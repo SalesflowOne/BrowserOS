@@ -2,6 +2,7 @@ import { createParser, type EventSourceMessage } from 'eventsource-parser'
 import type { ChatMode } from '@/entrypoints/sidepanel/index/chatTypes'
 import { getAgentServerUrl } from '@/lib/browseros/helpers'
 import {
+  createDefaultBrowserOSProvider,
   defaultProviderIdStorage,
   providersStorage,
 } from '@/lib/llm-providers/storage'
@@ -78,7 +79,7 @@ export async function getChatServerResponse(
   request: ChatServerRequest,
 ): Promise<ChatServerResponse> {
   const agentServerUrl = await getAgentServerUrl()
-  const provider = await getDefaultProvider()
+  const provider = (await getDefaultProvider()) ?? createDefaultBrowserOSProvider()
   const conversationId = request.conversationId ?? crypto.randomUUID()
   const personalization = await personalizationStorage.getValue()
 

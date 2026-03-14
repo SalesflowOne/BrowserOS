@@ -23,6 +23,7 @@ import {
 import { formatConversationHistory } from '@/lib/conversations/formatConversationHistory'
 import { declinedAppsStorage } from '@/lib/declined-apps/storage'
 import { useGraphqlQuery } from '@/lib/graphql/useGraphqlQuery'
+import { createDefaultBrowserOSProvider } from '@/lib/llm-providers/storage'
 import { useLlmProviders } from '@/lib/llm-providers/useLlmProviders'
 import { track } from '@/lib/metrics/track'
 import { searchActionsStorage } from '@/lib/search-actions/searchActionsStorage'
@@ -208,7 +209,7 @@ export const useChatSession = (options?: ChatSessionOptions) => {
         })
         const activeTab = activeTabsList?.[0] ?? undefined
         const message = getLastMessageText(messages)
-        const provider = selectedLlmProviderRef.current
+        const provider = selectedLlmProviderRef.current ?? createDefaultBrowserOSProvider()
         const currentMode = modeRef.current
         const enabledMcpServers = enabledMcpServersRef.current
         const customMcpServers = enabledCustomServersRef.current
