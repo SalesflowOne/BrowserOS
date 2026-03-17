@@ -3,6 +3,15 @@ import { useEffect, useRef, useState } from 'react'
 const GATEWAY_URL = 'https://llm.browseros.com'
 const WAVEFORM_BAND_COUNT = 5
 
+export interface VoiceInputState {
+  isRecording: boolean
+  isTranscribing: boolean
+  audioLevels: number[]
+  error: string | null
+  onStartRecording: () => void
+  onStopRecording: () => void
+}
+
 export interface UseVoiceInputReturn {
   isRecording: boolean
   isTranscribing: boolean
@@ -25,6 +34,7 @@ async function transcribeAudio(audioBlob: Blob): Promise<string> {
   const response = await fetch(`${GATEWAY_URL}/api/transcribe`, {
     method: 'POST',
     body: formData,
+    signal: AbortSignal.timeout(30_000),
   })
 
   if (!response.ok) {

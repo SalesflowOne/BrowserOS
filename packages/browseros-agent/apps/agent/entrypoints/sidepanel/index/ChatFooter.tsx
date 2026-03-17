@@ -10,20 +10,12 @@ import { useCapabilities } from '@/lib/browseros/useCapabilities'
 import { useMcpServers } from '@/lib/mcp/mcpServerStorage'
 import { useSyncRemoteIntegrations } from '@/lib/mcp/useSyncRemoteIntegrations'
 import { cn } from '@/lib/utils'
+import type { VoiceInputState } from '@/lib/voice/useVoiceInput'
 import { useWorkspace } from '@/lib/workspace/use-workspace'
 import { ChatAttachedTabs } from './ChatAttachedTabs'
 import { ChatInput, type ChatInputHandle } from './ChatInput'
 import { ChatModeToggle } from './ChatModeToggle'
 import type { ChatMode } from './chatTypes'
-
-interface VoiceInputState {
-  isRecording: boolean
-  isTranscribing: boolean
-  audioLevels: number[]
-  error: string | null
-  onStartRecording: () => void
-  onStopRecording: () => void
-}
 
 interface ChatFooterProps {
   mode: ChatMode

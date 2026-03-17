@@ -179,9 +179,13 @@ export const Chat = () => {
     voice.startRecording()
   }
 
-  const handleStopRecording = () => {
-    track(SIDEPANEL_VOICE_RECORDING_STOPPED_EVENT)
-    voice.stopRecording()
+  const handleStopRecording = async () => {
+    try {
+      await voice.stopRecording()
+      track(SIDEPANEL_VOICE_RECORDING_STOPPED_EVENT)
+    } catch {
+      // error surfaced via voice.error state
+    }
   }
 
   const voiceState = {

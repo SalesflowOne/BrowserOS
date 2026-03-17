@@ -10,21 +10,13 @@ import {
 } from 'react'
 import { TabPickerPopover } from '@/components/elements/tab-picker-popover'
 import { cn } from '@/lib/utils'
+import type { VoiceInputState } from '@/lib/voice/useVoiceInput'
 import type { ChatMode } from './chatTypes'
 
 interface MentionState {
   isOpen: boolean
   filterText: string
   startPosition: number
-}
-
-interface VoiceInputState {
-  isRecording: boolean
-  isTranscribing: boolean
-  audioLevels: number[]
-  error: string | null
-  onStartRecording: () => void
-  onStopRecording: () => void
 }
 
 interface ChatInputProps {
