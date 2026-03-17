@@ -289,7 +289,7 @@ export const NewScheduledTaskDialog: FC<NewScheduledTaskDialogProps> = ({
                       }}
                     />
                   </FormControl>
-                  {originalPromptRef.current !== null ? (
+                  {!isRefining && originalPromptRef.current !== null ? (
                     <button
                       type="button"
                       className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
