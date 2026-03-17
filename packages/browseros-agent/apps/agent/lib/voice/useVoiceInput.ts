@@ -19,12 +19,16 @@ export interface UseVoiceInputReturn {
   audioLevel: number
   audioLevels: number[]
   error: string | null
-  startRecording: () => Promise<void>
+  startRecording: () => Promise<boolean>
   stopRecording: () => Promise<void>
   clearTranscript: () => void
 }
 
 const EMPTY_LEVELS = Array(WAVEFORM_BAND_COUNT).fill(0)
+
+interface TranscribeResponse {
+  text: string
+}
 
 async function transcribeAudio(audioBlob: Blob): Promise<string> {
   const formData = new FormData()
@@ -38,13 +42,13 @@ async function transcribeAudio(audioBlob: Blob): Promise<string> {
   })
 
   if (!response.ok) {
-    const error = await response
+    const errorBody: { error?: string } = await response
       .json()
       .catch(() => ({ error: 'Transcription failed' }))
-    throw new Error(error.error || `Transcription failed: ${response.status}`)
+    throw new Error(errorBody.error || `Transcription failed: ${response.status}`)
   }
 
-  const result = await response.json()
+  const result: TranscribeResponse = await response.json()
   return result.text || ''
 }
 
@@ -132,7 +136,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
     updateLevel()
   }
 
-  const startRecording = async () => {
+  const startRecording = async (): Promise<boolean> => {
     try {
       setError(null)
       setTranscript('')
@@ -165,7 +169,12 @@ export function useVoiceInput(): UseVoiceInputReturn {
 
       mediaRecorder.start(250)
       setIsRecording(true)
+      return true
     } catch (err) {
+      streamRef.current?.getTracks().forEach((track) => track.stop())
+      streamRef.current = null
+      stopAudioLevelMonitoring()
+
       if (err instanceof Error) {
         if (err.name === 'NotAllowedError') {
           setError('Microphone permission denied')
@@ -177,6 +186,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
       } else {
         setError('Failed to start recording')
       }
+      return false
     }
   }
 
