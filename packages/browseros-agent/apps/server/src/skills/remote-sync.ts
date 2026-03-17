@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { SKILLS_LIMITS } from '@browseros/shared/constants/limits'
@@ -8,34 +7,13 @@ import { INLINED_ENV } from '../env'
 import { getSkillsDir } from '../lib/browseros-dir'
 import { logger } from '../lib/logger'
 import { safeSkillDir } from './service'
-import type {
-  ManagedSkillRecord,
-  RemoteSkillCatalog,
-  RemoteSkillEntry,
-  SkillManifest,
-} from './types'
-
-export const MANIFEST_FILE = '.remote-manifest.json'
+import type { RemoteSkillCatalog, RemoteSkillEntry } from './types'
 
 let syncTimer: ReturnType<typeof setInterval> | null = null
 
 export function extractVersion(content: string): string {
   const match = content.match(/^\s*version:\s*["']?([^"'\n]+)["']?/m)
   return match?.[1]?.trim() || '1.0'
-}
-
-export function contentHash(content: string): string {
-  return createHash('sha256').update(content).digest('hex')
-}
-
-function getManifestPath(): string {
-  return join(getSkillsDir(), MANIFEST_FILE)
-}
-
-function isValidManifest(data: unknown): data is SkillManifest {
-  if (typeof data !== 'object' || data === null) return false
-  const d = data as Record<string, unknown>
-  return typeof d.lastSyncedAt === 'string' && typeof d.skills === 'object' && d.skills !== null
 }
 
 function isValidSkillEntry(entry: unknown): entry is RemoteSkillEntry {
@@ -56,24 +34,6 @@ function isValidCatalog(data: unknown): data is RemoteSkillCatalog {
     Array.isArray(d.skills) &&
     d.skills.every(isValidSkillEntry)
   )
-}
-
-export async function loadManifest(): Promise<SkillManifest> {
-  try {
-    const raw = await readFile(getManifestPath(), 'utf-8')
-    const parsed: unknown = JSON.parse(raw)
-    if (!isValidManifest(parsed)) {
-      logger.warn('Invalid manifest file, resetting')
-      return { lastSyncedAt: '', skills: {} }
-    }
-    return parsed
-  } catch {
-    return { lastSyncedAt: '', skills: {} }
-  }
-}
-
-export async function saveManifest(manifest: SkillManifest): Promise<void> {
-  await writeFile(getManifestPath(), JSON.stringify(manifest, null, 2))
 }
 
 function getCatalogUrl(): string {
@@ -119,20 +79,11 @@ export async function fetchRemoteCatalog(): Promise<RemoteSkillCatalog | null> {
   }
 }
 
-function isSkillCustomized(
-  skillId: string,
-  currentContent: string,
-  manifest: SkillManifest,
-): boolean {
-  const record = manifest.skills[skillId]
-  if (!record) return false
-  return contentHash(currentContent) !== record.contentHash
-}
-
-async function readSkillContent(skillId: string): Promise<string | null> {
+async function getLocalVersion(skillId: string): Promise<string | null> {
   try {
     const safeDir = safeSkillDir(skillId)
-    return await readFile(join(safeDir, 'SKILL.md'), 'utf-8')
+    const content = await readFile(join(safeDir, 'SKILL.md'), 'utf-8')
+    return extractVersion(content)
   } catch {
     return null
   }
@@ -147,55 +98,29 @@ export async function writeSkillFile(
   await writeFile(join(safeDir, 'SKILL.md'), content)
 }
 
-export async function installSkill(
-  skill: RemoteSkillEntry,
-  manifest: SkillManifest,
-): Promise<void> {
-  await writeSkillFile(skill.id, skill.content)
-  manifest.skills[skill.id] = {
-    version: skill.version,
-    contentHash: contentHash(skill.content),
-  }
-}
-
 export async function syncRemoteSkills(): Promise<{
   installed: number
   updated: number
-  skipped: number
 }> {
-  const result = { installed: 0, updated: 0, skipped: 0 }
+  const result = { installed: 0, updated: 0 }
   const catalog = await fetchRemoteCatalog()
   if (!catalog) return result
 
-  const manifest = await loadManifest()
-
   for (const remoteSkill of catalog.skills) {
     try {
-      const localContent = await readSkillContent(remoteSkill.id)
-      const localRecord: ManagedSkillRecord | undefined =
-        manifest.skills[remoteSkill.id]
+      const localVersion = await getLocalVersion(remoteSkill.id)
 
-      if (!localContent) {
-        await installSkill(remoteSkill, manifest)
+      if (!localVersion) {
+        await writeSkillFile(remoteSkill.id, remoteSkill.content)
         result.installed++
         continue
       }
 
-      if (!localRecord) {
-        result.skipped++
+      if (localVersion === remoteSkill.version) {
         continue
       }
 
-      if (localRecord.version === remoteSkill.version) {
-        continue
-      }
-
-      if (isSkillCustomized(remoteSkill.id, localContent, manifest)) {
-        result.skipped++
-        continue
-      }
-
-      await installSkill(remoteSkill, manifest)
+      await writeSkillFile(remoteSkill.id, remoteSkill.content)
       result.updated++
     } catch (err) {
       logger.warn('Failed to sync skill', {
@@ -205,11 +130,6 @@ export async function syncRemoteSkills(): Promise<{
     }
   }
 
-  if (result.installed > 0 || result.updated > 0) {
-    manifest.lastSyncedAt = new Date().toISOString()
-    await saveManifest(manifest)
-  }
-
   return result
 }
 
@@ -217,12 +137,11 @@ export async function seedFromRemote(): Promise<boolean> {
   const catalog = await fetchRemoteCatalog()
   if (!catalog || catalog.skills.length === 0) return false
 
-  const manifest = await loadManifest()
   let seeded = 0
 
   for (const skill of catalog.skills) {
     try {
-      await installSkill(skill, manifest)
+      await writeSkillFile(skill.id, skill.content)
       seeded++
     } catch (err) {
       logger.warn('Failed to seed remote skill', {
@@ -232,24 +151,18 @@ export async function seedFromRemote(): Promise<boolean> {
     }
   }
 
-  if (seeded === 0) return false
-
-  manifest.lastSyncedAt = new Date().toISOString()
-  await saveManifest(manifest)
-  logger.info(`Seeded ${seeded}/${catalog.skills.length} skills from remote catalog`)
+  if (seeded > 0) {
+    logger.info(`Seeded ${seeded}/${catalog.skills.length} skills from remote catalog`)
+  }
 
   return seeded === catalog.skills.length
 }
 
 async function runSync(): Promise<void> {
   try {
-    const { installed, updated, skipped } = await syncRemoteSkills()
+    const { installed, updated } = await syncRemoteSkills()
     if (installed > 0 || updated > 0) {
-      logger.info('Remote skill sync completed', {
-        installed,
-        updated,
-        skipped,
-      })
+      logger.info('Remote skill sync completed', { installed, updated })
     }
   } catch (err) {
     logger.warn('Skill sync failed', {
@@ -264,7 +177,6 @@ export function startSkillSync(): void {
   runSync()
 
   syncTimer = setInterval(runSync, TIMEOUTS.SKILLS_SYNC_INTERVAL)
-
   syncTimer.unref()
 }
 

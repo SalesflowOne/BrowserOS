@@ -2,15 +2,7 @@ import { readdir } from 'node:fs/promises'
 import { getSkillsDir } from '../lib/browseros-dir'
 import { logger } from '../lib/logger'
 import { DEFAULT_SKILLS } from './defaults'
-import {
-  contentHash,
-  extractVersion,
-  installSkill,
-  loadManifest,
-  saveManifest,
-  seedFromRemote,
-  writeSkillFile,
-} from './remote-sync'
+import { seedFromRemote, writeSkillFile } from './remote-sync'
 
 async function hasExistingSkills(skillsDir: string): Promise<boolean> {
   try {
@@ -28,18 +20,10 @@ export async function seedDefaultSkills(): Promise<void> {
   const remoteSucceeded = await seedFromRemote()
   if (remoteSucceeded) return
 
-  const manifest = await loadManifest()
   let seeded = 0
-
   for (const skill of DEFAULT_SKILLS) {
-    if (manifest.skills[skill.id]) continue
     try {
-      const version = extractVersion(skill.content)
       await writeSkillFile(skill.id, skill.content)
-      manifest.skills[skill.id] = {
-        version,
-        contentHash: contentHash(skill.content),
-      }
       seeded++
     } catch (err) {
       logger.warn('Failed to seed skill', {
@@ -50,7 +34,6 @@ export async function seedDefaultSkills(): Promise<void> {
   }
 
   if (seeded > 0) {
-    await saveManifest(manifest)
     logger.info(`Seeded ${seeded} default skills (bundled)`)
   }
 }

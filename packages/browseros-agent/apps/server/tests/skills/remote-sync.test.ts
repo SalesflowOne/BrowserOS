@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, it, mock, spyOn } from 'bun:test'
 import assert from 'node:assert'
 import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve, sep } from 'node:path'
-import type { RemoteSkillCatalog, SkillManifest } from '../../src/skills/types'
+import { join } from 'node:path'
+import type { RemoteSkillCatalog } from '../../src/skills/types'
 
 let testDir: string
 
@@ -13,7 +13,7 @@ mock.module('../../src/lib/browseros-dir', () => ({
   getSkillsDir: mockGetSkillsDir,
 }))
 
-const { loadManifest, fetchRemoteCatalog, syncRemoteSkills, seedFromRemote } =
+const { fetchRemoteCatalog, syncRemoteSkills, seedFromRemote } =
   await import('../../src/skills/remote-sync')
 
 function makeCatalog(
@@ -22,7 +22,7 @@ function makeCatalog(
   return { version: 1, skills }
 }
 
-const SKILL_CONTENT = `---
+const SKILL_V1 = `---
 name: test-skill
 description: A test skill
 metadata:
@@ -36,7 +36,7 @@ metadata:
 Do the thing.
 `
 
-const SKILL_CONTENT_V2 = `---
+const SKILL_V2 = `---
 name: test-skill
 description: A test skill (updated)
 metadata:
@@ -59,357 +59,196 @@ afterEach(async () => {
   mock.restore()
 })
 
-describe('loadManifest', () => {
-  it('returns empty manifest when file does not exist', async () => {
-    const manifest = await loadManifest()
-    assert.deepStrictEqual(manifest, { lastSyncedAt: '', skills: {} })
-  })
-
-  it('reads existing manifest', async () => {
-    const manifest: SkillManifest = {
-      lastSyncedAt: '2025-01-01T00:00:00.000Z',
-      skills: {
-        'test-skill': { version: '1.0', contentHash: 'abc123' },
-      },
-    }
-    await writeFile(
-      join(testDir, '.remote-manifest.json'),
-      JSON.stringify(manifest),
-    )
-    const loaded = await loadManifest()
-    assert.deepStrictEqual(loaded, manifest)
-  })
-
-  it('returns empty manifest for invalid JSON', async () => {
-    await writeFile(join(testDir, '.remote-manifest.json'), '{ corrupted }}}')
-    const loaded = await loadManifest()
-    assert.deepStrictEqual(loaded, { lastSyncedAt: '', skills: {} })
-  })
-
-  it('returns empty manifest for wrong shape', async () => {
-    await writeFile(
-      join(testDir, '.remote-manifest.json'),
-      JSON.stringify({ wrong: 'shape' }),
-    )
-    const loaded = await loadManifest()
-    assert.deepStrictEqual(loaded, { lastSyncedAt: '', skills: {} })
-  })
-})
-
 describe('fetchRemoteCatalog', () => {
   it('returns null on network failure', async () => {
-    const fetchSpy = spyOn(globalThis, 'fetch').mockRejectedValue(
-      new Error('network error'),
-    )
-    const result = await fetchRemoteCatalog()
-    assert.strictEqual(result, null)
-    fetchSpy.mockRestore()
+    const spy = spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'))
+    assert.strictEqual(await fetchRemoteCatalog(), null)
+    spy.mockRestore()
   })
 
   it('returns null on non-ok response', async () => {
-    const fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValue(
+    const spy = spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('Not Found', { status: 404 }),
     )
-    const result = await fetchRemoteCatalog()
-    assert.strictEqual(result, null)
-    fetchSpy.mockRestore()
+    assert.strictEqual(await fetchRemoteCatalog(), null)
+    spy.mockRestore()
   })
 
   it('returns catalog on success', async () => {
-    const catalog = makeCatalog([
-      { id: 'test', version: '1.0', content: 'hello' },
-    ])
-    const fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(catalog), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
+    const catalog = makeCatalog([{ id: 'test', version: '1.0', content: 'hello' }])
+    const spy = spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(catalog), { status: 200 }),
     )
-    const result = await fetchRemoteCatalog()
-    assert.deepStrictEqual(result, catalog)
-    fetchSpy.mockRestore()
+    assert.deepStrictEqual(await fetchRemoteCatalog(), catalog)
+    spy.mockRestore()
   })
 
   it('returns null for invalid catalog shape', async () => {
-    const fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValue(
+    const spy = spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ skills: 'not-an-array' }), { status: 200 }),
     )
-    const result = await fetchRemoteCatalog()
-    assert.strictEqual(result, null)
-    fetchSpy.mockRestore()
+    assert.strictEqual(await fetchRemoteCatalog(), null)
+    spy.mockRestore()
   })
 
   it('returns null when skill entries have invalid shape', async () => {
-    const fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValue(
+    const spy = spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(
-        JSON.stringify({
-          version: 1,
-          skills: [{ id: 123, version: '1.0', content: null }],
-        }),
+        JSON.stringify({ version: 1, skills: [{ id: 123, version: '1.0', content: null }] }),
         { status: 200 },
       ),
     )
-    const result = await fetchRemoteCatalog()
-    assert.strictEqual(result, null)
-    fetchSpy.mockRestore()
+    assert.strictEqual(await fetchRemoteCatalog(), null)
+    spy.mockRestore()
   })
 
   it('returns null for oversized response', async () => {
-    const huge = 'x'.repeat(1_100_000)
-    const fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(huge, { status: 200 }),
+    const spy = spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('x'.repeat(1_100_000), { status: 200 }),
     )
-    const result = await fetchRemoteCatalog()
-    assert.strictEqual(result, null)
-    fetchSpy.mockRestore()
-  })
-
-  it('returns null when skills field is missing', async () => {
-    const fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ version: 1 }), { status: 200 }),
-    )
-    const result = await fetchRemoteCatalog()
-    assert.strictEqual(result, null)
-    fetchSpy.mockRestore()
+    assert.strictEqual(await fetchRemoteCatalog(), null)
+    spy.mockRestore()
   })
 })
 
 describe('syncRemoteSkills', () => {
   it('returns zeros when remote is unavailable', async () => {
-    const fetchSpy = spyOn(globalThis, 'fetch').mockRejectedValue(
-      new Error('offline'),
-    )
+    const spy = spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'))
     const result = await syncRemoteSkills()
-    assert.deepStrictEqual(result, { installed: 0, updated: 0, skipped: 0 })
-    fetchSpy.mockRestore()
+    assert.deepStrictEqual(result, { installed: 0, updated: 0 })
+    spy.mockRestore()
   })
 
   it('installs new skills that do not exist locally', async () => {
-    const catalog = makeCatalog([
-      { id: 'new-skill', version: '1.0', content: SKILL_CONTENT },
-    ])
-    const fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(catalog), { status: 200 }),
+    const spy = spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(makeCatalog([
+        { id: 'new-skill', version: '1.0', content: SKILL_V1 },
+      ])), { status: 200 }),
     )
-
     const result = await syncRemoteSkills()
     assert.strictEqual(result.installed, 1)
 
-    const content = await readFile(
-      join(testDir, 'new-skill', 'SKILL.md'),
-      'utf-8',
-    )
-    assert.strictEqual(content, SKILL_CONTENT)
-
-    const manifest = await loadManifest()
-    assert.ok(manifest.skills['new-skill'])
-    assert.strictEqual(manifest.skills['new-skill'].version, '1.0')
-
-    fetchSpy.mockRestore()
+    const content = await readFile(join(testDir, 'new-skill', 'SKILL.md'), 'utf-8')
+    assert.strictEqual(content, SKILL_V1)
+    spy.mockRestore()
   })
 
-  it('updates managed skills when version changes and content is unmodified', async () => {
+  it('updates skill when remote has newer version', async () => {
     await mkdir(join(testDir, 'test-skill'), { recursive: true })
-    await writeFile(join(testDir, 'test-skill', 'SKILL.md'), SKILL_CONTENT)
+    await writeFile(join(testDir, 'test-skill', 'SKILL.md'), SKILL_V1)
 
-    const { createHash } = await import('node:crypto')
-    const hash = createHash('sha256').update(SKILL_CONTENT).digest('hex')
-    const manifest: SkillManifest = {
-      lastSyncedAt: '2025-01-01T00:00:00.000Z',
-      skills: {
-        'test-skill': { version: '1.0', contentHash: hash },
-      },
-    }
-    await writeFile(
-      join(testDir, '.remote-manifest.json'),
-      JSON.stringify(manifest),
+    const spy = spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(makeCatalog([
+        { id: 'test-skill', version: '2.0', content: SKILL_V2 },
+      ])), { status: 200 }),
     )
-
-    const catalog = makeCatalog([
-      { id: 'test-skill', version: '2.0', content: SKILL_CONTENT_V2 },
-    ])
-    const fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(catalog), { status: 200 }),
-    )
-
     const result = await syncRemoteSkills()
     assert.strictEqual(result.updated, 1)
-    assert.strictEqual(result.skipped, 0)
 
-    const content = await readFile(
-      join(testDir, 'test-skill', 'SKILL.md'),
-      'utf-8',
-    )
-    assert.strictEqual(content, SKILL_CONTENT_V2)
-
-    fetchSpy.mockRestore()
+    const content = await readFile(join(testDir, 'test-skill', 'SKILL.md'), 'utf-8')
+    assert.strictEqual(content, SKILL_V2)
+    spy.mockRestore()
   })
 
-  it('skips user-customized skills', async () => {
+  it('overwrites user-edited skill when remote has newer version', async () => {
     await mkdir(join(testDir, 'test-skill'), { recursive: true })
-    const customContent = SKILL_CONTENT + '\n\n## My Custom Section\n'
-    await writeFile(join(testDir, 'test-skill', 'SKILL.md'), customContent)
+    await writeFile(join(testDir, 'test-skill', 'SKILL.md'), SKILL_V1 + '\n## My Notes\n')
 
-    const { createHash } = await import('node:crypto')
-    const originalHash = createHash('sha256')
-      .update(SKILL_CONTENT)
-      .digest('hex')
-    const manifest: SkillManifest = {
-      lastSyncedAt: '2025-01-01T00:00:00.000Z',
-      skills: {
-        'test-skill': { version: '1.0', contentHash: originalHash },
-      },
-    }
-    await writeFile(
-      join(testDir, '.remote-manifest.json'),
-      JSON.stringify(manifest),
+    const spy = spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(makeCatalog([
+        { id: 'test-skill', version: '2.0', content: SKILL_V2 },
+      ])), { status: 200 }),
     )
-
-    const catalog = makeCatalog([
-      { id: 'test-skill', version: '2.0', content: SKILL_CONTENT_V2 },
-    ])
-    const fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(catalog), { status: 200 }),
-    )
-
     const result = await syncRemoteSkills()
-    assert.strictEqual(result.skipped, 1)
-    assert.strictEqual(result.updated, 0)
+    assert.strictEqual(result.updated, 1)
 
-    const content = await readFile(
-      join(testDir, 'test-skill', 'SKILL.md'),
-      'utf-8',
-    )
-    assert.strictEqual(content, customContent)
-
-    fetchSpy.mockRestore()
+    const content = await readFile(join(testDir, 'test-skill', 'SKILL.md'), 'utf-8')
+    assert.strictEqual(content, SKILL_V2)
+    assert.ok(!content.includes('My Notes'))
+    spy.mockRestore()
   })
 
-  it('skips locally existing skills not in manifest (untracked)', async () => {
-    await mkdir(join(testDir, 'my-skill'), { recursive: true })
-    await writeFile(join(testDir, 'my-skill', 'SKILL.md'), SKILL_CONTENT)
-
-    const catalog = makeCatalog([
-      { id: 'my-skill', version: '2.0', content: SKILL_CONTENT_V2 },
-    ])
-    const fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(catalog), { status: 200 }),
-    )
-
-    const result = await syncRemoteSkills()
-    assert.strictEqual(result.skipped, 1)
-    assert.strictEqual(result.updated, 0)
-
-    fetchSpy.mockRestore()
-  })
-
-  it('does not update when versions match', async () => {
+  it('skips when version matches', async () => {
     await mkdir(join(testDir, 'test-skill'), { recursive: true })
-    await writeFile(join(testDir, 'test-skill', 'SKILL.md'), SKILL_CONTENT)
+    await writeFile(join(testDir, 'test-skill', 'SKILL.md'), SKILL_V1)
 
-    const { createHash } = await import('node:crypto')
-    const hash = createHash('sha256').update(SKILL_CONTENT).digest('hex')
-    const manifest: SkillManifest = {
-      lastSyncedAt: '2025-01-01T00:00:00.000Z',
-      skills: {
-        'test-skill': { version: '1.0', contentHash: hash },
-      },
-    }
-    await writeFile(
-      join(testDir, '.remote-manifest.json'),
-      JSON.stringify(manifest),
+    const spy = spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(makeCatalog([
+        { id: 'test-skill', version: '1.0', content: SKILL_V1 },
+      ])), { status: 200 }),
     )
-
-    const catalog = makeCatalog([
-      { id: 'test-skill', version: '1.0', content: SKILL_CONTENT },
-    ])
-    const fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(catalog), { status: 200 }),
-    )
-
     const result = await syncRemoteSkills()
     assert.strictEqual(result.installed, 0)
     assert.strictEqual(result.updated, 0)
-    assert.strictEqual(result.skipped, 0)
+    spy.mockRestore()
+  })
 
-    fetchSpy.mockRestore()
+  it('does not touch user-created skills not in catalog', async () => {
+    await mkdir(join(testDir, 'my-custom'), { recursive: true })
+    const custom = '---\nname: my-custom\ndescription: mine\nmetadata:\n  version: "1.0"\n---\n# Mine\n'
+    await writeFile(join(testDir, 'my-custom', 'SKILL.md'), custom)
+
+    const spy = spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(makeCatalog([
+        { id: 'other-skill', version: '1.0', content: SKILL_V1 },
+      ])), { status: 200 }),
+    )
+    await syncRemoteSkills()
+
+    const content = await readFile(join(testDir, 'my-custom', 'SKILL.md'), 'utf-8')
+    assert.strictEqual(content, custom)
+    spy.mockRestore()
   })
 
   it('rejects path traversal in skill ids', async () => {
-    const catalog = makeCatalog([
-      { id: '../../etc/evil', version: '1.0', content: SKILL_CONTENT },
-    ])
-    const fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(catalog), { status: 200 }),
+    const spy = spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(makeCatalog([
+        { id: '../../etc/evil', version: '1.0', content: SKILL_V1 },
+      ])), { status: 200 }),
     )
-
     const result = await syncRemoteSkills()
     assert.strictEqual(result.installed, 0)
-
-    fetchSpy.mockRestore()
+    spy.mockRestore()
   })
 })
 
 describe('seedFromRemote', () => {
   it('returns false when remote is unavailable', async () => {
-    const fetchSpy = spyOn(globalThis, 'fetch').mockRejectedValue(
-      new Error('offline'),
-    )
-    const result = await seedFromRemote()
-    assert.strictEqual(result, false)
-    fetchSpy.mockRestore()
+    const spy = spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'))
+    assert.strictEqual(await seedFromRemote(), false)
+    spy.mockRestore()
   })
 
-  it('seeds all skills from remote and writes manifest', async () => {
-    const catalog = makeCatalog([
-      { id: 'skill-a', version: '1.0', content: SKILL_CONTENT },
-      { id: 'skill-b', version: '1.0', content: SKILL_CONTENT_V2 },
-    ])
-    const fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(catalog), { status: 200 }),
+  it('seeds all skills from remote', async () => {
+    const spy = spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(makeCatalog([
+        { id: 'skill-a', version: '1.0', content: SKILL_V1 },
+        { id: 'skill-b', version: '1.0', content: SKILL_V2 },
+      ])), { status: 200 }),
     )
+    assert.strictEqual(await seedFromRemote(), true)
 
-    const result = await seedFromRemote()
-    assert.strictEqual(result, true)
-
-    const contentA = await readFile(
-      join(testDir, 'skill-a', 'SKILL.md'),
-      'utf-8',
-    )
-    assert.strictEqual(contentA, SKILL_CONTENT)
-
-    const manifest = await loadManifest()
-    assert.ok(manifest.skills['skill-a'])
-    assert.ok(manifest.skills['skill-b'])
-    assert.ok(manifest.lastSyncedAt)
-
-    fetchSpy.mockRestore()
+    const content = await readFile(join(testDir, 'skill-a', 'SKILL.md'), 'utf-8')
+    assert.strictEqual(content, SKILL_V1)
+    spy.mockRestore()
   })
 
   it('returns false for empty catalog', async () => {
-    const catalog = makeCatalog([])
-    const fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(catalog), { status: 200 }),
+    const spy = spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(makeCatalog([])), { status: 200 }),
     )
-
-    const result = await seedFromRemote()
-    assert.strictEqual(result, false)
-
-    fetchSpy.mockRestore()
+    assert.strictEqual(await seedFromRemote(), false)
+    spy.mockRestore()
   })
 
-  it('returns false on partial failure (triggers bundled fallback)', async () => {
-    const catalog = makeCatalog([
-      { id: 'good-skill', version: '1.0', content: SKILL_CONTENT },
-      { id: '../../traversal', version: '1.0', content: 'evil' },
-    ])
-    const fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(catalog), { status: 200 }),
+  it('returns false on partial failure', async () => {
+    const spy = spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(makeCatalog([
+        { id: 'good-skill', version: '1.0', content: SKILL_V1 },
+        { id: '../../traversal', version: '1.0', content: 'evil' },
+      ])), { status: 200 }),
     )
-
-    const result = await seedFromRemote()
-    assert.strictEqual(result, false)
-
-    fetchSpy.mockRestore()
+    assert.strictEqual(await seedFromRemote(), false)
+    spy.mockRestore()
   })
 })

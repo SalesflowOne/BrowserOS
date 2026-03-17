@@ -50,12 +50,3 @@ export type RemoteSkillCatalog = {
   skills: RemoteSkillEntry[]
 }
 
-export type ManagedSkillRecord = {
-  version: string
-  contentHash: string
-}
-
-export type SkillManifest = {
-  lastSyncedAt: string
-  skills: Record<string, ManagedSkillRecord>
-}
