@@ -177,7 +177,7 @@ export const clear = defineTool({
     element: z.number(),
   }),
   handler: async (args, ctx, response) => {
-    await ctx.browser.fill(args.page, args.element, '', true)
+    await ctx.browser.clear(args.page, args.element)
     response.text(`Cleared [${args.element}]`)
     response.data({ action: 'clear', page: args.page, element: args.element })
     response.includeSnapshot(args.page)

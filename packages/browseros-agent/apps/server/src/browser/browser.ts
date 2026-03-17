@@ -821,6 +821,22 @@ export class Browser {
     return coords
   }
 
+  async clear(page: number, element: number): Promise<void> {
+    const session = await this.resolveSession(page)
+    await elements.scrollIntoView(session, element)
+    try {
+      await elements.focusElement(session, element)
+    } catch {
+      try {
+        const { x, y } = await elements.getElementCenter(session, element)
+        await mouse.dispatchClick(session, x, y, 'left', 1, 0)
+      } catch {
+        logger.warn('Could not focus element for clear')
+      }
+    }
+    await keyboard.clearField(session)
+  }
+
   async pressKey(page: number, key: string): Promise<void> {
     const session = await this.resolveSession(page)
     await keyboard.pressCombo(session, key)

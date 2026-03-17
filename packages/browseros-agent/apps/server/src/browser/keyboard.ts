@@ -180,31 +180,31 @@ export async function typeText(
 }
 
 export async function clearField(session: ProtocolApi): Promise<void> {
+  // Use the CDP `commands` parameter to trigger the selectAll editing command
+  // directly, bypassing platform-specific keyboard shortcut mappings
+  // (Ctrl+A doesn't select all on macOS Chrome — it's the Emacs "beginning of paragraph" binding)
   await session.Input.dispatchKeyEvent({
-    type: 'keyDown',
+    type: 'rawKeyDown',
     key: 'a',
     code: 'KeyA',
-    modifiers: 2,
-    windowsVirtualKeyCode: 65,
+    commands: ['selectAll'],
   })
   await session.Input.dispatchKeyEvent({
     type: 'keyUp',
     key: 'a',
     code: 'KeyA',
-    modifiers: 2,
-    windowsVirtualKeyCode: 65,
   })
   await session.Input.dispatchKeyEvent({
-    type: 'keyDown',
-    key: 'Delete',
-    code: 'Delete',
-    windowsVirtualKeyCode: 46,
+    type: 'rawKeyDown',
+    key: 'Backspace',
+    code: 'Backspace',
+    windowsVirtualKeyCode: 8,
   })
   await session.Input.dispatchKeyEvent({
     type: 'keyUp',
-    key: 'Delete',
-    code: 'Delete',
-    windowsVirtualKeyCode: 46,
+    key: 'Backspace',
+    code: 'Backspace',
+    windowsVirtualKeyCode: 8,
   })
 }
 
