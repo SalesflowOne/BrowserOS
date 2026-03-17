@@ -77,12 +77,25 @@ A fresh profile opens the **onboarding page** (`app.html#/onboarding`). Navigate
 bun scripts/dev/inspect-ui.ts eval app.html "window.location.hash = '#/home'"
 ```
 
-Now screenshot to verify:
+Verify with a snapshot (not screenshot — snapshot is faster and sufficient for structural checks):
 ```bash
-bun scripts/dev/inspect-ui.ts screenshot app.html /tmp/home.png
+bun scripts/dev/inspect-ui.ts snapshot app.html
 ```
 
-Then read `/tmp/home.png` to view it.
+## Snapshot vs Screenshot
+
+**Prefer `snapshot` for most checks** — it's fast, text-based, and tells you what elements exist, their text, and their IDs. Use it after every navigation or interaction to verify state.
+
+**Use `screenshot` only when you need visual verification** — layout changes, CSS/styling, colors, images, or a final "does it look right" check. Screenshots are expensive (capture → save → read image).
+
+| Check | Use |
+|-------|-----|
+| Did the page navigate? | `snapshot` — look for new elements |
+| Does my new component render? | `snapshot` — look for its text/role |
+| Did a click change state? | `snapshot` — check element names/values |
+| Is the layout correct? | `screenshot` — visual check needed |
+| Do CSS changes look right? | `screenshot` — visual check needed |
+| Final verification before committing | `screenshot` — one visual confirmation |
 
 ## Step 4: Test the new tab page (left sidebar)
 
@@ -115,9 +128,13 @@ bun scripts/dev/inspect-ui.ts eval app.html "window.location.hash = '#/scheduled
 bun scripts/dev/inspect-ui.ts eval app.html "window.location.hash = '#/home'"
 ```
 
-### Screenshot to verify
+### Verify navigation
 
 ```bash
+# Snapshot to confirm the page changed (fast, preferred)
+bun scripts/dev/inspect-ui.ts snapshot app.html
+
+# Screenshot only if you need to check visual layout
 bun scripts/dev/inspect-ui.ts screenshot app.html /tmp/settings.png
 ```
 
@@ -166,23 +183,67 @@ bun scripts/dev/inspect-ui.ts scroll sidepanel down 3
 # Hover over an element to test hover states
 bun scripts/dev/inspect-ui.ts hover sidepanel 99
 
-# Screenshot to verify
+# Snapshot to verify state changed (fast, preferred)
+bun scripts/dev/inspect-ui.ts snapshot sidepanel
+
+# Screenshot only for visual/layout verification
 bun scripts/dev/inspect-ui.ts screenshot sidepanel /tmp/result.png
 ```
 
 ## Step 6: Verify and iterate
 
-The core loop is:
+### The core loop
 
 ```
-snapshot → identify element IDs → click/fill → screenshot → verify
+snapshot → identify element IDs → click/fill/press_key → snapshot → verify
 ```
 
-If something looks wrong:
+Use `screenshot` only when visual layout verification is needed (CSS changes, final check).
+
+### After making code changes
+
 1. Fix the code in `apps/agent/`
-2. WXT HMR will hot-reload the extension automatically
-3. Wait a few seconds for the reload
-4. Re-snapshot and re-screenshot to verify the fix
+2. WXT HMR will hot-reload the extension automatically (watch mode)
+3. Wait 2-3 seconds for the reload to complete
+4. **Re-snapshot** — element IDs WILL change after HMR reload
+5. Verify the fix with snapshot (or screenshot if visual)
+
+### Check server logs
+
+The dev server output (running in background) contains useful diagnostics:
+- `[agent]` — WXT build/HMR status, compilation errors
+- `[server]` — MCP server logs, tool execution, errors
+- `[build]` — Extension build output
+
+If the UI isn't rendering, check for build errors in the `[agent]` output.
+
+### Check for JavaScript errors
+
+```bash
+bun scripts/dev/inspect-ui.ts eval sidepanel "JSON.stringify(window.__errors || 'no errors')"
+```
+
+Or check the console for React errors:
+```bash
+bun scripts/dev/inspect-ui.ts eval app.html "document.querySelector('#root')?.innerHTML?.substring(0, 200)"
+```
+
+### Verify API connectivity
+
+The extension talks to the MCP server. Verify the server is reachable:
+```bash
+bun scripts/dev/inspect-ui.ts eval sidepanel "fetch('http://127.0.0.1:<serverPort>/health').then(r => r.ok).catch(() => false)"
+```
+
+### Common issues
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Blank page after navigation | React render error | Check `eval` for JS errors |
+| Element IDs don't match | Page re-rendered (HMR/navigation) | Re-run `snapshot` before interacting |
+| `open-sidepanel` fails | Extension not fully loaded | Wait longer after dev server starts |
+| Click does nothing | Element not visible (below fold) | Use `scroll` first, then re-snapshot |
+| `wait_for` times out | Content hasn't loaded yet | Check server logs for API errors |
 
 ## Available commands reference
 
