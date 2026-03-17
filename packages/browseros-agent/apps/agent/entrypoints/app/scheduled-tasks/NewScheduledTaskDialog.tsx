@@ -117,6 +117,7 @@ export const NewScheduledTaskDialog: FC<NewScheduledTaskDialogProps> = ({
   const [isRefining, setIsRefining] = useState(false)
   const originalPromptRef = useRef<string | null>(null)
   const refineRequestIdRef = useRef(0)
+  const isProgrammaticChange = useRef(false)
 
   // Load providers from storage
   useEffect(() => {
@@ -187,9 +188,11 @@ export const NewScheduledTaskDialog: FC<NewScheduledTaskDialogProps> = ({
       'textarea[name="query"]',
     ) as HTMLTextAreaElement
     if (textarea) {
+      isProgrammaticChange.current = true
       textarea.focus()
       textarea.select()
       document.execCommand('insertText', false, value)
+      isProgrammaticChange.current = false
     } else {
       form.setValue('query', value)
     }
@@ -305,6 +308,15 @@ export const NewScheduledTaskDialog: FC<NewScheduledTaskDialogProps> = ({
                       placeholder="What should the agent do? e.g., Check my email and summarize important messages"
                       className="min-h-[100px] resize-none"
                       {...field}
+                      onChange={(e) => {
+                        field.onChange(e)
+                        if (
+                          !isProgrammaticChange.current &&
+                          originalPromptRef.current !== null
+                        ) {
+                          originalPromptRef.current = null
+                        }
+                      }}
                     />
                   </FormControl>
                   {!isRefining && originalPromptRef.current !== null ? (
