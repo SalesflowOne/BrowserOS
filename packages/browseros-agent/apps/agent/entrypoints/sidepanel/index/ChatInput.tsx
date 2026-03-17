@@ -329,7 +329,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     return (
       <form
         onSubmit={handleSubmit}
-        className="relative mt-2 flex w-full items-end gap-1.5"
+        className="relative mt-2 flex w-full items-end gap-2"
       >
         <TabPickerPopover
           variant="mention"
@@ -344,6 +344,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           <div
             className={cn(
               'flex min-h-[42px] flex-1 items-center justify-center gap-1 rounded-2xl border border-red-500/50 bg-muted/50 px-4 py-2.5',
+              voice ? 'pr-[4.5rem]' : 'pr-11',
             )}
           >
             {voice.audioLevels.map((level, i) => (
@@ -361,6 +362,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             ref={textareaRef}
             className={cn(
               'field-sizing-content max-h-60 min-h-[42px] flex-1 resize-none overflow-hidden rounded-2xl border border-border/50 bg-muted/50 px-4 py-2.5 text-sm outline-none transition-colors placeholder:text-muted-foreground/70 hover:border-border focus:border-[var(--accent-orange)]',
+              voice ? 'pr-[4.5rem]' : 'pr-11',
             )}
             value={input}
             onChange={(e) => handleInputChange(e.target.value)}
@@ -376,8 +378,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             rows={1}
           />
         )}
-        {renderVoiceButton()}
-        {renderSendButton()}
+        <div className="absolute right-1.5 bottom-1.5 flex items-center gap-1">
+          {renderVoiceButton()}
+          {renderSendButton()}
+        </div>
       </form>
     )
   },
