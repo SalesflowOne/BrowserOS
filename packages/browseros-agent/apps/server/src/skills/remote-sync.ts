@@ -51,13 +51,6 @@ export async function fetchRemoteCatalog(): Promise<RemoteSkillCatalog | null> {
       })
       return null
     }
-    const contentLength = Number(response.headers.get('content-length') ?? 0)
-    if (contentLength > SKILLS_LIMITS.MAX_CATALOG_BYTES) {
-      logger.warn('Remote skill catalog Content-Length too large', {
-        contentLength,
-      })
-      return null
-    }
     const text = await response.text()
     if (text.length > SKILLS_LIMITS.MAX_CATALOG_BYTES) {
       logger.warn('Remote skill catalog response too large', {
