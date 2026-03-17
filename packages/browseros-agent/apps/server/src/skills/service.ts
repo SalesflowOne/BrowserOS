@@ -19,8 +19,7 @@ export function slugify(name: string): string {
     .replace(/^-|-$/g, '')
 }
 
-// Prevents path traversal — ensures resolved path stays inside skills directory
-function safeSkillDir(id: string): string {
+export function safeSkillDir(id: string): string {
   const skillsDir = getSkillsDir()
   const resolved = resolve(skillsDir, id)
   if (!resolved.startsWith(`${skillsDir}${sep}`)) {

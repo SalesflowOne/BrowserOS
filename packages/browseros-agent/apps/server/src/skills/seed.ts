@@ -1,8 +1,9 @@
-import { mkdir, readdir, writeFile } from 'node:fs/promises'
+import { readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { getSkillsDir } from '../lib/browseros-dir'
 import { logger } from '../lib/logger'
 import { DEFAULT_SKILLS } from './defaults'
+import { seedFromRemote, writeSkillFile } from './remote-sync'
 
 async function hasExistingSkills(skillsDir: string): Promise<boolean> {
   try {
@@ -13,16 +14,27 @@ async function hasExistingSkills(skillsDir: string): Promise<boolean> {
   }
 }
 
+async function skillExists(skillsDir: string, id: string): Promise<boolean> {
+  try {
+    await stat(join(skillsDir, id, 'SKILL.md'))
+    return true
+  } catch {
+    return false
+  }
+}
+
 export async function seedDefaultSkills(): Promise<void> {
   const skillsDir = getSkillsDir()
   if (await hasExistingSkills(skillsDir)) return
 
+  const remoteSucceeded = await seedFromRemote()
+  if (remoteSucceeded) return
+
   let seeded = 0
   for (const skill of DEFAULT_SKILLS) {
+    if (await skillExists(skillsDir, skill.id)) continue
     try {
-      const targetDir = join(skillsDir, skill.id)
-      await mkdir(targetDir, { recursive: true })
-      await writeFile(join(targetDir, 'SKILL.md'), skill.content)
+      await writeSkillFile(skill.id, skill.content)
       seeded++
     } catch (err) {
       logger.warn('Failed to seed skill', {
@@ -33,6 +45,6 @@ export async function seedDefaultSkills(): Promise<void> {
   }
 
   if (seeded > 0) {
-    logger.info(`Seeded ${seeded} default skills`)
+    logger.info(`Seeded ${seeded} default skills (bundled)`)
   }
 }

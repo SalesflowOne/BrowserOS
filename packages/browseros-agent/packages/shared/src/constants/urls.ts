@@ -12,4 +12,5 @@ export const EXTERNAL_URLS = {
   CODEGEN_SERVICE: 'https://graph.browseros.com',
   OPENAI_AUTH: 'https://auth.openai.com/oauth/authorize',
   OPENAI_TOKEN: 'https://auth.openai.com/oauth/token',
+  SKILLS_CATALOG: 'https://cdn.browseros.com/skills/v1/catalog.json',
 } as const

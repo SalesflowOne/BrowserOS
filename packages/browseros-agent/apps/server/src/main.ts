@@ -28,6 +28,7 @@ import { fetchDailyRateLimit } from './lib/rate-limiter/fetch-config'
 import { RateLimiter } from './lib/rate-limiter/rate-limiter'
 import { Sentry } from './lib/sentry'
 import { seedSoulTemplate } from './lib/soul'
+import { startSkillSync, stopSkillSync } from './skills/remote-sync'
 import { seedDefaultSkills } from './skills/seed'
 import { registry } from './tools/registry'
 import { VERSION } from './version'
@@ -112,12 +113,14 @@ export class Application {
     )
 
     this.logStartupSummary(controllerServerStarted)
+    startSkillSync()
 
     metrics.log('http_server.started', { version: VERSION })
   }
 
   stop(reason?: string): void {
     logger.info('Shutting down server...', { reason })
+    stopSkillSync()
 
     // Immediate exit without graceful shutdown. Chromium may kill us on update/restart,
     // and we need to free the port instantly so the HTTP port doesn't keep switching.

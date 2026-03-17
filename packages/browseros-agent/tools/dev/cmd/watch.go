@@ -58,6 +58,9 @@ func runWatch(cmd *cobra.Command, args []string) error {
 		userDataDir = dir
 		proc.LogMsgf(proc.TagInfo, "Created fresh profile: %s", userDataDir)
 	} else {
+		if err := os.MkdirAll(userDataDir, 0o755); err != nil {
+			return fmt.Errorf("creating user-data dir: %w", err)
+		}
 		proc.LogMsg(proc.TagInfo, "Killing processes on preferred ports...")
 		proc.KillPorts(defaultPorts)
 		proc.LogMsg(proc.TagInfo, "Ports cleared")

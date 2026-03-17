@@ -38,3 +38,15 @@ export type CreateSkillInput = {
 export type UpdateSkillInput = Partial<CreateSkillInput> & {
   enabled?: boolean
 }
+
+export type RemoteSkillEntry = {
+  id: string
+  version: string
+  content: string
+}
+
+export type RemoteSkillCatalog = {
+  version: number
+  skills: RemoteSkillEntry[]
+}
+
