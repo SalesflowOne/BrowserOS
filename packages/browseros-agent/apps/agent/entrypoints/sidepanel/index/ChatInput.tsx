@@ -1,4 +1,4 @@
-import { Send, SquareStop } from 'lucide-react'
+import { Loader2, Mic, Send, Square, SquareStop } from 'lucide-react'
 import type { FormEvent, KeyboardEvent } from 'react'
 import {
   forwardRef,
@@ -18,6 +18,15 @@ interface MentionState {
   startPosition: number
 }
 
+interface VoiceInputState {
+  isRecording: boolean
+  isTranscribing: boolean
+  audioLevels: number[]
+  error: string | null
+  onStartRecording: () => void
+  onStopRecording: () => void
+}
+
 interface ChatInputProps {
   input: string
   status: 'streaming' | 'submitted' | 'ready' | 'error'
@@ -28,6 +37,7 @@ interface ChatInputProps {
   selectedTabs: chrome.tabs.Tab[]
   onToggleTab: (tab: chrome.tabs.Tab) => void
   onTabMentionOpenChange?: (isOpen: boolean) => void
+  voice?: VoiceInputState
 }
 
 export interface ChatInputHandle {
@@ -49,6 +59,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       selectedTabs,
       onToggleTab,
       onTabMentionOpenChange,
+      voice,
     },
     ref,
   ) => {
@@ -259,6 +270,83 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       return () => document.removeEventListener('mousedown', handleClickOutside)
     }, [mentionState.isOpen, closeMention])
 
+    const renderActionButton = () => {
+      if (voice?.isRecording) {
+        return (
+          <button
+            type="button"
+            onClick={voice.onStopRecording}
+            className="absolute right-1.5 bottom-1.5 cursor-pointer rounded-full bg-red-600 p-2 text-white shadow-sm transition-all duration-200 hover:bg-red-900"
+          >
+            <Square className="h-3.5 w-3.5" />
+            <span className="sr-only">Stop recording</span>
+          </button>
+        )
+      }
+
+      if (voice?.isTranscribing) {
+        return (
+          <button
+            type="button"
+            disabled
+            className="absolute right-1.5 bottom-1.5 rounded-full bg-muted p-2 text-muted-foreground"
+          >
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <span className="sr-only">Transcribing</span>
+          </button>
+        )
+      }
+
+      if (isBusy) {
+        return (
+          <button
+            type="button"
+            onClick={onStop}
+            className="absolute right-1.5 bottom-1.5 cursor-pointer rounded-full bg-red-600 p-2 text-white shadow-sm transition-all duration-200 hover:bg-red-900 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <SquareStop className="h-3.5 w-3.5" />
+            <span className="sr-only">Stop</span>
+          </button>
+        )
+      }
+
+      if (input.trim()) {
+        return (
+          <button
+            type="submit"
+            className="absolute right-1.5 bottom-1.5 cursor-pointer rounded-full bg-[var(--accent-orange)] p-2 text-white shadow-sm transition-all duration-200 hover:bg-[var(--accent-orange-bright)]"
+          >
+            <Send className="h-3.5 w-3.5" />
+            <span className="sr-only">Send</span>
+          </button>
+        )
+      }
+
+      if (voice) {
+        return (
+          <button
+            type="button"
+            onClick={voice.onStartRecording}
+            className="absolute right-1.5 bottom-1.5 cursor-pointer rounded-full p-2 text-muted-foreground transition-all duration-200 hover:bg-muted hover:text-foreground"
+          >
+            <Mic className="h-3.5 w-3.5" />
+            <span className="sr-only">Voice input</span>
+          </button>
+        )
+      }
+
+      return (
+        <button
+          type="submit"
+          disabled
+          className="absolute right-1.5 bottom-1.5 cursor-pointer rounded-full bg-[var(--accent-orange)] p-2 text-white shadow-sm transition-all duration-200 hover:bg-[var(--accent-orange-bright)] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Send className="h-3.5 w-3.5" />
+          <span className="sr-only">Send</span>
+        </button>
+      )
+    }
+
     return (
       <form
         onSubmit={handleSubmit}
@@ -273,38 +361,43 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           onClose={closeMention}
           anchorRef={textareaRef}
         />
-        <textarea
-          ref={textareaRef}
-          className={cn(
-            'field-sizing-content max-h-60 min-h-[42px] flex-1 resize-none overflow-hidden rounded-2xl border border-border/50 bg-muted/50 px-4 py-2.5 pr-11 text-sm outline-none transition-colors placeholder:text-muted-foreground/70 hover:border-border focus:border-[var(--accent-orange)]',
-          )}
-          value={input}
-          onChange={(e) => handleInputChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={
-            mode === 'chat' ? 'Ask about this page...' : 'What should I do?'
-          }
-          rows={1}
-        />
-        {isBusy ? (
-          <button
-            type="button"
-            onClick={onStop}
-            className="absolute right-1.5 bottom-1.5 cursor-pointer rounded-full bg-red-600 p-2 text-white shadow-sm transition-all duration-200 hover:bg-red-900 disabled:cursor-not-allowed disabled:opacity-50"
+        {voice?.isRecording ? (
+          <div
+            className={cn(
+              'flex min-h-[42px] flex-1 items-center justify-center gap-1 rounded-2xl border border-red-500/50 bg-muted/50 px-4 py-2.5 pr-11',
+            )}
           >
-            <SquareStop className="h-3.5 w-3.5" />
-            <span className="sr-only">Stop</span>
-          </button>
+            {voice.audioLevels.map((level, i) => (
+              <div
+                key={i}
+                className="w-1 rounded-full bg-red-500 transition-all duration-75"
+                style={{
+                  height: `${Math.max(4, Math.min(20, level * 0.6))}px`,
+                }}
+              />
+            ))}
+          </div>
         ) : (
-          <button
-            type="submit"
-            disabled={!input.trim()}
-            className="absolute right-1.5 bottom-1.5 cursor-pointer rounded-full bg-[var(--accent-orange)] p-2 text-white shadow-sm transition-all duration-200 hover:bg-[var(--accent-orange-bright)] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Send className="h-3.5 w-3.5" />
-            <span className="sr-only">Send</span>
-          </button>
+          <textarea
+            ref={textareaRef}
+            className={cn(
+              'field-sizing-content max-h-60 min-h-[42px] flex-1 resize-none overflow-hidden rounded-2xl border border-border/50 bg-muted/50 px-4 py-2.5 pr-11 text-sm outline-none transition-colors placeholder:text-muted-foreground/70 hover:border-border focus:border-[var(--accent-orange)]',
+            )}
+            value={input}
+            onChange={(e) => handleInputChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={
+              voice?.isTranscribing
+                ? 'Transcribing...'
+                : mode === 'chat'
+                  ? 'Ask about this page...'
+                  : 'What should I do?'
+            }
+            disabled={voice?.isTranscribing}
+            rows={1}
+          />
         )}
+        {renderActionButton()}
       </form>
     )
   },

@@ -4,8 +4,8 @@ import { MessageResponse } from '@/components/ai-elements/message'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
+import { useVoiceInput } from '@/lib/voice/useVoiceInput'
 import type { Message } from './useSurveyChat'
-import { useVoiceInput } from './useVoiceInput'
 import { VoiceInputButton } from './VoiceInputButton'
 
 interface Props {

@@ -16,6 +16,15 @@ import { ChatInput, type ChatInputHandle } from './ChatInput'
 import { ChatModeToggle } from './ChatModeToggle'
 import type { ChatMode } from './chatTypes'
 
+interface VoiceInputState {
+  isRecording: boolean
+  isTranscribing: boolean
+  audioLevels: number[]
+  error: string | null
+  onStartRecording: () => void
+  onStopRecording: () => void
+}
+
 interface ChatFooterProps {
   mode: ChatMode
   onModeChange: (mode: ChatMode) => void
@@ -27,6 +36,7 @@ interface ChatFooterProps {
   attachedTabs: chrome.tabs.Tab[]
   onToggleTab: (tab: chrome.tabs.Tab) => void
   onRemoveTab: (tabId?: number) => void
+  voice?: VoiceInputState
 }
 
 export const ChatFooter: FC<ChatFooterProps> = ({
@@ -40,6 +50,7 @@ export const ChatFooter: FC<ChatFooterProps> = ({
   attachedTabs,
   onToggleTab,
   onRemoveTab,
+  voice,
 }) => {
   const { selectedFolder } = useWorkspace()
   const { supports } = useCapabilities()
@@ -172,6 +183,10 @@ export const ChatFooter: FC<ChatFooterProps> = ({
           </div>
         </div>
 
+        {voice?.error && (
+          <div className="mt-1 text-destructive text-xs">{voice.error}</div>
+        )}
+
         <ChatInput
           input={input}
           status={status}
@@ -182,6 +197,7 @@ export const ChatFooter: FC<ChatFooterProps> = ({
           selectedTabs={attachedTabs}
           onToggleTab={onToggleTab}
           onTabMentionOpenChange={setIsTabMentionOpen}
+          voice={voice}
           ref={chatInputRef}
         />
       </div>

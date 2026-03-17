@@ -251,3 +251,18 @@ export const KIMI_RATE_LIMIT_DOCS_CLICKED_EVENT =
 /** @public */
 export const KIMI_RATE_LIMIT_PLATFORM_CLICKED_EVENT =
   'ui.rate_limit.moonshot_platform_clicked'
+
+/** @public */
+export const SIDEPANEL_VOICE_RECORDING_STARTED_EVENT =
+  'sidepanel.voice.recording_started'
+
+/** @public */
+export const SIDEPANEL_VOICE_RECORDING_STOPPED_EVENT =
+  'sidepanel.voice.recording_stopped'
+
+/** @public */
+export const SIDEPANEL_VOICE_TRANSCRIPTION_COMPLETED_EVENT =
+  'sidepanel.voice.transcription_completed'
+
+/** @public */
+export const SIDEPANEL_VOICE_ERROR_EVENT = 'sidepanel.voice.error'

@@ -8,9 +8,14 @@ import {
   SIDEPANEL_SUGGESTION_CLICKED_EVENT,
   SIDEPANEL_TAB_REMOVED_EVENT,
   SIDEPANEL_TAB_TOGGLED_EVENT,
+  SIDEPANEL_VOICE_ERROR_EVENT,
+  SIDEPANEL_VOICE_RECORDING_STARTED_EVENT,
+  SIDEPANEL_VOICE_RECORDING_STOPPED_EVENT,
+  SIDEPANEL_VOICE_TRANSCRIPTION_COMPLETED_EVENT,
 } from '@/lib/constants/analyticsEvents'
 import { useJtbdPopup } from '@/lib/jtbd-popup/useJtbdPopup'
 import { track } from '@/lib/metrics/track'
+import { useVoiceInput } from '@/lib/voice/useVoiceInput'
 import { useChatSessionContext } from '../layout/ChatSessionContext'
 import { ChatEmptyState } from './ChatEmptyState'
 import { ChatError } from './ChatError'
@@ -48,6 +53,8 @@ export const Chat = () => {
     onDismiss: onDismissJtbdPopup,
   } = useJtbdPopup()
 
+  const voice = useVoiceInput()
+
   const [input, setInput] = useState('')
   const [attachedTabs, setAttachedTabs] = useState<chrome.tabs.Tab[]>([])
   const [mounted, setMounted] = useState(false)
@@ -82,6 +89,26 @@ export const Chat = () => {
     }
     previousChatStatus.current = status
   }, [status])
+
+  // Insert transcript into input when transcription completes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only trigger on transcript/transcribing change
+  useEffect(() => {
+    if (voice.transcript && !voice.isTranscribing) {
+      setInput((prev) => {
+        const separator = prev.trim() ? ' ' : ''
+        return prev + separator + voice.transcript
+      })
+      track(SIDEPANEL_VOICE_TRANSCRIPTION_COMPLETED_EVENT)
+      voice.clearTranscript()
+    }
+  }, [voice.transcript, voice.isTranscribing])
+
+  // Track voice errors
+  useEffect(() => {
+    if (voice.error) {
+      track(SIDEPANEL_VOICE_ERROR_EVENT, { error: voice.error })
+    }
+  }, [voice.error])
 
   const handleModeChange = (newMode: ChatMode) => {
     track(SIDEPANEL_MODE_CHANGED_EVENT, { from: mode, to: newMode })
@@ -147,6 +174,25 @@ export const Chat = () => {
     executeMessage(suggestion)
   }
 
+  const handleStartRecording = () => {
+    track(SIDEPANEL_VOICE_RECORDING_STARTED_EVENT)
+    voice.startRecording()
+  }
+
+  const handleStopRecording = () => {
+    track(SIDEPANEL_VOICE_RECORDING_STOPPED_EVENT)
+    voice.stopRecording()
+  }
+
+  const voiceState = {
+    isRecording: voice.isRecording,
+    isTranscribing: voice.isTranscribing,
+    audioLevels: voice.audioLevels,
+    error: voice.error,
+    onStartRecording: handleStartRecording,
+    onStopRecording: handleStopRecording,
+  }
+
   return (
     <>
       <main className="mt-4 flex h-full flex-1 flex-col space-y-4 overflow-y-auto">
@@ -190,6 +236,7 @@ export const Chat = () => {
         attachedTabs={attachedTabs}
         onToggleTab={toggleTabSelection}
         onRemoveTab={removeTab}
+        voice={voiceState}
       />
     </>
   )
