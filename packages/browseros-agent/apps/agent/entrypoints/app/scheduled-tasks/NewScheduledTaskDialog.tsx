@@ -131,6 +131,7 @@ export const NewScheduledTaskDialog: FC<NewScheduledTaskDialogProps> = ({
 
   useEffect(() => {
     if (open) {
+      originalPromptRef.current = null
       if (initialValues) {
         form.reset({
           name: initialValues.name,
@@ -187,6 +188,7 @@ export const NewScheduledTaskDialog: FC<NewScheduledTaskDialogProps> = ({
       const refined = await refinePrompt({
         prompt: currentQuery,
         name: currentName || 'Untitled Task',
+        providerId: form.getValues('providerId'),
       })
       form.setValue('query', refined)
       track(SCHEDULED_TASK_PROMPT_REFINED_EVENT)
@@ -218,6 +220,7 @@ export const NewScheduledTaskDialog: FC<NewScheduledTaskDialogProps> = ({
       enabled: values.enabled,
     })
     form.reset()
+    originalPromptRef.current = null
     onOpenChange(false)
   }
 

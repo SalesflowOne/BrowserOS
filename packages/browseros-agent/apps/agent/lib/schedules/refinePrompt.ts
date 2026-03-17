@@ -6,8 +6,14 @@ import {
 } from '@/lib/llm-providers/storage'
 import type { LlmProviderConfig } from '@/lib/llm-providers/types'
 
-const resolveProvider = async (): Promise<LlmProviderConfig> => {
+const resolveProvider = async (
+  providerId?: string,
+): Promise<LlmProviderConfig> => {
   const providers = await providersStorage.getValue()
+  if (providerId && providers?.length) {
+    const match = providers.find((p) => p.id === providerId)
+    if (match) return match
+  }
   if (providers?.length) {
     const defaultProviderId = await defaultProviderIdStorage.getValue()
     const defaultProvider = providers.find((p) => p.id === defaultProviderId)
@@ -26,9 +32,10 @@ interface RefinePromptResponse {
 export async function refinePrompt(params: {
   prompt: string
   name: string
+  providerId?: string
 }): Promise<string> {
   const agentServerUrl = await getAgentServerUrl()
-  const provider = await resolveProvider()
+  const provider = await resolveProvider(params.providerId)
 
   const response = await fetch(`${agentServerUrl}/refine-prompt`, {
     method: 'POST',
