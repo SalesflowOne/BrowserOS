@@ -11,19 +11,14 @@ import { OAuthTokenStore } from './token-store'
 
 let tokenManager: OAuthTokenManager | null = null
 
-interface OAuthHandle {
-  tokenManager: OAuthTokenManager
-  stopCallbackServer: () => void
-}
-
 export function initializeOAuth(
   db: Database,
   browserosId: string,
-): OAuthHandle {
+): OAuthTokenManager {
   const store = new OAuthTokenStore(db)
   tokenManager = new OAuthTokenManager(store, browserosId)
-  const { stop } = startOAuthCallbackServer(tokenManager)
-  return { tokenManager, stopCallbackServer: stop }
+  startOAuthCallbackServer(tokenManager)
+  return tokenManager
 }
 
 export function getOAuthTokenManager(): OAuthTokenManager | null {

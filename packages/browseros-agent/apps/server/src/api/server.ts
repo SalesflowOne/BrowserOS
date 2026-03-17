@@ -78,11 +78,10 @@ export async function createHttpServer(config: HttpServerConfig) {
 
   const { onShutdown } = config
 
-  // Initialize OAuth token manager + callback server
-  const oauthHandle = browserosId
+  // Initialize OAuth token manager + callback server (port released on process exit)
+  const tokenManager = browserosId
     ? initializeOAuth(getDb(), browserosId)
     : null
-  const tokenManager = oauthHandle?.tokenManager ?? null
 
   // Connect Klavis proxy (non-blocking: browser tools still work if this fails)
   let klavisProxy: KlavisProxyHandle | null = null
@@ -109,7 +108,6 @@ export async function createHttpServer(config: HttpServerConfig) {
       '/shutdown',
       createShutdownRoute({
         onShutdown: () => {
-          oauthHandle?.stopCallbackServer()
           klavisProxy?.close().catch((err) =>
             logger.warn('Failed to close Klavis proxy transport', {
               error: err instanceof Error ? err.message : String(err),

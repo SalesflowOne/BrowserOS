@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getAgentServerUrl } from '@/lib/browseros/helpers'
 
 interface OAuthStatus {
@@ -22,7 +22,7 @@ export function useOAuthStatus(provider: string): UseOAuthStatusReturn {
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const fetchStatus = useCallback(async (): Promise<OAuthStatus | null> => {
+  async function fetchStatus(): Promise<OAuthStatus | null> {
     try {
       const serverUrl = await getAgentServerUrl()
       const res = await fetch(`${serverUrl}/oauth/${provider}/status`)
@@ -33,26 +33,20 @@ export function useOAuthStatus(provider: string): UseOAuthStatusReturn {
     } catch {
       return null
     }
-  }, [provider])
+  }
 
-  // Initial status check on mount
-  useEffect(() => {
-    fetchStatus()
-  }, [fetchStatus])
-
-  const stopPolling = useCallback(() => {
+  function stopPolling() {
     if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
     if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current)
     pollIntervalRef.current = null
     pollTimeoutRef.current = null
     setIsPolling(false)
-  }, [])
+  }
 
-  const startPolling = useCallback(() => {
+  function startPolling() {
     stopPolling()
     setIsPolling(true)
 
-    // Poll for status every 2 seconds
     pollIntervalRef.current = setInterval(async () => {
       const result = await fetchStatus()
       if (result?.authenticated) {
@@ -60,11 +54,10 @@ export function useOAuthStatus(provider: string): UseOAuthStatusReturn {
       }
     }, 2_000)
 
-    // Stop polling after 5 minutes
     pollTimeoutRef.current = setTimeout(stopPolling, 300_000)
-  }, [fetchStatus, stopPolling])
+  }
 
-  const disconnect = useCallback(async () => {
+  async function disconnect() {
     try {
       const serverUrl = await getAgentServerUrl()
       await fetch(`${serverUrl}/oauth/${provider}`, { method: 'DELETE' })
@@ -72,10 +65,18 @@ export function useOAuthStatus(provider: string): UseOAuthStatusReturn {
     } catch {
       // Best-effort disconnect
     }
-  }, [provider])
+  }
+
+  // Initial status check on mount
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only run on mount
+  useEffect(() => {
+    fetchStatus()
+  }, [])
 
   // Cleanup on unmount
-  useEffect(() => stopPolling, [stopPolling])
+  useEffect(() => {
+    return () => stopPolling()
+  }, [])
 
   return {
     status,
