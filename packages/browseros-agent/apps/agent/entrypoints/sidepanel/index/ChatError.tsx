@@ -44,6 +44,18 @@ function parseErrorMessage(message: string): {
     }
   }
 
+  // Detect credit exhaustion from gateway
+  if (
+    message.includes('CREDITS_EXHAUSTED') ||
+    message.includes('Daily credits exhausted')
+  ) {
+    return {
+      text: 'Daily credits exhausted. Credits reset at midnight UTC.',
+      url: '/app.html#/settings/usage',
+      isRateLimit: true,
+    }
+  }
+
   // Detect BrowserOS rate limit (unique pattern, no provider uses this)
   if (message.includes('BrowserOS LLM daily limit reached')) {
     return {
