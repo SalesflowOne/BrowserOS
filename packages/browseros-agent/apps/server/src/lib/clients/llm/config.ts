@@ -50,7 +50,7 @@ async function resolveChatGPTProConfig(
 
   return {
     ...config,
-    model: config.model || 'gpt-4o',
+    model: config.model || 'gpt-5.3-codex',
     apiKey: tokens.accessToken,
     upstreamProvider: 'openai',
     accountId: tokens.accountId,

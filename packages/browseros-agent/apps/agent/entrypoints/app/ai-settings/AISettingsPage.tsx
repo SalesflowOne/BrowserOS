@@ -118,19 +118,18 @@ export const AISettingsPage: FC = () => {
     disconnect: disconnectChatGPTPro,
   } = useOAuthStatus('chatgpt-pro')
 
-  // Guard against duplicate auto-create calls
-  const isCreatingOAuthProviderRef = useRef(false)
+  // Track whether user explicitly started an OAuth flow this session
+  const oauthFlowStartedRef = useRef(false)
 
-  // Auto-create provider when OAuth completes
+  // Auto-create provider only when user actively completed OAuth,
+  // not on passive page load when server has old tokens
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional — only trigger on auth status change
   useEffect(() => {
     if (!chatgptProStatus?.authenticated) return
-    if (isCreatingOAuthProviderRef.current) return
+    if (!oauthFlowStartedRef.current) return
 
     const exists = providers.some((p) => p.type === 'chatgpt-pro')
     if (exists) return
-
-    isCreatingOAuthProviderRef.current = true
 
     const now = Date.now()
     try {
@@ -154,8 +153,12 @@ export const AISettingsPage: FC = () => {
           ? `Authenticated as ${chatgptProStatus.email}`
           : 'Successfully authenticated with ChatGPT Pro',
       })
+    } catch (err) {
+      toast.error('Failed to create ChatGPT Pro provider', {
+        description: err instanceof Error ? err.message : 'Unknown error',
+      })
     } finally {
-      isCreatingOAuthProviderRef.current = false
+      oauthFlowStartedRef.current = false
     }
   }, [chatgptProStatus?.authenticated])
 
@@ -190,6 +193,7 @@ export const AISettingsPage: FC = () => {
       })
       return
     }
+    oauthFlowStartedRef.current = true
 
     const extensionSettingsUrl = chrome.runtime.getURL('app.html#/ai-settings')
     const startUrl = `${agentServerUrl}/oauth/chatgpt-pro/start?redirect=${encodeURIComponent(extensionSettingsUrl)}`

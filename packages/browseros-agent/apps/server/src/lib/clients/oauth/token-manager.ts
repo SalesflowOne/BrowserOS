@@ -186,6 +186,7 @@ export class OAuthTokenManager {
         provider,
         status: response.status,
       })
+      this.store.deleteTokens(this.browserosId, provider)
       const providerName = providerConfig.name
       throw new Error(`${providerName} session expired. Please re-login.`)
     }
