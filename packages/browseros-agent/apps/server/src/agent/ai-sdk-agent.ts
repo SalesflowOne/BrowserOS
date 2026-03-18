@@ -4,6 +4,7 @@ import type {
   LanguageModelV3Middleware,
 } from '@ai-sdk/provider'
 import { AGENT_LIMITS } from '@browseros/shared/constants/limits'
+import { LLM_PROVIDERS } from '@browseros/shared/schemas/llm'
 import type { BrowserContext } from '@browseros/shared/schemas/browser-context'
 import {
   type LanguageModel,
@@ -189,13 +190,25 @@ export class AiSdkAgent {
         ),
       })
 
-    // Create the ToolLoopAgent
+    // Codex requires store=false — tell the SDK to inline content
+    // instead of using item_reference (which fails with store=false)
+    const isChatGPTPro =
+      config.resolvedConfig.provider === LLM_PROVIDERS.CHATGPT_PRO
+
     const agent = new ToolLoopAgent({
       model,
       instructions,
       tools,
       stopWhen: [stepCountIs(AGENT_LIMITS.MAX_TURNS)],
       prepareStep,
+      ...(isChatGPTPro && {
+        providerOptions: {
+          openai: {
+            store: false,
+            include: ['reasoning.encrypted_content'],
+          },
+        },
+      }),
     })
 
     logger.info('Agent session created (v2)', {

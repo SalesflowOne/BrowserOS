@@ -34,23 +34,21 @@ export function createCodexFetch(accountId?: string) {
     headers.set('originator', 'browseros')
     headers.set('OpenAI-Beta', 'responses=experimental')
 
-    // Codex requires stream:true, store:false, and instructions
     let body = init?.body
     if (shouldRewrite && body && typeof body === 'string') {
       try {
         const json = JSON.parse(body)
         json.stream = true
         json.store = false
+        delete json.previous_response_id
         if (!json.instructions) {
           json.instructions = 'You are a helpful assistant.'
         }
-        // Strip item IDs from messages — Codex doesn't persist items when store=false,
-        // so referencing them in subsequent turns causes "item not found" errors.
-        // Keep IDs on function_call_output items — those are call_ids linking
-        // tool results to their calls (required by the Responses API).
+        // Strip item IDs — Codex doesn't persist items with store=false.
+        // The SDK should already inline content (via providerOptions store=false),
+        // but this is a safety net matching OpenCode's approach.
         if (Array.isArray(json.input)) {
           for (const item of json.input) {
-            if (item.type === 'function_call_output') continue
             if ('id' in item) {
               delete item.id
             }
