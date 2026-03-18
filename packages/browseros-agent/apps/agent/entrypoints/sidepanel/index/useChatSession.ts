@@ -8,7 +8,7 @@ import type { Provider } from '@/components/chat/chatComponentTypes'
 import {
   clearActiveStream,
   extractToolTabIds,
-  findStreamForTab,
+  getAllActiveStreams,
   setActiveStream,
   watchActiveStreams,
 } from '@/lib/active-stream/active-stream-storage'
@@ -139,14 +139,10 @@ export const useChatSession = (options?: ChatSessionOptions) => {
   // Multi-tab stream sync: leader broadcasts, followers display
   const isLeaderRef = useRef(false)
   const isFollowingRef = useRef(false)
-  const ownTabIdRef = useRef<number | undefined>()
-  // When user resets on a follower, opt out so it doesn't re-enter following
   const optedOutRef = useRef(false)
   const [isFollowing, setIsFollowing] = useState(false)
   const [followedMessages, setFollowedMessages] = useState<UIMessage[]>([])
   const [followedStatus, setFollowedStatus] = useState<ChatStatus>('ready')
-
-  // Resolved in the follower effect below (sequenced before initial read)
 
   const onClickLike = (messageId: string) => {
     const { responseText, queryText } = getResponseAndQueryFromMessageId(
@@ -399,21 +395,20 @@ export const useChatSession = (options?: ChatSessionOptions) => {
     }
   }, [messages, status, conversationId])
 
-  // Follower: watch for active streams from other panels.
-  // Searches all active streams (supports parallel agents) to find one
-  // whose followerTabIds includes this panel's tab.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only set up once on mount
+  // Follower: if this panel opened with no messages and there's an active
+  // stream, follow it. Background only opens side panels on agent-interacted
+  // tabs, so any fresh panel during streaming is a follower.
   useEffect(() => {
     const STALE_THRESHOLD_MS = 10_000
     let staleCheckTimer: ReturnType<typeof setTimeout> | undefined
 
-    const handleStreamChange = async () => {
+    const check = async () => {
       if (isLeaderRef.current || optedOutRef.current) return
 
-      const ownTabId = ownTabIdRef.current
-      if (ownTabId === undefined) return
-
-      const state = await findStreamForTab(ownTabId)
+      const streams = await getAllActiveStreams()
+      const state = streams.find(
+        (s) => s.status === 'streaming' || s.status === 'submitted',
+      )
 
       if (!state) {
         if (isFollowingRef.current) {
@@ -424,11 +419,7 @@ export const useChatSession = (options?: ChatSessionOptions) => {
         return
       }
 
-      const isActive =
-        state.status === 'streaming' || state.status === 'submitted'
-
-      // Detect stale leader (e.g. leader tab was closed mid-stream)
-      if (isActive && Date.now() - state.lastUpdated > STALE_THRESHOLD_MS) {
+      if (Date.now() - state.lastUpdated > STALE_THRESHOLD_MS) {
         if (isFollowingRef.current) {
           isFollowingRef.current = false
           setIsFollowing(false)
@@ -437,42 +428,26 @@ export const useChatSession = (options?: ChatSessionOptions) => {
         return
       }
 
-      if (isActive) {
-        isFollowingRef.current = true
-        setIsFollowing(true)
-        setFollowedMessages(state.messages)
-        setFollowedStatus(state.status)
-        setConversationId(
-          state.conversationId as ReturnType<typeof crypto.randomUUID>,
-        )
-        // Schedule a re-check in case leader dies and stops writing
-        clearTimeout(staleCheckTimer)
-        staleCheckTimer = setTimeout(
-          handleStreamChange,
-          STALE_THRESHOLD_MS + 500,
-        )
-      } else if (state.status === 'ready' && isFollowingRef.current) {
-        isFollowingRef.current = false
-        setIsFollowing(false)
-        setMessages(state.messages)
-        setConversationId(
-          state.conversationId as ReturnType<typeof crypto.randomUUID>,
-        )
-        clearTimeout(staleCheckTimer)
-      }
+      isFollowingRef.current = true
+      setIsFollowing(true)
+      setFollowedMessages(state.messages)
+      setFollowedStatus(state.status)
+      setConversationId(
+        state.conversationId as ReturnType<typeof crypto.randomUUID>,
+      )
+      clearTimeout(staleCheckTimer)
+      staleCheckTimer = setTimeout(check, STALE_THRESHOLD_MS + 500)
     }
 
-    // Resolve own tab ID first, then do initial check (fixes race condition)
-    chrome.tabs
-      .query({ active: true, currentWindow: true })
-      .then((tabs) => {
-        ownTabIdRef.current = tabs[0]?.id
-        return handleStreamChange()
-      })
-      .catch(() => {})
+    // Only auto-follow if this panel has no conversation
+    if (messagesRef.current.length === 0) {
+      check()
+    }
 
     const unwatchStreams = watchActiveStreams(() => {
-      handleStreamChange()
+      if (isFollowingRef.current || messagesRef.current.length === 0) {
+        check()
+      }
     })
 
     return () => {

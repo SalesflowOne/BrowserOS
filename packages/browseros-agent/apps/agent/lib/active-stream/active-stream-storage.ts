@@ -25,13 +25,14 @@ function streamKey(conversationId: string) {
 
 /** Write a conversation's stream state to its own storage key. */
 export async function setActiveStream(state: ActiveStreamState): Promise<void> {
-  const key = streamKey(state.conversationId)
-  await chrome.storage.session.set({ [key]: state }).catch(() => {})
-
+  // Register ID first so the watcher's getAllActiveStreams() can find it
   const ids = await activeStreamIdsStorage.getValue()
   if (!ids.includes(state.conversationId)) {
     await activeStreamIdsStorage.setValue([...ids, state.conversationId])
   }
+
+  const key = streamKey(state.conversationId)
+  await chrome.storage.session.set({ [key]: state }).catch(() => {})
 }
 
 /** Remove a conversation's stream state. */
@@ -73,8 +74,7 @@ export function watchActiveStreams(
 ): () => void {
   const listener = (changes: Record<string, chrome.storage.StorageChange>) => {
     const hasStreamChange = Object.keys(changes).some(
-      (k) =>
-        k.startsWith('session:stream:') || k === 'session:active-stream-ids',
+      (k) => k.startsWith('session:stream:') || k === 'active-stream-ids',
     )
     if (hasStreamChange) {
       getAllActiveStreams()
