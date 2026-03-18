@@ -134,25 +134,3 @@ export async function fetchCredits(
   logger.debug('Credits fetched', { credits: result.credits })
   return result
 }
-
-export async function setCredits(
-  gatewayBaseUrl: string,
-  browserosId: string,
-  credits: number,
-): Promise<CreditsInfo> {
-  const url = new URL(`/credits/${browserosId}`, gatewayBaseUrl).href
-  const response = await fetch(url, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ credits }),
-  })
-  if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(
-      `Failed to set credits: ${response.status} ${response.statusText} - ${errorText}`,
-    )
-  }
-  const result = (await response.json()) as CreditsInfo
-  logger.debug('Credits updated', { credits: result.credits })
-  return result
-}
