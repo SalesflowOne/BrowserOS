@@ -194,5 +194,6 @@ export class KlavisClient {
       'DELETE',
       `/mcp-server/strata/${strata.strataId}/servers?servers=${encodeURIComponent(serverName)}`,
     )
+    this.strataCache.delete(this.buildStrataCacheKey(userId, [serverName]))
   }
 }
