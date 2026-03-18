@@ -44,7 +44,7 @@ export class KlavisClient {
   }
 
   private buildStrataCacheKey(userId: string, servers: string[]): string {
-    return JSON.stringify([userId, ...servers.sort()])
+    return JSON.stringify([userId, ...[...servers].sort()])
   }
 
   private async request<T>(
