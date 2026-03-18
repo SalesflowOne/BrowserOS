@@ -8,6 +8,7 @@ import type { Provider } from '@/components/chat/chatComponentTypes'
 import { Capabilities, Feature } from '@/lib/browseros/capabilities'
 import { useAgentServerUrl } from '@/lib/browseros/useBrowserOSProviders'
 import type { ChatAction } from '@/lib/chat-actions/types'
+import { useInvalidateCredits } from '@/lib/credits/useCredits'
 import {
   CONVERSATION_RESET_EVENT,
   GLOW_STOP_CLICKED_EVENT,
@@ -85,6 +86,7 @@ export const useChatSession = (options?: ChatSessionOptions) => {
     selectedLlmProvider,
     isLoadingProviders,
   } = useChatRefs()
+  const invalidateCredits = useInvalidateCredits()
 
   const { providers: llmProviders, setDefaultProvider } = useLlmProviders()
 
@@ -422,7 +424,13 @@ export const useChatSession = (options?: ChatSessionOptions) => {
     } else {
       saveLocalConversation(conversationIdRef.current, messagesToSave)
     }
+
+    invalidateCredits()
   }, [status])
+
+  useEffect(() => {
+    if (chatError) invalidateCredits()
+  }, [chatError])
 
   const isIntegrationsSynced = options?.isIntegrationsSynced ?? true
   const isIntegrationsSyncedRef = useRef(isIntegrationsSynced)
