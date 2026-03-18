@@ -22,7 +22,6 @@ describe('loadServerConfig', () => {
     // Clear relevant env vars
     delete process.env.BROWSEROS_CDP_PORT
     delete process.env.BROWSEROS_SERVER_PORT
-    delete process.env.BROWSEROS_EXTENSION_PORT
     delete process.env.BROWSEROS_RESOURCES_DIR
     delete process.env.BROWSEROS_EXECUTION_DIR
     delete process.env.BROWSEROS_INSTALL_ID
@@ -42,7 +41,6 @@ describe('loadServerConfig', () => {
         'src/index.ts',
         '--cdp-port=9222',
         '--server-port=9223',
-        '--extension-port=9224',
       ])
 
       assert.strictEqual(result.ok, true)
@@ -51,7 +49,6 @@ describe('loadServerConfig', () => {
       assert.strictEqual(result.value.serverPort, 9223)
       // agentPort is deprecated - always equals serverPort
       assert.strictEqual(result.value.agentPort, 9223)
-      assert.strictEqual(result.value.extensionPort, 9224)
       assert.strictEqual(result.value.mcpAllowRemote, false)
     })
 
@@ -60,7 +57,6 @@ describe('loadServerConfig', () => {
         'bun',
         'src/index.ts',
         '--server-port=9223',
-        '--extension-port=9224',
         '--allow-remote-in-mcp',
       ])
 
@@ -74,7 +70,6 @@ describe('loadServerConfig', () => {
         'bun',
         'src/index.ts',
         '--server-port=9223',
-        '--extension-port=9224',
       ])
 
       assert.strictEqual(result.ok, true)
@@ -87,7 +82,6 @@ describe('loadServerConfig', () => {
     it('reads from env when CLI not provided', () => {
       process.env.BROWSEROS_CDP_PORT = '9222'
       process.env.BROWSEROS_SERVER_PORT = '9223'
-      process.env.BROWSEROS_EXTENSION_PORT = '9224'
 
       const result = loadServerConfig(['bun', 'src/index.ts'])
 
@@ -97,18 +91,15 @@ describe('loadServerConfig', () => {
       assert.strictEqual(result.value.serverPort, 9223)
       // agentPort is deprecated - always equals serverPort
       assert.strictEqual(result.value.agentPort, 9223)
-      assert.strictEqual(result.value.extensionPort, 9224)
     })
 
     it('CLI takes precedence over env', () => {
       process.env.BROWSEROS_SERVER_PORT = '9999'
-      process.env.BROWSEROS_EXTENSION_PORT = '9999'
 
       const result = loadServerConfig([
         'bun',
         'src/index.ts',
         '--server-port=1111',
-        '--extension-port=3333',
       ])
 
       assert.strictEqual(result.ok, true)
@@ -116,7 +107,6 @@ describe('loadServerConfig', () => {
       assert.strictEqual(result.value.serverPort, 1111)
       // agentPort is deprecated - always equals serverPort
       assert.strictEqual(result.value.agentPort, 1111)
-      assert.strictEqual(result.value.extensionPort, 3333)
     })
   })
 
@@ -129,7 +119,6 @@ describe('loadServerConfig', () => {
           ports: {
             cdp: 9222,
             http_mcp: 3000,
-            extension: 3002,
           },
           flags: {
             allow_remote_in_mcp: true,
@@ -149,7 +138,6 @@ describe('loadServerConfig', () => {
       assert.strictEqual(result.value.serverPort, 3000)
       // agentPort is deprecated - always equals serverPort
       assert.strictEqual(result.value.agentPort, 3000)
-      assert.strictEqual(result.value.extensionPort, 3002)
       assert.strictEqual(result.value.mcpAllowRemote, true)
     })
 
@@ -160,7 +148,6 @@ describe('loadServerConfig', () => {
         JSON.stringify({
           ports: {
             http_mcp: 3000,
-            extension: 3002,
           },
         }),
       )
@@ -186,7 +173,6 @@ describe('loadServerConfig', () => {
         JSON.stringify({
           ports: {
             http_mcp: 3000,
-            extension: 3002,
           },
         }),
       )
@@ -211,7 +197,7 @@ describe('loadServerConfig', () => {
       fs.writeFileSync(
         configPath,
         JSON.stringify({
-          ports: { http_mcp: 3000, extension: 3002 },
+          ports: { http_mcp: 3000 },
           directories: {
             resources: '../data',
             execution: './logs',
@@ -236,7 +222,7 @@ describe('loadServerConfig', () => {
       fs.writeFileSync(
         configPath,
         JSON.stringify({
-          ports: { http_mcp: 3000, extension: 3002 },
+          ports: { http_mcp: 3000 },
           instance: {
             client_id: 'user-123',
             install_id: 'install-456',
@@ -268,7 +254,6 @@ describe('loadServerConfig', () => {
       assert.strictEqual(result.ok, false)
       if (result.ok) return
       assert.ok(result.error.includes('serverPort'))
-      assert.ok(result.error.includes('extensionPort'))
     })
 
     it('returns error for missing config file', () => {
@@ -305,7 +290,6 @@ describe('loadServerConfig', () => {
         JSON.stringify({
           ports: {
             http_mcp: 'not-a-number',
-            extension: 3002,
           },
         }),
       )
@@ -327,7 +311,7 @@ describe('loadServerConfig', () => {
       fs.writeFileSync(
         configPath,
         JSON.stringify({
-          ports: { http_mcp: 3000, extension: 3002 },
+          ports: { http_mcp: 3000 },
           instance: {
             client_id: 123, // should be string
             browseros_version: true, // should be string
@@ -355,7 +339,6 @@ describe('loadServerConfig', () => {
         'bun',
         'src/index.ts',
         '--server-port=3000',
-        '--extension-port=3002',
       ])
 
       assert.strictEqual(result.ok, true)
@@ -369,7 +352,6 @@ describe('loadServerConfig', () => {
         'bun',
         'src/index.ts',
         '--server-port=3000',
-        '--extension-port=3002',
       ])
 
       assert.strictEqual(result.ok, true)
@@ -382,7 +364,6 @@ describe('loadServerConfig', () => {
         'bun',
         'src/index.ts',
         '--server-port=3000',
-        '--extension-port=3002',
       ])
 
       assert.strictEqual(result.ok, true)
@@ -395,7 +376,6 @@ describe('loadServerConfig', () => {
         'bun',
         'src/index.ts',
         '--server-port=3000',
-        '--extension-port=3002',
       ])
 
       assert.strictEqual(result.ok, true)
@@ -408,7 +388,6 @@ describe('loadServerConfig', () => {
         'bun',
         'src/index.ts',
         '--server-port=3000',
-        '--extension-port=3002',
       ])
 
       assert.strictEqual(result.ok, true)
@@ -425,7 +404,6 @@ describe('loadServerConfig', () => {
         'bun',
         'src/index.ts',
         '--server-port=3000',
-        '--extension-port=3002',
       ])
 
       assert.strictEqual(result.ok, true)
@@ -438,7 +416,7 @@ describe('loadServerConfig', () => {
       fs.writeFileSync(
         configPath,
         JSON.stringify({
-          ports: { http_mcp: 3000, extension: 3002 },
+          ports: { http_mcp: 3000 },
           flags: { ai_sdk_devtools: true },
         }),
       )

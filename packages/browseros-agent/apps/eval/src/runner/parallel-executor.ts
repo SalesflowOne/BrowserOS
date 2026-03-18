@@ -133,7 +133,6 @@ export class ParallelExecutor {
     const appManager = new BrowserOSAppManager(
       workerIndex,
       basePorts,
-      false,
       headless,
     )
     this.appManagers.set(workerIndex, appManager)

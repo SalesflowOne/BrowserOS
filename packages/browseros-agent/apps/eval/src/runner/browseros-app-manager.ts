@@ -5,11 +5,10 @@
  * Mirrors scripts/dev/start.ts --manual mode with per-worker isolation:
  *
  *   1. Kill ports
- *   2. Build extensions (once, shared across workers)
- *   3. Launch Chrome directly with per-worker user-data-dir and ports
- *   4. Wait for CDP
- *   5. Start server with port env vars
- *   6. Wait for server health
+ *   2. Launch Chrome directly with per-worker user-data-dir and ports
+ *   3. Wait for CDP
+ *   4. Start server with port env vars
+ *   5. Wait for server health
  *
  * Each worker gets isolated ports: base + workerIndex offset.
  */
@@ -43,7 +42,6 @@ export class BrowserOSAppManager {
   constructor(
     workerIndex: number = 0,
     basePorts?: EvalPorts,
-    _loadExtensions: boolean = false,
     headless: boolean = false,
   ) {
     this.workerIndex = workerIndex
@@ -101,7 +99,7 @@ export class BrowserOSAppManager {
    *   --disable-browseros-extensions  (we load them explicitly if needed)
    *   --remote-debugging-port, --browseros-mcp-port, --browseros-extension-port
    *   --user-data-dir (unique per worker)
-   *   --load-extension (optional)
+   *   --load-extension (agent extension, optional)
    */
   private async startAll(): Promise<void> {
     const { cdp, server, extension } = this.ports
