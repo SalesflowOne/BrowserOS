@@ -10,80 +10,35 @@ export interface ActiveStreamState {
 }
 
 /**
- * Registry of active conversation IDs. Each conversation's state is stored
- * under its own key (`session:stream:<id>`) to avoid read-modify-write races
- * when multiple agents run in parallel.
+ * Single storage item holding the active stream state.
+ * Uses local storage for reliable cross-context access (background + sidepanel).
+ * Keyed by conversationId inside the map for parallel agent support.
  */
-export const activeStreamIdsStorage = storage.defineItem<string[]>(
-  'session:active-stream-ids',
-  { fallback: [] },
+export type ActiveStreamsMap = Record<string, ActiveStreamState>
+
+export const activeStreamsStorage = storage.defineItem<ActiveStreamsMap>(
+  'local:active-streams',
+  { fallback: {} },
 )
 
-function streamKey(conversationId: string) {
-  return `session:stream:${conversationId}` as const
-}
-
-/** Write a conversation's stream state to its own storage key. */
+/** Write a conversation's stream state. */
 export async function setActiveStream(state: ActiveStreamState): Promise<void> {
-  // Register ID first so the watcher's getAllActiveStreams() can find it
-  const ids = await activeStreamIdsStorage.getValue()
-  if (!ids.includes(state.conversationId)) {
-    await activeStreamIdsStorage.setValue([...ids, state.conversationId])
-  }
-
-  const key = streamKey(state.conversationId)
-  await chrome.storage.session.set({ [key]: state }).catch(() => {})
+  const map = await activeStreamsStorage.getValue()
+  map[state.conversationId] = state
+  await activeStreamsStorage.setValue(map)
 }
 
 /** Remove a conversation's stream state. */
 export async function clearActiveStream(conversationId: string): Promise<void> {
-  const key = streamKey(conversationId)
-  await chrome.storage.session.remove(key).catch(() => {})
-
-  const ids = await activeStreamIdsStorage.getValue()
-  await activeStreamIdsStorage.setValue(
-    ids.filter((id) => id !== conversationId),
-  )
+  const map = await activeStreamsStorage.getValue()
+  delete map[conversationId]
+  await activeStreamsStorage.setValue(map)
 }
 
 /** Read all active streams. */
 export async function getAllActiveStreams(): Promise<ActiveStreamState[]> {
-  const ids = await activeStreamIdsStorage.getValue()
-  if (ids.length === 0) return []
-  const keys = ids.map(streamKey)
-  const result = await chrome.storage.session.get(keys)
-  return keys
-    .map((k) => result[k] as ActiveStreamState | undefined)
-    .filter((s): s is ActiveStreamState => !!s)
-}
-
-/** Find which active stream (if any) includes the given tabId as a follower. */
-export async function findStreamForTab(
-  tabId: number,
-): Promise<ActiveStreamState | undefined> {
-  const streams = await getAllActiveStreams()
-  return streams.find((s) => s.followerTabIds.includes(tabId))
-}
-
-/**
- * Watch for changes to any active stream.
- * Calls the handler with all current active streams whenever any stream key changes.
- */
-export function watchActiveStreams(
-  handler: (streams: ActiveStreamState[]) => void,
-): () => void {
-  const listener = (changes: Record<string, chrome.storage.StorageChange>) => {
-    const hasStreamChange = Object.keys(changes).some(
-      (k) => k.startsWith('session:stream:') || k === 'active-stream-ids',
-    )
-    if (hasStreamChange) {
-      getAllActiveStreams()
-        .then(handler)
-        .catch(() => {})
-    }
-  }
-  chrome.storage.session.onChanged.addListener(listener)
-  return () => chrome.storage.session.onChanged.removeListener(listener)
+  const map = await activeStreamsStorage.getValue()
+  return Object.values(map)
 }
 
 /**

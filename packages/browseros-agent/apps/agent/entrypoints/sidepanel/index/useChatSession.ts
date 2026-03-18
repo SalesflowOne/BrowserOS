@@ -6,11 +6,11 @@ import { useSearchParams } from 'react-router'
 import useDeepCompareEffect from 'use-deep-compare-effect'
 import type { Provider } from '@/components/chat/chatComponentTypes'
 import {
+  activeStreamsStorage,
   clearActiveStream,
   extractToolTabIds,
   getAllActiveStreams,
   setActiveStream,
-  watchActiveStreams,
 } from '@/lib/active-stream/active-stream-storage'
 import { Capabilities, Feature } from '@/lib/browseros/capabilities'
 import { useAgentServerUrl } from '@/lib/browseros/useBrowserOSProviders'
@@ -471,9 +471,7 @@ export const useChatSession = (options?: ChatSessionOptions) => {
       check()
     }
 
-    // Watch all storage changes — the watcher calls check() which
-    // handles both entering and updating follower mode
-    const unwatchStreams = watchActiveStreams(() => {
+    const unwatchStreams = activeStreamsStorage.watch(() => {
       if (isFollowingRef.current || messagesRef.current.length === 0) {
         check()
       }

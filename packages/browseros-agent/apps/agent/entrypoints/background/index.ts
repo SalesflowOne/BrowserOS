@@ -1,4 +1,4 @@
-import { watchActiveStreams } from '@/lib/active-stream/active-stream-storage'
+import { activeStreamsStorage } from '@/lib/active-stream/active-stream-storage'
 import { sessionStorage } from '@/lib/auth/sessionStorage'
 import { Capabilities } from '@/lib/browseros/capabilities'
 import { getHealthCheckUrl, getMcpServerUrl } from '@/lib/browseros/helpers'
@@ -96,7 +96,8 @@ export default defineBackground(() => {
 
   // Auto-open side panel on tabs the agent interacts with during streaming.
   const openedFollowerTabs = new Set<number>()
-  watchActiveStreams((streams) => {
+  activeStreamsStorage.watch((map) => {
+    const streams = Object.values(map)
     if (streams.length === 0) {
       openedFollowerTabs.clear()
       return
