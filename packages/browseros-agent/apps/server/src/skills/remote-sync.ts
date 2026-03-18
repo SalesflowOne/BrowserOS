@@ -41,13 +41,10 @@ function isValidCatalog(data: unknown): data is RemoteSkillCatalog {
   )
 }
 
-function getCatalogUrl(): string {
-  return INLINED_ENV.SKILLS_CATALOG_URL || EXTERNAL_URLS.SKILLS_CATALOG
-}
-
 export async function fetchRemoteCatalog(): Promise<RemoteSkillCatalog | null> {
+  const url = INLINED_ENV.SKILLS_CATALOG_URL || EXTERNAL_URLS.SKILLS_CATALOG
   try {
-    const response = await fetch(getCatalogUrl(), {
+    const response = await fetch(url, {
       signal: AbortSignal.timeout(TIMEOUTS.SKILLS_FETCH),
     })
     if (!response.ok) {
@@ -68,139 +65,71 @@ export async function fetchRemoteCatalog(): Promise<RemoteSkillCatalog | null> {
   }
 }
 
-async function readLocalFile(skillId: string): Promise<string | null> {
-  try {
-    return await readFile(join(safeBuiltinSkillDir(skillId), 'SKILL.md'), 'utf-8')
-  } catch {
-    return null
-  }
-}
-
-async function writeSkillFile(skillId: string, content: string): Promise<void> {
-  const dir = safeBuiltinSkillDir(skillId)
-  await mkdir(dir, { recursive: true })
-  await writeFile(join(dir, 'SKILL.md'), content)
-}
-
-async function applyEnabled(skillId: string, enabled: string): Promise<void> {
-  const filePath = join(safeBuiltinSkillDir(skillId), 'SKILL.md')
-  let content = await readFile(filePath, 'utf-8')
-  const updated = content.replace(
-    /^(\s*enabled:\s*)["']?(?:true|false)["']?/m,
-    `$1"${enabled}"`,
-  )
-  if (updated === content) {
-    logger.warn('Could not apply enabled state — no enabled field found', {
-      id: skillId,
-    })
-    return
-  }
-  await writeFile(filePath, updated)
-}
-
-async function skillExistsLocally(skillId: string): Promise<boolean> {
-  try {
-    await stat(join(safeBuiltinSkillDir(skillId), 'SKILL.md'))
-    return true
-  } catch {
-    return false
-  }
-}
-
-async function reconcileRemovedSkills(catalogIds: Set<string>): Promise<number> {
-  const builtinDir = getBuiltinSkillsDir()
-  let entries: string[]
-  try {
-    entries = await readdir(builtinDir)
-  } catch {
-    return 0
-  }
-
-  let removed = 0
-  for (const entry of entries) {
-    if (entry.startsWith('.')) continue
-    const entryPath = join(builtinDir, entry)
-    try {
-      const s = await stat(entryPath)
-      if (!s.isDirectory()) continue
-    } catch {
-      continue
-    }
-
-    if (!catalogIds.has(entry)) {
-      try {
-        await rm(entryPath, { recursive: true })
-        removed++
-      } catch (err) {
-        logger.warn('Failed to remove obsolete builtin skill', {
-          id: entry,
-          error: err instanceof Error ? err.message : String(err),
-        })
-      }
-    }
-  }
-  return removed
-}
-
 export async function syncBuiltinSkills(): Promise<void> {
   const catalog = await fetchRemoteCatalog()
-  const syncedIds = new Set<string>()
+
+  const contentMap = new Map<string, { version: string; content: string }>()
+
+  for (const skill of DEFAULT_SKILLS) {
+    contentMap.set(skill.id, { version: extractVersion(skill.content), content: skill.content })
+  }
 
   if (catalog) {
-    for (const remoteSkill of catalog.skills) {
-      try {
-        const localContent = await readLocalFile(remoteSkill.id)
-
-        if (localContent && extractVersion(localContent) === remoteSkill.version) {
-          syncedIds.add(remoteSkill.id)
-          continue
-        }
-
-        const localEnabled = localContent ? extractEnabled(localContent) : null
-
-        await writeSkillFile(remoteSkill.id, remoteSkill.content)
-
-        if (localEnabled === 'false') {
-          await applyEnabled(remoteSkill.id, 'false')
-        }
-
-        syncedIds.add(remoteSkill.id)
-      } catch (err) {
-        logger.warn('Failed to sync skill from remote', {
-          id: remoteSkill.id,
-          error: err instanceof Error ? err.message : String(err),
-        })
-      }
-    }
-
-    if (catalog.skills.length > 0) {
-      const keepIds = new Set(catalog.skills.map((s) => s.id))
-      for (const skill of DEFAULT_SKILLS) keepIds.add(skill.id)
-      const removed = await reconcileRemovedSkills(keepIds)
-      if (removed > 0) {
-        logger.info(`Removed ${removed} obsolete built-in skills`)
-      }
+    for (const skill of catalog.skills) {
+      contentMap.set(skill.id, { version: skill.version, content: skill.content })
     }
   }
 
-  let bundled = 0
-  for (const skill of DEFAULT_SKILLS) {
-    if (syncedIds.has(skill.id)) continue
-    if (await skillExistsLocally(skill.id)) continue
-
+  for (const [id, remote] of contentMap) {
     try {
-      await writeSkillFile(skill.id, skill.content)
-      bundled++
+      const dir = safeBuiltinSkillDir(id)
+      const filePath = join(dir, 'SKILL.md')
+
+      let localContent: string | null = null
+      try {
+        localContent = await readFile(filePath, 'utf-8')
+      } catch {}
+
+      if (localContent && extractVersion(localContent) === remote.version) continue
+
+      const localEnabled = localContent ? extractEnabled(localContent) : null
+
+      await mkdir(dir, { recursive: true })
+      await writeFile(filePath, remote.content)
+
+      if (localEnabled === 'false') {
+        const written = await readFile(filePath, 'utf-8')
+        const patched = written.replace(
+          /^(\s*enabled:\s*)["']?(?:true|false)["']?/m,
+          '$1"false"',
+        )
+        if (patched !== written) await writeFile(filePath, patched)
+      }
     } catch (err) {
-      logger.warn('Failed to write bundled skill', {
-        id: skill.id,
+      logger.warn('Failed to sync builtin skill', {
+        id,
         error: err instanceof Error ? err.message : String(err),
       })
     }
   }
 
-  if (bundled > 0) {
-    logger.info(`Installed ${bundled} built-in skills from bundled defaults`)
+  if (catalog) {
+    const builtinDir = getBuiltinSkillsDir()
+    let entries: string[]
+    try {
+      entries = await readdir(builtinDir)
+    } catch {
+      entries = []
+    }
+
+    for (const entry of entries) {
+      if (entry.startsWith('.') || contentMap.has(entry)) continue
+      try {
+        const entryPath = join(builtinDir, entry)
+        const s = await stat(entryPath)
+        if (s.isDirectory()) await rm(entryPath, { recursive: true })
+      } catch {}
+    }
   }
 }
 
