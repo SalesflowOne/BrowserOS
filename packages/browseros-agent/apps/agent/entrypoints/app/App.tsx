@@ -13,6 +13,7 @@ import { ConnectMCP } from './connect-mcp/ConnectMCP'
 import { CreateGraphWrapper } from './create-graph/CreateGraphWrapper'
 import { CustomizationPage } from './customization/CustomizationPage'
 import { SurveyPage } from './jtbd-agent/SurveyPage'
+import { UsagePage } from './usage/UsagePage'
 import { AuthLayout } from './layout/AuthLayout'
 import { SettingsSidebarLayout } from './layout/SettingsSidebarLayout'
 import { SidebarLayout } from './layout/SidebarLayout'
@@ -101,6 +102,7 @@ export const App: FC = () => {
             <Route path="customization" element={<CustomizationPage />} />
             <Route path="search" element={<SearchProviderPage />} />
             <Route path="survey" element={<SurveyPage {...surveyParams} />} />
+            <Route path="usage" element={<UsagePage />} />
           </Route>
         </Route>
 

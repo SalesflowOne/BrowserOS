@@ -8,6 +8,7 @@ import {
   Palette,
   RotateCcw,
   Search,
+  CreditCard,
   Server,
 } from 'lucide-react'
 import type { FC } from 'react'
@@ -79,6 +80,7 @@ const primarySettingsSections: NavSection[] = [
         feature: Feature.CUSTOMIZATION_SUPPORT,
       },
       { name: 'BrowserOS as MCP', to: '/settings/mcp', icon: Server },
+      { name: 'Usage & Billing', to: '/settings/usage', icon: CreditCard },
       {
         name: 'Workflows',
         to: '/workflows',
