@@ -4,7 +4,7 @@ description: Find alternative products to something the user is looking at or co
 metadata:
   display-name: Find Alternatives
   enabled: "true"
-  version: "1.0"
+  version: "1.1"
 ---
 
 # Find Alternatives
