@@ -16,5 +16,4 @@ export const EXTERNAL_URLS = {
   GITHUB_DEVICE_CODE: 'https://github.com/login/device/code',
   GITHUB_OAUTH_TOKEN: 'https://github.com/login/oauth/access_token',
   GITHUB_COPILOT_API: 'https://api.githubcopilot.com',
-  GITHUB_DEVICE_VERIFICATION: 'https://github.com/login/device',
 } as const

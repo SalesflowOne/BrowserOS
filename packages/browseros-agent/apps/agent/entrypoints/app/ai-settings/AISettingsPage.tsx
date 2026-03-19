@@ -273,8 +273,12 @@ export const AISettingsPage: FC = () => {
       if (!res.ok) throw new Error(`Server returned ${res.status}`)
 
       const data = (await res.json()) as {
-        userCode: string
-        verificationUri: string
+        userCode?: string
+        verificationUri?: string
+      }
+
+      if (!data.userCode || !data.verificationUri) {
+        throw new Error('Invalid response from server')
       }
 
       // Open GitHub device verification page

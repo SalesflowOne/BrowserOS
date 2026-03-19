@@ -162,9 +162,16 @@ export class OAuthTokenManager {
 
   // --- Device Code flow (GitHub Copilot) ---
 
+  private readonly activeDeviceFlows = new Set<string>()
+
   async startDeviceCodeFlow(providerId: string): Promise<DeviceCodeResult> {
     const provider = getOAuthProvider(providerId)
     if (!provider) throw new Error(`Unknown OAuth provider: ${providerId}`)
+
+    // Prevent concurrent flows for the same provider
+    if (this.activeDeviceFlows.has(providerId)) {
+      throw new Error(`Device code flow already in progress for ${providerId}`)
+    }
 
     // Request a device code from GitHub
     const response = await fetch(provider.authEndpoint, {
@@ -194,14 +201,15 @@ export class OAuthTokenManager {
       throw new Error('Invalid device code response from GitHub')
     }
 
-    // Start background polling (fire-and-forget)
+    // Start background polling with error handling
+    this.activeDeviceFlows.add(providerId)
     this.pollDeviceCode(
       providerId,
       provider,
       data.device_code,
       data.interval,
       data.expires_in,
-    )
+    ).finally(() => this.activeDeviceFlows.delete(providerId))
 
     return {
       userCode: data.user_code,
