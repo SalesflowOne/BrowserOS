@@ -14,6 +14,7 @@ export type ProviderType =
   | 'bedrock'
   | 'browseros'
   | 'moonshot'
+  | 'chatgpt-pro'
 
 /**
  * LLM Provider configuration
@@ -56,6 +57,10 @@ export interface LlmProviderConfig {
   region?: string
   /** AWS session token (for temporary STS credentials) */
   sessionToken?: string
+
+  // ChatGPT Pro (Codex) fields
+  reasoningEffort?: 'none' | 'low' | 'medium' | 'high'
+  reasoningSummary?: 'auto' | 'concise' | 'detailed'
 }
 
 /**

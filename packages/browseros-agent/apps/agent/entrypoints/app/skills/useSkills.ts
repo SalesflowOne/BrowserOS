@@ -7,6 +7,7 @@ export type SkillMeta = {
   description: string
   location: string
   enabled: boolean
+  builtIn: boolean
 }
 
 export type SkillDetail = SkillMeta & {

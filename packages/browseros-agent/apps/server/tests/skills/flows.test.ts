@@ -1,7 +1,3 @@
-/**
- * E2E flow tests against live CDN.
- */
-
 import { afterAll, beforeAll, describe, it, mock } from 'bun:test'
 import assert from 'node:assert'
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
@@ -9,9 +5,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 let testDir: string
+let builtinDir: string
 
 mock.module('../../src/lib/browseros-dir', () => ({
   getSkillsDir: () => testDir,
+  getBuiltinSkillsDir: () => builtinDir,
 }))
 
 mock.module('../../src/env', () => ({
@@ -20,17 +18,12 @@ mock.module('../../src/env', () => ({
   },
 }))
 
-const { seedFromRemote, syncRemoteSkills } =
-  await import('../../src/skills/remote-sync')
-
-async function listSkills(): Promise<string[]> {
-  const entries = await readdir(testDir)
-  return entries.filter((e) => !e.startsWith('.')).sort()
-}
+const { syncBuiltinSkills } = await import('../../src/skills/remote-sync')
 
 beforeAll(async () => {
   testDir = join(tmpdir(), `flow-test-${Date.now()}`)
-  await mkdir(testDir, { recursive: true })
+  builtinDir = join(testDir, 'builtin')
+  await mkdir(builtinDir, { recursive: true })
 })
 
 afterAll(async () => {
@@ -38,51 +31,48 @@ afterAll(async () => {
 })
 
 describe('Flow tests against live CDN', () => {
-  it('seeds all skills from CDN on fresh install', async () => {
-    const result = await seedFromRemote()
-    assert.strictEqual(result, true)
-    const skills = await listSkills()
+  it('syncs all skills from CDN on fresh install', async () => {
+    await syncBuiltinSkills()
+    const entries = await readdir(builtinDir)
+    const skills = entries.filter((e) => !e.startsWith('.'))
     assert.strictEqual(skills.length, 12)
   })
 
-  it('sync does nothing when already up to date', async () => {
-    const result = await syncRemoteSkills()
-    assert.strictEqual(result.installed, 0)
-    assert.strictEqual(result.updated, 0)
-  })
+  it('preserves disabled state during sync', async () => {
+    const skillPath = join(builtinDir, 'summarize-page', 'SKILL.md')
+    let content = await readFile(skillPath, 'utf-8')
 
-  it('remote overwrites local edits when version differs', async () => {
-    const skillPath = join(testDir, 'summarize-page', 'SKILL.md')
-    const original = await readFile(skillPath, 'utf-8')
+    content = content.replace(/enabled: "true"/, 'enabled: "false"')
+    content = content.replace(/version: "1.0"/, 'version: "0.9"')
+    await writeFile(skillPath, content)
 
-    // User edits the file AND we fake a version mismatch
-    const edited = original.replace(/version: "1.0"/, 'version: "0.9"') + '\n## My Notes\n'
-    await writeFile(skillPath, edited)
-
-    const result = await syncRemoteSkills()
-    assert.strictEqual(result.updated >= 1, true)
+    await syncBuiltinSkills()
 
     const afterSync = await readFile(skillPath, 'utf-8')
-    assert.ok(!afterSync.includes('My Notes'))
+    assert.ok(
+      afterSync.includes('enabled: "false"') ||
+        afterSync.includes("enabled: 'false'"),
+      'disabled state should be preserved',
+    )
   })
 
-  it('installs skill deleted locally', async () => {
-    await rm(join(testDir, 'save-page'), { recursive: true })
-
-    const result = await syncRemoteSkills()
-    assert.strictEqual(result.installed, 1)
-
-    const content = await readFile(join(testDir, 'save-page', 'SKILL.md'), 'utf-8')
+  it('reinstalls deleted builtin skill', async () => {
+    await rm(join(builtinDir, 'save-page'), { recursive: true })
+    await syncBuiltinSkills()
+    const content = await readFile(
+      join(builtinDir, 'save-page', 'SKILL.md'),
+      'utf-8',
+    )
     assert.ok(content.includes('name: save-page'))
   })
 
-  it('user-created skill is never touched', async () => {
+  it('never touches user-created skill in root', async () => {
     const customDir = join(testDir, 'my-workflow')
     await mkdir(customDir, { recursive: true })
     const custom = '---\nname: my-workflow\ndescription: custom\n---\n# Mine\n'
     await writeFile(join(customDir, 'SKILL.md'), custom)
 
-    await syncRemoteSkills()
+    await syncBuiltinSkills()
 
     const afterSync = await readFile(join(customDir, 'SKILL.md'), 'utf-8')
     assert.strictEqual(afterSync, custom)

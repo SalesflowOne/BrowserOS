@@ -27,6 +27,7 @@ interface ChatHeaderProps {
   onSelectProvider: (provider: Provider) => void
   onNewConversation: () => void
   hasMessages: boolean
+  hideHistory?: boolean
 }
 
 export const ChatHeader: FC<ChatHeaderProps> = ({
@@ -35,6 +36,7 @@ export const ChatHeader: FC<ChatHeaderProps> = ({
   onSelectProvider,
   onNewConversation,
   hasMessages,
+  hideHistory,
 }) => {
   const location = useLocation()
   const navigate = useNavigate()
@@ -87,24 +89,25 @@ export const ChatHeader: FC<ChatHeaderProps> = ({
           </button>
         )}
 
-        {isHistoryPage ? (
-          <button
-            type="button"
-            onClick={handleNewConversationFromHistory}
-            className="cursor-pointer rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-            title="New conversation"
-          >
-            <Plus className="h-4 w-4" />
-          </button>
-        ) : (
-          <Link
-            to="/history"
-            className="cursor-pointer rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-            title="Chat history"
-          >
-            <History className="h-4 w-4" />
-          </Link>
-        )}
+        {!hideHistory &&
+          (isHistoryPage ? (
+            <button
+              type="button"
+              onClick={handleNewConversationFromHistory}
+              className="cursor-pointer rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+              title="New conversation"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          ) : (
+            <Link
+              to="/history"
+              className="cursor-pointer rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+              title="Chat history"
+            >
+              <History className="h-4 w-4" />
+            </Link>
+          ))}
 
         <a
           href={productRepositoryUrl}

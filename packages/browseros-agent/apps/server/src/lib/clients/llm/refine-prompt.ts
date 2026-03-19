@@ -1,6 +1,6 @@
 import { TIMEOUTS } from '@browseros/shared/constants/timeouts'
 import type { LLMConfig } from '@browseros/shared/schemas/llm'
-import { generateText } from 'ai'
+import { streamText } from 'ai'
 import { resolveLLMConfig } from './config'
 import { createLLMProvider } from './provider'
 
@@ -38,18 +38,21 @@ Write it as a natural instruction — like telling a capable assistant what to d
 export async function refinePrompt(
   llmConfig: RefinePromptConfig,
   request: RefinePromptRequest,
+  browserosId?: string,
 ): Promise<RefinePromptResult> {
   try {
-    const resolvedConfig = await resolveLLMConfig(llmConfig)
+    const resolvedConfig = await resolveLLMConfig(llmConfig, browserosId)
     const model = createLLMProvider(resolvedConfig)
-    const response = await generateText({
+
+    // streamText works for all providers including Codex (which requires streaming)
+    const stream = streamText({
       model,
       system: buildSystemPrompt(request.name),
       messages: [{ role: 'user', content: request.prompt }],
       abortSignal: AbortSignal.timeout(TIMEOUTS.REFINE_PROMPT),
     })
+    const refined = (await stream.text)?.trim()
 
-    const refined = response.text?.trim()
     if (!refined) {
       return { success: false, message: 'Provider returned an empty response' }
     }

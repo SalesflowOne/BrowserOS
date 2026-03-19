@@ -10,7 +10,11 @@ const RefinePromptRequestSchema = AgentLLMConfigSchema.extend({
   name: z.string().min(1, 'Task name cannot be empty'),
 })
 
-export function createRefinePromptRoutes() {
+interface RefinePromptRouteDeps {
+  browserosId?: string
+}
+
+export function createRefinePromptRoutes(deps: RefinePromptRouteDeps = {}) {
   return new Hono().post(
     '/',
     zValidator('json', RefinePromptRequestSchema),
@@ -23,7 +27,11 @@ export function createRefinePromptRoutes() {
         taskName: name,
       })
 
-      const result = await refinePrompt(llmConfig, { prompt, name })
+      const result = await refinePrompt(
+        llmConfig,
+        { prompt, name },
+        deps.browserosId,
+      )
 
       logger.info('Refine prompt result', {
         provider: llmConfig.provider,

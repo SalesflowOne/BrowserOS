@@ -23,6 +23,7 @@ export interface ModelsData {
   bedrock: ModelInfo[]
   browseros: ModelInfo[]
   moonshot: ModelInfo[]
+  'chatgpt-pro': ModelInfo[]
 }
 
 /**
@@ -90,6 +91,16 @@ export const MODELS_DATA: ModelsData = {
   ],
   bedrock: [],
   browseros: [{ modelId: 'browseros-auto', contextLength: 200000 }],
+  'chatgpt-pro': [
+    { modelId: 'gpt-5.4', contextLength: 400000 },
+    { modelId: 'gpt-5.3-codex', contextLength: 400000 },
+    { modelId: 'gpt-5.2-codex', contextLength: 400000 },
+    { modelId: 'gpt-5.2', contextLength: 200000 },
+    { modelId: 'gpt-5.1-codex', contextLength: 400000 },
+    { modelId: 'gpt-5.1-codex-max', contextLength: 400000 },
+    { modelId: 'gpt-5.1-codex-mini', contextLength: 400000 },
+    { modelId: 'gpt-5.1', contextLength: 200000 },
+  ],
 }
 
 /**

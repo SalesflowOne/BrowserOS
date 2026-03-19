@@ -18,6 +18,7 @@ import {
   syncScheduledJobs,
 } from '@/lib/schedules/scheduleStorage'
 import { searchActionsStorage } from '@/lib/search-actions/searchActionsStorage'
+import { selectedTextStorage } from '@/lib/selected-text/selectedTextStorage'
 import { stopAgentStorage } from '@/lib/stop-agent/stop-agent-storage'
 import { scheduledJobRuns } from './scheduledJobRuns'
 
@@ -66,7 +67,12 @@ export default defineBackground(() => {
     }
   })
 
-  chrome.runtime.onMessage.addListener((message, sender) => {
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message?.type === 'get-tab-id') {
+      sendResponse({ tabId: sender.tab?.id })
+      return true
+    }
+
     if (message?.type === 'AUTH_SUCCESS' && sender.tab?.id) {
       const tabId = sender.tab.id
       authRedirectPathStorage
@@ -91,6 +97,17 @@ export default defineBackground(() => {
         timestamp: Date.now(),
       })
     }
+  })
+
+  // Clean up selected text storage when a tab is closed
+  chrome.tabs.onRemoved.addListener((tabId) => {
+    const key = String(tabId)
+    selectedTextStorage.getValue().then((map) => {
+      if (map[key]) {
+        const { [key]: _, ...rest } = map
+        selectedTextStorage.setValue(rest)
+      }
+    })
   })
 
   sessionStorage.watch(async (newSession) => {

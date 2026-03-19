@@ -1,4 +1,4 @@
-import { AlertCircle, Pencil, Plus, Trash2, Wand2 } from 'lucide-react'
+import { AlertCircle, Eye, Pencil, Plus, Trash2, Wand2 } from 'lucide-react'
 import { type FC, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import {
@@ -26,6 +26,7 @@ import { Label } from '@/components/ui/label'
 import { MarkdownEditor } from '@/components/ui/MarkdownEditor'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import Markdown from 'react-markdown'
 import { type SkillDetail, type SkillMeta, useSkills } from './useSkills'
 
 const loadingSkillCards = [
@@ -108,23 +109,19 @@ export const SkillsPage: FC = () => {
       ) : null}
 
       {!isLoading && !error && skills.length > 0 ? (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {skills.map((skill) => (
-            <SkillCard
-              key={skill.id}
-              skill={skill}
-              onEdit={() => handleEdit(skill)}
-              onDelete={() => setSkillToDelete(skill)}
-              onToggle={(enabled) => handleToggle(skill, enabled)}
-            />
-          ))}
-        </div>
+        <SkillSections
+          skills={skills}
+          onEdit={handleEdit}
+          onDelete={(skill) => setSkillToDelete(skill)}
+          onToggle={handleToggle}
+        />
       ) : null}
 
       <SkillDialog
         open={isDialogOpen}
         onOpenChange={setIsDialogOpen}
         editingSkill={editingSkill}
+        readOnly={editingSkill?.builtIn}
         onSave={async (data) => {
           try {
             if (editingSkill) {
@@ -251,6 +248,50 @@ const EmptyState: FC<{ onCreateClick: () => void }> = ({ onCreateClick }) => (
   </Card>
 )
 
+const SkillGrid: FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+    {children}
+  </div>
+)
+
+const SkillSections: FC<{
+  skills: SkillMeta[]
+  onEdit: (skill: SkillMeta) => void
+  onDelete: (skill: SkillMeta) => void
+  onToggle: (skill: SkillMeta, enabled: boolean) => void
+}> = ({ skills, onEdit, onDelete, onToggle }) => {
+  const userSkills = skills.filter((s) => !s.builtIn)
+  const builtInSkills = skills.filter((s) => s.builtIn)
+
+  const renderCard = (skill: SkillMeta) => (
+    <SkillCard
+      key={skill.id}
+      skill={skill}
+      onEdit={() => onEdit(skill)}
+      onDelete={() => onDelete(skill)}
+      onToggle={(enabled) => onToggle(skill, enabled)}
+    />
+  )
+
+  return (
+    <div className="space-y-6">
+      {userSkills.length > 0 ? (
+        <div className="space-y-3">
+          <h3 className="font-semibold text-sm">My Skills</h3>
+          <SkillGrid>{userSkills.map(renderCard)}</SkillGrid>
+        </div>
+      ) : null}
+
+      {builtInSkills.length > 0 ? (
+        <div className="space-y-3">
+          <h3 className="font-semibold text-sm">BrowserOS Skills</h3>
+          <SkillGrid>{builtInSkills.map(renderCard)}</SkillGrid>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 const SkillCard: FC<{
   skill: SkillMeta
   onEdit: () => void
@@ -260,7 +301,14 @@ const SkillCard: FC<{
   <Card className="h-full py-0 shadow-sm">
     <CardContent className="flex h-full flex-col p-4">
       <div className="flex items-start justify-between gap-3">
-        <h2 className="font-semibold text-sm leading-5">{skill.name}</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="font-semibold text-sm leading-5">{skill.name}</h2>
+          {skill.builtIn ? (
+            <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
+              Built-in
+            </Badge>
+          ) : null}
+        </div>
         <Switch
           checked={skill.enabled}
           onCheckedChange={onToggle}
@@ -281,18 +329,23 @@ const SkillCard: FC<{
           onClick={onEdit}
           className="-ml-2 h-7 px-2 text-muted-foreground hover:bg-transparent hover:text-foreground"
         >
-          <Pencil className="size-3.5" />
-          Edit
+          {skill.builtIn ? (
+            <><Eye className="size-3.5" />View</>
+          ) : (
+            <><Pencil className="size-3.5" />Edit</>
+          )}
         </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={onDelete}
-          className="size-7 text-muted-foreground hover:bg-transparent hover:text-destructive"
-          aria-label={`Delete ${skill.name}`}
-        >
-          <Trash2 className="size-4" />
-        </Button>
+        {!skill.builtIn ? (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onDelete}
+            className="size-7 text-muted-foreground hover:bg-transparent hover:text-destructive"
+            aria-label={`Delete ${skill.name}`}
+          >
+            <Trash2 className="size-4" />
+          </Button>
+        ) : null}
       </div>
     </CardContent>
   </Card>
@@ -302,12 +355,13 @@ const SkillDialog: FC<{
   open: boolean
   onOpenChange: (open: boolean) => void
   editingSkill: SkillDetail | null
+  readOnly?: boolean
   onSave: (data: {
     name: string
     description: string
     content: string
   }) => Promise<void>
-}> = ({ open, onOpenChange, editingSkill, onSave }) => {
+}> = ({ open, onOpenChange, editingSkill, readOnly, onSave }) => {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [content, setContent] = useState('')
@@ -354,12 +408,14 @@ const SkillDialog: FC<{
       <DialogContent className="flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl">
         <DialogHeader className="border-b px-6 py-5">
           <DialogTitle>
-            {editingSkill ? 'Edit Skill' : 'Create Skill'}
+            {readOnly ? 'View Skill' : editingSkill ? 'Edit Skill' : 'Create Skill'}
           </DialogTitle>
           <DialogDescription>
-            {editingSkill
-              ? 'Refine when the agent should use this skill and how it should execute it.'
-              : 'Define a reusable instruction set your agent can apply when a request matches.'}
+            {readOnly
+              ? 'This skill is managed by BrowserOS and updated automatically.'
+              : editingSkill
+                ? 'Refine when the agent should use this skill and how it should execute it.'
+                : 'Define a reusable instruction set your agent can apply when a request matches.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -373,6 +429,7 @@ const SkillDialog: FC<{
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 maxLength={100}
+                readOnly={readOnly}
               />
               <p className="text-muted-foreground text-xs leading-5">
                 Keep it short and recognizable in the skills list.
@@ -388,19 +445,22 @@ const SkillDialog: FC<{
                 onChange={(event) => setDescription(event.target.value)}
                 maxLength={500}
                 className="min-h-28 resize-none bg-background"
+                readOnly={readOnly}
               />
               <p className="text-muted-foreground text-xs leading-5">
                 This is the trigger summary the agent uses to pick the skill.
               </p>
             </div>
 
-            <div className="mt-auto rounded-lg border border-border/60 border-dashed bg-muted/30 px-3 py-2.5">
-              <p className="font-medium text-muted-foreground text-xs">Tip</p>
-              <ul className="mt-1.5 list-disc space-y-1 pl-4 text-muted-foreground text-xs leading-5">
-                <li>List the ordered steps the agent should follow.</li>
-                <li>Close with the output or formatting you expect back.</li>
-              </ul>
-            </div>
+            {!readOnly ? (
+              <div className="mt-auto rounded-lg border border-border/60 border-dashed bg-muted/30 px-3 py-2.5">
+                <p className="font-medium text-muted-foreground text-xs">Tip</p>
+                <ul className="mt-1.5 list-disc space-y-1 pl-4 text-muted-foreground text-xs leading-5">
+                  <li>List the ordered steps the agent should follow.</li>
+                  <li>Close with the output or formatting you expect back.</li>
+                </ul>
+              </div>
+            ) : null}
           </div>
 
           <div className="flex min-h-0 flex-col px-6 py-5">
@@ -411,36 +471,52 @@ const SkillDialog: FC<{
               </Badge>
             </div>
 
-            <MarkdownEditor
-              id="skill-content"
-              value={content}
-              onChange={setContent}
-              onKeyDown={handleContentKeyDown}
-              placeholder="Write instructions for the agent. Use markdown for structure."
-              className="mt-4 min-h-[320px] flex-1 overflow-y-auto text-sm"
-            />
+            {readOnly ? (
+              <div className="prose prose-sm mt-4 min-h-[320px] max-w-none flex-1 overflow-y-auto rounded-md border p-4 text-sm dark:prose-invert">
+                <Markdown>{content}</Markdown>
+              </div>
+            ) : (
+              <MarkdownEditor
+                id="skill-content"
+                value={content}
+                onChange={setContent}
+                onKeyDown={handleContentKeyDown}
+                placeholder="Write instructions for the agent. Use markdown for structure."
+                className="mt-4 min-h-[320px] flex-1 overflow-y-auto text-sm"
+              />
+            )}
           </div>
         </div>
 
         <div className="flex flex-col gap-3 border-t px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-muted-foreground text-xs">
-            Saved locally and available to your agent immediately.
+            {readOnly
+              ? 'This skill is managed by BrowserOS and updated automatically.'
+              : 'Saved locally and available to your agent immediately.'}
           </p>
           <div className="flex flex-col-reverse gap-2 sm:flex-row">
-            <Button
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={saving}
-            >
-              Cancel
-            </Button>
-            <Button onClick={handleSubmit} disabled={!isValid || saving}>
-              {saving
-                ? 'Saving...'
-                : editingSkill
-                  ? 'Update Skill'
-                  : 'Create Skill'}
-            </Button>
+            {readOnly ? (
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                Close
+              </Button>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => onOpenChange(false)}
+                  disabled={saving}
+                >
+                  Cancel
+                </Button>
+                <Button onClick={handleSubmit} disabled={!isValid || saving}>
+                  {saving
+                    ? 'Saving...'
+                    : editingSkill
+                      ? 'Update Skill'
+                      : 'Create Skill'}
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </DialogContent>

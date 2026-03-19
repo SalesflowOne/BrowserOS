@@ -23,6 +23,7 @@ export type SkillMeta = {
   location: string
   enabled: boolean
   version?: string
+  builtIn: boolean
 }
 
 export type SkillDetail = SkillMeta & {
@@ -49,4 +50,3 @@ export type RemoteSkillCatalog = {
   version: number
   skills: RemoteSkillEntry[]
 }
-

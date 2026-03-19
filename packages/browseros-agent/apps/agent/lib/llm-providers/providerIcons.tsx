@@ -32,6 +32,7 @@ const providerIconMap: Record<ProviderType, IconComponent | null> = {
   bedrock: Bedrock,
   browseros: null,
   moonshot: Kimi,
+  'chatgpt-pro': OpenAI,
 }
 
 interface ProviderIconProps {

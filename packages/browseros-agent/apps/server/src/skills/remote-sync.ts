@@ -1,18 +1,31 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { TIMEOUTS } from '@browseros/shared/constants/timeouts'
 import { EXTERNAL_URLS } from '@browseros/shared/constants/urls'
 import { INLINED_ENV } from '../env'
-import { getSkillsDir } from '../lib/browseros-dir'
+import { getBuiltinSkillsDir } from '../lib/browseros-dir'
 import { logger } from '../lib/logger'
-import { safeSkillDir } from './service'
+import { DEFAULT_SKILLS } from './defaults'
+import { safeBuiltinSkillDir } from './service'
 import type { RemoteSkillCatalog, RemoteSkillEntry } from './types'
 
 let syncTimer: ReturnType<typeof setInterval> | null = null
 
-export function extractVersion(content: string): string {
+function extractVersion(content: string): string {
   const match = content.match(/^\s*version:\s*["']?([^"'\n]+)["']?/m)
   return match?.[1]?.trim() || '1.0'
+}
+
+function extractEnabled(content: string): string | null {
+  const match = content.match(/^\s*enabled:\s*["']?(true|false)["']?/m)
+  return match?.[1] ?? null
+}
+
+function setEnabled(content: string, enabled: string): string {
+  return content.replace(
+    /^(\s*enabled:\s*)["']?(?:true|false)["']?/m,
+    `$1"${enabled}"`,
+  )
 }
 
 function isValidSkillEntry(entry: unknown): entry is RemoteSkillEntry {
@@ -35,13 +48,10 @@ function isValidCatalog(data: unknown): data is RemoteSkillCatalog {
   )
 }
 
-function getCatalogUrl(): string {
-  return INLINED_ENV.SKILLS_CATALOG_URL || EXTERNAL_URLS.SKILLS_CATALOG
-}
-
 export async function fetchRemoteCatalog(): Promise<RemoteSkillCatalog | null> {
+  const url = INLINED_ENV.SKILLS_CATALOG_URL || EXTERNAL_URLS.SKILLS_CATALOG
   try {
-    const response = await fetch(getCatalogUrl(), {
+    const response = await fetch(url, {
       signal: AbortSignal.timeout(TIMEOUTS.SKILLS_FETCH),
     })
     if (!response.ok) {
@@ -64,104 +74,92 @@ export async function fetchRemoteCatalog(): Promise<RemoteSkillCatalog | null> {
   }
 }
 
-async function getLocalVersion(skillId: string): Promise<string | null> {
-  try {
-    const safeDir = safeSkillDir(skillId)
-    const content = await readFile(join(safeDir, 'SKILL.md'), 'utf-8')
-    return extractVersion(content)
-  } catch {
-    return null
-  }
-}
-
-export async function writeSkillFile(
-  skillId: string,
-  content: string,
-): Promise<void> {
-  const safeDir = safeSkillDir(skillId)
-  await mkdir(safeDir, { recursive: true })
-  await writeFile(join(safeDir, 'SKILL.md'), content)
-}
-
-export async function syncRemoteSkills(): Promise<{
-  installed: number
-  updated: number
-}> {
-  const result = { installed: 0, updated: 0 }
+export async function syncBuiltinSkills(): Promise<void> {
   const catalog = await fetchRemoteCatalog()
-  if (!catalog) return result
 
-  for (const remoteSkill of catalog.skills) {
-    try {
-      const localVersion = await getLocalVersion(remoteSkill.id)
-
-      if (!localVersion) {
-        await writeSkillFile(remoteSkill.id, remoteSkill.content)
-        result.installed++
-        continue
-      }
-
-      if (localVersion === remoteSkill.version) {
-        continue
-      }
-
-      await writeSkillFile(remoteSkill.id, remoteSkill.content)
-      result.updated++
-    } catch (err) {
-      logger.warn('Failed to sync skill', {
-        id: remoteSkill.id,
-        error: err instanceof Error ? err.message : String(err),
-      })
-    }
-  }
-
-  return result
-}
-
-export async function seedFromRemote(): Promise<boolean> {
-  const catalog = await fetchRemoteCatalog()
-  if (!catalog || catalog.skills.length === 0) return false
-
-  let seeded = 0
-
-  for (const skill of catalog.skills) {
-    try {
-      await writeSkillFile(skill.id, skill.content)
-      seeded++
-    } catch (err) {
-      logger.warn('Failed to seed remote skill', {
-        id: skill.id,
-        error: err instanceof Error ? err.message : String(err),
-      })
-    }
-  }
-
-  if (seeded > 0) {
-    logger.info(`Seeded ${seeded}/${catalog.skills.length} skills from remote catalog`)
-  }
-
-  return seeded === catalog.skills.length
-}
-
-async function runSync(): Promise<void> {
-  try {
-    const { installed, updated } = await syncRemoteSkills()
-    if (installed > 0 || updated > 0) {
-      logger.info('Remote skill sync completed', { installed, updated })
-    }
-  } catch (err) {
-    logger.warn('Skill sync failed', {
-      error: err instanceof Error ? err.message : String(err),
+  const contentMap = new Map<string, { version: string; content: string }>()
+  for (const skill of DEFAULT_SKILLS) {
+    contentMap.set(skill.id, {
+      version: extractVersion(skill.content),
+      content: skill.content,
     })
+  }
+  if (catalog) {
+    for (const skill of catalog.skills) {
+      contentMap.set(skill.id, {
+        version: skill.version,
+        content: skill.content,
+      })
+    }
+  }
+
+  for (const [id, source] of contentMap) {
+    try {
+      await syncOneSkill(id, source)
+    } catch (err) {
+      logger.warn('Failed to sync builtin skill', {
+        id,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
+
+  if (catalog) await removeObsoleteSkills(contentMap)
+}
+
+async function syncOneSkill(
+  id: string,
+  source: { version: string; content: string },
+): Promise<void> {
+  const dir = safeBuiltinSkillDir(id)
+  const filePath = join(dir, 'SKILL.md')
+
+  let localContent: string | null = null
+  try {
+    localContent = await readFile(filePath, 'utf-8')
+  } catch {}
+
+  if (localContent && extractVersion(localContent) === source.version) return
+
+  let content = source.content
+  if (localContent && extractEnabled(localContent) === 'false') {
+    content = setEnabled(content, 'false')
+  }
+
+  await mkdir(dir, { recursive: true })
+  await writeFile(filePath, content)
+}
+
+async function removeObsoleteSkills(
+  keepIds: Map<string, unknown>,
+): Promise<void> {
+  const builtinDir = getBuiltinSkillsDir()
+  let entries: string[]
+  try {
+    entries = await readdir(builtinDir)
+  } catch {
+    return
+  }
+
+  for (const entry of entries) {
+    if (entry.startsWith('.') || keepIds.has(entry)) continue
+    try {
+      const entryPath = join(builtinDir, entry)
+      const s = await stat(entryPath)
+      if (s.isDirectory()) await rm(entryPath, { recursive: true })
+    } catch {}
   }
 }
 
 export function startSkillSync(): void {
   if (syncTimer) return
-
-  runSync()
-
-  syncTimer = setInterval(runSync, TIMEOUTS.SKILLS_SYNC_INTERVAL)
+  syncTimer = setInterval(() => {
+    syncBuiltinSkills().catch((err) => {
+      logger.warn('Skill sync failed', {
+        error: err instanceof Error ? err.message : String(err),
+      })
+    })
+  }, TIMEOUTS.SKILLS_SYNC_INTERVAL)
   syncTimer.unref()
 }
 

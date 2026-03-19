@@ -61,6 +61,7 @@ const providerTypeEnum = z.enum([
   'lmstudio',
   'bedrock',
   'browseros',
+  'chatgpt-pro',
 ])
 
 /**
@@ -84,6 +85,9 @@ export const providerFormSchema = z
     secretAccessKey: z.string().optional(),
     region: z.string().optional(),
     sessionToken: z.string().optional(),
+    // ChatGPT Pro (Codex)
+    reasoningEffort: z.enum(['none', 'low', 'medium', 'high']).optional(),
+    reasoningSummary: z.enum(['auto', 'concise', 'detailed']).optional(),
   })
   .superRefine((data, ctx) => {
     // Azure: require either resourceName or baseUrl
@@ -126,6 +130,10 @@ export const providerFormSchema = z
           path: ['region'],
         })
       }
+    }
+    // ChatGPT Pro: no credentials needed (server-managed OAuth)
+    else if (data.type === 'chatgpt-pro') {
+      // No validation needed — OAuth tokens are on the server
     }
     // Other providers: require baseUrl
     else if (!data.baseUrl) {
@@ -209,6 +217,8 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
       secretAccessKey: initialValues?.secretAccessKey || '',
       region: initialValues?.region || '',
       sessionToken: initialValues?.sessionToken || '',
+      reasoningEffort: initialValues?.reasoningEffort || 'high',
+      reasoningSummary: initialValues?.reasoningSummary || 'auto',
     },
   })
 
@@ -301,6 +311,8 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
         secretAccessKey: initialValues.secretAccessKey || '',
         region: initialValues.region || '',
         sessionToken: initialValues.sessionToken || '',
+        reasoningEffort: initialValues.reasoningEffort || 'high',
+        reasoningSummary: initialValues.reasoningSummary || 'auto',
       })
       setIsCustomModel(false)
     }
@@ -326,6 +338,8 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
         secretAccessKey: '',
         region: '',
         sessionToken: '',
+        reasoningEffort: 'high',
+        reasoningSummary: 'auto',
       })
       setIsCustomModel(false)
     }
@@ -362,6 +376,9 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
   // Check if we have enough info to test the connection
   const canTest = (): boolean => {
     if (!watchedModelId) return false
+
+    // ChatGPT Pro: always testable (server has the OAuth token)
+    if (watchedType === 'chatgpt-pro') return true
 
     if (watchedType === 'azure') {
       return !!(watchedResourceName || watchedBaseUrl) && !!watchedApiKey
@@ -444,6 +461,76 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
   }
 
   const renderProviderSpecificFields = () => {
+    // ChatGPT Pro: OAuth credentials + Codex reasoning settings
+    if (watchedType === 'chatgpt-pro') {
+      return (
+        <>
+          <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-green-700 text-sm dark:border-green-800 dark:bg-green-950 dark:text-green-300">
+            Credentials are managed via OAuth. No API key needed.
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField
+              control={form.control}
+              name="reasoningEffort"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Reasoning Effort</FormLabel>
+                  <Select
+                    onValueChange={field.onChange}
+                    value={field.value || 'high'}
+                  >
+                    <FormControl>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      <SelectItem value="low">Low</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="high">High</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>
+                    How much the model thinks before responding
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="reasoningSummary"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Reasoning Summary</FormLabel>
+                  <Select
+                    onValueChange={field.onChange}
+                    value={field.value || 'auto'}
+                  >
+                    <FormControl>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="auto">Auto</SelectItem>
+                      <SelectItem value="concise">Concise</SelectItem>
+                      <SelectItem value="detailed">Detailed</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>
+                    Detail level of visible thinking steps
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+        </>
+      )
+    }
+
     if (watchedType === 'azure') {
       return (
         <>

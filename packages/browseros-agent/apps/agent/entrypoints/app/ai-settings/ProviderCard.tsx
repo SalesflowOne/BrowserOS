@@ -103,8 +103,10 @@ export const ProviderCard: FC<ProviderCardProps> = ({
                 for better performance.
               </>
             )
-          ) : (
+          ) : provider.baseUrl ? (
             `${provider.modelId} • ${provider.baseUrl}`
+          ) : (
+            provider.modelId
           )}
         </p>
       </div>

@@ -24,6 +24,7 @@ export const LLM_PROVIDERS = {
   BROWSEROS: 'browseros',
   OPENAI_COMPATIBLE: 'openai-compatible',
   MOONSHOT: 'moonshot',
+  CHATGPT_PRO: 'chatgpt-pro',
 } as const
 
 /**
@@ -42,6 +43,7 @@ export const LLMProviderSchema: z.ZodEnum<
     'browseros',
     'openai-compatible',
     'moonshot',
+    'chatgpt-pro',
   ]
 > = z.enum([
   LLM_PROVIDERS.ANTHROPIC,
@@ -55,6 +57,7 @@ export const LLMProviderSchema: z.ZodEnum<
   LLM_PROVIDERS.BROWSEROS,
   LLM_PROVIDERS.OPENAI_COMPATIBLE,
   LLM_PROVIDERS.MOONSHOT,
+  LLM_PROVIDERS.CHATGPT_PRO,
 ])
 
 export type LLMProvider = z.infer<typeof LLMProviderSchema>
@@ -73,6 +76,8 @@ export const LLMConfigSchema: z.ZodObject<{
   accessKeyId: z.ZodOptional<z.ZodString>
   secretAccessKey: z.ZodOptional<z.ZodString>
   sessionToken: z.ZodOptional<z.ZodString>
+  reasoningEffort: z.ZodOptional<z.ZodEnum<['none', 'low', 'medium', 'high']>>
+  reasoningSummary: z.ZodOptional<z.ZodEnum<['auto', 'concise', 'detailed']>>
 }> = z.object({
   provider: LLMProviderSchema,
   model: z.string().optional(),
@@ -85,6 +90,9 @@ export const LLMConfigSchema: z.ZodObject<{
   accessKeyId: z.string().optional(),
   secretAccessKey: z.string().optional(),
   sessionToken: z.string().optional(),
+  // ChatGPT Pro (Codex)
+  reasoningEffort: z.enum(['none', 'low', 'medium', 'high']).optional(),
+  reasoningSummary: z.enum(['auto', 'concise', 'detailed']).optional(),
 })
 
 export type LLMConfig = z.infer<typeof LLMConfigSchema>

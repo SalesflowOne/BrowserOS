@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router'
 import { AppSelector } from '@/components/elements/AppSelector'
 import {
   GlowingBorder,
@@ -26,7 +27,6 @@ import {
 } from '@/components/ui/tooltip'
 import { McpServerIcon } from '@/entrypoints/app/connect-mcp/McpServerIcon'
 import { useGetUserMCPIntegrations } from '@/entrypoints/app/connect-mcp/useGetUserMCPIntegrations'
-import { useChatSessionContext } from '@/entrypoints/sidepanel/layout/ChatSessionContext'
 import { Feature } from '@/lib/browseros/capabilities'
 import { useCapabilities } from '@/lib/browseros/useCapabilities'
 import {
@@ -36,7 +36,6 @@ import {
 import {
   NEWTAB_AI_TRIGGERED_EVENT,
   NEWTAB_APPS_OPENED_EVENT,
-  NEWTAB_CHAT_RESET_EVENT,
   NEWTAB_CHAT_STARTED_EVENT,
   NEWTAB_OPENED_EVENT,
   NEWTAB_SEARCH_EXECUTED_EVENT,
@@ -58,7 +57,6 @@ import {
   useSuggestions,
 } from './lib/suggestions/useSuggestions'
 import { NewTabBranding } from './NewTabBranding'
-import { NewTabChat } from './NewTabChat'
 import { NewTabTip } from './NewTabTip'
 import { ScheduleResults } from './ScheduleResults'
 import { SearchSuggestions } from './SearchSuggestions'
@@ -78,13 +76,13 @@ interface MentionState {
  */
 export const NewTab = () => {
   const activeHint = useActiveHint()
+  const navigate = useNavigate()
   const [inputValue, setInputValue] = useState('')
   const [mounted, setMounted] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const tabsDropdownRef = useRef<HTMLDivElement>(null)
   const [selectedTabs, setSelectedTabs] = useState<chrome.tabs.Tab[]>([])
   const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false)
-  const [chatActive, setChatActive] = useState(false)
   const [mentionState, setMentionState] = useState<MentionState>({
     isOpen: false,
     filterText: '',
@@ -95,9 +93,6 @@ export const NewTab = () => {
   const { servers: mcpServers } = useMcpServers()
   const { data: userMCPIntegrations } = useGetUserMCPIntegrations()
   useSyncRemoteIntegrations()
-
-  const { messages, sendMessage, setMode, resetConversation } =
-    useChatSessionContext()
 
   const connectedManagedServers = mcpServers.filter((s) => {
     if (s.type !== 'managed' || !s.managedServerName) return false
@@ -275,17 +270,28 @@ export const NewTab = () => {
 
   const startInlineChat = (
     message: string,
-    mode: 'chat' | 'agent',
-    action?: ReturnType<
-      typeof createBrowserOSAction | typeof createAITabAction
-    >,
+    chatMode: 'chat' | 'agent',
+    aiTab?: { name: string; description: string },
   ) => {
-    track(NEWTAB_CHAT_STARTED_EVENT, { mode, tabs_count: selectedTabs.length })
-    setMode(mode)
-    setChatActive(true)
-    sendMessage({ text: message, action })
+    track(NEWTAB_CHAT_STARTED_EVENT, {
+      mode: chatMode,
+      tabs_count: selectedTabs.length,
+    })
+    const tabIds = selectedTabs
+      .map((t) => t.id)
+      .filter((id): id is number => id !== undefined)
     reset()
     setSelectedTabs([])
+    const params = new URLSearchParams({ q: message, mode: chatMode })
+    if (tabIds.length > 0) {
+      params.set('tabs', tabIds.join(','))
+    }
+    if (aiTab) {
+      params.set('actionType', 'ai-tab')
+      params.set('tabName', aiTab.name)
+      params.set('tabDescription', aiTab.description)
+    }
+    navigate(`/home/chat?${params.toString()}`)
   }
 
   const runSelectedAction = (item: SuggestionItem | undefined) => {
@@ -306,15 +312,18 @@ export const NewTab = () => {
           mode: 'agent',
           tabs_count: selectedTabs.length,
         })
-        const action = createAITabAction({
-          name: item.name,
-          description: item.description,
-          tabs: selectedTabs,
-        })
         const searchQuery = `${item.name}${item.description ? ` - ${item.description}` : ''}}`
         if (supports(Feature.NEWTAB_CHAT_SUPPORT)) {
-          startInlineChat(searchQuery, 'agent', action)
+          startInlineChat(searchQuery, 'agent', {
+            name: item.name,
+            description: item.description,
+          })
         } else {
+          const action = createAITabAction({
+            name: item.name,
+            description: item.description,
+            tabs: selectedTabs,
+          })
           openSidePanelWithSearch('open', {
             query: searchQuery,
             mode: 'agent',
@@ -330,14 +339,14 @@ export const NewTab = () => {
           mode: item.mode,
           tabs_count: selectedTabs.length,
         })
-        const action = createBrowserOSAction({
-          mode: item.mode,
-          message: item.message,
-          tabs: selectedTabs,
-        })
         if (supports(Feature.NEWTAB_CHAT_SUPPORT)) {
-          startInlineChat(item.message, item.mode, action)
+          startInlineChat(item.message, item.mode)
         } else {
+          const action = createBrowserOSAction({
+            mode: item.mode,
+            message: item.message,
+            tabs: selectedTabs,
+          })
           openSidePanelWithSearch('open', {
             query: item.message,
             mode: item.mode,
@@ -351,12 +360,6 @@ export const NewTab = () => {
     }
   }
 
-  const handleBackToSearch = () => {
-    track(NEWTAB_CHAT_RESET_EVENT, { message_count: messages.length })
-    resetConversation()
-    setChatActive(false)
-  }
-
   const isSuggestionsVisible =
     !mentionState.isOpen &&
     ((isOpen && inputValue.length) ||
@@ -367,10 +370,6 @@ export const NewTab = () => {
     setMounted(true)
     track(NEWTAB_OPENED_EVENT)
   }, [])
-
-  if (chatActive) {
-    return <NewTabChat onBackToSearch={handleBackToSearch} />
-  }
 
   return (
     <div className="pt-[max(25vh,16px)]">

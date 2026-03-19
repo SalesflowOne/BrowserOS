@@ -10,7 +10,11 @@ import { testProviderConnection } from '../../lib/clients/llm/test-provider'
 import { logger } from '../../lib/logger'
 import { AgentLLMConfigSchema } from '../types'
 
-export function createProviderRoutes() {
+interface ProviderRouteDeps {
+  browserosId?: string
+}
+
+export function createProviderRoutes(deps: ProviderRouteDeps = {}) {
   return new Hono().post(
     '/',
     zValidator('json', AgentLLMConfigSchema),
@@ -22,7 +26,7 @@ export function createProviderRoutes() {
         model: config.model,
       })
 
-      const result = await testProviderConnection(config)
+      const result = await testProviderConnection(config, deps.browserosId)
 
       logger.info('Provider test result', {
         provider: config.provider,

@@ -7,8 +7,6 @@ import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { ShortcutsDialog } from '@/entrypoints/newtab/index/ShortcutsDialog'
 import { useIsMobile } from '@/hooks/use-mobile'
-import { SETTINGS_PAGE_VIEWED_EVENT } from '@/lib/constants/analyticsEvents'
-import { track } from '@/lib/metrics/track'
 import { RpcClientProvider } from '@/lib/rpc/RpcClientProvider'
 
 const COLLAPSE_DELAY = 150
@@ -24,10 +22,6 @@ export const SidebarLayout: FC = () => {
   const openShortcuts = useCallback(() => {
     setShortcutsDialogOpen(true)
   }, [])
-
-  useEffect(() => {
-    track(SETTINGS_PAGE_VIEWED_EVENT, { page: location.pathname })
-  }, [location.pathname])
 
   useEffect(() => {
     setMobileOpen(false)
@@ -103,11 +97,17 @@ export const SidebarLayout: FC = () => {
         </div>
 
         {/* Main content - full width, centered */}
-        <main className="min-h-screen overflow-y-auto">
-          <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
+        {location.pathname === '/home/chat' ? (
+          <main className="relative h-dvh overflow-hidden">
             <Outlet />
-          </div>
-        </main>
+          </main>
+        ) : (
+          <main className="min-h-screen overflow-y-auto">
+            <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
+              <Outlet />
+            </div>
+          </main>
+        )}
       </div>
       <ShortcutsDialog
         open={shortcutsDialogOpen}

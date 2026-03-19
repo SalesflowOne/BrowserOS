@@ -16,6 +16,8 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { HttpAgentError } from '../agent/errors'
 import { INLINED_ENV } from '../env'
 import { KlavisClient } from '../lib/clients/klavis/klavis-client'
+import { initializeOAuth } from '../lib/clients/oauth'
+import { getDb } from '../lib/db'
 import { logger } from '../lib/logger'
 import { createChatRoutes } from './routes/chat'
 import { createCreditsRoutes } from './routes/credits'
@@ -24,6 +26,7 @@ import { createHealthRoute } from './routes/health'
 import { createKlavisRoutes } from './routes/klavis'
 import { createMcpRoutes } from './routes/mcp'
 import { createMemoryRoutes } from './routes/memory'
+import { createOAuthRoutes } from './routes/oauth'
 import { createProviderRoutes } from './routes/provider'
 import { createRefinePromptRoutes } from './routes/refine-prompt'
 import { createSdkRoutes } from './routes/sdk'
@@ -77,6 +80,11 @@ export async function createHttpServer(config: HttpServerConfig) {
 
   const { onShutdown } = config
 
+  // Initialize OAuth token manager + callback server (port released on process exit)
+  const tokenManager = browserosId
+    ? initializeOAuth(getDb(), browserosId)
+    : null
+
   // Connect Klavis proxy (non-blocking: browser tools still work if this fails)
   let klavisProxy: KlavisProxyHandle | null = null
   if (browserosId) {
@@ -115,8 +123,16 @@ export async function createHttpServer(config: HttpServerConfig) {
     .route('/soul', createSoulRoutes())
     .route('/memory', createMemoryRoutes())
     .route('/skills', createSkillsRoutes())
-    .route('/test-provider', createProviderRoutes())
-    .route('/refine-prompt', createRefinePromptRoutes())
+    .route('/test-provider', createProviderRoutes({ browserosId }))
+    .route('/refine-prompt', createRefinePromptRoutes({ browserosId }))
+    .route(
+      '/oauth',
+      tokenManager
+        ? createOAuthRoutes({ tokenManager })
+        : new Hono().all('/*', (c) =>
+            c.json({ error: 'OAuth not available' }, 503),
+          ),
+    )
     .route('/klavis', createKlavisRoutes({ browserosId: browserosId || '' }))
     .route(
       '/credits',

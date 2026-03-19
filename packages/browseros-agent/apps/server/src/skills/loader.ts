@@ -1,6 +1,8 @@
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
+import { PATHS } from '@browseros/shared/constants/paths'
 import matter from 'gray-matter'
+import { getBuiltinSkillsDir, getSkillsDir } from '../lib/browseros-dir'
 import { logger } from '../lib/logger'
 import type { SkillFrontmatter, SkillMeta } from './types'
 
@@ -27,6 +29,7 @@ export function isValidFrontmatter(data: unknown): data is SkillFrontmatter {
 async function parseSkillFile(
   skillMdPath: string,
   dirName: string,
+  builtIn: boolean,
 ): Promise<SkillMeta | null> {
   try {
     const content = await readFile(skillMdPath, 'utf-8')
@@ -48,6 +51,7 @@ async function parseSkillFile(
       location: skillMdPath,
       enabled: meta?.enabled !== 'false',
       version: meta?.version,
+      builtIn,
     }
   } catch (err) {
     logger.warn('Failed to parse skill', {
@@ -58,10 +62,14 @@ async function parseSkillFile(
   }
 }
 
-async function scanSkills(skillsDir: string): Promise<SkillMeta[]> {
+async function scanDir(
+  dir: string,
+  builtIn: boolean,
+  skipDirs?: Set<string>,
+): Promise<SkillMeta[]> {
   let entries: string[]
   try {
-    entries = await readdir(skillsDir)
+    entries = await readdir(dir)
   } catch {
     return []
   }
@@ -70,7 +78,8 @@ async function scanSkills(skillsDir: string): Promise<SkillMeta[]> {
   const seen = new Set<string>()
 
   for (const entry of entries) {
-    const entryPath = join(skillsDir, entry)
+    if (skipDirs?.has(entry)) continue
+    const entryPath = join(dir, entry)
     if (!(await isDirectory(entryPath))) continue
 
     const skillMdPath = join(entryPath, 'SKILL.md')
@@ -80,21 +89,27 @@ async function scanSkills(skillsDir: string): Promise<SkillMeta[]> {
       continue
     }
 
-    const skill = await parseSkillFile(skillMdPath, entry)
-    if (!skill || seen.has(skill.name)) continue
+    const skill = await parseSkillFile(skillMdPath, entry, builtIn)
+    if (!skill || seen.has(skill.id)) continue
 
-    seen.add(skill.name)
+    seen.add(skill.id)
     skills.push(skill)
   }
 
   return skills
 }
 
-export async function loadSkills(skillsDir: string): Promise<SkillMeta[]> {
-  const all = await scanSkills(skillsDir)
-  return all.filter((s) => s.enabled)
+export async function loadAllSkills(): Promise<SkillMeta[]> {
+  const builtinSkills = await scanDir(getBuiltinSkillsDir(), true)
+  const userSkills = await scanDir(
+    getSkillsDir(),
+    false,
+    new Set([PATHS.BUILTIN_DIR_NAME]),
+  )
+  return [...builtinSkills, ...userSkills]
 }
 
-export async function loadAllSkills(skillsDir: string): Promise<SkillMeta[]> {
-  return scanSkills(skillsDir)
+export async function loadSkills(): Promise<SkillMeta[]> {
+  const all = await loadAllSkills()
+  return all.filter((s) => s.enabled)
 }

@@ -6,7 +6,7 @@
 
 import { TIMEOUTS } from '@browseros/shared/constants/timeouts'
 import type { LLMConfig } from '@browseros/shared/schemas/llm'
-import { generateText } from 'ai'
+import { streamText } from 'ai'
 import { resolveLLMConfig } from './config'
 import { createLLMProvider } from './provider'
 
@@ -25,20 +25,22 @@ const TEST_PROMPT = "Respond with exactly: 'ok'"
 
 export async function testProviderConnection(
   config: ProviderTestConfig,
+  browserosId?: string,
 ): Promise<ProviderTestResult> {
   const startTime = performance.now()
 
   try {
-    const resolvedConfig = await resolveLLMConfig(config)
+    const resolvedConfig = await resolveLLMConfig(config, browserosId)
     const model = createLLMProvider(resolvedConfig)
-    const response = await generateText({
+
+    // streamText works for all providers including Codex (which requires streaming)
+    const stream = streamText({
       model,
       messages: [{ role: 'user', content: TEST_PROMPT }],
       abortSignal: AbortSignal.timeout(TIMEOUTS.TEST_PROVIDER),
     })
-
+    const text = await stream.text
     const responseTime = Math.round(performance.now() - startTime)
-    const text = response.text
 
     if (text) {
       const preview = text.length > 100 ? `${text.slice(0, 100)}...` : text

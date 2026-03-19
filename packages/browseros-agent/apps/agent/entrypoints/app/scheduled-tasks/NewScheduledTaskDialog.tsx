@@ -3,6 +3,7 @@ import { ChevronDown, Loader2, Sparkles, Undo2 } from 'lucide-react'
 import type { FC } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
+import { toast } from 'sonner'
 import { z } from 'zod/v3'
 import { ChatProviderSelector } from '@/components/chat/ChatProviderSelector'
 import type { Provider } from '@/components/chat/chatComponentTypes'
@@ -34,16 +35,15 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { SCHEDULED_TASK_PROMPT_REFINED_EVENT } from '@/lib/constants/analyticsEvents'
 import { BrowserOSIcon, ProviderIcon } from '@/lib/llm-providers/providerIcons'
 import {
   defaultProviderIdStorage,
   providersStorage,
 } from '@/lib/llm-providers/storage'
 import type { LlmProviderConfig, ProviderType } from '@/lib/llm-providers/types'
-import { SCHEDULED_TASK_PROMPT_REFINED_EVENT } from '@/lib/constants/analyticsEvents'
 import { track } from '@/lib/metrics/track'
 import { refinePrompt } from '@/lib/schedules/refine-prompt'
-import { toast } from 'sonner'
 import type { ScheduledJob } from './types'
 
 const formSchema = z
@@ -117,6 +117,7 @@ export const NewScheduledTaskDialog: FC<NewScheduledTaskDialogProps> = ({
   const [isRefining, setIsRefining] = useState(false)
   const originalPromptRef = useRef<string | null>(null)
   const refineRequestIdRef = useRef(0)
+  const isProgrammaticChange = useRef(false)
 
   // Load providers from storage
   useEffect(() => {
@@ -179,6 +180,24 @@ export const NewScheduledTaskDialog: FC<NewScheduledTaskDialogProps> = ({
     type: p.type,
   }))
 
+  // Replace textarea content via execCommand so the browser's native undo
+  // stack (Cmd+Z / Ctrl+Z) records the change. Falls back to form.setValue
+  // if the textarea element can't be found.
+  const setQueryWithUndo = (value: string) => {
+    const textarea = document.querySelector(
+      'textarea[name="query"]',
+    ) as HTMLTextAreaElement
+    if (textarea) {
+      isProgrammaticChange.current = true
+      textarea.focus()
+      textarea.select()
+      document.execCommand('insertText', false, value)
+      isProgrammaticChange.current = false
+    } else {
+      form.setValue('query', value)
+    }
+  }
+
   const handleRefinePrompt = async () => {
     const currentQuery = form.getValues('query').trim()
     const currentName = form.getValues('name').trim()
@@ -195,7 +214,7 @@ export const NewScheduledTaskDialog: FC<NewScheduledTaskDialogProps> = ({
         providerId: form.getValues('providerId'),
       })
       if (requestId !== refineRequestIdRef.current) return
-      form.setValue('query', refined)
+      setQueryWithUndo(refined)
       track(SCHEDULED_TASK_PROMPT_REFINED_EVENT)
     } catch {
       if (requestId !== refineRequestIdRef.current) return
@@ -210,7 +229,7 @@ export const NewScheduledTaskDialog: FC<NewScheduledTaskDialogProps> = ({
 
   const handleUndoRefine = () => {
     if (originalPromptRef.current !== null) {
-      form.setValue('query', originalPromptRef.current)
+      setQueryWithUndo(originalPromptRef.current)
       originalPromptRef.current = null
     }
   }
@@ -272,7 +291,7 @@ export const NewScheduledTaskDialog: FC<NewScheduledTaskDialogProps> = ({
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="h-auto gap-1 px-2 py-1 text-xs text-muted-foreground"
+                      className="h-auto gap-1 px-2 py-1 text-muted-foreground text-xs"
                       disabled={!queryValue?.trim() || isRefining}
                       onClick={handleRefinePrompt}
                     >
@@ -291,7 +310,10 @@ export const NewScheduledTaskDialog: FC<NewScheduledTaskDialogProps> = ({
                       {...field}
                       onChange={(e) => {
                         field.onChange(e)
-                        if (originalPromptRef.current !== null) {
+                        if (
+                          !isProgrammaticChange.current &&
+                          originalPromptRef.current !== null
+                        ) {
                           originalPromptRef.current = null
                         }
                       }}
@@ -300,7 +322,7 @@ export const NewScheduledTaskDialog: FC<NewScheduledTaskDialogProps> = ({
                   {!isRefining && originalPromptRef.current !== null ? (
                     <button
                       type="button"
-                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                      className="flex items-center gap-1 text-muted-foreground text-xs hover:text-foreground"
                       onClick={handleUndoRefine}
                     >
                       <Undo2 className="h-3 w-3" />

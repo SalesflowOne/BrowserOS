@@ -21,6 +21,15 @@ export interface ProviderTemplate {
  */
 export const providerTemplates: ProviderTemplate[] = [
   {
+    id: 'chatgpt-pro',
+    name: 'ChatGPT Plus/Pro',
+    defaultBaseUrl: 'https://chatgpt.com/backend-api',
+    defaultModelId: 'gpt-5.3-codex',
+    supportsImages: true,
+    contextWindow: 400000,
+    setupGuideUrl: 'https://docs.browseros.com/features/chatgpt-pro-oauth',
+  },
+  {
     id: 'moonshot',
     name: 'Moonshot AI',
     defaultBaseUrl: 'https://api.moonshot.ai/v1',
@@ -129,6 +138,7 @@ export const providerTemplates: ProviderTemplate[] = [
  * @public
  */
 export const providerTypeOptions: { value: ProviderType; label: string }[] = [
+  { value: 'chatgpt-pro', label: 'ChatGPT Plus/Pro' },
   { value: 'moonshot', label: 'Moonshot AI' },
   { value: 'anthropic', label: 'Anthropic' },
   { value: 'openai', label: 'OpenAI' },
@@ -157,6 +167,7 @@ export const getProviderTemplate = (
  * Auto-fills when user selects a provider type
  */
 export const DEFAULT_BASE_URLS: Record<ProviderType, string> = {
+  'chatgpt-pro': 'https://chatgpt.com/backend-api',
   moonshot: 'https://api.moonshot.ai/v1',
   anthropic: 'https://api.anthropic.com/v1',
   openai: 'https://api.openai.com/v1',

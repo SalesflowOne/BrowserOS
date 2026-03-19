@@ -28,9 +28,14 @@ export function getSkillsDir(): string {
   return join(getBrowserosDir(), PATHS.SKILLS_DIR_NAME)
 }
 
+export function getBuiltinSkillsDir(): string {
+  return join(getSkillsDir(), PATHS.BUILTIN_DIR_NAME)
+}
+
 export async function ensureBrowserosDir(): Promise<void> {
   await mkdir(getMemoryDir(), { recursive: true })
   await mkdir(getSkillsDir(), { recursive: true })
+  await mkdir(getBuiltinSkillsDir(), { recursive: true })
   await mkdir(getSessionsDir(), { recursive: true })
 }
 

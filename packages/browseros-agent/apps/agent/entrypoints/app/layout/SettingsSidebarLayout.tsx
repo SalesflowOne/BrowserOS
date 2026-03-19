@@ -17,11 +17,8 @@ export const SettingsSidebarLayout: FC = () => {
 
   useEffect(() => {
     track(SETTINGS_PAGE_VIEWED_EVENT, { page: location.pathname })
-  }, [location.pathname])
-
-  useEffect(() => {
     setMobileOpen(false)
-  }, [])
+  }, [location.pathname])
 
   if (isMobile) {
     return (

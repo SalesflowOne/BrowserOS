@@ -12,4 +12,5 @@ export interface ResolvedLLMConfig extends LLMConfig {
   model: string
   upstreamProvider?: string
   browserosId?: string
+  accountId?: string
 }

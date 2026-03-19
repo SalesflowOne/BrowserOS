@@ -5,6 +5,7 @@ import type {
 } from '@ai-sdk/provider'
 import { AGENT_LIMITS } from '@browseros/shared/constants/limits'
 import type { BrowserContext } from '@browseros/shared/schemas/browser-context'
+import { LLM_PROVIDERS } from '@browseros/shared/schemas/llm'
 import {
   type LanguageModel,
   type ModelMessage,
@@ -14,7 +15,6 @@ import {
   wrapLanguageModel,
 } from 'ai'
 import type { Browser } from '../browser/browser'
-import { getSkillsDir } from '../lib/browseros-dir'
 import type { KlavisClient } from '../lib/clients/klavis/klavis-client'
 import { logger } from '../lib/logger'
 import { isSoulBootstrap, readSoul } from '../lib/soul'
@@ -150,7 +150,7 @@ export class AiSdkAgent {
     const isBootstrap = await isSoulBootstrap()
 
     // Load skills catalog for prompt injection
-    const skills = await loadSkills(getSkillsDir())
+    const skills = await loadSkills()
     const skillsCatalog =
       skills.length > 0 ? buildSkillsCatalog(skills) : undefined
 
@@ -189,13 +189,27 @@ export class AiSdkAgent {
         ),
       })
 
-    // Create the ToolLoopAgent
+    // Codex requires store=false — tell the SDK to inline content
+    // instead of using item_reference (which fails with store=false)
+    const isChatGPTPro =
+      config.resolvedConfig.provider === LLM_PROVIDERS.CHATGPT_PRO
+
     const agent = new ToolLoopAgent({
       model,
       instructions,
       tools,
       stopWhen: [stepCountIs(AGENT_LIMITS.MAX_TURNS)],
       prepareStep,
+      ...(isChatGPTPro && {
+        providerOptions: {
+          openai: {
+            store: false,
+            reasoningEffort: config.resolvedConfig.reasoningEffort || 'high',
+            reasoningSummary: config.resolvedConfig.reasoningSummary || 'auto',
+            include: ['reasoning.encrypted_content'],
+          },
+        },
+      }),
     })
 
     logger.info('Agent session created (v2)', {

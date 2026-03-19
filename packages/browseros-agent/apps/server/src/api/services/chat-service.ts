@@ -54,6 +54,9 @@ export class ChatService {
       accessKeyId: llmConfig.accessKeyId,
       secretAccessKey: llmConfig.secretAccessKey,
       sessionToken: llmConfig.sessionToken,
+      accountId: llmConfig.accountId,
+      reasoningEffort: request.reasoningEffort,
+      reasoningSummary: request.reasoningSummary,
       contextWindowSize: request.contextWindowSize,
       userSystemPrompt: request.userSystemPrompt,
       workingDir,
@@ -169,6 +172,8 @@ export class ChatService {
     const userContent = formatUserMessage(
       request.message,
       resolvedMessageContext,
+      request.selectedText,
+      request.selectedTextSource,
     )
     session.agent.appendUserMessage(userContent)
 
