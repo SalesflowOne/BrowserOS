@@ -19,6 +19,7 @@ export interface Provider {
 
 export interface CreditsInfo {
   credits: number
+  dailyLimit?: number
   lastResetAt?: string
 }
 

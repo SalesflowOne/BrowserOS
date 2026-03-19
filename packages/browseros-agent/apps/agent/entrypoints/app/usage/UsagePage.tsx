@@ -1,24 +1,18 @@
-import { Clock, Coins, CreditCard, Zap } from 'lucide-react'
+import { AlertCircle, Clock, Coins, CreditCard, Zap } from 'lucide-react'
 import type { FC } from 'react'
 import { Button } from '@/components/ui/button'
+import {
+  getCreditBarColor,
+  getCreditTextColor,
+} from '@/lib/credits/credit-colors'
 import { useCredits } from '@/lib/credits/useCredits'
 import { BrowserOSIcon } from '@/lib/llm-providers/providerIcons'
 import { cn } from '@/lib/utils'
 
-function getCreditColor(credits: number): string {
-  if (credits <= 0) return 'text-red-500'
-  if (credits <= 30) return 'text-yellow-500'
-  return 'text-green-500'
-}
-
-function getProgressColor(credits: number): string {
-  if (credits <= 0) return 'bg-red-500'
-  if (credits <= 30) return 'bg-yellow-500'
-  return 'bg-green-500'
-}
+const DEFAULT_DAILY_LIMIT = 100
 
 export const UsagePage: FC = () => {
-  const { data, isLoading } = useCredits()
+  const { data, isLoading, error } = useCredits()
 
   if (isLoading) {
     return (
@@ -28,13 +22,34 @@ export const UsagePage: FC = () => {
     )
   }
 
+  if (error) {
+    return (
+      <div className="space-y-6 p-6">
+        <div className="flex items-center gap-4 rounded-xl border p-5">
+          <BrowserOSIcon size={40} />
+          <div>
+            <h2 className="font-semibold text-lg">Usage & Billing</h2>
+            <p className="text-muted-foreground text-sm">
+              Monitor your BrowserOS AI credit usage
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-8">
+          <AlertCircle className="h-6 w-6 text-muted-foreground" />
+          <p className="text-muted-foreground text-sm">
+            Unable to load credit information
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   const credits = data?.credits ?? 0
-  const total = 100
+  const total = data?.dailyLimit ?? DEFAULT_DAILY_LIMIT
   const percentage = Math.min((credits / total) * 100, 100)
 
   return (
     <div className="space-y-6 p-6">
-      {/* Header matching AI Settings style */}
       <div className="flex items-center gap-4 rounded-xl border p-5">
         <BrowserOSIcon size={40} />
         <div>
@@ -45,14 +60,15 @@ export const UsagePage: FC = () => {
         </div>
       </div>
 
-      {/* Credits overview */}
       <div className="rounded-xl border p-5">
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Coins className="h-5 w-5 text-muted-foreground" />
             <span className="font-semibold text-sm">Daily Credits</span>
           </div>
-          <span className={cn('font-bold text-2xl', getCreditColor(credits))}>
+          <span
+            className={cn('font-bold text-2xl', getCreditTextColor(credits))}
+          >
             {credits}
             <span className="ml-1 font-normal text-muted-foreground text-sm">
               / {total}
@@ -64,7 +80,7 @@ export const UsagePage: FC = () => {
           <div
             className={cn(
               'h-full rounded-full transition-all duration-500',
-              getProgressColor(credits),
+              getCreditBarColor(credits),
             )}
             style={{ width: `${percentage}%` }}
           />
@@ -90,7 +106,6 @@ export const UsagePage: FC = () => {
         </div>
       </div>
 
-      {/* Add credits */}
       <div className="rounded-xl border p-5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">

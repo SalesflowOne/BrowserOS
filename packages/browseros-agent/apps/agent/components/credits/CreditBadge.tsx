@@ -1,16 +1,11 @@
 import { Coins } from 'lucide-react'
 import type { FC } from 'react'
+import { getCreditTextColor } from '@/lib/credits/credit-colors'
 import { cn } from '@/lib/utils'
 
 interface CreditBadgeProps {
   credits: number
   onClick?: () => void
-}
-
-function getCreditColor(credits: number): string {
-  if (credits <= 0) return 'text-red-500'
-  if (credits <= 30) return 'text-yellow-500'
-  return 'text-green-500'
 }
 
 export const CreditBadge: FC<CreditBadgeProps> = ({ credits, onClick }) => {
@@ -20,7 +15,7 @@ export const CreditBadge: FC<CreditBadgeProps> = ({ credits, onClick }) => {
       onClick={onClick}
       className={cn(
         'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-xs transition-colors hover:bg-muted/50',
-        getCreditColor(credits),
+        getCreditTextColor(credits),
       )}
       title={`${credits} credits remaining`}
     >
