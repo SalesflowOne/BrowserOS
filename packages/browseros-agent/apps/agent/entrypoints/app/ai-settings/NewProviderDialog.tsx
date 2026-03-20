@@ -200,6 +200,7 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
       return supports(Feature.CHATGPT_PRO_SUPPORT)
     if (opt.value === 'github-copilot')
       return supports(Feature.GITHUB_COPILOT_SUPPORT)
+    if (opt.value === 'qwen-code') return supports(Feature.QWEN_CODE_SUPPORT)
     if (opt.value === 'moonshot')
       return kimiLaunch || initialValues?.type === 'moonshot'
     if (opt.value === 'openai-compatible') {

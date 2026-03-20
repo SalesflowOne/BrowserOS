@@ -30,6 +30,7 @@ export const ProviderTemplatesSection: FC<ProviderTemplatesSectionProps> = ({
       return supports(Feature.CHATGPT_PRO_SUPPORT)
     if (template.id === 'github-copilot')
       return supports(Feature.GITHUB_COPILOT_SUPPORT)
+    if (template.id === 'qwen-code') return supports(Feature.QWEN_CODE_SUPPORT)
     if (template.id === 'moonshot') return kimiLaunch
     if (template.id === 'openai-compatible') {
       return supports(Feature.OPENAI_COMPATIBLE_SUPPORT)
