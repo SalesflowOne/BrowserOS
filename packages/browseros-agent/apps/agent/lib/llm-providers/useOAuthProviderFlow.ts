@@ -1,6 +1,11 @@
 import { useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 import { track } from '@/lib/metrics/track'
+import {
+  type ClientAuthConfig,
+  requestDeviceCode,
+  startTokenPolling,
+} from './client-oauth'
 import { getProviderTemplate } from './providerTemplates'
 import type { LlmProviderConfig, ProviderType } from './types'
 import { useOAuthStatus } from './useOAuthStatus'
@@ -11,6 +16,8 @@ interface OAuthProviderFlowConfig {
   startedEvent: string
   completedEvent: string
   disconnectedEvent: string
+  /** Client-side auth for providers with WAF-protected endpoints */
+  clientAuth?: ClientAuthConfig
 }
 
 interface OAuthProviderFlowReturn {
@@ -76,49 +83,80 @@ export function useOAuthProviderFlow(
     flowStartedRef.current = true
 
     try {
-      const res = await fetch(
-        `${agentServerUrl}/oauth/${config.providerType}/start`,
-      )
-
-      // Device code flow returns JSON
-      if (res.headers.get('content-type')?.includes('application/json')) {
-        const data = (await res.json()) as {
-          userCode?: string
-          verificationUri?: string
-          error?: string
-        }
-
-        if (!res.ok || data.error) {
-          throw new Error(data.error || `Server returned ${res.status}`)
-        }
-        if (!data.userCode || !data.verificationUri) {
-          throw new Error('Invalid response from server')
-        }
-
-        window.open(data.verificationUri, '_blank')
-        startPolling()
-        track(config.startedEvent)
-        toast.info(`Enter code: ${data.userCode}`, {
-          description: `Paste this code on the ${config.displayName} page that just opened.`,
-          duration: 60_000,
-        })
-        return
+      if (config.clientAuth) {
+        await handleClientAuth(config.clientAuth, agentServerUrl)
+      } else {
+        await handleServerAuth(agentServerUrl)
       }
-
-      // PKCE redirect flow
-      if (!res.ok) throw new Error(`Server returned ${res.status}`)
-      window.open(res.url, '_blank')
-      startPolling()
-      track(config.startedEvent)
-      toast.info(`Authenticating with ${config.displayName}`, {
-        description: 'Complete the login in the opened tab.',
-      })
     } catch (err) {
       flowStartedRef.current = false
       toast.error(`Failed to start ${config.displayName} authentication`, {
         description: err instanceof Error ? err.message : 'Unknown error',
       })
     }
+  }
+
+  // Client-side: extension handles device code + polling, sends token to server
+  async function handleClientAuth(auth: ClientAuthConfig, serverUrl: string) {
+    const { deviceData, codeVerifier } = await requestDeviceCode(auth)
+
+    const verificationUri =
+      deviceData.verification_uri_complete ?? deviceData.verification_uri
+    window.open(verificationUri, '_blank')
+    track(config.startedEvent)
+    toast.info(`Enter code: ${deviceData.user_code}`, {
+      description: `Paste this code on the ${config.displayName} page that just opened.`,
+      duration: 60_000,
+    })
+
+    startTokenPolling(auth, deviceData, codeVerifier, async (token) => {
+      await fetch(`${serverUrl}/oauth/${config.providerType}/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(token),
+      })
+      startPolling()
+    })
+  }
+
+  // Server-side: server handles device code + polling
+  async function handleServerAuth(agentServerUrl: string) {
+    const res = await fetch(
+      `${agentServerUrl}/oauth/${config.providerType}/start`,
+    )
+
+    if (res.headers.get('content-type')?.includes('application/json')) {
+      const data = (await res.json()) as {
+        userCode?: string
+        verificationUri?: string
+        error?: string
+      }
+
+      if (!res.ok || data.error) {
+        throw new Error(data.error || `Server returned ${res.status}`)
+      }
+      if (!data.userCode || !data.verificationUri) {
+        throw new Error('Invalid response from server')
+      }
+
+      window.open(data.verificationUri, '_blank')
+      startPolling()
+      track(config.startedEvent)
+      toast.info(`Enter code: ${data.userCode}`, {
+        description: `Paste this code on the ${config.displayName} page that just opened.`,
+        duration: 60_000,
+      })
+      return
+    }
+
+    // PKCE redirect flow
+    if (!res.ok) throw new Error(`Server returned ${res.status}`)
+    window.open(res.url, '_blank')
+    startPolling()
+    track(config.startedEvent)
+    toast.info(`Authenticating with ${config.displayName}`, {
+      description: 'Complete the login in the opened tab.',
+    })
   }
 
   return {

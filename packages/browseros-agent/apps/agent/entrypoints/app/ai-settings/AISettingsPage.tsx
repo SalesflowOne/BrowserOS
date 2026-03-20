@@ -69,6 +69,14 @@ const OAUTH_PROVIDERS_CONFIG: Record<
     startedEvent: GITHUB_COPILOT_OAUTH_STARTED_EVENT,
     completedEvent: GITHUB_COPILOT_OAUTH_COMPLETED_EVENT,
     disconnectedEvent: GITHUB_COPILOT_OAUTH_DISCONNECTED_EVENT,
+    clientAuth: {
+      deviceCodeEndpoint: 'https://github.com/login/device/code',
+      tokenEndpoint: 'https://github.com/login/oauth/access_token',
+      clientId: 'Ov23li8tweQw6odWQebz',
+      scopes: 'read:user',
+      requiresPKCE: false,
+      contentType: 'json',
+    },
   },
   'qwen-code': {
     providerType: 'qwen-code',
@@ -76,6 +84,14 @@ const OAUTH_PROVIDERS_CONFIG: Record<
     startedEvent: QWEN_CODE_OAUTH_STARTED_EVENT,
     completedEvent: QWEN_CODE_OAUTH_COMPLETED_EVENT,
     disconnectedEvent: QWEN_CODE_OAUTH_DISCONNECTED_EVENT,
+    clientAuth: {
+      deviceCodeEndpoint: 'https://chat.qwen.ai/api/v1/oauth2/device/code',
+      tokenEndpoint: 'https://chat.qwen.ai/api/v1/oauth2/token',
+      clientId: 'f0304373b74a44d2b584a3fb70ca9e56',
+      scopes: 'openid profile email model.completion',
+      requiresPKCE: true,
+      contentType: 'form',
+    },
   },
 }
 
