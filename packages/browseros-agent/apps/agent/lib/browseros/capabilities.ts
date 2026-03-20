@@ -51,6 +51,8 @@ export enum Feature {
   GITHUB_COPILOT_SUPPORT = 'GITHUB_COPILOT_SUPPORT',
   // Qwen Code OAuth LLM provider
   QWEN_CODE_SUPPORT = 'QWEN_CODE_SUPPORT',
+  // Credit-based usage tracking
+  CREDITS_SUPPORT = 'CREDITS_SUPPORT',
 }
 
 /**
@@ -81,6 +83,7 @@ const FEATURE_CONFIG: { [K in Feature]: FeatureConfig } = {
   [Feature.CHATGPT_PRO_SUPPORT]: { minServerVersion: '0.0.77' },
   [Feature.GITHUB_COPILOT_SUPPORT]: { minServerVersion: '0.0.77' },
   [Feature.QWEN_CODE_SUPPORT]: { minServerVersion: '0.0.77' },
+  [Feature.CREDITS_SUPPORT]: { minServerVersion: '0.0.78' },
 }
 
 function parseVersion(version: string): number[] {
