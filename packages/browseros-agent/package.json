@@ -44,7 +44,6 @@
   },
   "homepage": "https://github.com/browseros-ai/BrowserOS#readme",
   "devDependencies": {
-    "@anthropic-ai/sdk": "^0.80.0",
     "@aws-sdk/client-s3": "^3.933.0",
     "@biomejs/biome": "2.4.8",
     "@sentry/cli": "^2.42.2",

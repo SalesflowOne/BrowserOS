@@ -1,19 +1,23 @@
 /* biome-ignore-all lint/suspicious/noConsole: CLI script requires console output */
 /* biome-ignore-all lint/style/noProcessEnv: CLI script reads env vars directly */
 /**
- * Auto-translate locale files using Claude API.
+ * Auto-translate locale files using any OpenAI-compatible API.
  *
  * Usage:
  *   bun run scripts/translate.ts                     # translate all target languages
  *   bun run scripts/translate.ts --lang=zh_CN        # translate one language
  *   bun run scripts/translate.ts --lang=ja --dry-run # preview without writing
  *
- * Requires ANTHROPIC_API_KEY environment variable.
+ * Environment variables:
+ *   TRANSLATE_API_KEY   — API key (required)
+ *   TRANSLATE_BASE_URL  — Base URL (default: https://api.anthropic.com/v1)
+ *   TRANSLATE_MODEL     — Model ID (default: claude-sonnet-4-20250514)
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import Anthropic from '@anthropic-ai/sdk'
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
+import { generateText } from 'ai'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 
 const LOCALES_DIR = join(import.meta.dir, '..', 'locales')
@@ -89,26 +93,30 @@ async function translateKeys(
   targetLang: string,
   targetName: string,
 ): Promise<Record<string, string>> {
-  const apiKey = process.env.ANTHROPIC_API_KEY
+  const apiKey = process.env.TRANSLATE_API_KEY
   if (!apiKey) {
     throw new Error(
-      'ANTHROPIC_API_KEY environment variable is required. Set it before running.',
+      'TRANSLATE_API_KEY environment variable is required. Set it before running.',
     )
   }
 
-  const client = new Anthropic({ apiKey })
+  const baseURL =
+    process.env.TRANSLATE_BASE_URL || 'https://api.anthropic.com/v1'
+  const modelId = process.env.TRANSLATE_MODEL || 'claude-sonnet-4-20250514'
+
+  const provider = createOpenAICompatible({
+    name: 'translate-provider',
+    baseURL,
+    apiKey,
+  })
 
   const keysText = Object.entries(keys)
     .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
     .join('\n')
 
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 4096,
-    messages: [
-      {
-        role: 'user',
-        content: `Translate the following UI strings from English to ${targetName} (${targetLang}).
+  const { text } = await generateText({
+    model: provider.chatModel(modelId),
+    prompt: `Translate the following UI strings from English to ${targetName} (${targetLang}).
 
 These are for a browser extension called BrowserOS — an AI-powered browser assistant.
 
@@ -120,12 +128,7 @@ Rules:
 
 Keys to translate:
 ${keysText}`,
-      },
-    ],
   })
-
-  const text =
-    response.content[0].type === 'text' ? response.content[0].text : ''
 
   // Extract JSON from response (handle potential markdown wrapping)
   const jsonMatch = text.match(/\{[\s\S]*\}/)
