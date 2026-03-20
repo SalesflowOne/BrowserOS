@@ -3,7 +3,7 @@ import { getAgentServerUrl } from '@/lib/browseros/helpers'
 
 export interface CreditsInfo {
   credits: number
-  dailyLimit?: number
+  dailyLimit: number
   lastResetAt?: string
 }
 

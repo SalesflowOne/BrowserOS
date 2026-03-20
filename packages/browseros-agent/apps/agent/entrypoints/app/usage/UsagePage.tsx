@@ -9,8 +9,6 @@ import { useCredits } from '@/lib/credits/useCredits'
 import { BrowserOSIcon } from '@/lib/llm-providers/providerIcons'
 import { cn } from '@/lib/utils'
 
-const DEFAULT_DAILY_LIMIT = 100
-
 export const UsagePage: FC = () => {
   const { data, isLoading, error } = useCredits()
 
@@ -45,7 +43,7 @@ export const UsagePage: FC = () => {
   }
 
   const credits = data?.credits ?? 0
-  const total = data?.dailyLimit ?? DEFAULT_DAILY_LIMIT
+  const total = data?.dailyLimit ?? 100
   const percentage = Math.min((credits / total) * 100, 100)
 
   return (
