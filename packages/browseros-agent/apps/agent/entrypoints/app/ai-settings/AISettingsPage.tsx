@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { type FC, useEffect, useMemo, useRef, useState } from 'react'
+import { type FC, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import {
   AlertDialog,
@@ -17,19 +17,25 @@ import {
   CHATGPT_PRO_OAUTH_COMPLETED_EVENT,
   CHATGPT_PRO_OAUTH_DISCONNECTED_EVENT,
   CHATGPT_PRO_OAUTH_STARTED_EVENT,
+  GITHUB_COPILOT_OAUTH_COMPLETED_EVENT,
+  GITHUB_COPILOT_OAUTH_DISCONNECTED_EVENT,
+  GITHUB_COPILOT_OAUTH_STARTED_EVENT,
+  QWEN_CODE_OAUTH_COMPLETED_EVENT,
+  QWEN_CODE_OAUTH_DISCONNECTED_EVENT,
+  QWEN_CODE_OAUTH_STARTED_EVENT,
 } from '@/lib/constants/analyticsEvents'
 import { GetProfileIdByUserIdDocument } from '@/lib/conversations/graphql/uploadConversationDocument'
 import { getQueryKeyFromDocument } from '@/lib/graphql/getQueryKeyFromDocument'
 import { useGraphqlMutation } from '@/lib/graphql/useGraphqlMutation'
 import { useGraphqlQuery } from '@/lib/graphql/useGraphqlQuery'
-import {
-  getProviderTemplate,
-  type ProviderTemplate,
-} from '@/lib/llm-providers/providerTemplates'
+import type { ProviderTemplate } from '@/lib/llm-providers/providerTemplates'
 import { testProvider } from '@/lib/llm-providers/testProvider'
 import type { LlmProviderConfig } from '@/lib/llm-providers/types'
 import { useLlmProviders } from '@/lib/llm-providers/useLlmProviders'
-import { useOAuthStatus } from '@/lib/llm-providers/useOAuthStatus'
+import {
+  type OAuthProviderFlowConfig,
+  useOAuthProviderFlow,
+} from '@/lib/llm-providers/useOAuthProviderFlow'
 import { track } from '@/lib/metrics/track'
 import { ConfiguredProvidersList } from './ConfiguredProvidersList'
 import {
@@ -41,6 +47,47 @@ import { IncompleteProvidersList } from './IncompleteProvidersList'
 import { LlmProvidersHeader } from './LlmProvidersHeader'
 import { NewProviderDialog } from './NewProviderDialog'
 import { ProviderTemplatesSection } from './ProviderTemplatesSection'
+
+// All OAuth providers share the same flow via useOAuthProviderFlow
+const OAUTH_PROVIDERS_CONFIG: Record<string, OAuthProviderFlowConfig> = {
+  'chatgpt-pro': {
+    providerType: 'chatgpt-pro',
+    displayName: 'ChatGPT Plus/Pro',
+    startedEvent: CHATGPT_PRO_OAUTH_STARTED_EVENT,
+    completedEvent: CHATGPT_PRO_OAUTH_COMPLETED_EVENT,
+    disconnectedEvent: CHATGPT_PRO_OAUTH_DISCONNECTED_EVENT,
+  },
+  'github-copilot': {
+    providerType: 'github-copilot',
+    displayName: 'GitHub Copilot',
+    startedEvent: GITHUB_COPILOT_OAUTH_STARTED_EVENT,
+    completedEvent: GITHUB_COPILOT_OAUTH_COMPLETED_EVENT,
+    disconnectedEvent: GITHUB_COPILOT_OAUTH_DISCONNECTED_EVENT,
+    clientAuth: {
+      deviceCodeEndpoint: 'https://github.com/login/device/code',
+      tokenEndpoint: 'https://github.com/login/oauth/access_token',
+      clientId: 'Ov23li8tweQw6odWQebz',
+      scopes: 'read:user',
+      requiresPKCE: false,
+      contentType: 'json',
+    },
+  },
+  'qwen-code': {
+    providerType: 'qwen-code',
+    displayName: 'Qwen Code',
+    startedEvent: QWEN_CODE_OAUTH_STARTED_EVENT,
+    completedEvent: QWEN_CODE_OAUTH_COMPLETED_EVENT,
+    disconnectedEvent: QWEN_CODE_OAUTH_DISCONNECTED_EVENT,
+    clientAuth: {
+      deviceCodeEndpoint: 'https://chat.qwen.ai/api/v1/oauth2/device/code',
+      tokenEndpoint: 'https://chat.qwen.ai/api/v1/oauth2/token',
+      clientId: 'f0304373b74a44d2b584a3fb70ca9e56',
+      scopes: 'openid profile email model.completion',
+      requiresPKCE: true,
+      contentType: 'form',
+    },
+  },
+}
 
 /**
  * AI Settings page for managing LLM providers
@@ -88,9 +135,7 @@ export const AISettingsPage: FC = () => {
 
   const incompleteProviders = useMemo<IncompleteProvider[]>(() => {
     if (!remoteProvidersData?.llmProviders?.nodes) return []
-
     const localProviderIds = new Set(providers.map((p) => p.id))
-
     return remoteProvidersData.llmProviders.nodes
       .filter((node): node is NonNullable<typeof node> => node !== null)
       .filter((node) => !localProviderIds.has(node.rowId))
@@ -111,56 +156,47 @@ export const AISettingsPage: FC = () => {
     null,
   )
 
-  // OAuth status for ChatGPT Plus/Pro
-  const {
-    status: chatgptProStatus,
-    startPolling: startChatGPTProPolling,
-    disconnect: disconnectChatGPTPro,
-  } = useOAuthStatus('chatgpt-pro')
+  // OAuth flows — shared hook eliminates per-provider duplication
+  const chatgptPro = useOAuthProviderFlow(
+    OAUTH_PROVIDERS_CONFIG['chatgpt-pro'],
+    providers,
+    saveProvider,
+  )
+  const copilot = useOAuthProviderFlow(
+    OAUTH_PROVIDERS_CONFIG['github-copilot'],
+    providers,
+    saveProvider,
+  )
+  const qwenCode = useOAuthProviderFlow(
+    OAUTH_PROVIDERS_CONFIG['qwen-code'],
+    providers,
+    saveProvider,
+  )
 
-  // Track whether user explicitly started an OAuth flow this session
-  const oauthFlowStartedRef = useRef(false)
-
-  // Auto-create provider only when user actively completed OAuth,
-  // not on passive page load when server has old tokens
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional — only trigger on auth status change
-  useEffect(() => {
-    if (!chatgptProStatus?.authenticated) return
-    if (!oauthFlowStartedRef.current) return
-
-    const exists = providers.some((p) => p.type === 'chatgpt-pro')
-    if (exists) return
-
-    const now = Date.now()
-    try {
-      const template = getProviderTemplate('chatgpt-pro')
-      saveProvider({
-        id: `chatgpt-pro-${now}`,
-        type: 'chatgpt-pro',
-        name: `ChatGPT Plus/Pro${chatgptProStatus.email ? ` (${chatgptProStatus.email})` : ''}`,
-        modelId: template?.defaultModelId ?? 'gpt-5.3-codex',
-        supportsImages: template?.supportsImages ?? true,
-        contextWindow: template?.contextWindow ?? 400000,
-        temperature: 0.2,
-        createdAt: now,
-        updatedAt: now,
-      })
-      track(CHATGPT_PRO_OAUTH_COMPLETED_EVENT, {
-        email: chatgptProStatus.email,
-      })
-      toast.success('ChatGPT Plus/Pro Connected', {
-        description: chatgptProStatus.email
-          ? `Authenticated as ${chatgptProStatus.email}`
-          : 'Successfully authenticated with ChatGPT Plus/Pro',
-      })
-    } catch (err) {
-      toast.error('Failed to create ChatGPT Plus/Pro provider', {
-        description: err instanceof Error ? err.message : 'Unknown error',
-      })
-    } finally {
-      oauthFlowStartedRef.current = false
+  const oauthFlows: Record<
+    string,
+    {
+      startOAuthFlow: (url: string | undefined) => Promise<void>
+      disconnect: () => Promise<void>
+      disconnectedEvent: string
     }
-  }, [chatgptProStatus?.authenticated])
+  > = {
+    'chatgpt-pro': {
+      startOAuthFlow: chatgptPro.startOAuthFlow,
+      disconnect: chatgptPro.disconnect,
+      disconnectedEvent: CHATGPT_PRO_OAUTH_DISCONNECTED_EVENT,
+    },
+    'github-copilot': {
+      startOAuthFlow: copilot.startOAuthFlow,
+      disconnect: copilot.disconnect,
+      disconnectedEvent: GITHUB_COPILOT_OAUTH_DISCONNECTED_EVENT,
+    },
+    'qwen-code': {
+      startOAuthFlow: qwenCode.startOAuthFlow,
+      disconnect: qwenCode.disconnect,
+      disconnectedEvent: QWEN_CODE_OAUTH_DISCONNECTED_EVENT,
+    },
+  }
 
   const handleAddProvider = () => {
     setTemplateValues(undefined)
@@ -168,9 +204,10 @@ export const AISettingsPage: FC = () => {
   }
 
   const handleUseTemplate = (template: ProviderTemplate) => {
-    // OAuth providers: trigger OAuth flow instead of opening form dialog
-    if (template.id === 'chatgpt-pro') {
-      handleStartChatGPTProOAuth()
+    // OAuth providers: trigger OAuth flow
+    const oauthFlow = oauthFlows[template.id]
+    if (oauthFlow) {
+      oauthFlow.startOAuthFlow(agentServerUrl ?? undefined)
       return
     }
 
@@ -186,27 +223,6 @@ export const AISettingsPage: FC = () => {
     setIsNewDialogOpen(true)
   }
 
-  const handleStartChatGPTProOAuth = () => {
-    if (!agentServerUrl) {
-      toast.error('Server not available', {
-        description: 'Cannot start OAuth flow without server connection.',
-      })
-      return
-    }
-    oauthFlowStartedRef.current = true
-
-    const extensionSettingsUrl = chrome.runtime.getURL('app.html#/ai-settings')
-    const startUrl = `${agentServerUrl}/oauth/chatgpt-pro/start?redirect=${encodeURIComponent(extensionSettingsUrl)}`
-    window.open(startUrl, '_blank')
-
-    // Start polling for OAuth completion
-    startChatGPTProPolling()
-    track(CHATGPT_PRO_OAUTH_STARTED_EVENT)
-    toast.info('Authenticating with ChatGPT Plus/Pro', {
-      description: 'Complete the login in the opened tab.',
-    })
-  }
-
   const handleEditProvider = (provider: LlmProviderConfig) => {
     setEditingProvider(provider)
     setIsEditDialogOpen(true)
@@ -217,16 +233,18 @@ export const AISettingsPage: FC = () => {
   }
 
   const confirmDeleteProvider = async () => {
-    if (providerToDelete) {
-      // Clear OAuth tokens on server for OAuth-based providers
-      if (providerToDelete.type === 'chatgpt-pro') {
-        await disconnectChatGPTPro()
-        track(CHATGPT_PRO_OAUTH_DISCONNECTED_EVENT)
-      }
-      await deleteProvider(providerToDelete.id)
-      deleteRemoteProviderMutation.mutate({ rowId: providerToDelete.id })
-      setProviderToDelete(null)
+    if (!providerToDelete) return
+
+    // Clear OAuth tokens on server for OAuth-based providers
+    const oauthFlow = oauthFlows[providerToDelete.type]
+    if (oauthFlow) {
+      await oauthFlow.disconnect()
+      track(oauthFlow.disconnectedEvent)
     }
+
+    await deleteProvider(providerToDelete.id)
+    deleteRemoteProviderMutation.mutate({ rowId: providerToDelete.id })
+    setProviderToDelete(null)
   }
 
   const handleAddKeysToIncomplete = (provider: IncompleteProvider) => {

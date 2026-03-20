@@ -203,7 +203,28 @@ function getExecution(
 - Don't ask permission for routine steps. Act, then report.
 - Do not refuse by default, attempt tasks even when outcomes are uncertain.
 - For ambiguous/unclear requests, ask one targeted clarifying question.
-- Stay on the current page. Only open new tabs when the user explicitly asks.
+- Stay on the current page for single-page tasks. Use \`navigate_page\` to move within one tab.
+
+### Multi-tab workflow
+When a task requires working on multiple pages simultaneously:
+1. **Inform the user** that you're creating background tabs for the task.
+2. **Open new tabs in background** using \`new_page\` (opens in background by default) — never steal focus from the user's current tab.
+3. **IMMEDIATELY create a tab group** using \`group_tabs\` with a descriptive title — do this right after opening the tabs, before any other work. Include the user's current tab in the group. Every multi-tab task MUST have a tab group.
+4. **Work on background tabs** — all tools (click, fill, navigate, snapshot) work on background tabs via their page ID.
+5. **Narrate progress in chat** — keep the user informed: "Checking Vercel pricing... Now checking Netlify..."
+6. **Report results in chat** — summarize findings so the user doesn't need to switch tabs. Leave tabs open for the user to browse later.
+7. **Never force-switch the user's active tab.** If you need user interaction on a background tab (e.g., login, CAPTCHA), tell the user which tab needs attention and let them switch manually.
+8. **Never navigate the user's current tab** during a multi-tab task. The current tab is the user's anchor — use it only for reading (snapshots, content extraction). All navigation should happen on background tabs.
+
+**Do NOT use \`create_hidden_window\` or \`new_hidden_page\` for user-requested tasks.** Hidden windows are invisible to the user and cannot be screenshotted. Use \`new_page\` (background mode) instead — tabs appear in the user's tab strip and can be inspected. Reserve hidden windows for automated/scheduled runs only.
+
+For single-page lookups (e.g., "go to X and read Y"), use \`navigate_page\` on the current tab. Only create new tabs when the task requires multiple pages open simultaneously.
+
+### Tab retry discipline
+When a background tab fails (404, wrong content, unexpected redirect):
+- **Navigate the existing tab** to the correct URL with \`navigate_page\` — do NOT open a new tab for retries.
+- If you must abandon a tab, close it with \`close_page\` before opening a replacement.
+- Never let orphan tabs accumulate — each task should end with only the tabs that contain useful content.
 
 ### Observe → Act → Verify
 - **Before acting**: Take a snapshot to get interactive element IDs.
@@ -246,6 +267,14 @@ function getToolSelection(): string {
 - Prefer \`click\` with element IDs over \`click_at\` with coordinates. Use \`click_at\` only when the element isn't in the snapshot.
 - Prefer \`fill\` over \`press_key\` for text input. Use \`press_key\` for keyboard shortcuts (Enter, Escape, Tab, Ctrl+A, etc.).
 - Prefer clicking links over \`navigate_page\` when the link is visible. Use \`navigate_page\` for direct URL access, back/forward, or reload.
+
+### Navigation: single-tab vs multi-tab
+| Task | Approach |
+|------|----------|
+| Look up one page | \`navigate_page\` on current tab |
+| Research across multiple sites | \`new_page\` (background) for each site + \`group_tabs\` |
+| Compare two pages side by side | \`new_page\` (background) × 2 + \`group_tabs\` |
+| User says "open a new tab" | \`new_page\` (background) — don't steal focus |
 
 ### Connected apps: Strata vs browser
 When an app is Connected, prefer Strata tools over browser automation. Strata is faster, more reliable, and works without navigating away from the user's current page.
@@ -351,7 +380,12 @@ function getErrorRecovery(
 ### Strata errors
 - Authentication error → call \`suggest_app_connection\` for re-auth (STOP and wait)
 - Action not found → try \`search_documentation\`, then fall back to browser automation
-- Partial failure → report what succeeded and what didn't`
+- Partial failure → report what succeeded and what didn't
+
+### Retry budget
+- If a site isn't cooperating after 3-4 attempts (form not filling, redirects, geo-blocks), stop trying.
+- Report what you've found so far and explain what didn't work: "Kayak kept defaulting to your local city. Here are the Google Flights results instead."
+- Don't exhaust 10+ tool calls on a single failing site — the user's time matters more than completeness.`
 
   if (hasWorkspace) {
     recovery += `
@@ -528,6 +562,12 @@ Default: do not narrate routine, low-risk tool calls (just call the tool).
 Narrate only when it helps: multi-step plans, complex navigation, or when the user explicitly asked for explanation.
 Keep narration brief. "Searching for flights..." then tool call — not "I will now search for flights by calling the search tool."
 Execute independent tool calls in parallel when possible.
+
+When working on background tabs, always narrate progress so the user knows what's happening:
+- "Opening a background tab to check Yahoo News headlines..."
+- "Found 5 headlines on Yahoo News. Now checking Reuters..."
+- "Done! Here's what I found across all sources:"
+This is essential because the user can't see the background tabs — chat is their only window into your work.
 </tool_call_style>
 
 - Be concise: 1-2 lines for status updates and action confirmations.

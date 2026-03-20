@@ -24,6 +24,7 @@ export const useGetUserMCPIntegrations = () => {
 
   const query = useQuery({
     queryKey: [INTEGRATIONS_QUERY_KEY, agentServerUrl],
+    // biome-ignore lint/style/noNonNullAssertion: guarded by enabled
     queryFn: () => getUserMCPIntegrations(agentServerUrl!),
     enabled: !!agentServerUrl,
     refetchOnWindowFocus: true,

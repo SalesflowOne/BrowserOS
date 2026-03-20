@@ -1,5 +1,6 @@
 import { AlertCircle, Eye, Pencil, Plus, Trash2, Wand2 } from 'lucide-react'
 import { type FC, useEffect, useState } from 'react'
+import Markdown from 'react-markdown'
 import { toast } from 'sonner'
 import {
   AlertDialog,
@@ -26,7 +27,6 @@ import { Label } from '@/components/ui/label'
 import { MarkdownEditor } from '@/components/ui/MarkdownEditor'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import Markdown from 'react-markdown'
 import { type SkillDetail, type SkillMeta, useSkills } from './useSkills'
 
 const loadingSkillCards = [
@@ -330,9 +330,15 @@ const SkillCard: FC<{
           className="-ml-2 h-7 px-2 text-muted-foreground hover:bg-transparent hover:text-foreground"
         >
           {skill.builtIn ? (
-            <><Eye className="size-3.5" />View</>
+            <>
+              <Eye className="size-3.5" />
+              View
+            </>
           ) : (
-            <><Pencil className="size-3.5" />Edit</>
+            <>
+              <Pencil className="size-3.5" />
+              Edit
+            </>
           )}
         </Button>
         {!skill.builtIn ? (
@@ -408,7 +414,11 @@ const SkillDialog: FC<{
       <DialogContent className="flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl">
         <DialogHeader className="border-b px-6 py-5">
           <DialogTitle>
-            {readOnly ? 'View Skill' : editingSkill ? 'Edit Skill' : 'Create Skill'}
+            {readOnly
+              ? 'View Skill'
+              : editingSkill
+                ? 'Edit Skill'
+                : 'Create Skill'}
           </DialogTitle>
           <DialogDescription>
             {readOnly
@@ -472,7 +482,7 @@ const SkillDialog: FC<{
             </div>
 
             {readOnly ? (
-              <div className="prose prose-sm mt-4 min-h-[320px] max-w-none flex-1 overflow-y-auto rounded-md border p-4 text-sm dark:prose-invert">
+              <div className="prose prose-sm dark:prose-invert mt-4 min-h-[320px] max-w-none flex-1 overflow-y-auto rounded-md border p-4 text-sm">
                 <Markdown>{content}</Markdown>
               </div>
             ) : (

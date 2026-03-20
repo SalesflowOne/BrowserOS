@@ -12,6 +12,7 @@ import {
 import { AnimatePresence, motion } from 'motion/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
+import { ChatProviderSelector } from '@/components/chat/ChatProviderSelector'
 import { AppSelector } from '@/components/elements/AppSelector'
 import {
   GlowingBorder,
@@ -27,6 +28,7 @@ import {
 } from '@/components/ui/tooltip'
 import { McpServerIcon } from '@/entrypoints/app/connect-mcp/McpServerIcon'
 import { useGetUserMCPIntegrations } from '@/entrypoints/app/connect-mcp/useGetUserMCPIntegrations'
+import { useChatSessionContext } from '@/entrypoints/sidepanel/layout/ChatSessionContext'
 import { Feature } from '@/lib/browseros/capabilities'
 import { useCapabilities } from '@/lib/browseros/useCapabilities'
 import {
@@ -44,6 +46,8 @@ import {
   NEWTAB_TABS_OPENED_EVENT,
   NEWTAB_WORKSPACE_OPENED_EVENT,
 } from '@/lib/constants/analyticsEvents'
+import { BrowserOSIcon, ProviderIcon } from '@/lib/llm-providers/providerIcons'
+import type { ProviderType } from '@/lib/llm-providers/types'
 import { useMcpServers } from '@/lib/mcp/mcpServerStorage'
 import { useSyncRemoteIntegrations } from '@/lib/mcp/useSyncRemoteIntegrations'
 import { openSidePanelWithSearch } from '@/lib/messaging/sidepanel/openSidepanelWithSearch'
@@ -90,6 +94,8 @@ export const NewTab = () => {
   })
   const { selectedFolder } = useWorkspace()
   const { supports } = useCapabilities()
+  const { providers, selectedProvider, handleSelectProvider } =
+    useChatSessionContext()
   const { servers: mcpServers } = useMcpServers()
   const { data: userMCPIntegrations } = useGetUserMCPIntegrations()
   useSyncRemoteIntegrations()
@@ -523,6 +529,34 @@ export const NewTab = () => {
             {mounted && (
               <div className="flex items-center justify-between border-border/50 border-t px-5 py-3">
                 <div className="flex items-center gap-1">
+                  {selectedProvider && (
+                    <ChatProviderSelector
+                      providers={providers}
+                      selectedProvider={selectedProvider}
+                      onSelectProvider={handleSelectProvider}
+                    >
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title={selectedProvider.name}
+                        className={cn(
+                          'h-8 w-8 rounded-lg transition-all',
+                          'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+                          'data-[state=open]:bg-accent',
+                        )}
+                      >
+                        {selectedProvider.type === 'browseros' ? (
+                          <BrowserOSIcon size={16} />
+                        ) : (
+                          <ProviderIcon
+                            type={selectedProvider.type as ProviderType}
+                            size={16}
+                          />
+                        )}
+                      </Button>
+                    </ChatProviderSelector>
+                  )}
+
                   {supports(Feature.WORKSPACE_FOLDER_SUPPORT) && (
                     <WorkspaceSelector>
                       <Button

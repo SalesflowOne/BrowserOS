@@ -15,6 +15,8 @@ export type ProviderType =
   | 'browseros'
   | 'moonshot'
   | 'chatgpt-pro'
+  | 'github-copilot'
+  | 'qwen-code'
 
 /**
  * LLM Provider configuration

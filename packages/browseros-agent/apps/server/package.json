@@ -1,6 +1,6 @@
 {
   "name": "@browseros/server",
-  "version": "0.0.76",
+  "version": "0.0.77",
   "description": "BrowserOS server",
   "type": "module",
   "main": "./src/index.ts",
@@ -63,8 +63,8 @@
     "@ai-sdk/amazon-bedrock": "^4.0.62",
     "@ai-sdk/anthropic": "^3.0.46",
     "@ai-sdk/azure": "^3.0.31",
-    "@ai-sdk/google": "^3.0.30",
     "@ai-sdk/devtools": "^0.0.15",
+    "@ai-sdk/google": "^3.0.30",
     "@ai-sdk/mcp": "^1.0.21",
     "@ai-sdk/openai": "^3.0.30",
     "@ai-sdk/openai-compatible": "^2.0.30",
@@ -93,6 +93,7 @@
     "pino": "^9.6.0",
     "posthog-node": "^4.17.0",
     "puppeteer-core": "24.23.0",
+    "sharp": "^0.34.5",
     "ws": "^8.18.0",
     "zod": "^3.24.2",
     "zod-from-json-schema": "^0.1.0"

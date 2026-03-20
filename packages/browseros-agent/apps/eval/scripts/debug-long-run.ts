@@ -49,10 +49,13 @@ async function callMcpTool(
     const result = await Promise.race([toolPromise, timeoutPromise])
     const duration = Date.now() - start
 
-    if ((result as any).isError) {
+    const res = result as Record<string, unknown>
+    if (res.isError) {
+      const content = res.content as
+        | Array<{ type: string; text?: string }>
+        | undefined
       const errorText =
-        (result as any).content?.find((c: any) => c.type === 'text')?.text ||
-        'Unknown error'
+        content?.find((c) => c.type === 'text')?.text || 'Unknown error'
       return { success: false, error: errorText, duration }
     }
 
@@ -96,13 +99,19 @@ async function main() {
     })
 
     // Try structured content first
-    windowId = (result as any).structuredContent?.windowId
-    tabId = (result as any).structuredContent?.tabId
+    const createRes = result as Record<string, unknown>
+    const structured = createRes.structuredContent as
+      | Record<string, number>
+      | undefined
+    windowId = structured?.windowId ?? 0
+    tabId = structured?.tabId ?? 0
 
     // Fall back to parsing text
     if (!windowId || !tabId) {
-      const text =
-        (result as any).content?.find((c: any) => c.type === 'text')?.text || ''
+      const content = createRes.content as
+        | Array<{ type: string; text?: string }>
+        | undefined
+      const text = content?.find((c) => c.type === 'text')?.text || ''
       const windowMatch = text.match(/window\s+(\d+)/i)
       const tabMatch =
         text.match(/Tab ID:\s*(\d+)/i) || text.match(/tab\s+(\d+)/i)

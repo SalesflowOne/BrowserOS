@@ -121,14 +121,17 @@ export const navigate_page = defineTool({
 
 export const new_page = defineTool({
   name: 'new_page',
-  description: 'Open a new page (tab) and navigate to a URL',
+  description:
+    'Open a new page (tab) and navigate to a URL. Opens in background by default to keep the user on their current page. Use group_tabs to organize related tabs.',
   input: z.object({
     url: z.string().describe('URL to open'),
     hidden: z.boolean().default(false).describe('Create as hidden tab'),
     background: z
       .boolean()
-      .default(false)
-      .describe('Open in background without activating'),
+      .default(true)
+      .describe(
+        'Open in background without stealing focus. Set to false only when user needs to see the tab immediately.',
+      ),
     windowId: z.number().optional().describe('Window ID to create tab in'),
   }),
   output: z.object({
@@ -140,8 +143,8 @@ export const new_page = defineTool({
   }),
   handler: async (args, ctx, response) => {
     const pageId = await ctx.browser.newPage(args.url, {
-      hidden: args.hidden || undefined,
-      background: args.background || undefined,
+      hidden: args.hidden ? true : undefined,
+      background: args.background === false ? false : true,
       windowId: args.windowId,
     })
     response.text(`Opened new page: ${args.url}\nPage ID: ${pageId}`)

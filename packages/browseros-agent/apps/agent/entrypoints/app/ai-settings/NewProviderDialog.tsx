@@ -62,6 +62,8 @@ const providerTypeEnum = z.enum([
   'bedrock',
   'browseros',
   'chatgpt-pro',
+  'github-copilot',
+  'qwen-code',
 ])
 
 /**
@@ -131,8 +133,12 @@ export const providerFormSchema = z
         })
       }
     }
-    // ChatGPT Pro: no credentials needed (server-managed OAuth)
-    else if (data.type === 'chatgpt-pro') {
+    // OAuth providers: no credentials needed (server-managed)
+    else if (
+      data.type === 'chatgpt-pro' ||
+      data.type === 'github-copilot' ||
+      data.type === 'qwen-code'
+    ) {
       // No validation needed — OAuth tokens are on the server
     }
     // Other providers: require baseUrl
@@ -190,6 +196,11 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
   const kimiLaunch = useKimiLaunch()
 
   const filteredProviderTypeOptions = providerTypeOptions.filter((opt) => {
+    if (opt.value === 'chatgpt-pro')
+      return supports(Feature.CHATGPT_PRO_SUPPORT)
+    if (opt.value === 'github-copilot')
+      return supports(Feature.GITHUB_COPILOT_SUPPORT)
+    if (opt.value === 'qwen-code') return supports(Feature.QWEN_CODE_SUPPORT)
     if (opt.value === 'moonshot')
       return kimiLaunch || initialValues?.type === 'moonshot'
     if (opt.value === 'openai-compatible') {
@@ -377,8 +388,13 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
   const canTest = (): boolean => {
     if (!watchedModelId) return false
 
-    // ChatGPT Pro: always testable (server has the OAuth token)
-    if (watchedType === 'chatgpt-pro') return true
+    // OAuth providers: always testable (server has the OAuth token)
+    if (
+      watchedType === 'chatgpt-pro' ||
+      watchedType === 'github-copilot' ||
+      watchedType === 'qwen-code'
+    )
+      return true
 
     if (watchedType === 'azure') {
       return !!(watchedResourceName || watchedBaseUrl) && !!watchedApiKey
@@ -461,6 +477,15 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
   }
 
   const renderProviderSpecificFields = () => {
+    // OAuth-only providers (no API key needed)
+    if (watchedType === 'github-copilot' || watchedType === 'qwen-code') {
+      const name = watchedType === 'github-copilot' ? 'GitHub' : 'Qwen Code'
+      return (
+        <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-green-700 text-sm dark:border-green-800 dark:bg-green-950 dark:text-green-300">
+          Credentials are managed via {name} OAuth. No API key needed.
+        </div>
+      )
+    }
     // ChatGPT Pro: OAuth credentials + Codex reasoning settings
     if (watchedType === 'chatgpt-pro') {
       return (

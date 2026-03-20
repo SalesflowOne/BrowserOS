@@ -45,6 +45,12 @@ export enum Feature {
   MEMORY_SUPPORT = 'MEMORY_SUPPORT',
   // Skills page: agent skills viewer and editor
   SKILLS_SUPPORT = 'SKILLS_SUPPORT',
+  // ChatGPT Pro OAuth LLM provider
+  CHATGPT_PRO_SUPPORT = 'CHATGPT_PRO_SUPPORT',
+  // GitHub Copilot OAuth LLM provider
+  GITHUB_COPILOT_SUPPORT = 'GITHUB_COPILOT_SUPPORT',
+  // Qwen Code OAuth LLM provider
+  QWEN_CODE_SUPPORT = 'QWEN_CODE_SUPPORT',
 }
 
 /**
@@ -72,6 +78,9 @@ const FEATURE_CONFIG: { [K in Feature]: FeatureConfig } = {
   [Feature.VERTICAL_TABS_SUPPORT]: { minBrowserOSVersion: '0.42.0.0' },
   [Feature.MEMORY_SUPPORT]: { minServerVersion: '0.0.73' },
   [Feature.SKILLS_SUPPORT]: { minBrowserOSVersion: '0.43.0.0' },
+  [Feature.CHATGPT_PRO_SUPPORT]: { minServerVersion: '0.0.77' },
+  [Feature.GITHUB_COPILOT_SUPPORT]: { minServerVersion: '0.0.77' },
+  [Feature.QWEN_CODE_SUPPORT]: { minServerVersion: '0.0.77' },
 }
 
 function parseVersion(version: string): number[] {

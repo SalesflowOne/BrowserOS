@@ -8,8 +8,9 @@ import {
   Ollama,
   OpenAI,
   OpenRouter,
+  Qwen,
 } from '@lobehub/icons'
-import { Bot } from 'lucide-react'
+import { Bot, Github } from 'lucide-react'
 import type { FC, SVGProps } from 'react'
 import ProductLogoSvg from '@/assets/product_logo.svg'
 import type { ProviderType } from './types'
@@ -33,6 +34,8 @@ const providerIconMap: Record<ProviderType, IconComponent | null> = {
   browseros: null,
   moonshot: Kimi,
   'chatgpt-pro': OpenAI,
+  'github-copilot': Github,
+  'qwen-code': Qwen,
 }
 
 interface ProviderIconProps {

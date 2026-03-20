@@ -54,6 +54,7 @@ export const TIMEOUTS = {
   OAUTH_TOKEN_EXPIRY_BUFFER: 300_000,
   OAUTH_POLL_INTERVAL: 2_000,
   OAUTH_POLL_TIMEOUT: 300_000,
+  DEVICE_CODE_POLL_SAFETY_MARGIN: 3_000,
 } as const
 
 export type TimeoutKey = keyof typeof TIMEOUTS

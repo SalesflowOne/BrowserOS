@@ -4,11 +4,13 @@ import { createAzure } from '@ai-sdk/azure'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { createOpenAI } from '@ai-sdk/openai'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
+import { EXTERNAL_URLS } from '@browseros/shared/constants/urls'
 import { LLM_PROVIDERS } from '@browseros/shared/schemas/llm'
 import { createOpenRouter } from '@openrouter/ai-sdk-provider'
 import type { LanguageModel } from 'ai'
 import { createBrowserOSFetch } from '../lib/browseros-fetch'
 import { createCodexFetch } from '../lib/clients/oauth/codex-fetch'
+import { createCopilotFetch } from '../lib/clients/oauth/copilot-fetch'
 import { logger } from '../lib/logger'
 import { createOpenRouterCompatibleFetch } from '../lib/openrouter-fetch'
 import type { ResolvedAgentConfig } from './types'
@@ -162,6 +164,30 @@ function createMoonshotFactory(
   })
 }
 
+function createQwenCodeFactory(
+  config: ResolvedAgentConfig,
+): (modelId: string) => unknown {
+  if (!config.apiKey) throw new Error('Qwen Code requires OAuth authentication')
+  return createOpenAICompatible({
+    name: 'qwen-code',
+    baseURL: EXTERNAL_URLS.QWEN_CODE_API,
+    apiKey: config.apiKey,
+  })
+}
+
+function createGitHubCopilotFactory(
+  config: ResolvedAgentConfig,
+): (modelId: string) => unknown {
+  if (!config.apiKey)
+    throw new Error('GitHub Copilot requires OAuth authentication')
+  return createOpenAICompatible({
+    name: 'github-copilot',
+    baseURL: EXTERNAL_URLS.GITHUB_COPILOT_API,
+    apiKey: config.apiKey,
+    fetch: createCopilotFetch() as typeof globalThis.fetch,
+  })
+}
+
 function createChatGPTProFactory(
   config: ResolvedAgentConfig,
 ): (modelId: string) => unknown {
@@ -186,6 +212,8 @@ const PROVIDER_FACTORIES: Record<string, ProviderFactory> = {
   [LLM_PROVIDERS.OPENAI_COMPATIBLE]: createOpenAICompatibleFactory,
   [LLM_PROVIDERS.MOONSHOT]: createMoonshotFactory,
   [LLM_PROVIDERS.CHATGPT_PRO]: createChatGPTProFactory,
+  [LLM_PROVIDERS.GITHUB_COPILOT]: createGitHubCopilotFactory,
+  [LLM_PROVIDERS.QWEN_CODE]: createQwenCodeFactory,
 }
 
 export function createLanguageModel(

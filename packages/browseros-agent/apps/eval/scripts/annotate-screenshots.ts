@@ -173,7 +173,9 @@ async function annotateScreenshot(
 
   const image = sharp(inputPath)
   const metadata = await image.metadata()
+  // biome-ignore lint/style/noNonNullAssertion: sharp metadata always has dimensions for valid images
   const imgWidth = metadata.width!
+  // biome-ignore lint/style/noNonNullAssertion: sharp metadata always has dimensions for valid images
   const imgHeight = metadata.height!
 
   const sx = Math.round(action.cssX * dpr)

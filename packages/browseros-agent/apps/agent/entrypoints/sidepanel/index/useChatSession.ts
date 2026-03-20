@@ -510,6 +510,7 @@ export const useChatSession = (options?: ChatSessionOptions) => {
       if (pending.action) {
         setTextToAction((prev) => {
           const next = new Map(prev)
+          // biome-ignore lint/style/noNonNullAssertion: guarded by if (pending.action) above
           next.set(pending.text, pending.action!)
           return next
         })

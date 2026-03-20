@@ -15,6 +15,11 @@ export interface OAuthProviderConfig {
   scopes: string[]
   extraAuthParams?: Record<string, string>
   upstreamLLMProvider: string
+  authFlow?: 'pkce' | 'device-code'
+  /** Device code flow uses form-urlencoded instead of JSON */
+  deviceCodeContentType?: 'json' | 'form'
+  /** Device code flow requires PKCE code_challenge/code_verifier */
+  deviceCodeRequiresPKCE?: boolean
 }
 
 export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
@@ -31,6 +36,28 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
       originator: 'browseros',
     },
     upstreamLLMProvider: 'openai',
+  },
+  'github-copilot': {
+    id: 'github-copilot',
+    name: 'GitHub Copilot',
+    clientId: 'Ov23li8tweQw6odWQebz',
+    authEndpoint: EXTERNAL_URLS.GITHUB_DEVICE_CODE,
+    tokenEndpoint: EXTERNAL_URLS.GITHUB_OAUTH_TOKEN,
+    scopes: ['read:user'],
+    upstreamLLMProvider: 'github-copilot',
+    authFlow: 'device-code',
+  },
+  'qwen-code': {
+    id: 'qwen-code',
+    name: 'Qwen Code',
+    clientId: 'f0304373b74a44d2b584a3fb70ca9e56',
+    authEndpoint: EXTERNAL_URLS.QWEN_DEVICE_CODE,
+    tokenEndpoint: EXTERNAL_URLS.QWEN_OAUTH_TOKEN,
+    scopes: ['openid', 'profile', 'email', 'model.completion'],
+    upstreamLLMProvider: 'qwen-code',
+    authFlow: 'device-code',
+    deviceCodeContentType: 'form',
+    deviceCodeRequiresPKCE: true,
   },
 }
 

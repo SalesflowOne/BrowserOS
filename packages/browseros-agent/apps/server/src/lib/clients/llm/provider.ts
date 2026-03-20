@@ -12,6 +12,7 @@ import { createAzure } from '@ai-sdk/azure'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { createOpenAI } from '@ai-sdk/openai'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
+import { EXTERNAL_URLS } from '@browseros/shared/constants/urls'
 import { LLM_PROVIDERS } from '@browseros/shared/schemas/llm'
 import { createOpenRouter } from '@openrouter/ai-sdk-provider'
 import type { LanguageModel } from 'ai'
@@ -19,6 +20,7 @@ import { createBrowserOSFetch } from '../../browseros-fetch'
 import { logger } from '../../logger'
 import { createOpenRouterCompatibleFetch } from '../../openrouter-fetch'
 import { createCodexFetch } from '../oauth/codex-fetch'
+import { createCopilotFetch } from '../oauth/copilot-fetch'
 import type { ResolvedLLMConfig } from './types'
 
 type ProviderFactory = (config: ResolvedLLMConfig) => LanguageModel
@@ -146,6 +148,26 @@ function createMoonshotModel(config: ResolvedLLMConfig): LanguageModel {
   })(config.model)
 }
 
+function createQwenCodeModel(config: ResolvedLLMConfig): LanguageModel {
+  if (!config.apiKey) throw new Error('Qwen Code requires OAuth authentication')
+  return createOpenAICompatible({
+    name: 'qwen-code',
+    baseURL: EXTERNAL_URLS.QWEN_CODE_API,
+    apiKey: config.apiKey,
+  })(config.model)
+}
+
+function createGitHubCopilotModel(config: ResolvedLLMConfig): LanguageModel {
+  if (!config.apiKey)
+    throw new Error('GitHub Copilot requires OAuth authentication')
+  return createOpenAICompatible({
+    name: 'github-copilot',
+    baseURL: EXTERNAL_URLS.GITHUB_COPILOT_API,
+    apiKey: config.apiKey,
+    fetch: createCopilotFetch() as typeof globalThis.fetch,
+  })(config.model)
+}
+
 function createChatGPTProModel(config: ResolvedLLMConfig): LanguageModel {
   if (!config.apiKey)
     throw new Error('ChatGPT Plus/Pro requires OAuth authentication')
@@ -168,6 +190,8 @@ const PROVIDER_FACTORIES: Record<string, ProviderFactory> = {
   [LLM_PROVIDERS.OPENAI_COMPATIBLE]: createOpenAICompatibleModel,
   [LLM_PROVIDERS.MOONSHOT]: createMoonshotModel,
   [LLM_PROVIDERS.CHATGPT_PRO]: createChatGPTProModel,
+  [LLM_PROVIDERS.GITHUB_COPILOT]: createGitHubCopilotModel,
+  [LLM_PROVIDERS.QWEN_CODE]: createQwenCodeModel,
 }
 
 export function createLLMProvider(config: ResolvedLLMConfig): LanguageModel {
