@@ -47,21 +47,37 @@ function parseDataUrl(dataUrl: string) {
   return { mime, buffer: Buffer.from(b64, 'base64') }
 }
 
+async function withMockFetch<T>(
+  fn: (calls: { input: RequestInfo | URL; init?: RequestInit }[]) => Promise<T>,
+): Promise<T> {
+  const calls: { input: RequestInfo | URL; init?: RequestInit }[] = []
+  const original = globalThis.fetch
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({ input, init })
+    return new Response('ok')
+  }) as typeof fetch
+  try {
+    return await fn(calls)
+  } finally {
+    globalThis.fetch = original
+  }
+}
+
+async function resizeViaFetch(dataUrl: string): Promise<string> {
+  return withMockFetch(async (calls) => {
+    const copilotFetch = createCopilotFetch()
+    await copilotFetch('https://api.example.com', {
+      body: makeImageBody([dataUrl]),
+    })
+    const parsed = JSON.parse(calls[0].init?.body as string)
+    return parsed.messages[0].content[0].image_url.url
+  })
+}
+
 describe('createCopilotFetch', () => {
   it('sets Copilot headers on every request', async () => {
-    const copilotFetch = createCopilotFetch()
-    const calls: { input: RequestInfo | URL; init?: RequestInit }[] = []
-
-    const originalFetch = globalThis.fetch
-    globalThis.fetch = (async (
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ) => {
-      calls.push({ input, init })
-      return new Response('ok')
-    }) as typeof fetch
-
-    try {
+    await withMockFetch(async (calls) => {
+      const copilotFetch = createCopilotFetch()
       await copilotFetch('https://api.example.com', {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: [{ role: 'user', content: 'hi' }] }),
@@ -71,25 +87,12 @@ describe('createCopilotFetch', () => {
       const headers = new Headers(calls[0].init?.headers as HeadersInit)
       assert.strictEqual(headers.get('Openai-Intent'), 'conversation-edits')
       assert.strictEqual(headers.get('x-initiator'), 'user')
-    } finally {
-      globalThis.fetch = originalFetch
-    }
+    })
   })
 
   it('sets Copilot-Vision-Request header when images present', async () => {
-    const copilotFetch = createCopilotFetch()
-    const calls: { input: RequestInfo | URL; init?: RequestInit }[] = []
-
-    const originalFetch = globalThis.fetch
-    globalThis.fetch = (async (
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ) => {
-      calls.push({ input, init })
-      return new Response('ok')
-    }) as typeof fetch
-
-    try {
+    await withMockFetch(async (calls) => {
+      const copilotFetch = createCopilotFetch()
       const dataUrl = await createTestImage(100, 100)
       await copilotFetch('https://api.example.com', {
         body: makeImageBody([dataUrl]),
@@ -97,33 +100,11 @@ describe('createCopilotFetch', () => {
 
       const headers = new Headers(calls[0].init?.headers as HeadersInit)
       assert.strictEqual(headers.get('Copilot-Vision-Request'), 'true')
-    } finally {
-      globalThis.fetch = originalFetch
-    }
+    })
   })
 })
 
 describe('image resizing', () => {
-  async function resizeViaFetch(dataUrl: string): Promise<string> {
-    let capturedBody = ''
-    const originalFetch = globalThis.fetch
-    globalThis.fetch = (async (_: RequestInfo | URL, init?: RequestInit) => {
-      capturedBody = init?.body as string
-      return new Response('ok')
-    }) as typeof fetch
-
-    try {
-      const copilotFetch = createCopilotFetch()
-      await copilotFetch('https://api.example.com', {
-        body: makeImageBody([dataUrl]),
-      })
-      const parsed = JSON.parse(capturedBody)
-      return parsed.messages[0].content[0].image_url.url
-    } finally {
-      globalThis.fetch = originalFetch
-    }
-  }
-
   it('does not resize images already within limits', async () => {
     const dataUrl = await createTestImage(800, 600)
     const result = await resizeViaFetch(dataUrl)
@@ -131,14 +112,15 @@ describe('image resizing', () => {
   })
 
   it('scales down when longest side exceeds 2048', async () => {
+    // 4096x2048: step 1 → 2048x1024, step 2 → 1536x768
     const dataUrl = await createTestImage(4096, 2048)
     const result = await resizeViaFetch(dataUrl)
 
     assert.notStrictEqual(result, dataUrl)
     const { buffer } = parseDataUrl(result)
     const resized = await Jimp.fromBuffer(buffer)
-    assert.ok(resized.width <= 2048)
-    assert.ok(resized.height <= 1024)
+    assert.strictEqual(resized.width, 1536)
+    assert.strictEqual(resized.height, 768)
   })
 
   it('scales down when shortest side exceeds 768', async () => {
@@ -166,13 +148,13 @@ describe('image resizing', () => {
   })
 
   it('applies both scaling steps (long side then short side)', async () => {
-    // 4000x3000: step 1 scales to 2048x1536, step 2 scales 1536→768 so 1024x768
+    // 4000x3000: step 1 → 2048x1536, step 2 → 1024x768
     const dataUrl = await createTestImage(4000, 3000)
     const result = await resizeViaFetch(dataUrl)
 
     const { buffer } = parseDataUrl(result)
     const resized = await Jimp.fromBuffer(buffer)
-    assert.ok(resized.width <= 2048)
-    assert.ok(Math.min(resized.width, resized.height) <= 768)
+    assert.strictEqual(resized.width, 1024)
+    assert.strictEqual(resized.height, 768)
   })
 })
