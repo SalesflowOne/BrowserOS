@@ -1,4 +1,5 @@
-import { mkdir, readdir, rm, stat, unlink, writeFile } from 'node:fs/promises'
+import { unlinkSync } from 'node:fs'
+import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { PATHS } from '@browseros/shared/constants/paths'
@@ -44,9 +45,9 @@ export async function writeServerConfig(port: number): Promise<void> {
   await writeFile(getServerConfigPath(), JSON.stringify(config, null, 2) + '\n')
 }
 
-export async function removeServerConfig(): Promise<void> {
+export function removeServerConfigSync(): void {
   try {
-    await unlink(getServerConfigPath())
+    unlinkSync(getServerConfigPath())
   } catch {
     // File may not exist or already be removed
   }

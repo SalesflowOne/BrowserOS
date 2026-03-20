@@ -21,7 +21,7 @@ import { INLINED_ENV } from './env'
 import {
   cleanOldSessions,
   ensureBrowserosDir,
-  removeServerConfig,
+  removeServerConfigSync,
   writeServerConfig,
 } from './lib/browseros-dir'
 import { initializeDb } from './lib/db'
@@ -114,7 +114,13 @@ export class Application {
       this.handleStartupError('HTTP server', this.config.serverPort, error)
     }
 
-    await writeServerConfig(this.config.serverPort)
+    try {
+      await writeServerConfig(this.config.serverPort)
+    } catch (error) {
+      logger.warn('Failed to write server config for auto-discovery', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
 
     logger.info(
       `HTTP server listening on http://127.0.0.1:${this.config.serverPort}`,
@@ -132,7 +138,7 @@ export class Application {
   stop(reason?: string): void {
     logger.info('Shutting down server...', { reason })
     stopSkillSync()
-    removeServerConfig().catch(() => {})
+    removeServerConfigSync()
 
     // Immediate exit without graceful shutdown. Chromium may kill us on update/restart,
     // and we need to free the port instantly so the HTTP port doesn't keep switching.
