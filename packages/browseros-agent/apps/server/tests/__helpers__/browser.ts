@@ -16,6 +16,7 @@ export interface BrowserConfig {
   binaryPath: string
   userDataDir: string
   headless: boolean
+  extraArgs: string[]
 }
 
 interface BrowserState {
@@ -25,6 +26,12 @@ interface BrowserState {
 }
 
 let browserState: BrowserState | null = null
+
+function shouldLogBrowserOutput(): boolean {
+  return (
+    process.env.CI === 'true' || process.env.BROWSEROS_TEST_DEBUG === 'true'
+  )
+}
 
 export async function isBrowserRunning(cdpPort: number): Promise<boolean> {
   try {
@@ -74,6 +81,7 @@ export async function spawnBrowser(
       '--show-component-extension-options',
       '--enable-logging=stderr',
       ...(config.headless ? ['--headless=new'] : []),
+      ...config.extraArgs,
       `--user-data-dir=${config.userDataDir}`,
       // TODO: replace with --browseros-cdp-port once we fix the browseros bug
       `--remote-debugging-port=${config.cdpPort}`,
@@ -86,14 +94,18 @@ export async function spawnBrowser(
     },
   )
 
-  browserProcess.stdout?.on('data', (_data) => {
-    // Uncomment for debugging
-    // console.log(`[BROWSER] ${_data.toString().trim()}`)
+  browserProcess.stdout?.on('data', (data) => {
+    if (!shouldLogBrowserOutput()) {
+      return
+    }
+    console.log(`[BROWSER] ${data.toString().trim()}`)
   })
 
-  browserProcess.stderr?.on('data', (_data) => {
-    // Uncomment for debugging
-    // console.log(`[BROWSER] ${_data.toString().trim()}`)
+  browserProcess.stderr?.on('data', (data) => {
+    if (!shouldLogBrowserOutput()) {
+      return
+    }
+    console.error(`[BROWSER] ${data.toString().trim()}`)
   })
 
   browserProcess.on('error', (error) => {

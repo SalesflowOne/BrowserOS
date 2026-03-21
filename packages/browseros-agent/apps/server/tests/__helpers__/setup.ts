@@ -132,6 +132,7 @@ export async function ensureBrowserOS(
     binaryPath: runtimePlan.binaryPath,
     userDataDir: runtimePlan.userDataDir,
     headless: runtimePlan.headless,
+    extraArgs: runtimePlan.extraArgs,
   }
   await spawnBrowser(browserConfig)
 

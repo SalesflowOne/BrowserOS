@@ -20,7 +20,18 @@ export interface TestRuntimePlan {
   userDataDir: string
   binaryPath: string
   headless: boolean
+  extraArgs: string[]
   usesFixedPorts: boolean
+}
+
+function parseExtraArgs(value: string | undefined): string[] {
+  if (!value) {
+    return []
+  }
+  return value
+    .split(/\s+/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
 }
 
 function parsePort(
@@ -137,12 +148,14 @@ export async function createTestRuntimePlan(): Promise<TestRuntimePlan> {
   const resolvedPorts = await resolveRuntimePorts()
   const userDataDir = mkdtempSync(join(tmpdir(), 'browseros-test-'))
   const headless = process.env.BROWSEROS_TEST_HEADLESS === 'true'
+  const extraArgs = parseExtraArgs(process.env.BROWSEROS_TEST_EXTRA_ARGS)
 
   return {
     ports: resolvedPorts.ports,
     userDataDir,
     binaryPath: DEFAULT_BINARY_PATH,
     headless,
+    extraArgs,
     usesFixedPorts: resolvedPorts.usesFixedPorts,
   }
 }

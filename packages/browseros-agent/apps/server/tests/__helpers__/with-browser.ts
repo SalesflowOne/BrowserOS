@@ -46,6 +46,7 @@ async function getOrCreateBrowser(): Promise<Browser> {
     binaryPath: runtimePlan.binaryPath,
     userDataDir: runtimePlan.userDataDir,
     headless: runtimePlan.headless,
+    extraArgs: runtimePlan.extraArgs,
   }
   await spawnBrowser(config)
 

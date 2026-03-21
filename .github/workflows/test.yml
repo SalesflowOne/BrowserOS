@@ -99,6 +99,7 @@ jobs:
         env:
           BROWSEROS_BINARY: ${{ github.workspace }}/packages/browseros-agent/.ci/bin/browseros
           BROWSEROS_TEST_HEADLESS: "true"
+          BROWSEROS_TEST_EXTRA_ARGS: --no-sandbox --disable-dev-shm-usage
         run: |
           set +e
           mkdir -p test-results
@@ -133,7 +134,7 @@ jobs:
         uses: mikepenz/action-junit-report@v5
         with:
           report_paths: packages/browseros-agent/${{ matrix.junit_path }}
-          check_name: Tests / ${{ matrix.suite }}
+          check_name: Test Report / ${{ matrix.suite }}
           fail_on_failure: false
 
       - name: Summarize suite result
@@ -144,5 +145,5 @@ jobs:
           else
             echo "### ${{ matrix.suite }} suite failed" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "See the \`Tests / ${{ matrix.suite }}\` check and uploaded JUnit artifact for details." >> "$GITHUB_STEP_SUMMARY"
+            echo "See the \`Test Report / ${{ matrix.suite }}\` check and uploaded JUnit artifact for details." >> "$GITHUB_STEP_SUMMARY"
           fi
