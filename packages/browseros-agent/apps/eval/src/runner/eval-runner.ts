@@ -242,6 +242,12 @@ function printTaskProgress(
   if (result.status === 'failed') {
     console.log(`  ERROR: ${result.error.message}`)
   } else if (isSuccessfulResult(result)) {
+    // Log agent errors (e.g., LLM API failures) even if task "completed"
+    if (result.agentResult.metadata.errors?.length) {
+      for (const err of result.agentResult.metadata.errors) {
+        console.log(`    ERROR [${err.source}]: ${err.message}`)
+      }
+    }
     for (const [name, gr] of Object.entries(result.graderResults)) {
       const icon = gr.pass ? 'PASS' : 'FAIL'
       console.log(`    ${name}: ${icon}`)
