@@ -701,6 +701,17 @@ export class Browser {
     }
   }
 
+  // --- Element Geometry ---
+
+  async getElementCenter(
+    page: number,
+    element: number,
+  ): Promise<{ x: number; y: number }> {
+    const session = await this.resolveSession(page)
+    await elements.scrollIntoView(session, element)
+    return elements.getElementCenter(session, element)
+  }
+
   // --- Input ---
 
   async click(
