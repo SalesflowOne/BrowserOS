@@ -99,12 +99,6 @@ describe('Application.start', () => {
           log: mock(() => {}),
         },
       }))
-      mock.module('../src/lib/rate-limiter/fetch-config', () => ({
-        fetchDailyRateLimit: mock(async () => 100),
-      }))
-      mock.module('../src/lib/rate-limiter/rate-limiter', () => ({
-        RateLimiter: class {},
-      }))
       mock.module('../src/lib/sentry', () => ({
         Sentry: {
           setContext: mock(() => {}),

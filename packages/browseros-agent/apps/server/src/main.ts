@@ -29,8 +29,6 @@ import { identity } from './lib/identity'
 import { logger } from './lib/logger'
 import { metrics } from './lib/metrics'
 import { isPortInUseError } from './lib/port-binding'
-import { fetchDailyRateLimit } from './lib/rate-limiter/fetch-config'
-import { RateLimiter } from './lib/rate-limiter/rate-limiter'
 import { Sentry } from './lib/sentry'
 import { seedSoulTemplate } from './lib/soul'
 import { migrateBuiltinSkills } from './skills/migrate'
@@ -58,8 +56,6 @@ export class Application {
     })
 
     await this.initCoreServices()
-
-    const dailyRateLimit = await fetchDailyRateLimit(identity.getBrowserOSId())
 
     const controller = new ControllerBackend({
       port: this.config.extensionPort,
@@ -104,7 +100,6 @@ export class Application {
         browserosId: identity.getBrowserOSId(),
         executionDir: this.config.executionDir,
         resourcesDir: this.config.resourcesDir,
-        rateLimiter: new RateLimiter(this.getDb(), dailyRateLimit),
         codegenServiceUrl: this.config.codegenServiceUrl,
         aiSdkDevtoolsEnabled: this.config.aiSdkDevtoolsEnabled,
 

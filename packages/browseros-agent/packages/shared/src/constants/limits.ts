@@ -6,12 +6,6 @@
  * Centralized limits and thresholds.
  */
 
-export const RATE_LIMITS = {
-  DEFAULT_DAILY: 5,
-  DEV_DAILY: 100,
-  TEST_DAILY: Infinity,
-} as const
-
 export const AGENT_LIMITS = {
   MAX_TURNS: 100,
   DEFAULT_CONTEXT_WINDOW: 200_000,
