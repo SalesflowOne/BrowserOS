@@ -269,13 +269,4 @@ export class Application {
     logger.info(`  HTTP Server: http://127.0.0.1:${this.config.serverPort}`)
     logger.info('')
   }
-
-  private getDb(): Database {
-    if (!this.db) {
-      throw new Error(
-        'Database not initialized. Call initCoreServices() first.',
-      )
-    }
-    return this.db
-  }
 }
