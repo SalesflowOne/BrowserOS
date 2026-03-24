@@ -1,6 +1,13 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { CheckCircle2, ExternalLink, Loader2, XCircle } from 'lucide-react'
-import { type FC, useEffect, useState } from 'react'
+import {
+  CheckCircle2,
+  ChevronDown,
+  ExternalLink,
+  Loader2,
+  SearchIcon,
+  XCircle,
+} from 'lucide-react'
+import { type FC, useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod/v3'
 import { Button } from '@/components/ui/button'
@@ -48,7 +55,11 @@ import { type TestResult, testProvider } from '@/lib/llm-providers/testProvider'
 import type { LlmProviderConfig, ProviderType } from '@/lib/llm-providers/types'
 import { track } from '@/lib/metrics/track'
 import { cn } from '@/lib/utils'
-import { getModelContextLength, getModelsForProvider } from './models'
+import {
+  getModelContextLength,
+  getModelsForProvider,
+  type ModelInfo,
+} from './models'
 
 const providerTypeEnum = z.enum([
   'moonshot',
@@ -169,6 +180,100 @@ function formatContextWindow(tokens: number): string {
     return `${(tokens / 1000000).toFixed(tokens % 1000000 === 0 ? 0 : 1)}M`
   if (tokens >= 1000) return `${Math.round(tokens / 1000)}K`
   return `${tokens}`
+}
+
+function ModelPickerList({
+  models,
+  selectedModelId,
+  onSelect,
+  onCustomSubmit,
+  onClose,
+}: {
+  models: ModelInfo[]
+  selectedModelId: string
+  onSelect: (modelId: string) => void
+  onCustomSubmit: (modelId: string) => void
+  onClose: () => void
+}) {
+  const [search, setSearch] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    inputRef.current?.focus()
+  }, [])
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
+        onClose()
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [onClose])
+
+  const query = search.toLowerCase()
+  const filtered = query
+    ? models.filter((m) => m.modelId.toLowerCase().includes(query))
+    : models
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && search) {
+      e.preventDefault()
+      onCustomSubmit(search)
+    }
+    if (e.key === 'Escape') {
+      onClose()
+    }
+  }
+
+  return (
+    <div ref={containerRef} className="rounded-md border">
+      <div className="flex items-center gap-2 border-b px-3">
+        <SearchIcon className="h-4 w-4 shrink-0 text-muted-foreground opacity-50" />
+        <input
+          ref={inputRef}
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Search or type a custom model ID..."
+          className="flex h-9 w-full bg-transparent py-2 text-sm outline-none placeholder:text-muted-foreground"
+        />
+      </div>
+      <div className="max-h-[200px] overflow-y-auto">
+        {filtered.length > 0 ? (
+          filtered.map((model) => {
+            const isSelected = selectedModelId === model.modelId
+            return (
+              <button
+                key={model.modelId}
+                type="button"
+                onClick={() => onSelect(model.modelId)}
+                className={cn(
+                  'flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors hover:bg-accent',
+                  isSelected && 'bg-accent font-medium',
+                )}
+              >
+                <span className="truncate">{model.modelId}</span>
+                <span className="ml-2 shrink-0 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                  {formatContextWindow(model.contextLength)}
+                </span>
+              </button>
+            )
+          })
+        ) : (
+          <div className="px-3 py-6 text-center text-muted-foreground text-sm">
+            No models match. Press Enter to use &quot;{search}&quot;
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }
 
 /**
@@ -803,25 +908,10 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
             <FormField
               control={form.control}
               name="modelId"
-              render={({ field }) => {
-                const query = field.value?.toLowerCase() ?? ''
-                const exactMatch = modelInfoList.some(
-                  (m) => m.modelId === field.value,
-                )
-                const filtered =
-                  !modelListOpen || exactMatch
-                    ? modelInfoList
-                    : modelInfoList.filter((m) =>
-                        m.modelId.toLowerCase().includes(query),
-                      )
-                const showList =
-                  modelListOpen &&
-                  modelInfoList.length > 0 &&
-                  filtered.length > 0
-
-                return (
-                  <FormItem className="flex flex-col">
-                    <FormLabel>Model *</FormLabel>
+              render={({ field }) => (
+                <FormItem className="flex flex-col">
+                  <FormLabel>Model *</FormLabel>
+                  {modelInfoList.length === 0 ? (
                     <FormControl>
                       <Input
                         placeholder={
@@ -829,55 +919,45 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
                             ? 'Enter your deployment name'
                             : watchedType === 'bedrock'
                               ? 'e.g., anthropic.claude-3-5-sonnet-20241022-v2:0'
-                              : 'Enter or select a model ID'
+                              : 'Enter model ID'
                         }
                         {...field}
-                        onFocus={() => setModelListOpen(true)}
-                        onBlur={() => {
-                          // Delay to allow click on list item to register
-                          setTimeout(() => setModelListOpen(false), 150)
-                        }}
-                        onChange={(e) => {
-                          field.onChange(e)
-                          setModelListOpen(true)
-                        }}
                       />
                     </FormControl>
-                    {showList && (
-                      <div className="rounded-md border">
-                        <div className="max-h-[200px] overflow-y-auto">
-                          {filtered.map((model) => {
-                            const isSelected = field.value === model.modelId
-                            return (
-                              <button
-                                key={model.modelId}
-                                type="button"
-                                onMouseDown={(e) => e.preventDefault()}
-                                onClick={() => {
-                                  form.setValue('modelId', model.modelId)
-                                  setModelListOpen(false)
-                                }}
-                                className={cn(
-                                  'flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors hover:bg-accent',
-                                  isSelected && 'bg-accent font-medium',
-                                )}
-                              >
-                                <span className="truncate">
-                                  {model.modelId}
-                                </span>
-                                <span className="ml-2 shrink-0 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                                  {formatContextWindow(model.contextLength)}
-                                </span>
-                              </button>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )}
-                    <FormMessage />
-                  </FormItem>
-                )
-              }}
+                  ) : modelListOpen ? (
+                    <ModelPickerList
+                      models={modelInfoList}
+                      selectedModelId={field.value}
+                      onSelect={(modelId) => {
+                        form.setValue('modelId', modelId)
+                        setModelListOpen(false)
+                      }}
+                      onCustomSubmit={(modelId) => {
+                        form.setValue('modelId', modelId)
+                        setModelListOpen(false)
+                      }}
+                      onClose={() => setModelListOpen(false)}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setModelListOpen(true)}
+                      className={cn(
+                        'flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs',
+                        field.value
+                          ? 'text-foreground'
+                          : 'text-muted-foreground',
+                      )}
+                    >
+                      <span className="truncate">
+                        {field.value || 'Select a model...'}
+                      </span>
+                      <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </button>
+                  )}
+                  <FormMessage />
+                </FormItem>
+              )}
             />
 
             {/* Model Configuration */}
