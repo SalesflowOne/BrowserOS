@@ -132,15 +132,14 @@ export const UsagePage: FC = () => {
               </p>
             </div>
           </div>
-          <a href="/app.html#/settings/ai">
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-[var(--accent-orange)] bg-[var(--accent-orange)]/10 text-[var(--accent-orange)] hover:bg-[var(--accent-orange)]/20"
-            >
-              Add Provider
-            </Button>
-          </a>
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-[var(--accent-orange)] bg-[var(--accent-orange)]/10 text-[var(--accent-orange)] hover:bg-[var(--accent-orange)]/20"
+            asChild
+          >
+            <a href="/app.html#/settings/ai">Add Provider</a>
+          </Button>
         </div>
       </div>
     </div>
