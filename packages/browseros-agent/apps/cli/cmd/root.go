@@ -154,7 +154,10 @@ func newClient() *mcp.Client {
 	// Quick health check — if it fails, try to launch BrowserOS
 	httpClient := &http.Client{Timeout: 3 * time.Second}
 	resp, err := httpClient.Get(baseURL + "/health")
-	if err != nil {
+	if err != nil || resp.StatusCode != http.StatusOK {
+		if err == nil {
+			resp.Body.Close()
+		}
 		url, launchErr := ensureRunning(baseURL)
 		if launchErr != nil {
 			output.Error(launchErr.Error(), 1)

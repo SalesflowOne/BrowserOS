@@ -95,6 +95,7 @@ func waitForServer(maxWait time.Duration) (string, bool) {
 				}
 			}
 		}
+		fmt.Print(".")
 		time.Sleep(1 * time.Second)
 	}
 	return "", false
