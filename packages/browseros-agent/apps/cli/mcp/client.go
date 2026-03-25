@@ -46,7 +46,7 @@ func (c *Client) connect(ctx context.Context) (*sdkmcp.ClientSession, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot connect to BrowserOS at %s: %w\n\n"+
 			"  If BrowserOS is running on a different port:  browseros-cli init --auto\n"+
-			"  If BrowserOS is not running:                  launch it, then retry\n"+
+			"  If BrowserOS is not running:                  browseros-cli launch\n"+
 			"  If not installed:                             browseros-cli install", c.BaseURL, err)
 	}
 	return session, nil
@@ -189,7 +189,7 @@ func (c *Client) restGET(path string) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot connect to BrowserOS at %s: %w\n\n"+
 			"  If BrowserOS is running on a different port:  browseros-cli init --auto\n"+
-			"  If BrowserOS is not running:                  launch it, then retry\n"+
+			"  If BrowserOS is not running:                  browseros-cli launch\n"+
 			"  If not installed:                             browseros-cli install", c.BaseURL, err)
 	}
 	defer resp.Body.Close()

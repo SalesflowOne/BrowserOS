@@ -49,17 +49,15 @@ Three modes:
 				input = args[0]
 
 			case autoDiscover:
-				// Auto-discover: prefer live server.json over stale config
-				discovered := loadBrowserosServerURL()
+				// Auto-discover: server.json → config → probe common ports
+				discovered := probeRunningServer()
 				if discovered == "" {
-					// Fall back to config/env
-					discovered = defaultServerURL()
-				}
-				if discovered == "" {
-					output.Error("auto-discovery failed: no running BrowserOS found.\n  Start BrowserOS first, or pass a URL: browseros-cli init <url>", 1)
+					output.Error("auto-discovery failed: no running BrowserOS found.\n\n"+
+						"  If not running:    browseros-cli launch\n"+
+						"  If not installed:  browseros-cli install", 1)
 				}
 				input = discovered
-				fmt.Printf("Auto-discovered server URL: %s\n", input)
+				fmt.Printf("Auto-discovered server at %s\n", input)
 
 			default:
 				// Interactive prompt (original behavior)

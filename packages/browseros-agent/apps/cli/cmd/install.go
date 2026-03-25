@@ -25,6 +25,10 @@ func init() {
 			dir, _ := cmd.Flags().GetString("dir")
 			deb, _ := cmd.Flags().GetBool("deb")
 
+			if deb && runtime.GOOS != "linux" {
+				output.Error("--deb is only available on Linux", 1)
+			}
+
 			downloadURL, filename := resolveDownload(deb)
 
 			destPath := filepath.Join(dir, filename)
