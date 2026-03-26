@@ -9,6 +9,8 @@ export interface AgentSession {
   browserContext?: BrowserContext
   /** MCP server names used when the session was created, for change detection. */
   mcpServerKey?: string
+  /** Tool approval category key for change detection. */
+  approvalConfigKey?: string
 }
 
 export class SessionStore {

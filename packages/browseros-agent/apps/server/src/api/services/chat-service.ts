@@ -65,13 +65,17 @@ export class ChatService {
       isScheduledTask: request.isScheduledTask,
       declinedApps: request.declinedApps,
       browserosId: this.deps.browserosId,
+      toolApprovalConfig: request.toolApprovalConfig,
     }
 
     let session = sessionStore.get(request.conversationId)
     let isNewSession = false
 
-    // Build a stable key from enabled MCP servers for change detection
+    // Build stable keys for change detection
     const mcpServerKey = this.buildMcpServerKey(request.browserContext)
+    const approvalConfigKey = this.buildApprovalConfigKey(
+      request.toolApprovalConfig,
+    )
 
     // Detect MCP config change mid-conversation → rebuild session
     if (session && session.mcpServerKey !== mcpServerKey) {
@@ -95,7 +99,32 @@ export class ChatService {
         aiSdkDevtoolsEnabled: this.deps.aiSdkDevtoolsEnabled,
         aclRules: request.aclRules,
       })
-      session = { agent, browserContext, mcpServerKey }
+      session = { agent, browserContext, mcpServerKey, approvalConfigKey }
+      session.agent.messages = previousMessages
+      sessionStore.set(request.conversationId, session)
+    }
+
+    // Detect approval config change mid-conversation → rebuild session
+    if (session && session.approvalConfigKey !== approvalConfigKey) {
+      logger.info(
+        'Approval config changed mid-conversation, rebuilding session',
+        { conversationId: request.conversationId },
+      )
+      const previousMessages = session.agent.messages
+      await session.agent.dispose()
+      sessionStore.remove(request.conversationId)
+
+      const browserContext = await this.resolvePageIds(request.browserContext)
+      const agent = await AiSdkAgent.create({
+        resolvedConfig: agentConfig,
+        browser: this.deps.browser,
+        registry: this.deps.registry,
+        browserContext,
+        klavisClient: this.deps.klavisClient,
+        browserosId: this.deps.browserosId,
+        aiSdkDevtoolsEnabled: this.deps.aiSdkDevtoolsEnabled,
+      })
+      session = { agent, browserContext, mcpServerKey, approvalConfigKey }
       session.agent.messages = previousMessages
       sessionStore.set(request.conversationId, session)
     }
@@ -143,7 +172,13 @@ export class ChatService {
         aiSdkDevtoolsEnabled: this.deps.aiSdkDevtoolsEnabled,
         aclRules: request.aclRules,
       })
-      session = { agent, hiddenWindowId, browserContext, mcpServerKey }
+      session = {
+        agent,
+        hiddenWindowId,
+        browserContext,
+        mcpServerKey,
+        approvalConfigKey,
+      }
       sessionStore.set(request.conversationId, session)
     }
 
@@ -161,6 +196,26 @@ export class ChatService {
       logger.info('Injected previous conversation history', {
         conversationId: request.conversationId,
         messageCount: request.previousConversation.length,
+      })
+    }
+
+    // Handle tool approval responses: patch the agent's messages and re-run
+    if (request.toolApprovalResponses?.length) {
+      this.applyToolApprovalResponses(
+        session.agent.messages,
+        request.toolApprovalResponses,
+      )
+      logger.info('Applied tool approval responses', {
+        conversationId: request.conversationId,
+        count: request.toolApprovalResponses.length,
+      })
+      return createAgentUIStreamResponse({
+        agent: session.agent.toolLoopAgent,
+        uiMessages: filterValidMessages(session.agent.messages),
+        abortSignal,
+        onFinish: async ({ messages }: { messages: UIMessage[] }) => {
+          session.agent.messages = filterValidMessages(messages)
+        },
       })
     }
 
@@ -264,6 +319,51 @@ export class ChatService {
         error: error instanceof Error ? error.message : String(error),
       })
     })
+  }
+
+  private applyToolApprovalResponses(
+    messages: UIMessage[],
+    responses: Array<{
+      approvalId: string
+      approved: boolean
+      reason?: string
+    }>,
+  ): void {
+    const responseMap = new Map(responses.map((r) => [r.approvalId, r]))
+    for (const msg of messages) {
+      if (msg.role !== 'assistant') continue
+      for (const part of msg.parts) {
+        const toolPart = part as {
+          state?: string
+          approval?: { id: string; approved?: boolean; reason?: string }
+        }
+        if (
+          toolPart.state === 'approval-requested' &&
+          toolPart.approval?.id &&
+          responseMap.has(toolPart.approval.id)
+        ) {
+          const resp = responseMap.get(toolPart.approval.id)
+          if (!resp) continue
+          toolPart.state = 'approval-responded'
+          toolPart.approval = {
+            ...toolPart.approval,
+            approved: resp.approved,
+            reason: resp.reason,
+          }
+        }
+      }
+    }
+  }
+
+  private buildApprovalConfigKey(config?: {
+    categories: Record<string, boolean>
+  }): string {
+    if (!config) return ''
+    return Object.entries(config.categories)
+      .filter(([, v]) => v)
+      .map(([k]) => k)
+      .sort()
+      .join(',')
   }
 
   private buildMcpServerKey(browserContext?: BrowserContext): string {

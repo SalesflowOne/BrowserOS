@@ -4,6 +4,7 @@ import {
   Home,
   PlugZap,
   Settings,
+  Shield,
   Sparkles,
   Wand2,
 } from 'lucide-react'
@@ -39,6 +40,7 @@ const primaryNavItems: NavItem[] = [
     feature: Feature.MANAGED_MCP_SUPPORT,
   },
   { name: 'Scheduled Tasks', to: '/scheduled', icon: CalendarClock },
+  { name: 'Admin', to: '/admin', icon: Shield },
   {
     name: 'Skills',
     to: '/home/skills',
