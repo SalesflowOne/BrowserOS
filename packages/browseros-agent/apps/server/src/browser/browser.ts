@@ -233,6 +233,14 @@ export class Browser {
     return this.pages.get(pageId)
   }
 
+  async getSession(pageId: number): Promise<ProtocolApi | null> {
+    const info = this.pages.get(pageId)
+    if (!info) return null
+    const sessionId = this.sessions.get(info.targetId)
+    if (!sessionId) return null
+    return this.cdp.session(sessionId)
+  }
+
   async resolveElementProperties(
     pageId: number,
     backendNodeId: number,

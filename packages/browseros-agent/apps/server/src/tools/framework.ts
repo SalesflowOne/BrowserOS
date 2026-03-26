@@ -1,4 +1,5 @@
 import { resolve } from 'node:path'
+import { matchesSitePattern } from '@browseros/shared/acl/match'
 import type { AclRule } from '@browseros/shared/types/acl'
 import type { z } from 'zod'
 import type { Browser } from '../browser/browser'
@@ -94,8 +95,31 @@ export async function executeTool(
 
   const result = await response.build(ctx.browser)
 
-  // TODO: nikhil -- maybe add to tool context instead of ugly args casting
+  // Apply ACL overlays after snapshot so the agent sees blocked elements
   const pageId = (args as Record<string, unknown>).page
+  if (
+    tool.name === 'take_snapshot' &&
+    typeof pageId === 'number' &&
+    ctx.aclRules?.length
+  ) {
+    const pageInfo = ctx.browser.getPageInfo(pageId)
+    if (pageInfo) {
+      const matchingRules = ctx.aclRules.filter((r) =>
+        matchesSitePattern(pageInfo.url, r.sitePattern),
+      )
+      if (matchingRules.length) {
+        try {
+          const { applyAclOverlays } = await import('../browser/acl-overlay')
+          const session = await ctx.browser.getSession(pageId)
+          if (session) await applyAclOverlays(session, matchingRules)
+        } catch {
+          // Overlay injection is best-effort
+        }
+      }
+    }
+  }
+
+  // TODO: nikhil -- maybe add to tool context instead of ugly args casting
   if (typeof pageId === 'number') {
     const tabId = ctx.browser.getTabIdForPage(pageId)
     if (tabId !== undefined) {
