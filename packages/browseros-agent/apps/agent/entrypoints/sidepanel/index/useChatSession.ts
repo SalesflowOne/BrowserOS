@@ -202,6 +202,7 @@ export const useChatSession = (options?: ChatSessionOptions) => {
   }
 
   const modeRef = useRef<ChatMode>(mode)
+  const approvalJustRespondedRef = useRef(false)
   const textToActionRef = useRef<Map<string, ChatAction>>(textToAction)
   const workingDirRef = useRef<string | undefined>(undefined)
   const selectionMapRef = useRef<
@@ -441,13 +442,12 @@ export const useChatSession = (options?: ChatSessionOptions) => {
         return result
       },
     }),
-    sendAutomaticallyWhen: ({ messages: msgs }) => {
-      const last = msgs[msgs.length - 1]
-      if (last?.role !== 'assistant') return false
-      return last.parts.some((p) => {
-        const tp = p as { state?: string }
-        return tp.state === 'approval-responded'
-      })
+    sendAutomaticallyWhen: () => {
+      if (approvalJustRespondedRef.current) {
+        approvalJustRespondedRef.current = false
+        return true
+      }
+      return false
     },
   })
 
@@ -607,7 +607,7 @@ export const useChatSession = (options?: ChatSessionOptions) => {
       if (!responses?.length) return
       try {
         for (const resp of responses) {
-          addToolApprovalResponse({
+          respondToToolApproval({
             id: resp.approvalId,
             approved: resp.approved,
             reason: resp.reason,
@@ -697,6 +697,15 @@ export const useChatSession = (options?: ChatSessionOptions) => {
     return () => unwatch()
   }, [])
 
+  const respondToToolApproval = (params: {
+    id: string
+    approved: boolean
+    reason?: string
+  }) => {
+    approvalJustRespondedRef.current = true
+    addToolApprovalResponse(params)
+  }
+
   const handleSelectProvider = (provider: Provider) => {
     track(PROVIDER_SELECTED_EVENT, {
       provider_id: provider.id,
@@ -751,6 +760,6 @@ export const useChatSession = (options?: ChatSessionOptions) => {
     disliked,
     onClickDislike,
     conversationId,
-    addToolApprovalResponse,
+    addToolApprovalResponse: respondToToolApproval,
   }
 }
