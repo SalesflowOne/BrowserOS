@@ -5,14 +5,16 @@ import { executeTool, type ToolContext } from '../../src/tools/framework'
 import {
   check,
   click,
+  click_at,
   fill,
   hover,
   press_key,
   scroll,
   select_option,
+  type_at,
   uncheck,
 } from '../../src/tools/input'
-import { close_page, new_page } from '../../src/tools/navigation'
+import { close_page, navigate_page, new_page } from '../../src/tools/navigation'
 import { evaluate_script, take_snapshot } from '../../src/tools/snapshot'
 import { withBrowser } from '../__helpers__/with-browser'
 
@@ -381,6 +383,208 @@ describe('input tools', () => {
       assert.ok(textOf(hoverResult).includes('Hovered'))
 
       await execute(close_page, { page: pageId })
+    })
+  }, 60_000)
+
+  it('applies updated ACL rules on an existing tool context', async () => {
+    await withBrowser(async ({ browser }) => {
+      const ctx: ToolContext = {
+        browser,
+        directories: { workingDir: process.cwd() },
+      }
+      const run =
+        (tool: typeof new_page | typeof take_snapshot | typeof click) =>
+        (args: unknown) =>
+          executeTool(tool, args, ctx, AbortSignal.timeout(30_000))
+
+      const newResult = await run(new_page)({ url: FORM_PAGE })
+      const pageId = pageIdOf(newResult)
+
+      const snap = await run(take_snapshot)({ page: pageId })
+      const btnId = findElementId(textOf(snap), 'Submit')
+
+      const beforeBlock = await run(click)({ page: pageId, element: btnId })
+      assert.ok(!beforeBlock.isError, textOf(beforeBlock))
+
+      ctx.aclRules = [
+        {
+          id: 'submit-rule',
+          sitePattern: '*',
+          description: 'submit',
+          enabled: true,
+        },
+      ]
+
+      const afterBlock = await run(click)({ page: pageId, element: btnId })
+      assert.ok(afterBlock.isError, 'Expected ACL block after updating rules')
+      assert.ok(textOf(afterBlock).includes('Action blocked by ACL rule'))
+
+      await executeTool(
+        close_page,
+        { page: pageId },
+        ctx,
+        AbortSignal.timeout(30_000),
+      )
+    })
+  }, 60_000)
+
+  it('blocks coordinate-based actions with ACL intent rules', async () => {
+    await withBrowser(async ({ browser }) => {
+      const ctx: ToolContext = {
+        browser,
+        directories: { workingDir: process.cwd() },
+        aclRules: [
+          {
+            id: 'submit-rule',
+            sitePattern: '*',
+            description: 'submit',
+            enabled: true,
+          },
+          {
+            id: 'name-rule',
+            sitePattern: '*',
+            textMatch: 'Enter name',
+            enabled: true,
+          },
+        ],
+      }
+
+      const newResult = await executeTool(
+        new_page,
+        { url: FORM_PAGE },
+        ctx,
+        AbortSignal.timeout(30_000),
+      )
+      const pageId = pageIdOf(newResult)
+
+      const buttonCenter = await executeTool(
+        evaluate_script,
+        {
+          page: pageId,
+          expression: `(() => {
+            const rect = document.getElementById('submit-btn').getBoundingClientRect();
+            return {
+              x: Math.round(rect.left + rect.width / 2),
+              y: Math.round(rect.top + rect.height / 2),
+            };
+          })()`,
+        },
+        ctx,
+        AbortSignal.timeout(30_000),
+      )
+      const buttonPoint = structuredOf<{ value: { x: number; y: number } }>(
+        buttonCenter,
+      ).value
+
+      const blockedClick = await executeTool(
+        click_at,
+        { page: pageId, x: buttonPoint.x, y: buttonPoint.y },
+        ctx,
+        AbortSignal.timeout(30_000),
+      )
+      assert.ok(blockedClick.isError, 'Expected click_at to be blocked')
+
+      ctx.aclRules = [
+        {
+          id: 'site-lock',
+          sitePattern: '*',
+          enabled: true,
+        },
+      ]
+
+      const inputCenter = await executeTool(
+        evaluate_script,
+        {
+          page: pageId,
+          expression: `(() => {
+            const rect = document.getElementById('name').getBoundingClientRect();
+            return {
+              x: Math.round(rect.left + rect.width / 2),
+              y: Math.round(rect.top + rect.height / 2),
+            };
+          })()`,
+        },
+        ctx,
+        AbortSignal.timeout(30_000),
+      )
+      const inputPoint = structuredOf<{ value: { x: number; y: number } }>(
+        inputCenter,
+      ).value
+
+      const blockedType = await executeTool(
+        type_at,
+        { page: pageId, x: inputPoint.x, y: inputPoint.y, text: 'blocked' },
+        ctx,
+        AbortSignal.timeout(30_000),
+      )
+      assert.ok(blockedType.isError, 'Expected type_at to be blocked')
+
+      await executeTool(
+        close_page,
+        { page: pageId },
+        ctx,
+        AbortSignal.timeout(30_000),
+      )
+    })
+  }, 60_000)
+
+  it('matches site ACLs after navigation with fresh page info', async () => {
+    await withBrowser(async ({ browser }) => {
+      const ctx: ToolContext = {
+        browser,
+        directories: { workingDir: process.cwd() },
+        aclRules: [
+          {
+            id: 'example-site-rule',
+            sitePattern: 'example.com',
+            enabled: true,
+          },
+        ],
+      }
+
+      const newResult = await executeTool(
+        new_page,
+        { url: 'about:blank' },
+        ctx,
+        AbortSignal.timeout(30_000),
+      )
+      const pageId = pageIdOf(newResult)
+
+      const navResult = await executeTool(
+        navigate_page,
+        { page: pageId, action: 'url', url: 'https://example.com' },
+        ctx,
+        AbortSignal.timeout(30_000),
+      )
+      assert.ok(!navResult.isError, textOf(navResult))
+
+      const snap = await executeTool(
+        take_snapshot,
+        { page: pageId },
+        ctx,
+        AbortSignal.timeout(30_000),
+      )
+      const linkMatch = textOf(snap).match(/\[(\d+)\]\s*link/)
+      assert.ok(linkMatch, `Expected a link in snapshot:\n${textOf(snap)}`)
+      const linkId = Number(linkMatch?.[1])
+
+      const blockedClick = await executeTool(
+        click,
+        { page: pageId, element: linkId },
+        ctx,
+        AbortSignal.timeout(30_000),
+      )
+      assert.ok(
+        blockedClick.isError,
+        'Expected example.com ACL to match after navigation',
+      )
+
+      await executeTool(
+        close_page,
+        { page: pageId },
+        ctx,
+        AbortSignal.timeout(30_000),
+      )
     })
   }, 60_000)
 })

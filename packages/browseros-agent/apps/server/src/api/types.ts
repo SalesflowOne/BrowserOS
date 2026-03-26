@@ -46,6 +46,18 @@ export const ChatRequestSchema = AgentLLMConfigSchema.extend({
   supportsImages: z.boolean().optional().default(true),
   mode: z.enum(['chat', 'agent']).optional().default('agent'),
   declinedApps: z.array(z.string()).optional(),
+  aclRules: z
+    .array(
+      z.object({
+        id: z.string(),
+        sitePattern: z.string(),
+        selector: z.string().optional(),
+        textMatch: z.string().optional(),
+        description: z.string().optional(),
+        enabled: z.boolean(),
+      }),
+    )
+    .optional(),
   selectedText: z.string().optional(),
   selectedTextSource: z
     .object({

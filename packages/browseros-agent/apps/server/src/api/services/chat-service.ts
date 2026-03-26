@@ -93,6 +93,7 @@ export class ChatService {
         klavisClient: this.deps.klavisClient,
         browserosId: this.deps.browserosId,
         aiSdkDevtoolsEnabled: this.deps.aiSdkDevtoolsEnabled,
+        aclRules: request.aclRules,
       })
       session = { agent, browserContext, mcpServerKey }
       session.agent.messages = previousMessages
@@ -140,10 +141,13 @@ export class ChatService {
         klavisClient: this.deps.klavisClient,
         browserosId: this.deps.browserosId,
         aiSdkDevtoolsEnabled: this.deps.aiSdkDevtoolsEnabled,
+        aclRules: request.aclRules,
       })
       session = { agent, hiddenWindowId, browserContext, mcpServerKey }
       sessionStore.set(request.conversationId, session)
     }
+
+    session.agent.updateAclRules(request.aclRules)
 
     if (isNewSession && request.previousConversation?.length) {
       for (const msg of request.previousConversation) {

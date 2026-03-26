@@ -56,6 +56,14 @@
     "./sentry/sanitize": {
       "types": "./src/sentry/sanitize.ts",
       "default": "./src/sentry/sanitize.ts"
+    },
+    "./types/acl": {
+      "types": "./src/types/acl.ts",
+      "default": "./src/types/acl.ts"
+    },
+    "./acl/match": {
+      "types": "./src/acl/match.ts",
+      "default": "./src/acl/match.ts"
     }
   }
 }

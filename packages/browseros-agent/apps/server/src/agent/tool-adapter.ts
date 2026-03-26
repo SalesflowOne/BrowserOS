@@ -1,6 +1,5 @@
 import type { LanguageModelV2ToolResultOutput } from '@ai-sdk/provider'
 import { type ToolSet, tool } from 'ai'
-import type { Browser } from '../browser/browser'
 import { logger } from '../lib/logger'
 import { metrics } from '../lib/metrics'
 import { executeTool, type ToolContext } from '../tools/framework'
@@ -37,14 +36,9 @@ function contentToModelOutput(
 
 export function buildBrowserToolSet(
   registry: ToolRegistry,
-  browser: Browser,
-  workingDir: string,
+  ctx: ToolContext,
 ): ToolSet {
   const toolSet: ToolSet = {}
-  const ctx: ToolContext = {
-    browser,
-    directories: { workingDir },
-  }
 
   for (const def of registry.all()) {
     toolSet[def.name] = tool({
