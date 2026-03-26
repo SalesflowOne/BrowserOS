@@ -1,7 +1,7 @@
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport, type UIMessage } from 'ai'
 import { compact } from 'es-toolkit/array'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import useDeepCompareEffect from 'use-deep-compare-effect'
 import type { Provider } from '@/components/chat/chatComponentTypes'
@@ -53,6 +53,7 @@ import { selectedWorkspaceStorage } from '@/lib/workspace/workspace-storage'
 import type { ChatMode } from './chatTypes'
 import { GetConversationWithMessagesDocument } from './graphql/chatSessionDocument'
 import { useChatRefs } from './useChatRefs'
+import { useExecutionHistoryTracker } from './useExecutionHistoryTracker'
 import { useNotifyActiveTab } from './useNotifyActiveTab'
 import { useRemoteConversationSave } from './useRemoteConversationSave'
 
@@ -235,6 +236,12 @@ export const useChatSession = (options?: ChatSessionOptions) => {
   useEffect(() => {
     conversationIdRef.current = conversationId
   }, [conversationId])
+
+  const {
+    startTask: startExecutionTask,
+    syncFromMessages: syncExecutionHistory,
+    finishTask: finishExecutionTask,
+  } = useExecutionHistoryTracker()
 
   const onClickLike = (messageId: string) => {
     const { responseText, queryText } = getResponseAndQueryFromMessageId(
@@ -448,6 +455,13 @@ export const useChatSession = (options?: ChatSessionOptions) => {
       }
       return false
     },
+    onFinish: async ({ message, isAbort, isError }) => {
+      await finishExecutionTask({
+        responseText: getLastMessageText([message]),
+        isAbort,
+        isError,
+      })
+    },
   })
 
   // Remove messages with empty parts (e.g. interrupted assistant responses)
@@ -525,7 +539,8 @@ export const useChatSession = (options?: ChatSessionOptions) => {
   // Keep messagesRef in sync on every change (cheap ref assignment)
   useEffect(() => {
     messagesRef.current = messages
-  }, [messages])
+    syncExecutionHistory(messages, status)
+  }, [messages, status, syncExecutionHistory])
 
   // Save conversation only after streaming completes — not on every token
   const previousStatusRef = useRef(status)
@@ -638,6 +653,17 @@ export const useChatSession = (options?: ChatSessionOptions) => {
     action?: ChatAction
   } | null>(null)
 
+  const dispatchMessage = useCallback(
+    (text: string) => {
+      startExecutionTask({
+        conversationId: conversationIdRef.current,
+        promptText: text,
+      })
+      baseSendMessage({ text })
+    },
+    [baseSendMessage, startExecutionTask],
+  )
+
   useEffect(() => {
     isIntegrationsSyncedRef.current = isIntegrationsSynced
   }, [isIntegrationsSynced])
@@ -655,9 +681,9 @@ export const useChatSession = (options?: ChatSessionOptions) => {
           return next
         })
       }
-      baseSendMessage({ text: pending.text })
+      dispatchMessage(pending.text)
     }
-  }, [isIntegrationsSynced, baseSendMessage])
+  }, [dispatchMessage, isIntegrationsSynced])
 
   const sendMessage = (params: { text: string; action?: ChatAction }) => {
     track(MESSAGE_SENT_EVENT, {
@@ -680,7 +706,7 @@ export const useChatSession = (options?: ChatSessionOptions) => {
         return next
       })
     }
-    baseSendMessage({ text: params.text })
+    dispatchMessage(params.text)
   }
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: only need to run this once
@@ -735,6 +761,7 @@ export const useChatSession = (options?: ChatSessionOptions) => {
   const resetConversation = () => {
     track(CONVERSATION_RESET_EVENT, { message_count: messages.length })
     stop()
+    void finishExecutionTask({ isAbort: true })
     setConversationId(crypto.randomUUID())
     setMessages([])
     setTextToAction(new Map())
