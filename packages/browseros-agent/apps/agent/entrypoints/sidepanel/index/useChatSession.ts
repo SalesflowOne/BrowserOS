@@ -36,7 +36,10 @@ import {
   type PendingApproval,
   pendingToolApprovalsStorage,
 } from '@/lib/tool-approvals/approval-sync-storage'
-import { toolApprovalConfigStorage } from '@/lib/tool-approvals/storage'
+import {
+  normalizeToolApprovalConfig,
+  toolApprovalConfigStorage,
+} from '@/lib/tool-approvals/storage'
 import { selectedWorkspaceStorage } from '@/lib/workspace/workspace-storage'
 import type { ChatMode } from './chatTypes'
 import { GetConversationWithMessagesDocument } from './graphql/chatSessionDocument'
@@ -367,7 +370,9 @@ export const useChatSession = (options?: ChatSessionOptions) => {
         const declinedApps = await declinedAppsStorage.getValue()
         const allAclRules = await aclRulesStorage.getValue()
         const enabledAclRules = allAclRules.filter((r) => r.enabled)
-        const approvalConfig = await toolApprovalConfigStorage.getValue()
+        const approvalConfig = normalizeToolApprovalConfig(
+          await toolApprovalConfigStorage.getValue(),
+        )
 
         const supportsArrayConversation = await Capabilities.supports(
           Feature.PREVIOUS_CONVERSATION_ARRAY,

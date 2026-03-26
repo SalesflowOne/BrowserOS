@@ -1,15 +1,19 @@
 import {
+  Bot,
   Camera,
   Code,
   Database,
+  Eye,
   Hand,
   MousePointerClick,
   Navigation,
 } from 'lucide-react'
 import { type FC, useEffect, useState } from 'react'
-import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
-import { toolApprovalConfigStorage } from '@/lib/tool-approvals/storage'
+import {
+  normalizeToolApprovalConfig,
+  toolApprovalConfigStorage,
+} from '@/lib/tool-approvals/storage'
 import {
   TOOL_CATEGORIES,
   type ToolApprovalConfig,
@@ -18,21 +22,28 @@ import {
 const CATEGORY_ICONS: Record<string, typeof Hand> = {
   input: MousePointerClick,
   navigation: Navigation,
+  observation: Eye,
   screenshots: Camera,
   scripts: Code,
   'data-modification': Database,
+  assistant: Bot,
 }
 
 export const ToolApprovalsPage: FC = () => {
   const [config, setConfig] = useState<ToolApprovalConfig>({ categories: {} })
 
   useEffect(() => {
-    toolApprovalConfigStorage.getValue().then(setConfig)
-    const unwatch = toolApprovalConfigStorage.watch(setConfig)
+    const applyConfig = (value: ToolApprovalConfig) =>
+      setConfig(normalizeToolApprovalConfig(value))
+
+    toolApprovalConfigStorage.getValue().then(applyConfig)
+    const unwatch = toolApprovalConfigStorage.watch(applyConfig)
     return () => unwatch()
   }, [])
 
-  const hasAnyEnabled = Object.values(config.categories).some(Boolean)
+  const allEnabled =
+    TOOL_CATEGORIES.length > 0 &&
+    TOOL_CATEGORIES.every((category) => config.categories[category.id] === true)
 
   const toggleCategory = (categoryId: string, enabled: boolean) => {
     const next = {
@@ -40,7 +51,7 @@ export const ToolApprovalsPage: FC = () => {
       categories: { ...config.categories, [categoryId]: enabled },
     }
     setConfig(next)
-    toolApprovalConfigStorage.setValue(next)
+    toolApprovalConfigStorage.setValue(normalizeToolApprovalConfig(next))
   }
 
   const toggleAll = (enabled: boolean) => {
@@ -50,7 +61,7 @@ export const ToolApprovalsPage: FC = () => {
     }
     const next = { ...config, categories }
     setConfig(next)
-    toolApprovalConfigStorage.setValue(next)
+    toolApprovalConfigStorage.setValue(normalizeToolApprovalConfig(next))
   }
 
   return (
@@ -59,7 +70,7 @@ export const ToolApprovalsPage: FC = () => {
         <h2 className="font-semibold text-xl tracking-tight">Tool Approvals</h2>
         <p className="text-muted-foreground text-sm">
           Require human approval before the agent executes certain actions.
-          Changes apply to new conversations.
+          Changes apply immediately.
         </p>
       </div>
 
@@ -70,7 +81,7 @@ export const ToolApprovalsPage: FC = () => {
             Toggle all categories at once
           </div>
         </div>
-        <Switch checked={hasAnyEnabled} onCheckedChange={toggleAll} />
+        <Switch checked={allEnabled} onCheckedChange={toggleAll} />
       </div>
 
       <div className="space-y-3">
@@ -89,9 +100,6 @@ export const ToolApprovalsPage: FC = () => {
               <div className="min-w-0 flex-1 space-y-1">
                 <div className="flex items-center gap-2">
                   <span className="font-medium text-sm">{category.name}</span>
-                  <Badge variant="outline" className="text-[10px]">
-                    {category.tools.length} tools
-                  </Badge>
                 </div>
                 <p className="text-muted-foreground text-xs">
                   {category.description}

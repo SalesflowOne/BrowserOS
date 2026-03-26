@@ -1,4 +1,5 @@
 import type { LanguageModelV2ToolResultOutput } from '@ai-sdk/provider'
+import type { ToolApprovalConfig } from '@browseros/shared/constants/tool-approval'
 import { type ToolSet, tool } from 'ai'
 import { logger } from '../lib/logger'
 import { metrics } from '../lib/metrics'
@@ -34,72 +35,29 @@ function contentToModelOutput(
   }
 }
 
-const TOOL_CATEGORY_MAP: Record<string, string[]> = {
-  input: [
-    'click',
-    'click_at',
-    'fill',
-    'type_at',
-    'press_key',
-    'select_option',
-    'check',
-    'uncheck',
-    'drag',
-    'drag_at',
-    'handle_dialog',
-    'focus',
-    'clear',
-  ],
-  navigation: [
-    'navigate_page',
-    'new_page',
-    'close_page',
-    'new_hidden_page',
-    'show_page',
-  ],
-  screenshots: [
-    'take_screenshot',
-    'save_screenshot',
-    'save_pdf',
-    'download_file',
-  ],
-  scripts: ['evaluate_script'],
-  'data-modification': [
-    'create_bookmark',
-    'remove_bookmark',
-    'update_bookmark',
-    'move_bookmark',
-    'delete_history_url',
-    'delete_history_range',
-  ],
-}
-
-function buildApprovalSet(config?: {
-  categories: Record<string, boolean>
-}): Set<string> {
-  const set = new Set<string>()
-  if (!config) return set
-  for (const [categoryId, tools] of Object.entries(TOOL_CATEGORY_MAP)) {
-    if (config.categories[categoryId]) {
-      for (const t of tools) set.add(t)
-    }
-  }
-  return set
+export function getApprovedBrowserToolNames(
+  registry: ToolRegistry,
+  approvalConfig?: ToolApprovalConfig,
+): string[] {
+  if (!approvalConfig) return []
+  return registry
+    .all()
+    .filter((def) => approvalConfig.categories[def.approvalCategory] === true)
+    .map((def) => def.name)
 }
 
 export function buildBrowserToolSet(
   registry: ToolRegistry,
   ctx: ToolContext,
-  approvalConfig?: { categories: Record<string, boolean> },
+  approvalConfig?: ToolApprovalConfig,
 ): ToolSet {
   const toolSet: ToolSet = {}
-  const toolsNeedingApproval = buildApprovalSet(approvalConfig)
 
   for (const def of registry.all()) {
     toolSet[def.name] = tool({
       description: def.description,
       inputSchema: def.input,
-      needsApproval: toolsNeedingApproval.has(def.name),
+      needsApproval: approvalConfig?.categories[def.approvalCategory] === true,
       execute: async (params) => {
         const startTime = performance.now()
         try {
