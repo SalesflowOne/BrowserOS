@@ -24,6 +24,7 @@ import { isSoulBootstrap, readSoul } from '../lib/soul'
 import { buildSkillsCatalog } from '../skills/catalog'
 import { loadSkills } from '../skills/loader'
 import { buildFilesystemToolSet } from '../tools/filesystem/build-toolset'
+import type { ToolContext } from '../tools/framework'
 import { buildMemoryToolSet } from '../tools/memory/build-toolset'
 import type { ToolRegistry } from '../tools/tool-registry'
 import { CHAT_MODE_ALLOWED_TOOLS } from './chat-mode'
@@ -56,6 +57,7 @@ export class AiSdkAgent {
     private _messages: UIMessage[],
     private _mcpClients: Array<{ close(): Promise<void> }>,
     private conversationId: string,
+    private toolContext: ToolContext,
   ) {}
 
   static async create(config: AiSdkAgentConfig): Promise<AiSdkAgent> {
@@ -94,12 +96,12 @@ export class AiSdkAgent {
     }
 
     // Build browser tools from the unified tool registry
-    const allBrowserTools = buildBrowserToolSet(
-      config.registry,
-      config.browser,
-      config.resolvedConfig.workingDir,
-      config.aclRules,
-    )
+    const toolContext: ToolContext = {
+      browser: config.browser,
+      directories: { workingDir: config.resolvedConfig.workingDir },
+      aclRules: config.aclRules,
+    }
+    const allBrowserTools = buildBrowserToolSet(config.registry, toolContext)
     const browserTools = config.resolvedConfig.chatMode
       ? Object.fromEntries(
           Object.entries(allBrowserTools).filter(([name]) =>
@@ -266,6 +268,7 @@ export class AiSdkAgent {
       [],
       clients,
       config.resolvedConfig.conversationId,
+      toolContext,
     )
   }
 
@@ -287,6 +290,10 @@ export class AiSdkAgent {
       role: 'user',
       parts: [{ type: 'text', text: content }],
     })
+  }
+
+  updateAclRules(rules?: AclRule[]): void {
+    this.toolContext.aclRules = rules
   }
 
   async dispose(): Promise<void> {

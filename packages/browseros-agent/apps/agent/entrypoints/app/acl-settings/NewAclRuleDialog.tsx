@@ -23,25 +23,19 @@ export const NewAclRuleDialog: FC<NewAclRuleDialogProps> = ({
 }) => {
   const [open, setOpen] = useState(false)
   const [sitePattern, setSitePattern] = useState('')
-  const [selector, setSelector] = useState('')
-  const [textMatch, setTextMatch] = useState('')
-  const [description, setDescription] = useState('')
+  const [intent, setIntent] = useState('')
 
   const reset = () => {
     setSitePattern('')
-    setSelector('')
-    setTextMatch('')
-    setDescription('')
+    setIntent('')
   }
 
   const handleSave = () => {
-    if (!sitePattern.trim()) return
+    if (!sitePattern.trim() || !intent.trim()) return
     onSave({
       id: crypto.randomUUID(),
       sitePattern: sitePattern.trim(),
-      selector: selector.trim() || undefined,
-      textMatch: textMatch.trim() || undefined,
-      description: description.trim() || undefined,
+      description: intent.trim(),
       enabled: true,
     })
     reset()
@@ -67,46 +61,34 @@ export const NewAclRuleDialog: FC<NewAclRuleDialogProps> = ({
               onChange={(e) => setSitePattern(e.target.value)}
             />
             <p className="text-muted-foreground text-xs">
-              Matches the domain and all subdomains (e.g. amazon.com matches
-              www.amazon.com).
+              Matches the domain and all subdomains.
             </p>
           </div>
           <div className="flex flex-col gap-2">
-            <Label htmlFor="selector">CSS Selector (optional)</Label>
+            <Label htmlFor="intent">
+              What should BrowserOS block?{' '}
+              <span className="text-destructive">*</span>
+            </Label>
             <Input
-              id="selector"
-              placeholder='button, #buy-now, [data-action="pay"]'
-              value={selector}
-              onChange={(e) => setSelector(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="text-match">Text Match (optional)</Label>
-            <Input
-              id="text-match"
-              placeholder="Place your order"
-              value={textMatch}
-              onChange={(e) => setTextMatch(e.target.value)}
+              id="intent"
+              placeholder="Payments and checkout"
+              value={intent}
+              onChange={(e) => setIntent(e.target.value)}
             />
             <p className="text-muted-foreground text-xs">
-              Blocks elements containing this text (case-insensitive).
+              Use plain English. BrowserOS will apply broad protections for this
+              page during the demo.
             </p>
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="description">Description (optional)</Label>
-            <Input
-              id="description"
-              placeholder="Block Amazon payments"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
           </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={!sitePattern.trim()}>
+          <Button
+            onClick={handleSave}
+            disabled={!sitePattern.trim() || !intent.trim()}
+          >
             Add Rule
           </Button>
         </DialogFooter>

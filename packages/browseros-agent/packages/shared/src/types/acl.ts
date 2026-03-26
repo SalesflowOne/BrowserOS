@@ -11,6 +11,7 @@ export interface ElementProperties {
   tagName: string
   textContent: string
   attributes: Record<string, string>
+  labelText?: string
   ariaLabel?: string
   role?: string
 }

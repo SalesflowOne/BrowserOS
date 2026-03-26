@@ -1,5 +1,5 @@
 import type { AclRule } from '@browseros/shared/types/acl'
-import { Globe, Trash2, Type } from 'lucide-react'
+import { Globe, Sparkles, Trash2 } from 'lucide-react'
 import type { FC } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -17,6 +17,9 @@ export const AclRuleCard: FC<AclRuleCardProps> = ({
   onToggle,
   onDelete,
 }) => {
+  const summary =
+    rule.description ?? rule.textMatch ?? rule.selector ?? 'Block actions'
+
   return (
     <div
       className={cn(
@@ -32,27 +35,16 @@ export const AclRuleCard: FC<AclRuleCardProps> = ({
       />
 
       <div className="flex min-w-0 flex-1 flex-col gap-1">
-        {rule.description && (
-          <span className="truncate font-medium text-sm">
-            {rule.description}
-          </span>
-        )}
+        <span className="truncate font-medium text-sm">{summary}</span>
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="secondary" className="gap-1 font-mono text-xs">
             <Globe className="size-3" />
             {rule.sitePattern}
           </Badge>
-          {rule.selector && (
-            <Badge variant="outline" className="font-mono text-xs">
-              {rule.selector}
-            </Badge>
-          )}
-          {rule.textMatch && (
-            <Badge variant="outline" className="gap-1 text-xs">
-              <Type className="size-3" />
-              &ldquo;{rule.textMatch}&rdquo;
-            </Badge>
-          )}
+          <Badge variant="outline" className="gap-1 text-xs">
+            <Sparkles className="size-3" />
+            Broad demo protection
+          </Badge>
         </div>
       </div>
 

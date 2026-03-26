@@ -147,6 +147,8 @@ export class ChatService {
       sessionStore.set(request.conversationId, session)
     }
 
+    session.agent.updateAclRules(request.aclRules)
+
     if (isNewSession && request.previousConversation?.length) {
       for (const msg of request.previousConversation) {
         if (!msg.content.trim()) continue

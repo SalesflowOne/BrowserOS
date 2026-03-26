@@ -38,8 +38,8 @@ export const AclSettingsPage: FC = () => {
         <div>
           <h1 className="font-semibold text-xl">ACL Rules</h1>
           <p className="mt-1 text-muted-foreground text-sm">
-            Block the agent from interacting with specific elements on specific
-            sites.
+            Describe what the agent should avoid on a site and BrowserOS will
+            block matching actions during the demo.
           </p>
         </div>
         <NewAclRuleDialog onSave={handleAddRule}>
@@ -56,8 +56,9 @@ export const AclSettingsPage: FC = () => {
           <div>
             <p className="font-medium">No ACL rules defined</p>
             <p className="mt-1 text-muted-foreground text-sm">
-              Add rules to prevent the agent from clicking buttons, filling
-              forms, or interacting with specific elements on websites.
+              Add a plain-English rule like &ldquo;payments and checkout&rdquo;
+              or &ldquo;send email&rdquo; and BrowserOS will apply broad safety
+              blocking on that site.
             </p>
           </div>
           <NewAclRuleDialog onSave={handleAddRule}>

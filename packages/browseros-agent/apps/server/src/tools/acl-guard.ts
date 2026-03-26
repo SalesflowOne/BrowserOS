@@ -23,6 +23,39 @@ const GUARDED_TOOLS = new Set([
 export interface AclCheckResult {
   blocked: boolean
   rule?: AclRule
+  pageId?: number
+  elementId?: number
+}
+
+async function resolveTargetElementId(
+  toolName: string,
+  args: Record<string, unknown>,
+  browser: Browser,
+  pageId: number,
+): Promise<number | undefined> {
+  if (typeof args.element === 'number') return args.element
+  if (toolName === 'drag' && typeof args.sourceElement === 'number') {
+    return args.sourceElement
+  }
+
+  if (typeof args.x === 'number' && typeof args.y === 'number') {
+    return (
+      (await browser.resolveElementAtPoint(pageId, args.x, args.y)) ?? undefined
+    )
+  }
+
+  if (
+    toolName === 'drag_at' &&
+    typeof args.startX === 'number' &&
+    typeof args.startY === 'number'
+  ) {
+    return (
+      (await browser.resolveElementAtPoint(pageId, args.startX, args.startY)) ??
+      undefined
+    )
+  }
+
+  return undefined
 }
 
 export async function checkAcl(
@@ -37,7 +70,7 @@ export async function checkAcl(
   const pageId = args.page as number | undefined
   if (pageId === undefined) return { blocked: false }
 
-  const pageInfo = browser.getPageInfo(pageId)
+  const pageInfo = await browser.refreshPageInfo(pageId)
   if (!pageInfo) return { blocked: false }
 
   const siteRules = rules.filter((r) =>
@@ -45,10 +78,19 @@ export async function checkAcl(
   )
   if (!siteRules.length) return { blocked: false }
 
-  const siteOnlyRule = siteRules.find((r) => !r.selector && !r.textMatch)
-  if (siteOnlyRule) return { blocked: true, rule: siteOnlyRule }
+  const siteOnlyRule = siteRules.find(
+    (r) => !r.selector && !r.textMatch && !r.description,
+  )
+  if (siteOnlyRule) {
+    return { blocked: true, rule: siteOnlyRule, pageId }
+  }
 
-  const elementId = args.element as number | undefined
+  const elementId = await resolveTargetElementId(
+    toolName,
+    args,
+    browser,
+    pageId,
+  )
   if (elementId === undefined) return { blocked: false }
 
   const props = await browser.resolveElementProperties(pageId, elementId)
@@ -56,7 +98,7 @@ export async function checkAcl(
 
   for (const rule of siteRules) {
     if (matchesElement(props, rule)) {
-      return { blocked: true, rule }
+      return { blocked: true, rule, pageId, elementId }
     }
   }
 

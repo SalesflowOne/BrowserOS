@@ -1,5 +1,4 @@
 import { resolve } from 'node:path'
-import { matchesSitePattern } from '@browseros/shared/acl/match'
 import type { AclRule } from '@browseros/shared/types/acl'
 import type { z } from 'zod'
 import type { Browser } from '../browser/browser'
@@ -78,7 +77,17 @@ export async function executeTool(
     )
     if (check.blocked) {
       const desc =
-        check.rule?.description ?? check.rule?.sitePattern ?? 'ACL rule'
+        check.rule?.description ??
+        check.rule?.textMatch ??
+        check.rule?.sitePattern ??
+        'ACL rule'
+      if (check.pageId !== undefined && check.elementId !== undefined) {
+        await ctx.browser.highlightBlockedElement(
+          check.pageId,
+          check.elementId,
+          desc,
+        )
+      }
       response.error(
         `Action blocked by ACL rule: "${desc}". The element on this page is restricted. Choose a different action or skip this step.`,
       )
@@ -95,31 +104,7 @@ export async function executeTool(
 
   const result = await response.build(ctx.browser)
 
-  // Apply ACL overlays after snapshot so the agent sees blocked elements
   const pageId = (args as Record<string, unknown>).page
-  if (
-    tool.name === 'take_snapshot' &&
-    typeof pageId === 'number' &&
-    ctx.aclRules?.length
-  ) {
-    const pageInfo = ctx.browser.getPageInfo(pageId)
-    if (pageInfo) {
-      const matchingRules = ctx.aclRules.filter((r) =>
-        matchesSitePattern(pageInfo.url, r.sitePattern),
-      )
-      if (matchingRules.length) {
-        try {
-          const { applyAclOverlays } = await import('../browser/acl-overlay')
-          const session = await ctx.browser.getSession(pageId)
-          if (session) await applyAclOverlays(session, matchingRules)
-        } catch {
-          // Overlay injection is best-effort
-        }
-      }
-    }
-  }
-
-  // TODO: nikhil -- maybe add to tool context instead of ugly args casting
   if (typeof pageId === 'number') {
     const tabId = ctx.browser.getTabIdForPage(pageId)
     if (tabId !== undefined) {
