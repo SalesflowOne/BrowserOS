@@ -342,7 +342,8 @@ export class ChatService {
           toolPart.approval?.id &&
           responseMap.has(toolPart.approval.id)
         ) {
-          const resp = responseMap.get(toolPart.approval.id)!
+          const resp = responseMap.get(toolPart.approval.id)
+          if (!resp) continue
           toolPart.state = 'approval-responded'
           toolPart.approval = {
             ...toolPart.approval,

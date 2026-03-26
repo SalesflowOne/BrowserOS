@@ -44,6 +44,35 @@ import { useChatRefs } from './useChatRefs'
 import { useNotifyActiveTab } from './useNotifyActiveTab'
 import { useRemoteConversationSave } from './useRemoteConversationSave'
 
+interface ApprovalResponseData {
+  approvalId: string
+  approved: boolean
+  reason?: string
+}
+
+const extractApprovalResponses = (
+  messages: UIMessage[],
+): ApprovalResponseData[] | null => {
+  const lastMsg = messages[messages.length - 1]
+  if (lastMsg?.role !== 'assistant') return null
+
+  const approvals: ApprovalResponseData[] = []
+  for (const part of lastMsg.parts) {
+    const p = part as {
+      state?: string
+      approval?: { id: string; approved?: boolean; reason?: string }
+    }
+    if (p.state === 'approval-responded' && p.approval?.approved != null) {
+      approvals.push({
+        approvalId: p.approval.id,
+        approved: p.approval.approved,
+        reason: p.approval.reason,
+      })
+    }
+  }
+  return approvals.length > 0 ? approvals : null
+}
+
 const getLastMessageText = (messages: UIMessage[]) => {
   const lastMessage = messages[messages.length - 1]
   if (!lastMessage) return ''
@@ -245,53 +274,26 @@ export const useChatSession = (options?: ChatSessionOptions) => {
         const provider =
           selectedLlmProviderRef.current ?? createDefaultBrowserOSProvider()
 
-        // Detect approval-triggered sends: last message is assistant (not a new user message)
-        const lastMsg = messages[messages.length - 1]
-        if (lastMsg?.role === 'assistant') {
-          const approvals: Array<{
-            approvalId: string
-            approved: boolean
-            reason?: string
-          }> = []
-          for (const part of lastMsg.parts) {
-            const p = part as {
-              state?: string
-              approval?: {
-                id: string
-                approved?: boolean
-                reason?: string
-              }
-            }
-            if (
-              p.state === 'approval-responded' &&
-              p.approval?.approved != null
-            ) {
-              approvals.push({
-                approvalId: p.approval.id,
-                approved: p.approval.approved,
-                reason: p.approval.reason,
-              })
-            }
-          }
-          if (approvals.length > 0) {
-            return {
-              api: `${agentUrlRef.current}/chat`,
-              body: {
-                conversationId: conversationIdRef.current,
-                provider: provider?.type,
-                providerType: provider?.type,
-                providerName: provider?.name,
-                apiKey: provider?.apiKey,
-                baseUrl: provider?.baseUrl,
-                model: provider?.modelId ?? 'default',
-                resourceName: provider?.resourceName,
-                accessKeyId: provider?.accessKeyId,
-                secretAccessKey: provider?.secretAccessKey,
-                region: provider?.region,
-                sessionToken: provider?.sessionToken,
-                toolApprovalResponses: approvals,
-              },
-            }
+        // Detect approval-triggered sends (last message is assistant, not user)
+        const approvalResponses = extractApprovalResponses(messages)
+        if (approvalResponses) {
+          return {
+            api: `${agentUrlRef.current}/chat`,
+            body: {
+              conversationId: conversationIdRef.current,
+              provider: provider?.type,
+              providerType: provider?.type,
+              providerName: provider?.name,
+              apiKey: provider?.apiKey,
+              baseUrl: provider?.baseUrl,
+              model: provider?.modelId ?? 'default',
+              resourceName: provider?.resourceName,
+              accessKeyId: provider?.accessKeyId,
+              secretAccessKey: provider?.secretAccessKey,
+              region: provider?.region,
+              sessionToken: provider?.sessionToken,
+              toolApprovalResponses: approvalResponses,
+            },
           }
         }
 
