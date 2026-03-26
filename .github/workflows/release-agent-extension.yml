@@ -44,9 +44,9 @@ jobs:
         run: |
           echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
           echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          ZIP_FILE=$(ls .output/*.zip | head -n 1)
+          ZIP_FILE=$(ls "$(pwd)/.output/"*.zip | head -n 1)
           echo "zip_path=$ZIP_FILE" >> "$GITHUB_OUTPUT"
-          echo "zip_name=$(basename $ZIP_FILE)" >> "$GITHUB_OUTPUT"
+          echo "zip_name=$(basename "$ZIP_FILE")" >> "$GITHUB_OUTPUT"
 
       - name: Generate release notes
         env:
