@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import useDeepCompareEffect from 'use-deep-compare-effect'
 import type { Provider } from '@/components/chat/chatComponentTypes'
+import { aclRulesStorage } from '@/lib/acl/storage'
 import { Capabilities, Feature } from '@/lib/browseros/capabilities'
 import { useAgentServerUrl } from '@/lib/browseros/useBrowserOSProviders'
 import type { ChatAction } from '@/lib/chat-actions/types'
@@ -303,6 +304,8 @@ export const useChatSession = (options?: ChatSessionOptions) => {
         }
 
         const declinedApps = await declinedAppsStorage.getValue()
+        const allAclRules = await aclRulesStorage.getValue()
+        const enabledAclRules = allAclRules.filter((r) => r.enabled)
 
         const supportsArrayConversation = await Capabilities.supports(
           Feature.PREVIOUS_CONVERSATION_ARRAY,
@@ -354,6 +357,7 @@ export const useChatSession = (options?: ChatSessionOptions) => {
             supportsImages: provider?.supportsImages,
             previousConversation,
             declinedApps: declinedApps.length > 0 ? declinedApps : undefined,
+            aclRules: enabledAclRules.length > 0 ? enabledAclRules : undefined,
             selectedText: activeTabSelection?.text,
             selectedTextSource: activeTabSelection
               ? {

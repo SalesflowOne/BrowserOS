@@ -1,4 +1,5 @@
 import { resolve } from 'node:path'
+import type { AclRule } from '@browseros/shared/types/acl'
 import type { z } from 'zod'
 import type { Browser } from '../browser/browser'
 import { ToolResponse, type ToolResult } from './response'
@@ -25,6 +26,7 @@ export interface ToolDirectories {
 export type ToolContext = {
   browser: Browser
   directories: ToolDirectories
+  aclRules?: AclRule[]
 }
 
 export function resolveWorkingPath(
@@ -63,6 +65,24 @@ export async function executeTool(
   if (signal.aborted) {
     response.error('Request was aborted')
     return response.toResult()
+  }
+
+  if (ctx.aclRules?.length) {
+    const { checkAcl } = await import('./acl-guard')
+    const check = await checkAcl(
+      tool.name,
+      args as Record<string, unknown>,
+      ctx.browser,
+      ctx.aclRules,
+    )
+    if (check.blocked) {
+      const desc =
+        check.rule?.description ?? check.rule?.sitePattern ?? 'ACL rule'
+      response.error(
+        `Action blocked by ACL rule: "${desc}". The element on this page is restricted. Choose a different action or skip this step.`,
+      )
+      return response.toResult()
+    }
   }
 
   try {

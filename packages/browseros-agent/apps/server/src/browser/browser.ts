@@ -229,6 +229,54 @@ export class Browser {
     return this.pages.get(pageId)?.tabId
   }
 
+  getPageInfo(pageId: number): PageInfo | undefined {
+    return this.pages.get(pageId)
+  }
+
+  async resolveElementProperties(
+    pageId: number,
+    backendNodeId: number,
+  ): Promise<{
+    tagName: string
+    textContent: string
+    attributes: Record<string, string>
+    ariaLabel?: string
+    role?: string
+  } | null> {
+    const session = await this.resolveSession(pageId)
+    try {
+      const desc = await session.DOM.describeNode({
+        backendNodeId,
+        depth: 0,
+      })
+      const node = desc.node
+      const attrs = parseNodeAttributes(node)
+
+      const resolved = await session.DOM.resolveNode({ backendNodeId })
+      const objectId = resolved.object?.objectId
+      let textContent = ''
+      if (objectId) {
+        const textResult = await session.Runtime.callFunctionOn({
+          functionDeclaration:
+            'function(){ return (this.textContent || "").trim().substring(0, 200) }',
+          objectId,
+          returnByValue: true,
+        })
+        textContent = (textResult.result?.value as string) ?? ''
+      }
+
+      return {
+        tagName: node.localName ?? '',
+        textContent,
+        attributes: attrs,
+        ariaLabel: attrs['aria-label'],
+        role: attrs.role,
+      }
+    } catch {
+      return null
+    }
+  }
+
   async resolveTabIds(tabIds: number[]): Promise<Map<number, number>> {
     await this.listPages()
     const tabToPage = new Map<number, number>()
