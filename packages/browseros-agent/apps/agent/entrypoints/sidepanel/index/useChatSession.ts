@@ -441,6 +441,14 @@ export const useChatSession = (options?: ChatSessionOptions) => {
         return result
       },
     }),
+    sendAutomaticallyWhen: ({ messages: msgs }) => {
+      const last = msgs[msgs.length - 1]
+      if (last?.role !== 'assistant') return false
+      return last.parts.some((p) => {
+        const tp = p as { state?: string }
+        return tp.state === 'approval-responded'
+      })
+    },
   })
 
   // Remove messages with empty parts (e.g. interrupted assistant responses)
