@@ -1,0 +1,167 @@
+name: Release Agent Extension
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: release-agent-extension
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    defaults:
+      run:
+        working-directory: packages/browseros-agent/apps/agent
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun ci
+        working-directory: packages/browseros-agent
+
+      - name: Build extension
+        run: bun run build
+        env:
+          VITE_PUBLIC_BROWSEROS_API: https://browseros-api.fly.dev
+
+      - name: Create extension zip
+        run: bun run zip
+        env:
+          VITE_PUBLIC_BROWSEROS_API: https://browseros-api.fly.dev
+
+      - name: Get version and zip path
+        id: version
+        run: |
+          echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+          echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          ZIP_FILE=$(ls .output/*.zip | head -n 1)
+          echo "zip_path=$ZIP_FILE" >> "$GITHUB_OUTPUT"
+          echo "zip_name=$(basename $ZIP_FILE)" >> "$GITHUB_OUTPUT"
+
+      - name: Generate release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          AGENT_PATH="packages/browseros-agent/apps/agent"
+          CURRENT_TAG="agent-extension-v${{ steps.version.outputs.version }}"
+          PREV_TAG=$(git tag -l "agent-extension-v*" --sort=-v:refname | grep -v "^${CURRENT_TAG}$" | head -n 1)
+
+          if [ -z "$PREV_TAG" ]; then
+            echo "Initial release" > /tmp/release-notes.md
+          else
+            COMMITS=$(git log "$PREV_TAG"..HEAD --pretty=format:"%H" -- "$AGENT_PATH")
+
+            if [ -z "$COMMITS" ]; then
+              echo "No notable changes." > /tmp/release-notes.md
+            else
+              echo "## What's Changed" > /tmp/release-notes.md
+              echo "" >> /tmp/release-notes.md
+
+              CONTRIBUTORS=""
+              while IFS= read -r SHA; do
+                SUBJECT=$(git log -1 --pretty=format:"%s" "$SHA")
+                AUTHOR=$(git log -1 --pretty=format:"%an" "$SHA")
+                GITHUB_USER=$(gh api "/repos/${{ github.repository }}/commits/${SHA}" --jq '.author.login // empty' 2>/dev/null)
+                PR_NUM=$(gh api "/repos/${{ github.repository }}/commits/${SHA}/pulls" --jq '.[0].number // empty' 2>/dev/null)
+
+                if [ -n "$PR_NUM" ]; then
+                  echo "- ${SUBJECT} (#${PR_NUM}) @${GITHUB_USER:-$AUTHOR}" >> /tmp/release-notes.md
+                else
+                  echo "- ${SUBJECT} (${SHA:0:7}) @${GITHUB_USER:-$AUTHOR}" >> /tmp/release-notes.md
+                fi
+
+                HANDLE="${GITHUB_USER:-$AUTHOR}"
+                if ! echo "$CONTRIBUTORS" | grep -qw "$HANDLE"; then
+                  CONTRIBUTORS="${CONTRIBUTORS} ${HANDLE}"
+                fi
+              done <<< "$COMMITS"
+
+              echo "" >> /tmp/release-notes.md
+              echo "## Contributors" >> /tmp/release-notes.md
+              echo "" >> /tmp/release-notes.md
+              for CONTRIB in $CONTRIBUTORS; do
+                echo "- @${CONTRIB}" >> /tmp/release-notes.md
+              done
+            fi
+          fi
+        working-directory: ${{ github.workspace }}
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="agent-extension-v${{ steps.version.outputs.version }}"
+          RELEASE_SHA="${{ steps.version.outputs.release_sha }}"
+          TITLE="BrowserOS Agent Extension v${{ steps.version.outputs.version }}"
+
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists, skipping tag creation"
+          else
+            git tag "$TAG" "$RELEASE_SHA"
+          fi
+
+          if git ls-remote --tags origin "$TAG" | grep -q "$TAG"; then
+            echo "Tag $TAG already on remote, skipping push"
+          else
+            git push origin "$TAG"
+          fi
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists, updating"
+            gh release edit "$TAG" --title "$TITLE" --notes-file /tmp/release-notes.md
+            gh release upload "$TAG" "${{ steps.version.outputs.zip_path }}" --clobber
+          else
+            gh release create "$TAG" \
+              --title "$TITLE" \
+              --notes-file /tmp/release-notes.md \
+              "${{ steps.version.outputs.zip_path }}"
+          fi
+        working-directory: ${{ github.workspace }}
+
+      - name: Update CHANGELOG.md via PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          DATE=$(date -u +"%Y-%m-%d")
+          BRANCH="docs/agent-extension-changelog-v${VERSION}"
+          CHANGELOG="packages/browseros-agent/apps/agent/CHANGELOG.md"
+
+          git checkout main
+
+          {
+            head -n 1 "$CHANGELOG"
+            echo ""
+            echo "## v${VERSION} (${DATE})"
+            echo ""
+            cat /tmp/release-notes.md
+            echo ""
+            tail -n +2 "$CHANGELOG"
+          } > /tmp/new-changelog.md
+          mv /tmp/new-changelog.md "$CHANGELOG"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add "$CHANGELOG"
+          git commit -m "docs: update agent extension changelog for v${VERSION}"
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --title "docs: update agent extension changelog for v${VERSION}" \
+            --body "Auto-generated changelog update for BrowserOS Agent Extension v${VERSION}." \
+            --base main \
+            --head "$BRANCH"
+
+          gh pr merge "$BRANCH" --squash --auto || true
+        working-directory: ${{ github.workspace }}
