@@ -199,6 +199,26 @@ export class ChatService {
       })
     }
 
+    // Handle tool approval responses: patch the agent's messages and re-run
+    if (request.toolApprovalResponses?.length) {
+      this.applyToolApprovalResponses(
+        session.agent.messages,
+        request.toolApprovalResponses,
+      )
+      logger.info('Applied tool approval responses', {
+        conversationId: request.conversationId,
+        count: request.toolApprovalResponses.length,
+      })
+      return createAgentUIStreamResponse({
+        agent: session.agent.toolLoopAgent,
+        uiMessages: filterValidMessages(session.agent.messages),
+        abortSignal,
+        onFinish: async ({ messages }: { messages: UIMessage[] }) => {
+          session.agent.messages = filterValidMessages(messages)
+        },
+      })
+    }
+
     const messageContext = request.isScheduledTask
       ? (session.browserContext ?? request.browserContext)
       : request.browserContext
@@ -299,6 +319,39 @@ export class ChatService {
         error: error instanceof Error ? error.message : String(error),
       })
     })
+  }
+
+  private applyToolApprovalResponses(
+    messages: UIMessage[],
+    responses: Array<{
+      approvalId: string
+      approved: boolean
+      reason?: string
+    }>,
+  ): void {
+    const responseMap = new Map(responses.map((r) => [r.approvalId, r]))
+    for (const msg of messages) {
+      if (msg.role !== 'assistant') continue
+      for (const part of msg.parts) {
+        const toolPart = part as {
+          state?: string
+          approval?: { id: string; approved?: boolean; reason?: string }
+        }
+        if (
+          toolPart.state === 'approval-requested' &&
+          toolPart.approval?.id &&
+          responseMap.has(toolPart.approval.id)
+        ) {
+          const resp = responseMap.get(toolPart.approval.id)!
+          toolPart.state = 'approval-responded'
+          toolPart.approval = {
+            ...toolPart.approval,
+            approved: resp.approved,
+            reason: resp.reason,
+          }
+        }
+      }
+    }
   }
 
   private buildApprovalConfigKey(config?: {

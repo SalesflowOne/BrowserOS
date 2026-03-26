@@ -37,7 +37,7 @@ export type AgentLLMConfig = z.infer<typeof AgentLLMConfigSchema>
 
 export const ChatRequestSchema = AgentLLMConfigSchema.extend({
   conversationId: z.string().uuid(),
-  message: z.string().min(1, 'Message cannot be empty'),
+  message: z.string().optional().default(''),
   contextWindowSize: z.number().optional(),
   browserContext: BrowserContextSchema.optional(),
   userSystemPrompt: z.string().optional(),
@@ -61,6 +61,15 @@ export const ChatRequestSchema = AgentLLMConfigSchema.extend({
     .object({
       categories: z.record(z.boolean()),
     })
+    .optional(),
+  toolApprovalResponses: z
+    .array(
+      z.object({
+        approvalId: z.string(),
+        approved: z.boolean(),
+        reason: z.string().optional(),
+      }),
+    )
     .optional(),
   selectedText: z.string().optional(),
   selectedTextSource: z

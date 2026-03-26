@@ -242,6 +242,59 @@ export const useChatSession = (options?: ChatSessionOptions) => {
     transport: new DefaultChatTransport({
       // Important: this chat logic is also used in apps/agent/lib/schedules/getChatServerResponse.ts for scheduled jobs. Make sure to keep them in sync for any future changes.
       prepareSendMessagesRequest: async ({ messages }) => {
+        const provider =
+          selectedLlmProviderRef.current ?? createDefaultBrowserOSProvider()
+
+        // Detect approval-triggered sends: last message is assistant (not a new user message)
+        const lastMsg = messages[messages.length - 1]
+        if (lastMsg?.role === 'assistant') {
+          const approvals: Array<{
+            approvalId: string
+            approved: boolean
+            reason?: string
+          }> = []
+          for (const part of lastMsg.parts) {
+            const p = part as {
+              state?: string
+              approval?: {
+                id: string
+                approved?: boolean
+                reason?: string
+              }
+            }
+            if (
+              p.state === 'approval-responded' &&
+              p.approval?.approved != null
+            ) {
+              approvals.push({
+                approvalId: p.approval.id,
+                approved: p.approval.approved,
+                reason: p.approval.reason,
+              })
+            }
+          }
+          if (approvals.length > 0) {
+            return {
+              api: `${agentUrlRef.current}/chat`,
+              body: {
+                conversationId: conversationIdRef.current,
+                provider: provider?.type,
+                providerType: provider?.type,
+                providerName: provider?.name,
+                apiKey: provider?.apiKey,
+                baseUrl: provider?.baseUrl,
+                model: provider?.modelId ?? 'default',
+                resourceName: provider?.resourceName,
+                accessKeyId: provider?.accessKeyId,
+                secretAccessKey: provider?.secretAccessKey,
+                region: provider?.region,
+                sessionToken: provider?.sessionToken,
+                toolApprovalResponses: approvals,
+              },
+            }
+          }
+        }
+
         const activeTabsList = await chrome.tabs.query({
           active: true,
           currentWindow: true,
@@ -251,8 +304,6 @@ export const useChatSession = (options?: ChatSessionOptions) => {
           ? (selectionMapRef.current[String(activeTab.id)] ?? null)
           : null
         const message = getLastMessageText(messages)
-        const provider =
-          selectedLlmProviderRef.current ?? createDefaultBrowserOSProvider()
         const currentMode = modeRef.current
         const enabledMcpServers = enabledMcpServersRef.current
         const customMcpServers = enabledCustomServersRef.current
