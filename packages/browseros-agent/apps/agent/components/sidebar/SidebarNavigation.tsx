@@ -40,7 +40,6 @@ const primaryNavItems: NavItem[] = [
     feature: Feature.MANAGED_MCP_SUPPORT,
   },
   { name: 'Scheduled Tasks', to: '/scheduled', icon: CalendarClock },
-  { name: 'Admin', to: '/admin', icon: Shield },
   {
     name: 'Skills',
     to: '/home/skills',
@@ -59,6 +58,7 @@ const primaryNavItems: NavItem[] = [
     icon: Sparkles,
     feature: Feature.SOUL_SUPPORT,
   },
+  { name: 'Admin', to: '/admin', icon: Shield },
   { name: 'Settings', to: '/settings/ai', icon: Settings },
 ]
 
