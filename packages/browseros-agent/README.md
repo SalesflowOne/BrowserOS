@@ -1,8 +1,6 @@
 # BrowserOS Agent
 
-Monorepo for the BrowserOS-agent -- contains 3 packages: agent-UI, server (which contains the agent loop) and controller-extension (which is used by the tools within the agent loop).
-
-> **⚠️ NOTE:** This is only a submodule, the main project is at -- https://github.com/browseros-ai/BrowserOS
+The agent platform powering [BrowserOS](https://github.com/browseros-ai/BrowserOS) — contains the MCP server, agent UI, CLI, evaluation framework, and SDK.
 
 ## Monorepo Structure
 
@@ -10,17 +8,25 @@ Monorepo for the BrowserOS-agent -- contains 3 packages: agent-UI, server (which
 apps/
   server/          # Bun server - MCP endpoints + agent loop
   agent/           # Agent UI (Chrome extension)
+  cli/             # Go CLI for controlling BrowserOS from the terminal
+  eval/            # Evaluation framework for benchmarking agents
   controller-ext/  # BrowserOS Controller (Chrome extension for chrome.* APIs)
 
 packages/
+  agent-sdk/       # Node.js SDK (@browseros-ai/agent-sdk)
+  cdp-protocol/    # Type-safe Chrome DevTools Protocol bindings
   shared/          # Shared constants (ports, timeouts, limits)
 ```
 
 | Package | Description |
 |---------|-------------|
 | `apps/server` | Bun server exposing MCP tools and running the agent loop |
-| `apps/agent` | Agent UI - Chrome extension for the chat interface |
-| `apps/controller-ext` | BrowserOS Controller - Chrome extension that bridges `chrome.*` APIs (tabs, bookmarks, history) to the server via WebSocket |
+| `apps/agent` | Agent UI — Chrome extension for the chat interface |
+| `apps/cli` | Go CLI — control BrowserOS from the terminal or AI coding agents |
+| `apps/eval` | Benchmark framework — WebVoyager, Mind2Web evaluation |
+| `apps/controller-ext` | BrowserOS Controller — bridges `chrome.*` APIs to the server via WebSocket |
+| `packages/agent-sdk` | Node.js SDK for browser automation with natural language |
+| `packages/cdp-protocol` | Auto-generated CDP type bindings used by the server |
 | `packages/shared` | Shared constants used across packages |
 
 ## Architecture
