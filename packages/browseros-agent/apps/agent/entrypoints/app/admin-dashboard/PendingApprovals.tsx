@@ -39,12 +39,12 @@ export const PendingApprovals: FC = () => {
 
   if (pending.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-lg border border-dashed bg-card/50 py-12 text-center">
-        <ShieldCheck className="mb-3 size-8 text-muted-foreground/40" />
-        <p className="font-medium text-muted-foreground text-sm">
-          No pending approvals
-        </p>
-        <p className="mt-1 max-w-xs text-muted-foreground/70 text-xs">
+      <div className="rounded-xl border border-dashed px-6 py-14 text-center">
+        <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-[var(--accent-orange)]/10">
+          <ShieldCheck className="size-5 text-[var(--accent-orange)]" />
+        </div>
+        <h3 className="mb-1 font-medium text-lg">No pending approvals</h3>
+        <p className="mx-auto max-w-sm text-muted-foreground text-sm">
           When the agent needs permission to execute a tool, approval requests
           will appear here.
         </p>
@@ -57,7 +57,7 @@ export const PendingApprovals: FC = () => {
       {pending.map((item) => (
         <div
           key={item.approvalId}
-          className="flex items-start gap-4 rounded-lg border border-yellow-500/20 bg-yellow-500/5 p-4"
+          className="flex items-start gap-4 rounded-xl border border-yellow-500/20 bg-yellow-500/5 p-4"
         >
           <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-yellow-500/10">
             <Clock className="size-4 text-yellow-600" />

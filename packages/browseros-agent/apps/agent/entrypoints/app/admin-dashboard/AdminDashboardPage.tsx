@@ -1,5 +1,5 @@
 import dayjs from 'dayjs'
-import { Loader2, Shield, ShieldCheck } from 'lucide-react'
+import { Shield } from 'lucide-react'
 import { type FC, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { ExecutionTaskCard } from '@/components/execution-history/ExecutionTaskCard'
@@ -13,13 +13,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Badge } from '@/components/ui/badge'
 import {
   removeConversationExecutionTask,
   useExecutionHistoryByConversation,
 } from '@/lib/execution-history/storage'
 import type { ExecutionTaskRecord } from '@/lib/execution-history/types'
 import { pendingToolApprovalsStorage } from '@/lib/tool-approvals/approval-sync-storage'
+import { AdminDashboardHeader } from './AdminDashboardHeader'
 import { PendingApprovals } from './PendingApprovals'
 
 type TaskGroup = {
@@ -105,49 +105,22 @@ export const AdminDashboardPage: FC = () => {
   }
 
   return (
-    <div className="fade-in slide-in-from-bottom-5 mx-auto w-full max-w-4xl animate-in space-y-8 duration-500">
-      <section className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-start gap-4">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[var(--accent-orange)]/10">
-            <Shield className="h-5 w-5 text-[var(--accent-orange)]" />
-          </div>
-          <div className="space-y-1.5">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="font-semibold text-3xl tracking-tight">Admin</h1>
-              {pendingCount > 0 && (
-                <Badge className="gap-1.5 rounded-full bg-yellow-500/10 px-3 py-1 text-yellow-600 hover:bg-yellow-500/10">
-                  {pendingCount} pending approval
-                  {pendingCount === 1 ? '' : 's'}
-                </Badge>
-              )}
-              {runningCount > 0 && (
-                <Badge className="gap-2 rounded-full px-3 py-1">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  {runningCount} live run{runningCount === 1 ? '' : 's'}
-                </Badge>
-              )}
-            </div>
-            <p className="max-w-2xl text-muted-foreground text-sm">
-              Manage tool approvals and review what BrowserOS did for each run.
-            </p>
-          </div>
-        </div>
-      </section>
+    <div className="fade-in slide-in-from-bottom-5 animate-in space-y-6 duration-500">
+      <AdminDashboardHeader
+        pendingCount={pendingCount}
+        runningCount={runningCount}
+      />
 
       <section className="space-y-3">
-        <h2 className="font-semibold text-muted-foreground text-xs uppercase tracking-[0.2em]">
-          Tool Approvals
-        </h2>
+        <h3 className="font-semibold text-sm">Tool Approvals</h3>
         <PendingApprovals />
       </section>
 
-      <section className="space-y-6">
+      <section className="space-y-4">
         <div>
-          <h2 className="font-semibold text-muted-foreground text-xs uppercase tracking-[0.2em]">
-            Execution History
-          </h2>
+          <h3 className="font-semibold text-sm">Execution History</h3>
           {tasks.length > 0 && (
-            <p className="mt-2 text-muted-foreground text-sm">
+            <p className="mt-1 text-muted-foreground text-sm">
               {tasks.length} recorded run{tasks.length === 1 ? '' : 's'}
               {conversationCount > 1
                 ? ` across ${conversationCount} chats`
@@ -158,31 +131,31 @@ export const AdminDashboardPage: FC = () => {
         </div>
 
         {tasks.length === 0 ? (
-          <div className="rounded-2xl border border-border/70 border-dashed bg-muted/20 px-6 py-14 text-center">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-background shadow-sm">
-              <ShieldCheck className="h-5 w-5 text-muted-foreground" />
+          <div className="rounded-xl border border-dashed px-6 py-14 text-center">
+            <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-[var(--accent-orange)]/10">
+              <Shield className="size-5 text-[var(--accent-orange)]" />
             </div>
-            <h3 className="mt-4 font-medium text-lg">No agent runs yet</h3>
-            <p className="mt-2 text-muted-foreground text-sm">
+            <h3 className="mb-1 font-medium text-lg">No agent runs yet</h3>
+            <p className="mx-auto max-w-sm text-muted-foreground text-sm">
               Run a task in BrowserOS and the execution history will appear
               here.
             </p>
           </div>
         ) : (
-          <div className="space-y-8">
+          <div className="space-y-6">
             {groupedTasks.map((group, groupIndex) => (
               <section key={group.label} className="space-y-3">
                 <div className="flex items-center gap-3">
-                  <h3 className="font-semibold text-muted-foreground text-xs uppercase tracking-[0.2em]">
+                  <h4 className="font-medium text-muted-foreground text-xs">
                     {group.label}
-                  </h3>
+                  </h4>
                   <div className="h-px flex-1 bg-border/60" />
                   <span className="text-muted-foreground text-xs">
                     {group.tasks.length} run
                     {group.tasks.length === 1 ? '' : 's'}
                   </span>
                 </div>
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {group.tasks.map((task, index) => (
                     <ExecutionTaskCard
                       key={task.id}
