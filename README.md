@@ -130,6 +130,11 @@ BrowserOS works with any LLM. Bring your own keys, use OAuth, or run models loca
 | Privacy | Local-first | Google sync | Better | Cloud | Cloud | Cloud |
 | Extensions | All Chrome extensions | :white_check_mark: | :white_check_mark: | Limited | :x: | :x: |
 
+**Detailed comparisons:**
+- [BrowserOS vs Chrome DevTools MCP](https://docs.browseros.com/comparisons/chrome-devtools-mcp) — developer-focused comparison for browser automation
+- [BrowserOS vs Claude Cowork](https://docs.browseros.com/comparisons/claude-cowork) — getting real work done with AI
+- [BrowserOS vs OpenClaw](https://docs.browseros.com/comparisons/openclaw) — everyday AI assistance
+
 ## Architecture
 
 BrowserOS is a monorepo with two main subsystems: the **browser** (Chromium fork) and the **agent platform** (TypeScript/Go).
