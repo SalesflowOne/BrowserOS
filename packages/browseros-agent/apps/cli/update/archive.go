@@ -81,7 +81,7 @@ func readTarBinary(reader *tar.Reader) ([]byte, error) {
 			continue
 		}
 		if binary != nil {
-			return nil, fmt.Errorf("archive contains multiple files")
+			return nil, fmt.Errorf("archive contains multiple files; expected exactly one binary")
 		}
 
 		binary, err = io.ReadAll(reader)
@@ -109,7 +109,7 @@ func extractZipBinary(archive []byte) ([]byte, error) {
 			continue
 		}
 		if binary != nil {
-			return nil, fmt.Errorf("archive contains multiple files")
+			return nil, fmt.Errorf("archive contains multiple files; expected exactly one binary")
 		}
 
 		rc, err := file.Open()

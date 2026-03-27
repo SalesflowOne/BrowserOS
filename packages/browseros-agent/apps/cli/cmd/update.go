@@ -14,6 +14,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type updateManager interface {
+	CheckNow(context.Context) (*update.CheckResult, error)
+	Apply(context.Context, *update.CheckResult) error
+}
+
 type updateOutcome struct {
 	result   *update.CheckResult
 	applied  bool
@@ -61,7 +66,7 @@ func init() {
 
 func runUpdateCommand(
 	ctx context.Context,
-	manager *update.Manager,
+	manager updateManager,
 	checkOnly bool,
 	yes bool,
 	interactive bool,

@@ -26,10 +26,6 @@ func ApplyBinary(binary []byte, checksumHex string, targetPath string) error {
 		Checksum:   checksum,
 		Hash:       crypto.SHA256,
 	}
-	if err := options.CheckPermissions(); err != nil {
-		return err
-	}
-
 	err = selfupdate.Apply(bytes.NewReader(binary), options)
 	if rollbackErr := selfupdate.RollbackError(err); rollbackErr != nil {
 		return fmt.Errorf("update failed and rollback failed: %w", rollbackErr)

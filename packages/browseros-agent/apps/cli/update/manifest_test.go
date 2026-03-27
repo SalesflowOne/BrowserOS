@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -72,5 +73,30 @@ func TestFetchManifest(t *testing.T) {
 	}
 	if manifest.Version != "1.2.3" {
 		t.Fatalf("FetchManifest() version = %q, want %q", manifest.Version, "1.2.3")
+	}
+}
+
+func TestFetchManifestRejectsOversizedResponse(t *testing.T) {
+	hugeName := strings.Repeat("a", maxManifestSize)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"version":"1.2.3",
+			"published_at":"2026-03-27T19:00:00Z",
+			"tag":"browseros-cli-v1.2.3",
+			"assets":{
+				"darwin/arm64":{
+					"filename":"` + hugeName + `",
+					"url":"https://cdn.example.com/cli/v1.2.3/browseros-cli_1.2.3_darwin_arm64.tar.gz",
+					"archive_format":"tar.gz",
+					"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+				}
+			}
+		}`))
+	}))
+	defer server.Close()
+
+	if _, err := FetchManifest(context.Background(), server.Client(), server.URL); err == nil {
+		t.Fatal("FetchManifest() error = nil, want oversized response error")
 	}
 }

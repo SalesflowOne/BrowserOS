@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
 	"golang.org/x/mod/semver"
 )
+
+const maxManifestSize = 1 << 20
 
 type Manifest struct {
 	Version     string           `json:"version"`
@@ -45,7 +48,7 @@ func FetchManifest(
 	}
 
 	var manifest Manifest
-	if err := json.NewDecoder(resp.Body).Decode(&manifest); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxManifestSize)).Decode(&manifest); err != nil {
 		return nil, err
 	}
 	if err := manifest.Validate(); err != nil {

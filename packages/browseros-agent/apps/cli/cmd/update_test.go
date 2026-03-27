@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
@@ -77,6 +78,67 @@ func TestRunUpdateCommandCancel(t *testing.T) {
 	if stderr.Len() == 0 {
 		t.Fatal("confirm prompt was not written to stderr")
 	}
+}
+
+func TestRunUpdateCommandYesAppliesWithoutPrompt(t *testing.T) {
+	manager := &fakeUpdateManager{
+		result: &update.CheckResult{
+			CurrentVersion:  "1.0.0",
+			LatestVersion:   "9.9.9",
+			UpdateAvailable: true,
+			Asset: &update.Asset{
+				Filename:      "browseros-cli_9.9.9_test.tar.gz",
+				URL:           "https://cdn.example.com/cli/v9.9.9/browseros-cli_9.9.9_test.tar.gz",
+				ArchiveFormat: "tar.gz",
+				SHA256:        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			},
+		},
+	}
+	stderr := &bytes.Buffer{}
+
+	outcome, err := runUpdateCommand(
+		context.Background(),
+		manager,
+		false,
+		true,
+		false,
+		bytes.NewBufferString(""),
+		stderr,
+	)
+	if err != nil {
+		t.Fatalf("runUpdateCommand() error = %v", err)
+	}
+	if !outcome.applied {
+		t.Fatal("runUpdateCommand() applied = false, want true")
+	}
+	if manager.applyCalls != 1 {
+		t.Fatalf("Apply() calls = %d, want 1", manager.applyCalls)
+	}
+	if stderr.Len() != 0 {
+		t.Fatal("prompt was written despite --yes")
+	}
+}
+
+type fakeUpdateManager struct {
+	result     *update.CheckResult
+	checkErr   error
+	applyErr   error
+	applyCalls int
+}
+
+func (m *fakeUpdateManager) CheckNow(context.Context) (*update.CheckResult, error) {
+	if m.checkErr != nil {
+		return nil, m.checkErr
+	}
+	if m.result == nil {
+		return nil, errors.New("missing check result")
+	}
+	return m.result, nil
+}
+
+func (m *fakeUpdateManager) Apply(context.Context, *update.CheckResult) error {
+	m.applyCalls++
+	return m.applyErr
 }
 
 func newTestUpdateManager(t *testing.T) *update.Manager {

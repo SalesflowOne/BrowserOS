@@ -30,6 +30,8 @@ var (
 	version   = "dev"
 )
 
+const automaticUpdateDrainTimeout = 150 * time.Millisecond
+
 func SetVersion(v string) {
 	version = v
 }
@@ -268,13 +270,20 @@ func requestedBoolFlag(args []string, flagName string, current bool) bool {
 }
 
 func drainAutomaticUpdateCheck(done <-chan struct{}) {
+	drainAutomaticUpdateCheckWithTimeout(done, automaticUpdateDrainTimeout)
+}
+
+func drainAutomaticUpdateCheckWithTimeout(done <-chan struct{}, timeout time.Duration) {
 	if done == nil {
 		return
 	}
 
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
 	select {
 	case <-done:
-	default:
+	case <-timer.C:
 	}
 }
 

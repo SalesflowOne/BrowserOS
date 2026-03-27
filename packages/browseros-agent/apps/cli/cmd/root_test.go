@@ -1,6 +1,9 @@
 package cmd
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestCommandName(t *testing.T) {
 	tests := []struct {
@@ -75,5 +78,51 @@ func TestShouldSkipAutomaticUpdates(t *testing.T) {
 				t.Fatalf("shouldSkipAutomaticUpdates(%v) = %t, want %t", tt.args, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestDrainAutomaticUpdateCheckWithTimeoutWaitsForCompletion(t *testing.T) {
+	done := make(chan struct{})
+	returned := make(chan struct{})
+
+	go func() {
+		drainAutomaticUpdateCheckWithTimeout(done, time.Second)
+		close(returned)
+	}()
+
+	select {
+	case <-returned:
+		t.Fatal("drainAutomaticUpdateCheckWithTimeout() returned before check completed")
+	case <-time.After(10 * time.Millisecond):
+	}
+
+	close(done)
+
+	select {
+	case <-returned:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("drainAutomaticUpdateCheckWithTimeout() did not return after check completed")
+	}
+}
+
+func TestDrainAutomaticUpdateCheckWithTimeoutStopsWaiting(t *testing.T) {
+	done := make(chan struct{})
+	returned := make(chan struct{})
+
+	go func() {
+		drainAutomaticUpdateCheckWithTimeout(done, 20*time.Millisecond)
+		close(returned)
+	}()
+
+	select {
+	case <-returned:
+		t.Fatal("drainAutomaticUpdateCheckWithTimeout() returned before timeout elapsed")
+	case <-time.After(5 * time.Millisecond):
+	}
+
+	select {
+	case <-returned:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("drainAutomaticUpdateCheckWithTimeout() did not return after timeout")
 	}
 }

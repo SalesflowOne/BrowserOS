@@ -77,6 +77,71 @@ func TestManagerCheckNow(t *testing.T) {
 	if !result.UpdateAvailable {
 		t.Fatal("CheckNow() UpdateAvailable = false, want true")
 	}
+	if result.LatestPublishedAt != "2026-03-27T19:00:00Z" {
+		t.Fatalf(
+			"CheckNow() LatestPublishedAt = %q, want %q",
+			result.LatestPublishedAt,
+			"2026-03-27T19:00:00Z",
+		)
+	}
+	if manager.state.LatestPublishedAt != "2026-03-27T19:00:00Z" {
+		t.Fatalf(
+			"state LatestPublishedAt = %q, want %q",
+			manager.state.LatestPublishedAt,
+			"2026-03-27T19:00:00Z",
+		)
+	}
+}
+
+func TestCloneHTTPClientClearsTimeout(t *testing.T) {
+	base := &http.Client{Timeout: time.Second}
+
+	cloned := cloneHTTPClient(base)
+
+	if cloned == base {
+		t.Fatal("cloneHTTPClient() returned the original client")
+	}
+	if cloned.Timeout != 0 {
+		t.Fatalf("cloneHTTPClient() Timeout = %s, want 0", cloned.Timeout)
+	}
+	if base.Timeout != time.Second {
+		t.Fatalf("base Timeout = %s, want %s", base.Timeout, time.Second)
+	}
+}
+
+func TestManagerSaveAppliedState(t *testing.T) {
+	configRoot := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", configRoot)
+
+	now := time.Unix(200, 0).UTC()
+	manager := NewManager(Options{
+		CurrentVersion: "1.0.0",
+		Now: func() time.Time {
+			return now
+		},
+	})
+	manager.state = &State{
+		LastCheckedAt: time.Unix(100, 0).UTC(),
+		CheckError:    "manifest fetch failed",
+	}
+
+	manager.saveAppliedState(&CheckResult{
+		LatestVersion:     "9.9.9",
+		LatestPublishedAt: "2026-03-27T19:00:00Z",
+		Asset: &Asset{
+			URL: "https://cdn.example.com/cli/v9.9.9/browseros-cli_9.9.9_test.tar.gz",
+		},
+	})
+
+	if manager.state.LastCheckedAt != now {
+		t.Fatalf("LastCheckedAt = %v, want %v", manager.state.LastCheckedAt, now)
+	}
+	if manager.state.CheckError != "" {
+		t.Fatalf("CheckError = %q, want empty", manager.state.CheckError)
+	}
+	if manager.state.LatestPublishedAt != "2026-03-27T19:00:00Z" {
+		t.Fatalf("LatestPublishedAt = %q", manager.state.LatestPublishedAt)
+	}
 }
 
 func runtimePlatformKey(t *testing.T) string {

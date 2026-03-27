@@ -10,22 +10,24 @@ import (
 )
 
 const (
-	DefaultManifestURL = "https://cdn.browseros.com/cli/latest/manifest.json"
-	DefaultCheckTTL    = 24 * time.Hour
-	DefaultHTTPTimeout = 2 * time.Second
-	SkipCheckEnv       = "BROWSEROS_SKIP_UPDATE_CHECK"
+	DefaultManifestURL     = "https://cdn.browseros.com/cli/latest/manifest.json"
+	DefaultCheckTTL        = 24 * time.Hour
+	DefaultHTTPTimeout     = 2 * time.Second
+	DefaultDownloadTimeout = 5 * time.Minute
+	SkipCheckEnv           = "BROWSEROS_SKIP_UPDATE_CHECK"
 )
 
 type Options struct {
-	CurrentVersion string
-	ManifestURL    string
-	CheckTTL       time.Duration
-	HTTPTimeout    time.Duration
-	JSONOutput     bool
-	Debug          bool
-	Automatic      bool
-	HTTPClient     *http.Client
-	Now            func() time.Time
+	CurrentVersion  string
+	ManifestURL     string
+	CheckTTL        time.Duration
+	HTTPTimeout     time.Duration
+	DownloadTimeout time.Duration
+	JSONOutput      bool
+	Debug           bool
+	Automatic       bool
+	HTTPClient      *http.Client
+	Now             func() time.Time
 }
 
 type Manager struct {
@@ -34,11 +36,12 @@ type Manager struct {
 }
 
 type CheckResult struct {
-	CurrentVersion  string    `json:"current_version"`
-	LatestVersion   string    `json:"latest_version"`
-	UpdateAvailable bool      `json:"update_available"`
-	CheckedAt       time.Time `json:"checked_at"`
-	Asset           *Asset    `json:"asset,omitempty"`
+	CurrentVersion    string    `json:"current_version"`
+	LatestVersion     string    `json:"latest_version"`
+	LatestPublishedAt string    `json:"latest_published_at,omitempty"`
+	UpdateAvailable   bool      `json:"update_available"`
+	CheckedAt         time.Time `json:"checked_at"`
+	Asset             *Asset    `json:"asset,omitempty"`
 }
 
 func NewManager(options Options) *Manager {
@@ -51,11 +54,14 @@ func NewManager(options Options) *Manager {
 	if options.HTTPTimeout == 0 {
 		options.HTTPTimeout = DefaultHTTPTimeout
 	}
+	if options.DownloadTimeout == 0 {
+		options.DownloadTimeout = DefaultDownloadTimeout
+	}
 	if options.Now == nil {
 		options.Now = time.Now
 	}
 	if options.HTTPClient == nil {
-		options.HTTPClient = &http.Client{Timeout: options.HTTPTimeout}
+		options.HTTPClient = &http.Client{}
 	}
 
 	state, err := LoadState()
@@ -122,7 +128,7 @@ func (m *Manager) CheckNow(ctx context.Context) (*CheckResult, error) {
 	checkCtx, cancel := context.WithTimeout(ctx, m.options.HTTPTimeout)
 	defer cancel()
 
-	manifest, err := FetchManifest(checkCtx, m.options.HTTPClient, m.options.ManifestURL)
+	manifest, err := FetchManifest(checkCtx, cloneHTTPClient(m.options.HTTPClient), m.options.ManifestURL)
 	if err != nil {
 		m.recordError(err)
 		return nil, err
@@ -141,10 +147,11 @@ func (m *Manager) CheckNow(ctx context.Context) (*CheckResult, error) {
 	}
 
 	result := &CheckResult{
-		CurrentVersion:  m.options.CurrentVersion,
-		LatestVersion:   manifest.Version,
-		UpdateAvailable: comparison < 0,
-		CheckedAt:       m.options.Now(),
+		CurrentVersion:    m.options.CurrentVersion,
+		LatestVersion:     manifest.Version,
+		LatestPublishedAt: manifest.PublishedAt,
+		UpdateAvailable:   comparison < 0,
+		CheckedAt:         m.options.Now(),
 	}
 	if result.UpdateAvailable {
 		assetCopy := asset
@@ -167,7 +174,10 @@ func (m *Manager) Apply(ctx context.Context, result *CheckResult) error {
 		return fmt.Errorf("browseros-cli is already up to date")
 	}
 
-	archive, err := DownloadAsset(ctx, m.options.HTTPClient, *result.Asset)
+	downloadCtx, cancel := context.WithTimeout(ctx, m.options.DownloadTimeout)
+	defer cancel()
+
+	archive, err := DownloadAsset(downloadCtx, cloneHTTPClient(m.options.HTTPClient), *result.Asset)
 	if err != nil {
 		return err
 	}
@@ -191,12 +201,7 @@ func (m *Manager) Apply(ctx context.Context, result *CheckResult) error {
 		return err
 	}
 
-	m.state = &State{
-		LastCheckedAt: result.CheckedAt,
-		LatestVersion: result.LatestVersion,
-		AssetURL:      result.Asset.URL,
-	}
-	_ = SaveState(m.state)
+	m.saveAppliedState(result)
 
 	return nil
 }
@@ -219,4 +224,25 @@ func (m *Manager) recordError(err error) {
 	state.CheckError = err.Error()
 	m.state = state
 	_ = SaveState(state)
+}
+
+func (m *Manager) saveAppliedState(result *CheckResult) {
+	state := &State{
+		LastCheckedAt:     m.options.Now(),
+		LatestVersion:     result.LatestVersion,
+		LatestPublishedAt: result.LatestPublishedAt,
+		AssetURL:          result.Asset.URL,
+	}
+	m.state = state
+	_ = SaveState(state)
+}
+
+func cloneHTTPClient(client *http.Client) *http.Client {
+	if client == nil {
+		return &http.Client{}
+	}
+
+	cloned := *client
+	cloned.Timeout = 0
+	return &cloned
 }

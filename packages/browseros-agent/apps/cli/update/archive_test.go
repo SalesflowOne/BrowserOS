@@ -36,6 +36,21 @@ func TestExtractBinaryZip(t *testing.T) {
 	}
 }
 
+func TestExtractBinaryTarGzRejectsMultipleFiles(t *testing.T) {
+	archive := createTarGz(t, map[string]string{
+		"browseros-cli":     "new-binary",
+		"browseros-cli.sig": "signature",
+	})
+
+	_, err := ExtractBinary(archive, "tar.gz")
+	if err == nil {
+		t.Fatal("ExtractBinary() error = nil, want multiple files error")
+	}
+	if err.Error() != "archive contains multiple files; expected exactly one binary" {
+		t.Fatalf("ExtractBinary() error = %q", err)
+	}
+}
+
 func TestApplyBinary(t *testing.T) {
 	targetPath := filepath.Join(t.TempDir(), "browseros-cli")
 	if err := os.WriteFile(targetPath, []byte("old-binary"), 0755); err != nil {
