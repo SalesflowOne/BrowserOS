@@ -14,6 +14,7 @@ import { AdminDashboardPage } from './admin-dashboard/AdminDashboardPage'
 import { AISettingsPage } from './ai-settings/AISettingsPage'
 import { ConnectMCP } from './connect-mcp/ConnectMCP'
 import { CustomizationPage } from './customization/CustomizationPage'
+import { ExecutionHistoryPage } from './execution-history/ExecutionHistoryPage'
 import { SurveyPage } from './jtbd-agent/SurveyPage'
 import { AuthLayout } from './layout/AuthLayout'
 import { SettingsSidebarLayout } from './layout/SettingsSidebarLayout'
@@ -91,6 +92,8 @@ export const App: FC = () => {
           <Route path="connect-apps" element={<ConnectMCP />} />
           <Route path="scheduled" element={<ScheduledTasksPage />} />
           <Route path="admin" element={<AdminDashboardPage />} />
+          <Route path="audit" element={<ExecutionHistoryPage />} />
+          <Route path="admin" element={<AdminDashboardPage />} />
         </Route>
 
         {/* Settings with dedicated sidebar */}
@@ -135,6 +138,11 @@ export const App: FC = () => {
           path="/settings/skills"
           element={<Navigate to="/home/skills" replace />}
         />
+        <Route
+          path="/observability"
+          element={<Navigate to="/audit" replace />}
+        />
+        <Route path="/executions" element={<Navigate to="/audit" replace />} />
         <Route path="/options/*" element={<OptionsRedirect />} />
 
         {/* Fallback to home */}
