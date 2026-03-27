@@ -8,11 +8,15 @@ require (
 )
 
 require (
+	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/google/jsonschema-go v0.4.2 // indirect
+	github.com/google/uuid v1.6.0 // indirect
+	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/modelcontextprotocol/go-sdk v1.4.0 // indirect
+	github.com/posthog/posthog-go v1.11.2 // indirect
 	github.com/segmentio/asm v1.1.3 // indirect
 	github.com/segmentio/encoding v0.5.3 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
