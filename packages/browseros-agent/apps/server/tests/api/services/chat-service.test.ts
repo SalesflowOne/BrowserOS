@@ -93,6 +93,13 @@ describe('buildAgentConfigKey', () => {
 
     expect(first).not.toBe(second)
   })
+
+  it('changes when eval mode changes', () => {
+    const first = buildAgentConfigKey(makeConfig({ evalMode: false }))
+    const second = buildAgentConfigKey(makeConfig({ evalMode: true }))
+
+    expect(first).not.toBe(second)
+  })
 })
 
 describe('ChatService session invalidation', () => {
@@ -159,5 +166,52 @@ describe('ChatService session invalidation', () => {
     expect(result.contextChanges).toEqual([
       'The user changed the active model configuration during this conversation. Continue with provider openai and model gpt-5-mini.',
     ])
+  })
+
+  it('does not rebuild legacy sessions that have no stored config key', async () => {
+    const service = createChatService()
+    const config = makeConfig()
+    let rebuildCalls = 0
+
+    ;(
+      service as unknown as {
+        rebuildSession: () => Promise<AgentSession>
+      }
+    ).rebuildSession = async () => {
+      rebuildCalls += 1
+      throw new Error('rebuildSession should not be called')
+    }
+
+    const legacySession = {
+      agent: {} as AgentSession['agent'],
+      agentConfigKey: undefined,
+      mcpServerKey: '',
+      workingDir: undefined,
+    } satisfies AgentSession
+
+    const result = await (
+      service as unknown as {
+        applySessionChanges: (
+          session: AgentSession,
+          request: ChatRequest,
+          agentConfig: ResolvedAgentConfig,
+          agentConfigKey: string,
+          mcpServerKey: string,
+        ) => Promise<{
+          session: AgentSession | undefined
+          contextChanges: string[]
+        }>
+      }
+    ).applySessionChanges(
+      legacySession,
+      makeRequest(),
+      config,
+      buildAgentConfigKey(config),
+      '',
+    )
+
+    expect(rebuildCalls).toBe(0)
+    expect(result.session).toBe(legacySession)
+    expect(result.contextChanges).toEqual([])
   })
 })

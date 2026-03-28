@@ -308,42 +308,46 @@ export class ChatService {
     const contextChanges: string[] = []
     let currentSession = session
 
-    if (currentSession && currentSession.mcpServerKey !== mcpServerKey) {
+    const hasMcpChange =
+      currentSession !== undefined &&
+      currentSession.mcpServerKey !== mcpServerKey
+    const hasWorkingDirChange =
+      currentSession !== undefined &&
+      currentSession.workingDir !== request.userWorkingDir
+    const hasAgentConfigChange =
+      currentSession !== undefined &&
+      currentSession.agentConfigKey !== undefined &&
+      currentSession.agentConfigKey !== agentConfigKey
+
+    if (
+      !currentSession ||
+      !(hasMcpChange || hasWorkingDirChange || hasAgentConfigChange)
+    ) {
+      return {
+        session: currentSession,
+        contextChanges,
+      }
+    }
+
+    if (hasMcpChange) {
       const previousMcpKey = currentSession.mcpServerKey
       logger.info('MCP servers changed mid-conversation, rebuilding session', {
         conversationId: request.conversationId,
         previous: previousMcpKey,
         current: mcpServerKey,
       })
-      currentSession = await this.rebuildSession(
-        currentSession,
-        request,
-        agentConfig,
-        mcpServerKey,
-        agentConfigKey,
-      )
       contextChanges.push(
         this.buildMcpChangeMessage(previousMcpKey, mcpServerKey),
       )
     }
 
-    if (
-      currentSession &&
-      currentSession.workingDir !== request.userWorkingDir
-    ) {
+    if (hasWorkingDirChange) {
       const previousWorkingDir = currentSession.workingDir
       logger.info('Workspace changed mid-conversation, rebuilding session', {
         conversationId: request.conversationId,
         previous: previousWorkingDir ?? '(none)',
         current: request.userWorkingDir ?? '(none)',
       })
-      currentSession = await this.rebuildSession(
-        currentSession,
-        request,
-        agentConfig,
-        mcpServerKey,
-        agentConfigKey,
-      )
       contextChanges.push(
         this.buildWorkspaceChangeMessage(
           previousWorkingDir,
@@ -352,23 +356,24 @@ export class ChatService {
       )
     }
 
-    if (currentSession && currentSession.agentConfigKey !== agentConfigKey) {
+    if (hasAgentConfigChange) {
       logger.info('Agent config changed mid-conversation, rebuilding session', {
         conversationId: request.conversationId,
         provider: agentConfig.provider,
         model: agentConfig.model,
       })
-      currentSession = await this.rebuildSession(
-        currentSession,
-        request,
-        agentConfig,
-        mcpServerKey,
-        agentConfigKey,
-      )
       contextChanges.push(
         `The user changed the active model configuration during this conversation. Continue with provider ${agentConfig.provider} and model ${agentConfig.model}.`,
       )
     }
+
+    currentSession = await this.rebuildSession(
+      currentSession,
+      request,
+      agentConfig,
+      mcpServerKey,
+      agentConfigKey,
+    )
 
     return {
       session: currentSession,
@@ -428,6 +433,9 @@ export class ChatService {
 }
 
 export function buildAgentConfigKey(config: ResolvedAgentConfig): string {
+  // Fingerprint all creation-time agent inputs. Fields handled by separate
+  // invalidation checks (for example workspace and MCP server state) are
+  // intentionally excluded from this hash.
   const keyInput = JSON.stringify({
     provider: config.provider,
     model: config.model,
@@ -445,6 +453,7 @@ export function buildAgentConfigKey(config: ResolvedAgentConfig): string {
     contextWindowSize: config.contextWindowSize,
     userSystemPrompt: config.userSystemPrompt,
     supportsImages: config.supportsImages,
+    evalMode: config.evalMode,
     chatMode: config.chatMode,
     isScheduledTask: config.isScheduledTask,
     origin: config.origin,
