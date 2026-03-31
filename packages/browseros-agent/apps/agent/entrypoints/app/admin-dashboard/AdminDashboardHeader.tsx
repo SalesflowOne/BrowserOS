@@ -1,4 +1,4 @@
-import { Loader2, Shield } from 'lucide-react'
+import { Shield } from 'lucide-react'
 import type { FC } from 'react'
 import { Badge } from '@/components/ui/badge'
 
@@ -27,7 +27,6 @@ export const AdminDashboardHeader: FC<AdminDashboardHeaderProps> = ({
             )}
             {runningCount > 0 && (
               <Badge className="gap-1.5 rounded-full">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 {runningCount} live
               </Badge>
             )}

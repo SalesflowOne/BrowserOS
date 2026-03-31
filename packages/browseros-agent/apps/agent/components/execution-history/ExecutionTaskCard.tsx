@@ -4,8 +4,8 @@ import relativeTime from 'dayjs/plugin/relativeTime'
 import {
   CheckCircle2,
   ChevronDown,
+  CircleDot,
   CircleSlash2,
-  Loader2,
   MessageSquareText,
   Trash2,
   XCircle,
@@ -31,9 +31,7 @@ function getTaskStatusIcon(status: ExecutionTaskRecord['status']) {
   }
 
   if (status === 'running') {
-    return (
-      <Loader2 className="h-4 w-4 animate-spin text-[var(--accent-orange)]" />
-    )
+    return <CircleDot className="h-4 w-4 text-[var(--accent-orange)]" />
   }
 
   if (status === 'stopped') {
@@ -51,8 +49,8 @@ function getTaskStatusLabel(status: ExecutionTaskRecord['status']) {
   return 'Failed'
 }
 
-function formatDuration(task: ExecutionTaskRecord) {
-  if (!task.completedAt) return 'In progress'
+function formatDuration(task: ExecutionTaskRecord): string | null {
+  if (!task.completedAt) return null
   const diff = dayjs(task.completedAt).diff(task.startedAt)
   const parsed = dayjs.duration(diff)
   const minutes = Math.floor(parsed.asMinutes())
@@ -99,8 +97,12 @@ export const ExecutionTaskCard: FC<{
                   <span>
                     {task.actionCount} action{task.actionCount === 1 ? '' : 's'}
                   </span>
-                  <span>•</span>
-                  <span>{formatDuration(task)}</span>
+                  {formatDuration(task) && (
+                    <>
+                      <span>•</span>
+                      <span>{formatDuration(task)}</span>
+                    </>
+                  )}
                   {task.deniedCount > 0 && (
                     <Badge variant="outline" className="h-5 rounded-full px-2">
                       {task.deniedCount} denied
