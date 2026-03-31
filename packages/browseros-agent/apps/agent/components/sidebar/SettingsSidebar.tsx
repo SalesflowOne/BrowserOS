@@ -3,6 +3,7 @@ import {
   BookOpen,
   Bot,
   Compass,
+  Cpu,
   CreditCard,
   GitBranch,
   MessageSquare,
@@ -80,6 +81,7 @@ const primarySettingsSections: NavSection[] = [
         feature: Feature.CUSTOMIZATION_SUPPORT,
       },
       { name: 'BrowserOS as MCP', to: '/settings/mcp', icon: Server },
+      { name: 'Agents', to: '/settings/agents', icon: Cpu },
       {
         name: 'Usage & Billing',
         to: '/settings/usage',

@@ -9,6 +9,7 @@ import { OnboardingDemo } from '../onboarding/demo/OnboardingDemo'
 import { FeaturesPage } from '../onboarding/features/Features'
 import { Onboarding } from '../onboarding/index/Onboarding'
 import { StepsLayout } from '../onboarding/steps/StepsLayout'
+import { AgentsPage } from './agents/AgentsPage'
 import { AISettingsPage } from './ai-settings/AISettingsPage'
 import { ConnectMCP } from './connect-mcp/ConnectMCP'
 import { CreateGraphWrapper } from './create-graph/CreateGraphWrapper'
@@ -104,6 +105,7 @@ export const App: FC = () => {
             <Route path="customization" element={<CustomizationPage />} />
             <Route path="search" element={<SearchProviderPage />} />
             <Route path="survey" element={<SurveyPage {...surveyParams} />} />
+            <Route path="agents" element={<AgentsPage />} />
             <Route path="usage" element={<UsagePage />} />
           </Route>
         </Route>
