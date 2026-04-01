@@ -91,7 +91,7 @@ export const NewTab = () => {
   const navigate = useNavigate()
   const [inputValue, setInputValue] = useState('')
   const [mounted, setMounted] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const tabsDropdownRef = useRef<HTMLDivElement>(null)
   const [selectedTabs, setSelectedTabs] = useState<chrome.tabs.Tab[]>([])
   const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false)
@@ -481,17 +481,21 @@ export const NewTab = () => {
                   ))}
                 </div>
               ) : (
-                <input
-                  type="text"
+                <textarea
+                  rows={1}
                   placeholder={
                     voice.isTranscribing ? 'Transcribing...' : searchPlaceholder
                   }
                   disabled={voice.isTranscribing}
-                  className="flex-1 border-none bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-60"
+                  className="field-sizing-content max-h-40 flex-1 resize-none border-none bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-60"
                   {...getInputProps({
-                    ref: inputRef,
+                    ref: inputRef as React.RefObject<HTMLInputElement>,
                     onChange: (e) => handleInputChange(e.currentTarget.value),
                     onKeyDown: (e) => {
+                      if (e.key === 'Enter' && e.shiftKey) {
+                        ;(e as any).preventDownshiftDefault = true
+                        return
+                      }
                       if (!mentionStateRef.current.isOpen) return
                       if (e.key === 'Tab') {
                         e.preventDefault()
