@@ -15,7 +15,10 @@ import { Hono } from 'hono'
 import { stream } from 'hono/streaming'
 import { getBrowserosDir } from '../../lib/browseros-dir'
 import { logger } from '../../lib/logger'
-import { getPodmanRuntime } from '../services/podman-runtime'
+import {
+  getPodmanRuntime,
+  type PodmanRuntime,
+} from '../services/podman-runtime'
 
 const OPENCLAW_IMAGE = 'ghcr.io/openclaw/openclaw:latest'
 const MAX_LOG_LINES = 1000
@@ -316,8 +319,9 @@ export function initAgentRuntime(): void {
 }
 
 /**
- * Call on server shutdown. Stops all running agent containers
- * and then stops the Podman machine to free resources.
+ * Call on server shutdown. Stops all BrowserOS agent containers.
+ * Only stops the Podman machine if no other containers are running
+ * (to avoid killing the user's own Podman workloads).
  */
 export async function shutdownAgentRuntime(): Promise<void> {
   const runtime = getPodmanRuntime()
@@ -342,14 +346,44 @@ export async function shutdownAgentRuntime(): Promise<void> {
   }
   saveAgents()
 
+  await stopMachineIfOnlyOurs(runtime)
+}
+
+/**
+ * Stops the Podman machine only if no non-BrowserOS containers are running.
+ * This prevents killing the user's own Podman workloads.
+ */
+async function stopMachineIfOnlyOurs(runtime: PodmanRuntime): Promise<void> {
   const status = await runtime.getMachineStatus()
-  if (status.running) {
-    try {
-      logger.info('Stopping Podman machine')
+  if (!status.running) return
+
+  try {
+    const proc = Bun.spawn(
+      [runtime.getPodmanPath(), 'ps', '--format', '{{.Names}}'],
+      { stdout: 'pipe', stderr: 'ignore' },
+    )
+    const output = await new Response(proc.stdout).text()
+    await proc.exited
+
+    const runningContainers = output
+      .trim()
+      .split('\n')
+      .filter((name) => name.trim())
+
+    const allOurs = runningContainers.every((name) =>
+      name.startsWith('browseros-claw-'),
+    )
+
+    if (runningContainers.length === 0 || allOurs) {
+      logger.info('No other containers running, stopping Podman machine')
       await runtime.stopMachine()
-    } catch {
-      // Best effort
+    } else {
+      logger.info('Other containers running, keeping Podman machine alive', {
+        count: runningContainers.length,
+      })
     }
+  } catch {
+    // Best effort — don't stop machine if we can't check
   }
 }
 
@@ -750,14 +784,9 @@ export function createAgentsRoutes() {
         instances.delete(id)
         saveAgents()
 
-        // Stop machine if no agents remain
+        // Stop machine if no agents remain and no other containers running
         if (instances.size === 0) {
-          const runtime = getPodmanRuntime()
-          const status = await runtime.getMachineStatus()
-          if (status.running) {
-            logger.info('Last agent deleted, stopping Podman machine')
-            runtime.stopMachine().catch(() => {})
-          }
+          stopMachineIfOnlyOurs(getPodmanRuntime()).catch(() => {})
         }
 
         return c.json({ success: true })
