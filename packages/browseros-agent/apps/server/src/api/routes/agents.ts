@@ -20,15 +20,24 @@ import { getPodmanRuntime } from '../services/podman-runtime'
 const OPENCLAW_IMAGE = 'ghcr.io/openclaw/openclaw:latest'
 const MAX_LOG_LINES = 1000
 
-// Maps BrowserOS provider types to OpenClaw environment variable names
-const OPENCLAW_PROVIDER_ENV_MAP: Record<string, string> = {
-  anthropic: 'ANTHROPIC_API_KEY',
-  openai: 'OPENAI_API_KEY',
-  google: 'GEMINI_API_KEY',
-  openrouter: 'OPENROUTER_API_KEY',
-  moonshot: 'MOONSHOT_API_KEY',
-  groq: 'GROQ_API_KEY',
-  mistral: 'MISTRAL_API_KEY',
+// Maps BrowserOS provider types to OpenClaw environment variable names and default models
+const OPENCLAW_PROVIDERS: Record<
+  string,
+  { envVar: string; defaultModel: string }
+> = {
+  anthropic: { envVar: 'ANTHROPIC_API_KEY', defaultModel: 'claude-sonnet-4-6' },
+  openai: { envVar: 'OPENAI_API_KEY', defaultModel: 'gpt-5' },
+  google: { envVar: 'GEMINI_API_KEY', defaultModel: 'gemini-2.5-flash' },
+  openrouter: {
+    envVar: 'OPENROUTER_API_KEY',
+    defaultModel: 'anthropic/claude-sonnet-4',
+  },
+  moonshot: { envVar: 'MOONSHOT_API_KEY', defaultModel: 'kimi-k2.5' },
+  groq: { envVar: 'GROQ_API_KEY', defaultModel: 'llama-3.3-70b-versatile' },
+  mistral: {
+    envVar: 'MISTRAL_API_KEY',
+    defaultModel: 'mistral-large-latest',
+  },
 }
 
 // Persisted to agents.json
@@ -219,21 +228,20 @@ function generateOpenClawConfig(config: {
     },
   }
 
-  if (!config.apiKey || !config.providerType) {
+  if (!config.providerType) {
     return openclawConfig
   }
 
-  const directEnvVar = OPENCLAW_PROVIDER_ENV_MAP[config.providerType]
+  const builtinProvider = OPENCLAW_PROVIDERS[config.providerType]
 
-  if (directEnvVar) {
-    // Built-in provider (Anthropic, OpenAI, Google, etc.)
-    openclawConfig.env = { [directEnvVar]: config.apiKey }
-    if (config.modelId) {
-      openclawConfig.agents = {
-        defaults: {
-          model: { primary: `${config.providerType}/${config.modelId}` },
-        },
-      }
+  if (builtinProvider) {
+    // Built-in provider (Anthropic, OpenAI, Google, OpenRouter, etc.)
+    const modelId = config.modelId || builtinProvider.defaultModel
+    openclawConfig.env = { [builtinProvider.envVar]: config.apiKey }
+    openclawConfig.agents = {
+      defaults: {
+        model: { primary: `${config.providerType}/${modelId}` },
+      },
     }
   } else if (config.baseUrl) {
     // Custom OpenAI-compatible provider
