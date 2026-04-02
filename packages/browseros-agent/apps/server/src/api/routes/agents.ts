@@ -225,6 +225,8 @@ function generateComposeFile(config: {
     environment:
       - OPENCLAW_GATEWAY_TOKEN=${config.token}
       - TZ=${tz}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ${config.configDir}:/home/node/.openclaw
       - ${config.workspaceDir}:/home/node/.openclaw/workspace
@@ -240,6 +242,7 @@ function generateComposeFile(config: {
 
 function generateOpenClawConfig(config: {
   port: number
+  browserosServerPort: number
   providerType?: string
   apiKey?: string
   baseUrl?: string
@@ -258,6 +261,14 @@ function generateOpenClawConfig(config: {
       http: {
         endpoints: {
           chatCompletions: { enabled: true },
+        },
+      },
+    },
+    mcp: {
+      servers: {
+        browseros: {
+          url: `http://host.docker.internal:${config.browserosServerPort}/mcp`,
+          transport: 'streamable-http',
         },
       },
     },
@@ -336,7 +347,7 @@ async function dumpContainerLogs(
 
 // ─── Routes ─────────────────────────────────────────────────────────────────
 
-export function createAgentsRoutes() {
+export function createAgentsRoutes(config: { serverPort: number }) {
   return new Hono()
     .get('/', (c) => {
       const agentList = Array.from(instances.values()).map(
@@ -483,6 +494,7 @@ export function createAgentsRoutes() {
           // Write openclaw.json config (gateway mode, allowed origins, LLM provider, model)
           const openclawConfig = generateOpenClawConfig({
             port,
+            browserosServerPort: config.serverPort,
             providerType: body.providerType,
             apiKey: body.apiKey,
             baseUrl: body.baseUrl,

@@ -105,7 +105,7 @@ export async function createHttpServer(config: HttpServerConfig) {
 
   const app = new Hono<Env>()
     .use('/*', cors(defaultCorsConfig))
-    .route('/agents', createAgentsRoutes())
+    .route('/agents', createAgentsRoutes({ serverPort: port }))
     .route('/health', createHealthRoute({ browser }))
     .route(
       '/shutdown',
