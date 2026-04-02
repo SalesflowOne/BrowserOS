@@ -146,6 +146,7 @@ export class PodmanRuntime {
     const code = await proc.exited
     if (code !== 0)
       throw new Error(`podman machine stop failed with code ${code}`)
+    this.machineReady = false
   }
 
   async ensureReady(onLog?: (msg: string) => void): Promise<void> {
@@ -174,11 +175,12 @@ export class PodmanRuntime {
       onOutput?: (line: string) => void
     },
   ): Promise<number> {
+    const useStreaming = !!options?.onOutput
     const proc = Bun.spawn([this.podmanPath, ...args], {
       cwd: options?.cwd,
       env: options?.env ? { ...process.env, ...options.env } : undefined,
-      stdout: 'pipe',
-      stderr: 'pipe',
+      stdout: useStreaming ? 'pipe' : 'ignore',
+      stderr: useStreaming ? 'pipe' : 'ignore',
     })
 
     if (options?.onOutput) {
