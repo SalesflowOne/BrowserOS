@@ -1,6 +1,8 @@
 import {
   AlertCircle,
   Cpu,
+  Folder,
+  FolderOpen,
   Loader2,
   MessageSquare,
   Play,
@@ -8,6 +10,7 @@ import {
   ScrollText,
   Square,
   Trash2,
+  X,
 } from 'lucide-react'
 import { type FC, useEffect, useMemo, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
@@ -28,6 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { getBrowserOSAdapter } from '@/lib/browseros/adapter'
 import { getAgentServerUrl } from '@/lib/browseros/helpers'
 import { useLlmProviders } from '@/lib/llm-providers/useLlmProviders'
 import { useRpcClient } from '@/lib/rpc/RpcClientProvider'
@@ -45,6 +49,7 @@ interface AgentInstance {
   createdAt: string
   error?: string
   providerType?: string
+  workspacePath?: string
 }
 
 export const AgentsPage: FC = () => {
@@ -61,6 +66,10 @@ export const AgentsPage: FC = () => {
   const [logsAgentId, setLogsAgentId] = useState<string | null>(null)
   const [chatAgentId, setChatAgentId] = useState<string | null>(null)
   const [selectedProviderId, setSelectedProviderId] = useState('')
+  const [workspacePath, setWorkspacePath] = useState<{
+    name: string
+    path: string
+  } | null>(null)
   const triggerRefresh = () => setRefreshKey((k) => k + 1)
 
   const logsAgent = logsAgentId
@@ -140,6 +149,7 @@ export const AgentsPage: FC = () => {
           baseUrl: selectedProvider?.baseUrl,
           modelId: selectedProvider?.modelId,
           providerName: selectedProvider?.name,
+          workspacePath: workspacePath?.path,
         }),
       })
 
@@ -147,6 +157,7 @@ export const AgentsPage: FC = () => {
         const data = (await res.json()) as { agent: AgentInstance }
         setCreateDialogOpen(false)
         setNewAgentName('')
+        setWorkspacePath(null)
         triggerRefresh()
         setLogsAgentId(data.agent.id)
       }
@@ -290,6 +301,56 @@ export const AgentsPage: FC = () => {
                 )}
               </div>
 
+              <div className="space-y-2">
+                <span className="font-medium text-sm">Output Workspace</span>
+                {workspacePath ? (
+                  <div className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+                    <Folder className="size-4 shrink-0 text-muted-foreground" />
+                    <span className="flex-1 truncate">
+                      {workspacePath.path}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-6 shrink-0"
+                      onClick={() => setWorkspacePath(null)}
+                    >
+                      <X className="size-3" />
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={async () => {
+                      try {
+                        const adapter = getBrowserOSAdapter()
+                        const result = await adapter.choosePath({
+                          type: 'folder',
+                        })
+                        if (result) {
+                          setWorkspacePath({
+                            name: result.name,
+                            path: result.path,
+                          })
+                        }
+                      } catch {
+                        // User cancelled or API not available
+                      }
+                    }}
+                  >
+                    <FolderOpen className="mr-2 size-4" />
+                    Choose output folder
+                  </Button>
+                )}
+                <p className="text-muted-foreground text-xs">
+                  The agent saves reports and files here. This is the only
+                  folder the agent can access on your computer.
+                  {!workspacePath &&
+                    ' If not chosen, a default folder will be created.'}
+                </p>
+              </div>
+
               <Button
                 className="w-full"
                 onClick={handleCreate}
@@ -366,8 +427,8 @@ export const AgentsPage: FC = () => {
                     </div>
                     <p className="text-muted-foreground text-xs">
                       Port {agent.port}
-                      {agent.status === 'running' && (
-                        <> &middot; Gateway at ws://127.0.0.1:{agent.port}</>
+                      {agent.workspacePath && (
+                        <> &middot; {agent.workspacePath}</>
                       )}
                     </p>
                     {agent.error && (

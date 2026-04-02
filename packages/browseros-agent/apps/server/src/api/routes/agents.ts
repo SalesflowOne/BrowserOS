@@ -3,13 +3,15 @@
  * Copyright 2025 BrowserOS
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * Agent management routes for OpenClaw Docker instances.
- * Generates docker-compose.yml directly and uses docker compose for lifecycle.
+ * Agent management routes for OpenClaw container instances.
+ * Uses named Docker volumes for secure internal persistence.
+ * User workspace is the only host directory exposed to the container.
  * Provides SSE log streaming for real-time setup visibility.
  * Persists agent metadata to ~/.browseros/agents.json.
  */
 
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { Hono } from 'hono'
 import { stream } from 'hono/streaming'
@@ -41,6 +43,7 @@ interface AgentRecord {
   createdAt: string
   error?: string
   providerType?: string
+  workspacePath: string
 }
 
 // Runtime-only (not persisted)
@@ -59,6 +62,10 @@ function getAgentsJsonPath(): string {
 
 function getAgentsBaseDir(): string {
   return path.join(getBrowserosDir(), 'agents')
+}
+
+function getDefaultWorkspacePath(agentName: string): string {
+  return path.join(os.homedir(), 'Documents', 'BrowserOS Agents', agentName)
 }
 
 const instances = new Map<string, AgentInstance>()
@@ -99,7 +106,6 @@ function loadAgents(): void {
   }
 }
 
-// Load persisted agents on module init
 loadAgents()
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -209,12 +215,14 @@ function composeEnv(name: string): Record<string, string> {
   return { COMPOSE_PROJECT_NAME: `browseros-claw-${name}` }
 }
 
+// ─── Generators ─────────────────────────────────────────────────────────────
+
 function generateComposeFile(config: {
   image: string
   gatewayPort: number
   token: string
-  configDir: string
-  workspaceDir: string
+  homeVolumeName: string
+  workspacePath: string
 }): string {
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
   return `services:
@@ -228,8 +236,8 @@ function generateComposeFile(config: {
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ${config.configDir}:/home/node/.openclaw
-      - ${config.workspaceDir}:/home/node/.openclaw/workspace
+      - ${config.homeVolumeName}:/home/node
+      - ${config.workspacePath}:/workspace
     command: node dist/index.js gateway --bind lan --port 18789
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://127.0.0.1:18789/healthz"]
@@ -237,6 +245,9 @@ function generateComposeFile(config: {
       timeout: 10s
       retries: 3
     restart: unless-stopped
+
+volumes:
+  ${config.homeVolumeName}:
 `
 }
 
@@ -281,7 +292,6 @@ function generateOpenClawConfig(config: {
   const directEnvVar = OPENCLAW_PROVIDER_ENV_MAP[config.providerType]
 
   if (directEnvVar) {
-    // Built-in provider (Anthropic, OpenAI, Google, etc.)
     openclawConfig.env = { [directEnvVar]: config.apiKey }
     if (config.modelId) {
       openclawConfig.agents = {
@@ -291,7 +301,6 @@ function generateOpenClawConfig(config: {
       }
     }
   } else if (config.baseUrl) {
-    // Custom OpenAI-compatible provider
     const providerId = (config.providerName || 'custom-provider')
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
@@ -322,6 +331,76 @@ function generateOpenClawConfig(config: {
   }
 
   return openclawConfig
+}
+
+function generateSoulMd(): string {
+  const lines = [
+    '# SOUL.md',
+    '',
+    'You are an AI assistant running inside BrowserOS.',
+    '',
+    '## Core Truths',
+    '- **Results Over Process** — Do not explain what you are going to do. Just do it.',
+    '- **Ownership** — When you take on a task, you own it end-to-end.',
+    '- **Output Goes to /workspace** — All reports, documents, and files you create for the user MUST be saved to /workspace. This is the only directory the user can see from their computer.',
+    '',
+    '## Environment',
+    '- You are running inside a Docker container managed by BrowserOS',
+    '- Your internal workspace is at ~/.openclaw/workspace (for your own notes and memory)',
+    '- The output directory is mounted at /workspace — save all deliverables here',
+    '- You have access to BrowserOS MCP tools for web browsing, taking screenshots, filling forms, and accessing 40+ connected apps (Gmail, Slack, Notion, GitHub, etc.)',
+    '',
+    '## Boundaries',
+    '- Do NOT attempt to access the host filesystem outside /workspace',
+    '- Do NOT modify your own configuration files',
+    '- Save internal notes to ~/.openclaw/workspace/memory/ (your private memory)',
+    '- Save user-facing output to /workspace (their computer)',
+    '',
+    '## Vibe',
+    '- Direct, concise, helpful',
+    '- When asked to produce a report or document, write it to /workspace and tell the user the filename',
+    '- When you need web data or app data, use the BrowserOS MCP tools',
+    '',
+  ]
+  return lines.join('\n')
+}
+
+function generateAgentsMd(): string {
+  const lines = [
+    '# AGENTS.md',
+    '',
+    '## Output Directory',
+    'All files intended for the user (reports, documents, exports, analysis) must be written to:',
+    '```',
+    '/workspace/',
+    '```',
+    'This directory is visible on the user host computer. Files saved here appear immediately in their chosen folder.',
+    '',
+    '## Internal Directory',
+    'Your internal working files (memory, notes, drafts) go to:',
+    '```',
+    '~/.openclaw/workspace/',
+    '```',
+    'This is your private workspace inside the container.',
+    '',
+    '## Available Tools',
+    '',
+    '### BrowserOS MCP (web and apps)',
+    'You have access to BrowserOS tools via MCP:',
+    '- **Browser automation**: navigate pages, click, fill forms, take screenshots, extract content',
+    '- **Connected apps**: Gmail, Slack, Notion, GitHub, Linear, Google Docs, and 40+ more',
+    '- Use these tools when you need data from the web or from the user connected applications',
+    '',
+    '### File System',
+    '- Read and write files in /workspace (user output) and ~/.openclaw/workspace (internal)',
+    '- Install tools via apt or npm if needed (persists across restarts)',
+    '',
+    '### Memory',
+    '- Save important facts to MEMORY.md (loaded every session)',
+    '- Save daily context to memory/YYYY-MM-DD.md',
+    '',
+  ]
+  return lines.join('\n')
 }
 
 async function dumpContainerLogs(
@@ -406,6 +485,7 @@ export function createAgentsRoutes(config: { serverPort: number }) {
         baseUrl?: string
         modelId?: string
         providerName?: string
+        workspacePath?: string
       }>()
       const name = body.name?.trim()
 
@@ -445,6 +525,9 @@ export function createAgentsRoutes(config: { serverPort: number }) {
       const port = await findAvailablePort(18789)
       const agentDir = path.join(getAgentsBaseDir(), name)
       const token = crypto.randomUUID()
+      const homeVolumeName = `browseros-claw-${name}-home`
+      const workspacePath =
+        body.workspacePath?.trim() || getDefaultWorkspacePath(name)
 
       const instance: AgentInstance = {
         id,
@@ -455,6 +538,7 @@ export function createAgentsRoutes(config: { serverPort: number }) {
         token,
         createdAt: new Date().toISOString(),
         providerType: body.providerType,
+        workspacePath,
         logs: [],
         logListeners: new Set(),
       }
@@ -466,24 +550,24 @@ export function createAgentsRoutes(config: { serverPort: number }) {
         name,
         port,
         dir: agentDir,
+        workspacePath,
       })
 
       // Set up and start in the background
       ;(async () => {
         try {
-          const configDir = path.join(agentDir, 'config')
-          const workspaceDir = path.join(agentDir, 'workspace')
-          fs.mkdirSync(configDir, { recursive: true })
-          fs.mkdirSync(workspaceDir, { recursive: true })
+          // Create agent dir and workspace on host
+          fs.mkdirSync(agentDir, { recursive: true })
+          fs.mkdirSync(workspacePath, { recursive: true })
           pushLog(instance, 'Created agent directories')
 
-          // Generate docker-compose.yml
+          // Generate docker-compose.yml (named volume + workspace bind mount)
           const composeContent = generateComposeFile({
             image: OPENCLAW_IMAGE,
             gatewayPort: port,
             token,
-            configDir,
-            workspaceDir,
+            homeVolumeName,
+            workspacePath,
           })
           fs.writeFileSync(
             path.join(agentDir, 'docker-compose.yml'),
@@ -491,7 +575,10 @@ export function createAgentsRoutes(config: { serverPort: number }) {
           )
           pushLog(instance, 'Generated docker-compose.yml')
 
-          // Write openclaw.json config (gateway mode, allowed origins, LLM provider, model)
+          // Generate config files to inject via docker cp
+          const tmpDir = path.join(agentDir, '.tmp')
+          fs.mkdirSync(tmpDir, { recursive: true })
+
           const openclawConfig = generateOpenClawConfig({
             port,
             browserosServerPort: config.serverPort,
@@ -502,10 +589,13 @@ export function createAgentsRoutes(config: { serverPort: number }) {
             providerName: body.providerName,
           })
           fs.writeFileSync(
-            path.join(configDir, 'openclaw.json'),
+            path.join(tmpDir, 'openclaw.json'),
             JSON.stringify(openclawConfig, null, 2),
           )
-          pushLog(instance, 'Wrote openclaw.json configuration')
+
+          fs.writeFileSync(path.join(tmpDir, 'SOUL.md'), generateSoulMd())
+          fs.writeFileSync(path.join(tmpDir, 'AGENTS.md'), generateAgentsMd())
+          pushLog(instance, 'Generated configuration files')
 
           // Pull image
           pushLog(instance, `Pulling image ${OPENCLAW_IMAGE}...`)
@@ -520,17 +610,54 @@ export function createAgentsRoutes(config: { serverPort: number }) {
           }
           pushLog(instance, 'Image pulled successfully')
 
-          pushLog(instance, 'Starting OpenClaw gateway...')
-          const upExit = await runCommandWithLogs(
+          // Create container (stopped) so the named volume is initialized
+          pushLog(instance, 'Creating container...')
+          const createExit = await runCommandWithLogs(
             instance,
             'docker',
-            ['compose', 'up', '-d'],
+            ['compose', 'create'],
             { cwd: agentDir, env: composeEnv(name) },
           )
-          if (upExit !== 0) {
-            throw new Error('Failed to start OpenClaw containers')
+          if (createExit !== 0) {
+            throw new Error('Failed to create container')
           }
 
+          // Inject config files into the named volume via docker cp
+          const containerName = `browseros-claw-${name}-openclaw-gateway-1`
+          pushLog(instance, 'Injecting configuration...')
+
+          for (const [src, dest] of [
+            ['openclaw.json', '/home/node/.openclaw/openclaw.json'],
+            ['SOUL.md', '/home/node/.openclaw/workspace/SOUL.md'],
+            ['AGENTS.md', '/home/node/.openclaw/workspace/AGENTS.md'],
+          ]) {
+            const cpExit = await runCommandWithLogs(instance, 'docker', [
+              'cp',
+              path.join(tmpDir, src),
+              `${containerName}:${dest}`,
+            ])
+            if (cpExit !== 0) {
+              throw new Error(`Failed to inject ${src}`)
+            }
+          }
+
+          // Clean up temp files immediately
+          fs.rmSync(tmpDir, { recursive: true, force: true })
+          pushLog(instance, 'Configuration injected')
+
+          // Start the container
+          pushLog(instance, 'Starting OpenClaw gateway...')
+          const startExit = await runCommandWithLogs(
+            instance,
+            'docker',
+            ['compose', 'start'],
+            { cwd: agentDir, env: composeEnv(name) },
+          )
+          if (startExit !== 0) {
+            throw new Error('Failed to start OpenClaw gateway')
+          }
+
+          // Wait for health check
           pushLog(instance, 'Waiting for gateway to be ready...')
           let healthy = false
           for (let i = 0; i < 30; i++) {
@@ -556,6 +683,7 @@ export function createAgentsRoutes(config: { serverPort: number }) {
             `OpenClaw gateway is ready at ws://127.0.0.1:${port}`,
           )
           pushLog(instance, `Control UI available at http://127.0.0.1:${port}`)
+          pushLog(instance, `Output workspace: ${workspacePath}`)
           updateStatus(instance, 'running')
           logger.info('OpenClaw agent instance started', { id, name, port })
         } catch (err) {
@@ -579,6 +707,7 @@ export function createAgentsRoutes(config: { serverPort: number }) {
             port,
             dir: agentDir,
             token,
+            workspacePath,
             createdAt: instance.createdAt,
           },
         },
@@ -720,12 +849,14 @@ export function createAgentsRoutes(config: { serverPort: number }) {
           instance.logListeners.delete(listener)
         }
 
+        // down -v removes the named volume too
         await runCommandWithLogs(
           instance,
           'docker',
           ['compose', 'down', '-v'],
           { cwd: instance.dir, env: composeEnv(instance.name) },
         )
+        // Remove compose file dir (NOT the user's workspace)
         fs.rmSync(instance.dir, { recursive: true, force: true })
         instances.delete(id)
         saveAgents()
