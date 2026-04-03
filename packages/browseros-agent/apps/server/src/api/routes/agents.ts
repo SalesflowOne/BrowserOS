@@ -220,6 +220,11 @@ function generateOpenClawConfig(config: {
         },
       },
     },
+    // Disable exec approvals — the container is already sandboxed
+    approvals: {
+      exec: { enabled: false },
+      plugin: { enabled: false },
+    },
   }
 
   if (!config.apiKey || !config.providerType) {
