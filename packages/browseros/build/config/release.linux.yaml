@@ -1,8 +1,8 @@
 # BrowserOS Linux Release Build Configuration
 #
-# Builds x64 on a Linux x64 host. arm64 is temporarily disabled while we
-# validate the cross-compile sysroot bootstrap end-to-end — re-enable by
-# switching `architecture` back to `[x64, arm64]`.
+# Pinned to arm64-only to validate the cross-compile sysroot bootstrap
+# end-to-end on a Linux x64 host. Flip back to `[x64, arm64]` once arm64
+# is green.
 #
 # Run:
 #   browseros build --config build/config/release.linux.yaml
@@ -13,7 +13,7 @@
 
 build:
   type: release
-  architecture: x64
+  architecture: arm64
 
 gn_flags:
   file: build/config/gn/flags.linux.release.gn
