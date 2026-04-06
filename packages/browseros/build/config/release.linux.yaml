@@ -1,8 +1,11 @@
 # BrowserOS Linux Release Build Configuration
 #
-# Run this config once per target architecture:
-#   browseros build --config build/config/release.linux.yaml --arch x64
-#   browseros build --config build/config/release.linux.yaml --arch arm64
+# Builds both x64 and arm64 in a single invocation on a Linux x64 host.
+# The runner loops the entire pipeline once per architecture; depot_tools
+# fetches the matching sysroots automatically (see git_setup module).
+#
+# Run:
+#   browseros build --config build/config/release.linux.yaml
 #
 # Environment Variables:
 #   Use !env tag to reference environment variables:
@@ -10,11 +13,12 @@
 
 build:
   type: release
+  architecture: [x64, arm64]  # Builds both arches sequentially in one run
 
 gn_flags:
   file: build/config/gn/flags.linux.release.gn
 
-# Explicit module execution order
+# Explicit module execution order. Runs once per architecture above.
 modules:
   # Phase 1: Setup
   - clean

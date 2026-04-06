@@ -17,23 +17,39 @@ from ...common.utils import (
     run_command,
     safe_rmtree,
     join_paths,
+    get_platform_arch,
     IS_LINUX,
 )
 from ...common.notify import get_notifier, COLOR_GREEN
 
+# Target-arch packaging metadata. These describe the artifact we're
+# producing, not the build machine. `appimage_arch` is passed to
+# appimagetool via the ARCH env var; `deb_arch` is written into the
+# .deb control file.
 LINUX_ARCHITECTURE_CONFIG = {
     "x64": {
-        "appimage_tool": "appimagetool-x86_64.AppImage",
-        "appimage_url": "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage",
         "appimage_arch": "x86_64",
         "deb_arch": "amd64",
     },
     "arm64": {
-        "appimage_tool": "appimagetool-aarch64.AppImage",
-        "appimage_url": "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-aarch64.AppImage",
         "appimage_arch": "aarch64",
         "deb_arch": "arm64",
     },
+}
+
+# Host-arch tool selection. appimagetool is a normal binary that runs on
+# the build machine — when cross-compiling arm64 from an x64 host, we
+# still need the x86_64 tool to actually execute. Keyed on
+# get_platform_arch() (BUILD machine arch), NOT ctx.architecture.
+LINUX_HOST_APPIMAGETOOL = {
+    "x64": (
+        "appimagetool-x86_64.AppImage",
+        "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage",
+    ),
+    "arm64": (
+        "appimagetool-aarch64.AppImage",
+        "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-aarch64.AppImage",
+    ),
 }
 
 
@@ -45,6 +61,19 @@ def get_linux_architecture_config(architecture: str) -> dict[str, str]:
             f"Unsupported Linux architecture: {architecture}. Supported: {supported}"
         )
     return config
+
+
+def get_host_appimagetool() -> tuple[str, str]:
+    """Return (filename, url) for the appimagetool binary that runs on
+    the current build machine. Critical for cross-compile correctness."""
+    host_arch = get_platform_arch()
+    tool = LINUX_HOST_APPIMAGETOOL.get(host_arch)
+    if not tool:
+        supported = ", ".join(sorted(LINUX_HOST_APPIMAGETOOL))
+        raise ValueError(
+            f"No appimagetool binary for host arch '{host_arch}'. Supported: {supported}"
+        )
+    return tool
 
 
 class LinuxPackageModule(CommandModule):
@@ -313,26 +342,30 @@ export CHROME_WRAPPER="${{THIS}}"
 
 
 def download_appimagetool(ctx: Context) -> Optional[Path]:
-    """Download appimagetool if not available"""
+    """Download the appimagetool binary that runs on the build machine.
+
+    Note: this is keyed on the HOST arch, not ctx.architecture. When
+    cross-compiling arm64 packages from an x64 host, we still need the
+    x86_64 appimagetool because the tool executes locally; the target
+    arch is communicated via the ARCH env var in create_appimage().
+    """
     tool_dir = Path(join_paths(ctx.root_dir, "build", "tools"))
     tool_dir.mkdir(exist_ok=True)
-    arch_config = get_linux_architecture_config(ctx.architecture)
 
-    tool_path = Path(join_paths(tool_dir, arch_config["appimage_tool"]))
+    tool_filename, url = get_host_appimagetool()
+    tool_path = Path(join_paths(tool_dir, tool_filename))
 
     if tool_path.exists():
-        log_info("✓ appimagetool already available")
+        log_info(f"✓ appimagetool already available ({tool_filename})")
         return tool_path
 
-    log_info("📥 Downloading appimagetool...")
-    url = arch_config["appimage_url"]
-
+    log_info(f"📥 Downloading {tool_filename}...")
     cmd = ["wget", "-O", str(tool_path), url]
     result = run_command(cmd, check=False)
 
     if result.returncode == 0:
         tool_path.chmod(0o755)
-        log_success("✓ Downloaded appimagetool")
+        log_success(f"✓ Downloaded {tool_filename}")
         return tool_path
     else:
         log_error("Failed to download appimagetool")
