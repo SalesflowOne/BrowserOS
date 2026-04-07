@@ -20,7 +20,7 @@ import {
   type PodmanRuntime,
 } from '../services/podman-runtime'
 
-const OPENCLAW_IMAGE = 'ghcr.io/openclaw/openclaw:latest'
+const OPENCLAW_IMAGE = 'ghcr.io/browseros/openclaw-runtime:latest'
 const MAX_LOG_LINES = 1000
 
 // Maps BrowserOS provider types to OpenClaw environment variable names
@@ -181,18 +181,20 @@ function generateComposeFile(config: {
     image: ${config.image}
     ports:
       - "127.0.0.1:${config.gatewayPort}:18789"
+      - "127.0.0.1:${config.gatewayPort + 1000}-${config.gatewayPort + 1099}:4000-4099"
     environment:
       - OPENCLAW_GATEWAY_TOKEN=${config.token}
       - TZ=${tz}
     volumes:
       - ${config.configDir}:/home/node/.openclaw
       - ${config.workspaceDir}:/home/node/.openclaw/workspace
-    command: node dist/index.js gateway --bind lan --port 18789
+    shm_size: "256mb"
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://127.0.0.1:18789/healthz"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 60s
     restart: unless-stopped
 `
 }
@@ -561,19 +563,50 @@ export function createAgentsRoutes() {
           pushLog(instance, 'Wrote openclaw.json configuration')
 
           pushLog(instance, 'Checking container runtime...')
-          await getPodmanRuntime().ensureReady((msg) => pushLog(instance, msg))
+          const runtime = getPodmanRuntime()
+          await runtime.ensureReady((msg) => pushLog(instance, msg))
           pushLog(instance, 'Container runtime ready')
 
-          pushLog(instance, `Pulling image ${OPENCLAW_IMAGE}...`)
-          const pullExit = await runCommandWithLogs(
-            instance,
-            ['compose', 'pull', '--quiet'],
-            { cwd: agentDir, env: composeEnv(name) },
+          // Check if the runtime image exists locally; build if not
+          const imageCheck = Bun.spawn(
+            [runtime.getPodmanPath(), 'image', 'exists', OPENCLAW_IMAGE],
+            { stdout: 'ignore', stderr: 'ignore' },
           )
-          if (pullExit !== 0) {
-            throw new Error('Failed to pull OpenClaw image')
+          const imageExists = (await imageCheck.exited) === 0
+
+          if (!imageExists) {
+            // Try pulling from registry first
+            pushLog(instance, `Pulling image ${OPENCLAW_IMAGE}...`)
+            const pullExit = await runCommandWithLogs(instance, [
+              'pull',
+              OPENCLAW_IMAGE,
+            ])
+            // If pull fails, build locally from Dockerfile
+            if (pullExit !== 0) {
+              pushLog(
+                instance,
+                'Image not found in registry, building locally (first time, may take a few minutes)...',
+              )
+              const dockerfileDir = path.join(
+                import.meta.dir,
+                '../services/openclaw-container',
+              )
+              const buildExit = await runCommandWithLogs(instance, [
+                'build',
+                '-t',
+                OPENCLAW_IMAGE,
+                dockerfileDir,
+              ])
+              if (buildExit !== 0) {
+                throw new Error('Failed to build runtime image')
+              }
+              pushLog(instance, 'Runtime image built successfully')
+            } else {
+              pushLog(instance, 'Image pulled successfully')
+            }
+          } else {
+            pushLog(instance, 'Using existing runtime image')
           }
-          pushLog(instance, 'Image pulled successfully')
 
           pushLog(instance, 'Starting OpenClaw gateway...')
           const upExit = await runCommandWithLogs(
@@ -587,7 +620,7 @@ export function createAgentsRoutes() {
 
           pushLog(instance, 'Waiting for gateway to be ready...')
           let healthy = false
-          for (let i = 0; i < 30; i++) {
+          for (let i = 0; i < 90; i++) {
             try {
               const res = await fetch(`http://127.0.0.1:${port}/healthz`)
               if (res.ok) {
