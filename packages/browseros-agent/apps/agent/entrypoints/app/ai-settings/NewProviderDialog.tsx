@@ -305,9 +305,14 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
     [modelInfoList],
   )
 
-  const filteredModels = modelSearch
-    ? modelFuse.search(modelSearch).map((r) => r.item)
-    : modelInfoList
+  const filteredModels = useMemo(() => {
+    if (!modelSearch) return modelInfoList
+    const fuzzyResults = modelFuse.search(modelSearch).map((r) => r.item)
+    const hasExactMatch = fuzzyResults.some((m) => m.modelId === modelSearch)
+    if (hasExactMatch) return fuzzyResults
+    const customEntry = { modelId: modelSearch, contextLength: 0 }
+    return [customEntry, ...fuzzyResults]
+  }, [modelSearch, modelFuse, modelInfoList])
 
   // Handle provider type change (user-initiated via Select)
   const handleTypeChange = (newType: ProviderType) => {
@@ -896,11 +901,7 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
                             value={modelSearch}
                             onValueChange={setModelSearch}
                             onKeyDown={(e) => {
-                              if (
-                                e.key === 'Enter' &&
-                                modelSearch &&
-                                filteredModels.length === 0
-                              ) {
+                              if (e.key === 'Enter' && modelSearch) {
                                 e.preventDefault()
                                 form.setValue('modelId', modelSearch)
                                 track(MODEL_SELECTED_EVENT, {
@@ -918,35 +919,43 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
                               No models found. Press Enter to use &quot;
                               {modelSearch}&quot;
                             </CommandEmpty>
-                            <CommandGroup>
-                              {filteredModels.map((model) => (
-                                <CommandItem
-                                  key={model.modelId}
-                                  value={model.modelId}
-                                  onSelect={() => {
-                                    form.setValue('modelId', model.modelId)
-                                    track(MODEL_SELECTED_EVENT, {
-                                      provider_type: watchedType,
-                                      model_id: model.modelId,
-                                      context_window: model.contextLength,
-                                      is_custom_model: false,
-                                    })
-                                    setModelPickerOpen(false)
-                                    setModelSearch('')
-                                  }}
-                                >
-                                  <span className="flex-1 truncate">
-                                    {model.modelId}
-                                  </span>
-                                  <span className="ml-2 shrink-0 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                                    {formatContextWindow(model.contextLength)}
-                                  </span>
-                                  {field.value === model.modelId && (
-                                    <Check className="ml-2 h-4 w-4 shrink-0" />
-                                  )}
-                                </CommandItem>
-                              ))}
-                            </CommandGroup>
+                            {filteredModels.length > 0 && (
+                              <CommandGroup>
+                                {filteredModels.map((model) => (
+                                  <CommandItem
+                                    key={model.modelId}
+                                    value={model.modelId}
+                                    onSelect={() => {
+                                      form.setValue('modelId', model.modelId)
+                                      track(MODEL_SELECTED_EVENT, {
+                                        provider_type: watchedType,
+                                        model_id: model.modelId,
+                                        context_window: model.contextLength,
+                                        is_custom_model: !modelInfoList.some(
+                                          (m) => m.modelId === model.modelId,
+                                        ),
+                                      })
+                                      setModelPickerOpen(false)
+                                      setModelSearch('')
+                                    }}
+                                  >
+                                    <span className="flex-1 truncate">
+                                      {model.modelId}
+                                    </span>
+                                    {model.contextLength > 0 && (
+                                      <span className="ml-2 shrink-0 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                                        {formatContextWindow(
+                                          model.contextLength,
+                                        )}
+                                      </span>
+                                    )}
+                                    {field.value === model.modelId && (
+                                      <Check className="ml-2 h-4 w-4 shrink-0" />
+                                    )}
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            )}
                           </CommandList>
                         </Command>
                       </PopoverContent>
