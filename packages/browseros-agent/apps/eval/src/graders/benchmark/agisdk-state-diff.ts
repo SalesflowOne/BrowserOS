@@ -19,6 +19,9 @@ export class AgisdkStateDiffGrader implements Grader {
   async grade(input: GraderInput): Promise<GraderResult> {
     const taskId = this.extractTaskId(input.task.query_id)
     const startUrl = this.extractStartUrl(input)
+    const mcpEndpoint =
+      input.mcpUrl ||
+      `${process.env.BROWSEROS_SERVER_URL || 'http://127.0.0.1:9110'}/mcp`
 
     if (!startUrl) {
       return {
@@ -32,7 +35,7 @@ export class AgisdkStateDiffGrader implements Grader {
 
     let envState: Record<string, unknown>
     try {
-      envState = await this.fetchFinishState(origin)
+      envState = await this.fetchFinishState(origin, mcpEndpoint)
     } catch (error) {
       return {
         score: 0,
@@ -99,9 +102,8 @@ export class AgisdkStateDiffGrader implements Grader {
 
   private async fetchFinishState(
     origin: string,
+    mcpEndpoint: string,
   ): Promise<Record<string, unknown>> {
-    const mcpUrl = process.env.BROWSEROS_SERVER_URL || 'http://127.0.0.1:9110'
-    const mcpEndpoint = `${mcpUrl}/mcp`
     const finishUrl = `${origin}/finish`
 
     // Navigate browser to /finish page (state diff is rendered client-side)

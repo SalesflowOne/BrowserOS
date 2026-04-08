@@ -234,6 +234,7 @@ export class TaskExecutor {
           expectedAnswer: (task.metadata?.additional as Record<string, unknown>)
             ?.answer as string | undefined,
           outputDir: join(this.outputDir, task.query_id),
+          mcpUrl: `${this.config.browseros.server_url}/mcp`,
         },
         this.deps.graderOptions,
       )
