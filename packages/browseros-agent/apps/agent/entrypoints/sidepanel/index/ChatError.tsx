@@ -132,7 +132,7 @@ export const ChatError: FC<ChatErrorProps> = ({
           View Usage & Billing
         </a>
       )}
-      {isRateLimit && (
+      {isRateLimit && !isCreditsExhausted && (
         <p className="text-muted-foreground text-xs">
           <a
             href={url}
