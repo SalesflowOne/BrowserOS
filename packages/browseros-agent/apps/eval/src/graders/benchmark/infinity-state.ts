@@ -89,7 +89,9 @@ export class InfinityStateGrader implements Grader {
   private parseQueryId(
     queryId: string,
   ): { appName: string; taskId: string } | null {
-    const match = queryId.match(/^infinity-(.+?)-(.+)$/)
+    // Task IDs start with "task_", app names may contain hyphens
+    // e.g. "infinity-elation-prescriptions-task_h69"
+    const match = queryId.match(/^infinity-(.+)-(task_.+)$/)
     if (!match) return null
     return { appName: match[1], taskId: match[2] }
   }
