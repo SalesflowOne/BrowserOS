@@ -8,7 +8,7 @@
     "supportsImages": true
   },
   "dataset": "../data/webarena-infinity-hard-50.jsonl",
-  "num_workers": 1,
+  "num_workers": 10,
   "restart_server_per_task": true,
   "browseros": {
     "server_url": "http://127.0.0.1:9110",
