@@ -1,4 +1,5 @@
 import type { GraderResult } from '../types'
+import { InfinityStateGrader } from './benchmark/infinity-state'
 import { Mind2WebJudgeGrader } from './benchmark/mind2web'
 import { WebVoyagerGrader } from './benchmark/webvoyager'
 import { FaraAlignmentGrader } from './fara/alignment'
@@ -19,6 +20,10 @@ export function createGrader(
   options: GraderOptions | null,
 ): Grader | null {
   switch (name) {
+    // Deterministic benchmark graders (no LLM judge)
+    case 'infinity_state':
+      return new InfinityStateGrader()
+
     // Benchmark graders
     case 'webvoyager_grader':
       if (!options?.apiKey) return null
@@ -111,6 +116,7 @@ export {
   FaraCombinedGrader,
   FaraMultimodalGrader,
   FaraRubricGrader,
+  InfinityStateGrader,
   Mind2WebJudgeGrader,
   PerformanceGrader,
   WebVoyagerGrader,
