@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 import type { GraderResult } from '../../types'
+import { callMcpTool } from '../../utils/mcp-client'
 import type { Grader, GraderInput } from '../types'
 
 const EVAL_SCRIPT = join(
@@ -75,13 +76,13 @@ export class AgisdkStateDiffGrader implements Grader {
   }
 
   private extractStartUrl(input: GraderInput): string | null {
-    // The task object may carry start_url if passed through
-    const metadata = input.task as Record<string, unknown>
-    if (metadata.start_url && typeof metadata.start_url === 'string') {
-      return metadata.start_url
-    }
+    // Derive from task_id: "dashdish-10" → "https://evals-dashdish.vercel.app"
+    // Task IDs are "{site}-{number}" where site may contain hyphens (e.g. "fly-unified-5")
+    const taskId = this.extractTaskId(input.task.query_id)
+    const siteId = taskId.replace(/-\d+$/, '')
+    if (siteId) return `https://evals-${siteId}.vercel.app`
 
-    // Try extracting vercel.app URLs from messages (user text or tool inputs)
+    // Fallback: search messages for vercel.app URLs
     for (const msg of input.messages) {
       const text =
         msg.type === 'user'
@@ -93,37 +94,51 @@ export class AgisdkStateDiffGrader implements Grader {
       if (urlMatch) return urlMatch[0]
     }
 
-    // Fallback: try reading task metadata from output dir
-    try {
-      const fs = require('node:fs')
-      const metaPath = join(input.outputDir, 'metadata.json')
-      const raw = fs.readFileSync(metaPath, 'utf8')
-      const parsed = JSON.parse(raw)
-      if (parsed.start_url) return parsed.start_url
-    } catch {
-      // metadata.json not available
-    }
-
     return null
   }
 
   private async fetchFinishState(
     origin: string,
   ): Promise<Record<string, unknown>> {
-    const url = `${origin}/finish`
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      signal: AbortSignal.timeout(30_000),
+    const mcpUrl = process.env.BROWSEROS_SERVER_URL || 'http://127.0.0.1:9110'
+    const mcpEndpoint = `${mcpUrl}/mcp`
+    const finishUrl = `${origin}/finish`
+
+    // Navigate browser to /finish page (state diff is rendered client-side)
+    await callMcpTool(mcpEndpoint, 'navigate_page', {
+      url: finishUrl,
+      page: 1,
     })
 
-    if (!response.ok) {
-      throw new Error(
-        `/finish returned ${response.status}: ${response.statusText}`,
-      )
+    // Wait for the page to render, then extract JSON from <pre> element
+    const result = await callMcpTool(mcpEndpoint, 'evaluate_script', {
+      page: 1,
+      expression: `
+        new Promise((resolve, reject) => {
+          let attempts = 0;
+          const check = () => {
+            const pre = document.querySelector('pre');
+            if (pre && pre.textContent.trim().startsWith('{')) {
+              resolve(pre.textContent);
+            } else if (++attempts > 20) {
+              reject(new Error('Timed out waiting for <pre> JSON on /finish'));
+            } else {
+              setTimeout(check, 500);
+            }
+          };
+          check();
+        })
+      `,
+    })
+
+    const textContent = result.content?.find(
+      (c: { type: string }) => c.type === 'text',
+    )
+    if (!textContent?.text) {
+      throw new Error('No text content returned from /finish page')
     }
 
-    return (await response.json()) as Record<string, unknown>
+    return JSON.parse(textContent.text) as Record<string, unknown>
   }
 
   private runPythonEvaluator(

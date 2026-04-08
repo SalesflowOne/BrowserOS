@@ -39,12 +39,18 @@ def main():
         sys.exit(0)
 
     try:
+        # Redirect stdout to stderr during evaluation — agisdk's rich logger
+        # prints directly to stdout, which would corrupt our JSON output
+        real_stdout = sys.stdout
+        sys.stdout = sys.stderr
+
         tc = TaskConfig(task_id)
         evaluator = WebCloneEvaluator(tc)
-        # evaluate() returns (reward: float, done: bool, message: str, info: dict)
         reward_val, _done, message, info = evaluator.evaluate(
             env_state=env_state, model_response=model_response
         )
+
+        sys.stdout = real_stdout
 
         reward_val = float(reward_val) if reward_val is not None else 0.0
         results = info.get("results", [])
@@ -65,6 +71,7 @@ def main():
         )
 
     except Exception as e:
+        sys.stdout = real_stdout if "real_stdout" in dir() else sys.__stdout__
         print(
             json.dumps(
                 {
