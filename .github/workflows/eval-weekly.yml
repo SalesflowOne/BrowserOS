@@ -89,6 +89,8 @@ jobs:
 
       - name: Generate trend report
         if: success()
+        timeout-minutes: 5
+        continue-on-error: true
         working-directory: packages/browseros-agent
         env:
           EVAL_R2_ACCOUNT_ID: ${{ secrets.EVAL_R2_ACCOUNT_ID }}
