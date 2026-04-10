@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react'
 import { getAgentServerUrl } from '@/lib/browseros/helpers'
 
 export interface AgentEntry {
-  id: string
+  agentId: string
   name: string
   workspace: string
+  model?: string
 }
 
 export interface OpenClawStatus {

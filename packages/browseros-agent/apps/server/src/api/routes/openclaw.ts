@@ -203,7 +203,6 @@ export function createOpenClawRoutes() {
         await getOpenClawService().updateProviderKeys(
           body.providerType,
           body.apiKey,
-          body.modelId,
         )
         return c.json({
           status: 'restarting',

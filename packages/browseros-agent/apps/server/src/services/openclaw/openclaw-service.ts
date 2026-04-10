@@ -4,22 +4,21 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
  * Main orchestrator for OpenClaw integration.
- * Manages the single OpenClaw container lifecycle, agent CRUD,
- * configuration, and chat proxy.
+ * Container lifecycle via Podman, agent CRUD via Gateway WS RPC,
+ * chat via HTTP /v1/chat/completions proxy.
  */
 
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { TIMEOUTS } from '@browseros/shared/constants/timeouts'
 import { getOpenClawDir } from '../../lib/browseros-dir'
 import { logger } from '../../lib/logger'
 import { ContainerRuntime } from './container-runtime'
+import { type GatewayAgentEntry, GatewayClient } from './gateway-client'
 import {
-  type AgentEntry,
+  buildBootstrapConfig,
   buildEnvFile,
-  buildOpenClawConfig,
-  makeAgentEntry,
   resolveProviderKeys,
 } from './openclaw-config'
 import { getPodmanRuntime } from './podman-runtime'
@@ -30,7 +29,7 @@ const COMPOSE_RESOURCE = resolve(
 )
 const OPENCLAW_CONFIG_FILE = 'openclaw.json'
 const GATEWAY_PORT = 18789
-const HEALTH_TIMEOUT_MS = 30_000
+const READY_TIMEOUT_MS = 30_000
 const CHAT_TIMEOUT_MS = TIMEOUTS.TOOL_CALL
 const AGENT_NAME_PATTERN = /^[a-z][a-z0-9-]*$/
 
@@ -63,6 +62,7 @@ export interface ChatMessage {
 
 export class OpenClawService {
   private runtime: ContainerRuntime
+  private gateway: GatewayClient | null = null
   private openclawDir: string
   private port = GATEWAY_PORT
   private token: string
@@ -104,18 +104,13 @@ export class OpenClawService {
     await this.runtime.writeEnvFile(envContent)
     onLog?.('Generated .env file')
 
-    const mainAgent = makeAgentEntry('main', {
-      providerType: input.providerType,
-      modelId: input.modelId,
-    })
-    const config = buildOpenClawConfig({
+    const config = buildBootstrapConfig({
       gatewayPort: this.port,
       gatewayToken: this.token,
-      agents: [mainAgent],
       providerType: input.providerType,
       modelId: input.modelId,
     })
-    await this.writeConfig(config)
+    await this.writeBootstrapConfig(config)
     onLog?.('Generated openclaw.json')
 
     onLog?.('Pulling OpenClaw image...')
@@ -125,17 +120,28 @@ export class OpenClawService {
     onLog?.('Starting OpenClaw gateway...')
     await this.runtime.composeUp(onLog)
 
-    onLog?.('Waiting for gateway health...')
-    const healthy = await this.runtime.waitForHealthy(
-      this.port,
-      HEALTH_TIMEOUT_MS,
-    )
-    if (!healthy) {
-      this.lastError = 'Gateway did not become healthy within 30 seconds'
+    onLog?.('Waiting for gateway readiness...')
+    const ready = await this.runtime.waitForReady(this.port, READY_TIMEOUT_MS)
+    if (!ready) {
+      this.lastError = 'Gateway did not become ready within 30 seconds'
       const logs = await this.runtime.composeLogs()
-      logger.error('Gateway health check failed', { logs })
+      logger.error('Gateway readiness check failed', { logs })
       throw new Error(this.lastError)
     }
+
+    onLog?.('Connecting to gateway...')
+    await this.connectGateway()
+
+    onLog?.('Creating main agent...')
+    const model =
+      input.providerType && input.modelId
+        ? `${input.providerType}/${input.modelId}`
+        : undefined
+    await this.gateway!.createAgent({
+      name: 'main',
+      workspace: GatewayClient.agentWorkspace('main'),
+      model,
+    })
 
     this.lastError = null
     onLog?.(`OpenClaw gateway running at http://127.0.0.1:${this.port}`)
@@ -147,40 +153,41 @@ export class OpenClawService {
     await this.runtime.ensureReady(onLog)
     await this.runtime.composeUp(onLog)
 
-    const healthy = await this.runtime.waitForHealthy(
-      this.port,
-      HEALTH_TIMEOUT_MS,
-    )
-    if (!healthy) {
-      this.lastError = 'Gateway did not become healthy after start'
+    const ready = await this.runtime.waitForReady(this.port, READY_TIMEOUT_MS)
+    if (!ready) {
+      this.lastError = 'Gateway did not become ready after start'
       throw new Error(this.lastError)
     }
+
+    await this.connectGateway()
     this.lastError = null
   }
 
   async stop(): Promise<void> {
+    this.disconnectGateway()
     await this.runtime.composeStop()
     logger.info('OpenClaw container stopped')
   }
 
   async restart(onLog?: (msg: string) => void): Promise<void> {
+    this.disconnectGateway()
     await this.loadTokenFromEnv()
     onLog?.('Restarting OpenClaw gateway...')
     await this.runtime.composeRestart(onLog)
 
-    const healthy = await this.runtime.waitForHealthy(
-      this.port,
-      HEALTH_TIMEOUT_MS,
-    )
-    if (!healthy) {
-      this.lastError = 'Gateway did not become healthy after restart'
+    const ready = await this.runtime.waitForReady(this.port, READY_TIMEOUT_MS)
+    if (!ready) {
+      this.lastError = 'Gateway did not become ready after restart'
       throw new Error(this.lastError)
     }
+
+    await this.connectGateway()
     this.lastError = null
     onLog?.('Gateway restarted successfully')
   }
 
   async shutdown(): Promise<void> {
+    this.disconnectGateway()
     try {
       await this.runtime.composeStop()
     } catch {
@@ -219,20 +226,22 @@ export class OpenClawService {
     }
 
     const machineStatus = await this.runtime.getMachineStatus()
-    const healthy = machineStatus.running
-      ? await this.runtime.isHealthy(this.port)
+    const ready = machineStatus.running
+      ? await this.runtime.isReady(this.port)
       : false
 
     let agentCount = 0
-    try {
-      const agents = await this.listAgents()
-      agentCount = agents.length
-    } catch {
-      // Config may be unreadable
+    if (ready && this.gateway?.isConnected) {
+      try {
+        const agents = await this.gateway.listAgents()
+        agentCount = agents.length
+      } catch {
+        // WS may be momentarily unavailable
+      }
     }
 
     return {
-      status: healthy ? 'running' : this.lastError ? 'error' : 'stopped',
+      status: ready ? 'running' : this.lastError ? 'error' : 'stopped',
       podmanAvailable: true,
       machineReady: machineStatus.running,
       port: this.port,
@@ -241,14 +250,14 @@ export class OpenClawService {
     }
   }
 
-  // ── Agent Management ─────────────────────────────────────────────────
+  // ── Agent Management (via WS RPC) ───────────────────────────────────
 
   async createAgent(input: {
     name: string
     providerType?: string
     apiKey?: string
     modelId?: string
-  }): Promise<AgentEntry> {
+  }): Promise<GatewayAgentEntry> {
     const { name } = input
     if (!AGENT_NAME_PATTERN.test(name)) {
       throw new Error(
@@ -256,37 +265,37 @@ export class OpenClawService {
       )
     }
 
-    const config = await this.readConfig()
-    const agents = this.getAgentsList(config)
+    this.ensureGatewayConnected()
 
-    if (agents.some((a) => a.id === name)) {
-      throw new Error(`Agent "${name}" already exists`)
-    }
-
-    const entry = makeAgentEntry(name, {
-      providerType: input.providerType,
-      modelId: input.modelId,
-    })
-
-    // Create workspace on host (visible inside container via volume mount)
-    const hostWorkspaceDir = join(this.openclawDir, `workspace-${name}`)
-    await mkdir(hostWorkspaceDir, { recursive: true })
-
-    agents.push(entry)
-    this.setAgentsList(config, agents)
-    await this.writeConfig(config)
-
-    // Merge new provider API key into .env so the container has access
+    // Merge new provider API key into .env if needed
+    let needsRestart = false
     if (input.providerType && input.apiKey) {
-      await this.mergeProviderKey(input.providerType, input.apiKey)
+      needsRestart = await this.mergeProviderKeyIfNew(
+        input.providerType,
+        input.apiKey,
+      )
     }
 
-    await this.restart()
-    logger.info('Agent created', {
-      agentId: name,
+    if (needsRestart) {
+      await this.restart()
+    }
+
+    const model =
+      input.providerType && input.modelId
+        ? `${input.providerType}/${input.modelId}`
+        : undefined
+
+    const agent = await this.gateway!.createAgent({
+      name,
+      workspace: GatewayClient.agentWorkspace(name),
+      model,
+    })
+
+    logger.info('Agent created via WS RPC', {
+      agentId: agent.agentId,
       providerType: input.providerType,
     })
-    return entry
+    return agent
   }
 
   async removeAgent(agentId: string): Promise<void> {
@@ -294,34 +303,19 @@ export class OpenClawService {
       throw new Error('Cannot delete the main agent')
     }
 
-    const config = await this.readConfig()
-    const agents = this.getAgentsList(config)
-    const index = agents.findIndex((a) => a.id === agentId)
-
-    if (index === -1) {
-      throw new Error(`Agent "${agentId}" not found`)
-    }
-
-    agents.splice(index, 1)
-    this.setAgentsList(config, agents)
-    await this.writeConfig(config)
-
-    // Remove workspace
-    const hostWorkspaceDir = join(this.openclawDir, `workspace-${agentId}`)
-    await rm(hostWorkspaceDir, { recursive: true, force: true })
-
-    await this.restart()
-    logger.info('Agent removed', { agentId })
+    this.ensureGatewayConnected()
+    await this.gateway!.deleteAgent(agentId)
+    logger.info('Agent removed via WS RPC', { agentId })
   }
 
-  async listAgents(): Promise<AgentEntry[]> {
-    const config = await this.readConfig()
-    return this.getAgentsList(config)
+  async listAgents(): Promise<GatewayAgentEntry[]> {
+    this.ensureGatewayConnected()
+    return this.gateway!.listAgents()
   }
 
-  // ── Chat Proxy ───────────────────────────────────────────────────────
+  // ── Chat Proxy (HTTP) ───────────────────────────────────────────────
 
-  async chat(_agentId: string, messages: ChatMessage[]): Promise<Response> {
+  async chat(agentId: string, messages: ChatMessage[]): Promise<Response> {
     await this.loadTokenFromEnv()
     const url = `http://127.0.0.1:${this.port}/v1/chat/completions`
 
@@ -332,7 +326,7 @@ export class OpenClawService {
         Authorization: `Bearer ${this.token}`,
       },
       body: JSON.stringify({
-        model: 'default',
+        model: `openclaw/${agentId}`,
         stream: true,
         messages,
       }),
@@ -352,29 +346,8 @@ export class OpenClawService {
   async updateProviderKeys(
     providerType: string,
     apiKey: string,
-    modelId?: string,
   ): Promise<void> {
-    const providerKeys = resolveProviderKeys(providerType, apiKey)
-    await this.loadTokenFromEnv()
-
-    const envContent = buildEnvFile({
-      token: this.token,
-      configDir: this.openclawDir,
-      providerKeys,
-    })
-    await this.runtime.writeEnvFile(envContent)
-
-    if (modelId) {
-      const config = await this.readConfig()
-      const agents = config.agents as Record<string, unknown> | undefined
-      if (agents) {
-        const defaults = (agents.defaults ?? {}) as Record<string, unknown>
-        defaults.model = { primary: `${providerType}/${modelId}` }
-        agents.defaults = defaults
-      }
-      await this.writeConfig(config)
-    }
-
+    await this.mergeProviderKeyIfNew(providerType, apiKey)
     await this.restart()
     logger.info('Provider keys updated', { providerType })
   }
@@ -398,20 +371,19 @@ export class OpenClawService {
       await this.loadTokenFromEnv()
       await this.runtime.ensureReady()
 
-      if (await this.runtime.isHealthy(this.port)) {
+      if (await this.runtime.isReady(this.port)) {
+        await this.connectGateway()
         logger.info('OpenClaw gateway already running')
         return
       }
 
       await this.runtime.composeUp()
-      const healthy = await this.runtime.waitForHealthy(
-        this.port,
-        HEALTH_TIMEOUT_MS,
-      )
-      if (healthy) {
+      const ready = await this.runtime.waitForReady(this.port, READY_TIMEOUT_MS)
+      if (ready) {
+        await this.connectGateway()
         logger.info('OpenClaw gateway auto-started')
       } else {
-        logger.warn('OpenClaw gateway failed to become healthy on auto-start')
+        logger.warn('OpenClaw gateway failed to become ready on auto-start')
       }
     } catch (err) {
       logger.warn('OpenClaw auto-start failed', {
@@ -422,43 +394,43 @@ export class OpenClawService {
 
   // ── Internal ─────────────────────────────────────────────────────────
 
-  private async readConfig(): Promise<Record<string, unknown>> {
-    const configPath = join(this.openclawDir, OPENCLAW_CONFIG_FILE)
-    const content = await readFile(configPath, 'utf-8')
-    return JSON.parse(content) as Record<string, unknown>
+  private async connectGateway(): Promise<void> {
+    this.disconnectGateway()
+    this.gateway = new GatewayClient(this.port, this.token)
+    await this.gateway.connect()
   }
 
-  private async writeConfig(config: Record<string, unknown>): Promise<void> {
+  private disconnectGateway(): void {
+    if (this.gateway) {
+      this.gateway.disconnect()
+      this.gateway = null
+    }
+  }
+
+  private ensureGatewayConnected(): void {
+    if (!this.gateway?.isConnected) {
+      throw new Error('Gateway WS not connected')
+    }
+  }
+
+  private async writeBootstrapConfig(
+    config: Record<string, unknown>,
+  ): Promise<void> {
     const configPath = join(this.openclawDir, OPENCLAW_CONFIG_FILE)
     await writeFile(configPath, JSON.stringify(config, null, 2))
   }
 
-  private getAgentsList(config: Record<string, unknown>): AgentEntry[] {
-    const agents = config.agents as Record<string, unknown> | undefined
-    if (!agents) return []
-    const list = agents.list as AgentEntry[] | undefined
-    return list ? [...list] : []
-  }
-
-  private setAgentsList(
-    config: Record<string, unknown>,
-    agents: AgentEntry[],
-  ): void {
-    const agentsConfig = (config.agents ?? {}) as Record<string, unknown>
-    agentsConfig.list = agents
-    config.agents = agentsConfig
-  }
-
   /**
-   * Reads the current .env, adds/updates the provider's API key, writes it back.
-   * Multiple providers can coexist (e.g. ANTHROPIC_API_KEY + OPENAI_API_KEY).
+   * Merges a provider API key into .env. Returns true if the key was NEW
+   * (not previously present), meaning a container restart is needed to
+   * pick up the new env var.
    */
-  private async mergeProviderKey(
+  private async mergeProviderKeyIfNew(
     providerType: string,
     apiKey: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const newKeys = resolveProviderKeys(providerType, apiKey)
-    if (Object.keys(newKeys).length === 0) return
+    if (Object.keys(newKeys).length === 0) return false
 
     const envPath = join(this.openclawDir, '.env')
     let content = ''
@@ -468,16 +440,19 @@ export class OpenClawService {
       // .env may not exist yet
     }
 
+    let addedNew = false
     for (const [key, value] of Object.entries(newKeys)) {
       const pattern = new RegExp(`^${key}=.*$`, 'm')
       if (pattern.test(content)) {
         content = content.replace(pattern, `${key}=${value}`)
       } else {
         content = `${content.trimEnd()}\n${key}=${value}\n`
+        addedNew = true
       }
     }
 
     await writeFile(envPath, content, { mode: 0o600 })
+    return addedNew
   }
 
   private async loadTokenFromEnv(): Promise<void> {

@@ -174,7 +174,7 @@ export const AgentsPage: FC = () => {
   if (chatAgent) {
     return (
       <AgentChat
-        agentId={chatAgent.id}
+        agentId={chatAgent.agentId}
         agentName={chatAgent.name}
         onBack={() => setChatAgent(null)}
       />
@@ -321,7 +321,7 @@ export const AgentsPage: FC = () => {
             </Card>
           ) : (
             agents.map((agent) => (
-              <Card key={agent.id}>
+              <Card key={agent.agentId}>
                 <CardHeader className="flex flex-row items-center justify-between py-3">
                   <div className="flex items-center gap-3">
                     <Cpu className="size-5 text-muted-foreground" />
@@ -341,11 +341,11 @@ export const AgentsPage: FC = () => {
                       <MessageSquare className="mr-1 size-4" />
                       Chat
                     </Button>
-                    {agent.id !== 'main' && (
+                    {agent.agentId !== 'main' && (
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => handleDelete(agent.id)}
+                        onClick={() => handleDelete(agent.agentId)}
                         disabled={actionInProgress}
                       >
                         <Trash2 className="size-4 text-destructive" />
