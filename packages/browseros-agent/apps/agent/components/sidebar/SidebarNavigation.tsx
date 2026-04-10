@@ -1,6 +1,7 @@
 import {
   Brain,
   CalendarClock,
+  Cpu,
   Home,
   PlugZap,
   Settings,
@@ -39,6 +40,7 @@ const primaryNavItems: NavItem[] = [
     feature: Feature.MANAGED_MCP_SUPPORT,
   },
   { name: 'Scheduled Tasks', to: '/scheduled', icon: CalendarClock },
+  { name: 'Agents', to: '/agents', icon: Cpu },
   {
     name: 'Skills',
     to: '/home/skills',
