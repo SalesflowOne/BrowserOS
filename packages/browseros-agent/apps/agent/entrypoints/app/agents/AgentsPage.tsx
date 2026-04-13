@@ -36,6 +36,7 @@ import {
   deleteAgent,
   restartOpenClaw,
   setupOpenClaw,
+  startOpenClaw,
   stopOpenClaw,
   useOpenClawAgents,
   useOpenClawStatus,
@@ -154,6 +155,19 @@ export const AgentsPage: FC = () => {
     setActionInProgress(true)
     try {
       await stopOpenClaw()
+      refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setActionInProgress(false)
+    }
+  }
+
+  const handleStart = async () => {
+    setActionInProgress(true)
+    setError(null)
+    try {
+      await startOpenClaw()
       refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -290,7 +304,9 @@ export const AgentsPage: FC = () => {
                 The OpenClaw gateway is not running.
               </p>
             </div>
-            <Button onClick={() => setSetupOpen(true)}>Start Gateway</Button>
+            <Button onClick={handleStart} disabled={actionInProgress}>
+              Start Gateway
+            </Button>
           </CardContent>
         </Card>
       )}

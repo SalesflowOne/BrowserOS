@@ -25,6 +25,16 @@ export interface OpenClawStatus {
 async function clawFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const baseUrl = await getAgentServerUrl()
   const res = await fetch(`${baseUrl}/claw${path}`, init)
+  if (!res.ok) {
+    let message = `Request failed with status ${res.status}`
+    try {
+      const body = (await res.json()) as { error?: string }
+      if (body.error) {
+        message = body.error
+      }
+    } catch {}
+    throw new Error(message)
+  }
   return res.json() as Promise<T>
 }
 
