@@ -236,11 +236,9 @@ export const AgentTerminal: FC<AgentTerminalProps> = ({ onBack }) => {
   }, [])
 
   return (
-    <div className="mx-auto flex h-[calc(100dvh-9rem)] min-h-[32rem] w-full max-w-5xl flex-col py-1 sm:min-h-[42rem] sm:py-3">
-      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[1.75rem] border border-border/60 bg-card/95 shadow-[0_24px_60px_-28px_rgba(15,23,42,0.4)] backdrop-blur">
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-[var(--accent-orange)]/8 to-transparent" />
-
-        <div className="relative flex items-center justify-between gap-3 border-border/60 border-b px-4 py-3 sm:px-5">
+    <div className="flex h-[calc(100dvh-10rem)] min-h-[32rem] w-full flex-col py-2 sm:min-h-[42rem] sm:py-4">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+        <div className="flex items-center gap-3 border-border border-b px-4 py-3 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <Button variant="ghost" size="icon" onClick={onBack}>
               <ArrowLeft className="size-4" />
@@ -254,24 +252,16 @@ export const AgentTerminal: FC<AgentTerminalProps> = ({ onBack }) => {
               </div>
             </div>
           </div>
-          <div className="hidden items-center gap-2 sm:flex">
-            <span className="rounded-full border border-border/60 bg-background/70 px-2.5 py-1 font-mono text-[11px] text-muted-foreground">
-              fish
-            </span>
-            <span className="rounded-full border border-border/60 bg-background/70 px-2.5 py-1 text-[11px] text-muted-foreground">
-              container
-            </span>
-          </div>
         </div>
 
-        <div className="relative min-h-0 flex-1 p-3 sm:p-4">
-          <div className="agent-terminal-shell flex h-full min-h-0 flex-col overflow-hidden rounded-[1.35rem] border border-border/70 bg-background shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-            <div className="flex items-center gap-2 border-border/60 border-b bg-muted/35 px-4 py-2.5">
-              <span className="size-2.5 rounded-full bg-[#ff5f57]/85" />
-              <span className="size-2.5 rounded-full bg-[#febc2e]/85" />
-              <span className="size-2.5 rounded-full bg-[#28c840]/85" />
-              <div className="ml-2 truncate font-mono text-[11px] text-muted-foreground">
+        <div className="min-h-0 flex-1 p-4 sm:p-6">
+          <div className="agent-terminal-shell flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-background">
+            <div className="flex items-center justify-between gap-3 border-border border-b px-4 py-2.5">
+              <div className="truncate font-mono text-muted-foreground text-xs">
                 {TERMINAL_HOME_DIR}
+              </div>
+              <div className="font-mono text-[11px] text-muted-foreground">
+                fish
               </div>
             </div>
 
@@ -279,13 +269,6 @@ export const AgentTerminal: FC<AgentTerminalProps> = ({ onBack }) => {
               <div ref={containerRef} className="h-full w-full" />
             </div>
           </div>
-        </div>
-
-        <div className="flex items-center justify-between gap-3 border-border/60 border-t bg-background/40 px-4 py-2 text-[11px] text-muted-foreground sm:px-5">
-          <span>
-            Interactive shell attached to the running OpenClaw container
-          </span>
-          <span className="font-mono">TERM=xterm-256color</span>
         </div>
       </div>
     </div>
