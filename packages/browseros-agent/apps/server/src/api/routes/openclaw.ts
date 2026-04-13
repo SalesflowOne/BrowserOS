@@ -146,30 +146,41 @@ export function createOpenClawRoutes() {
     .post('/agents/:id/chat', async (c) => {
       const { id } = c.req.param()
       const body = await c.req.json<{
-        messages: Array<{
-          role: 'user' | 'assistant' | 'system'
-          content: string
-        }>
+        message: string
+        sessionKey?: string
       }>()
 
-      if (!body.messages?.length) {
-        return c.json({ error: 'Messages are required' }, 400)
+      if (!body.message?.trim()) {
+        return c.json({ error: 'Message is required' }, 400)
       }
 
+      const sessionKey = body.sessionKey ?? crypto.randomUUID()
+
       try {
-        const response = await getOpenClawService().chat(id, body.messages)
+        const eventStream = getOpenClawService().chatStream(
+          id,
+          sessionKey,
+          body.message,
+        )
 
         c.header('Content-Type', 'text/event-stream')
         c.header('Cache-Control', 'no-cache')
+        c.header('X-Session-Key', sessionKey)
 
         return stream(c, async (s) => {
-          const reader = (
-            response.body as ReadableStream<Uint8Array>
-          ).getReader()
-          while (true) {
-            const { done, value } = await reader.read()
-            if (done) break
-            await s.write(value)
+          const reader = eventStream.getReader()
+          const encoder = new TextEncoder()
+          try {
+            while (true) {
+              const { done, value } = await reader.read()
+              if (done) break
+              await s.write(
+                encoder.encode(`data: ${JSON.stringify(value)}\n\n`),
+              )
+            }
+            await s.write(encoder.encode('data: [DONE]\n\n'))
+          } finally {
+            await reader.cancel()
           }
         })
       } catch (err) {

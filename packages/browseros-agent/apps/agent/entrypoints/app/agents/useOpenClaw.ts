@@ -116,14 +116,28 @@ export async function restartOpenClaw() {
   return clawFetch<{ status: string }>('/restart', { method: 'POST' })
 }
 
+export interface OpenClawStreamEvent {
+  type:
+    | 'text-delta'
+    | 'thinking'
+    | 'tool-start'
+    | 'tool-end'
+    | 'tool-output'
+    | 'lifecycle'
+    | 'done'
+    | 'error'
+  data: Record<string, unknown>
+}
+
 export async function chatWithAgent(
   agentId: string,
-  messages: Array<{ role: string; content: string }>,
+  message: string,
+  sessionKey?: string,
 ): Promise<Response> {
   const baseUrl = await getAgentServerUrl()
   return fetch(`${baseUrl}/claw/agents/${agentId}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify({ message, sessionKey }),
   })
 }

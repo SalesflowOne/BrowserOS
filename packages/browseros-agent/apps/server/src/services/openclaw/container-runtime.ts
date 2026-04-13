@@ -128,6 +128,13 @@ export class ContainerRuntime {
     }
   }
 
+  async execInContainer(command: string[], onLog?: LogFn): Promise<number> {
+    const containerName = `${COMPOSE_PROJECT_NAME}-openclaw-gateway-1`
+    return this.podman.runCommand(['exec', containerName, ...command], {
+      onOutput: onLog,
+    })
+  }
+
   private async compose(args: string[], onLog?: LogFn): Promise<number> {
     return this.podman.runCommand(['compose', ...args], {
       cwd: this.projectDir,

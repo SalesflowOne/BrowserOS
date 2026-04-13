@@ -119,7 +119,7 @@ export class Application {
     this.logStartupSummary()
     startSkillSync()
 
-    getOpenClawService()
+    getOpenClawService(this.config.serverPort)
       .tryAutoStart()
       .catch((err) =>
         logger.warn('OpenClaw auto-start failed', {
