@@ -7,11 +7,11 @@ import { describe, expect, it } from 'bun:test'
 import {
   parseTerminalClientMessage,
   serializeTerminalServerMessage,
-} from '../../../src/services/terminal/terminal-protocol'
+} from '../../../src/api/services/terminal/terminal-protocol'
 import {
   buildTerminalExecCommand,
   TERMINAL_HOME_DIR,
-} from '../../../src/services/terminal/terminal-session'
+} from '../../../src/api/services/terminal/terminal-session'
 
 describe('terminal protocol', () => {
   it('parses input messages', () => {

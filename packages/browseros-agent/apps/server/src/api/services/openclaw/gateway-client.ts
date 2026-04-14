@@ -13,7 +13,7 @@ import crypto from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { OPENCLAW_CONTAINER_HOME } from '@browseros/shared/constants/openclaw'
-import { logger } from '../../lib/logger'
+import { logger } from '../../../lib/logger'
 
 const RPC_TIMEOUT_MS = 15_000
 const RECONNECT_DELAY_MS = 2_000

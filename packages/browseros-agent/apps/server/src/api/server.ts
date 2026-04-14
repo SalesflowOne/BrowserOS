@@ -22,7 +22,6 @@ import { initializeOAuth } from '../lib/clients/oauth'
 import { getDb } from '../lib/db'
 import { logger } from '../lib/logger'
 import { Sentry } from '../lib/sentry'
-import { getPodmanRuntime } from '../services/openclaw/podman-runtime'
 import { createChatRoutes } from './routes/chat'
 import { createCreditsRoutes } from './routes/credits'
 import { createHealthRoute } from './routes/health'
@@ -43,6 +42,7 @@ import {
   connectKlavisProxy,
   type KlavisProxyHandle,
 } from './services/klavis/strata-proxy'
+import { getPodmanRuntime } from './services/openclaw/podman-runtime'
 import type { Env, HttpServerConfig } from './types'
 import { defaultCorsConfig } from './utils/cors'
 import { requireTrustedAppOrigin } from './utils/request-auth'

@@ -2,7 +2,7 @@ import {
   OPENCLAW_CONTAINER_HOME,
   OPENCLAW_TERMINAL_SHELL,
 } from '@browseros/shared/constants/openclaw'
-import { logger } from '../../lib/logger'
+import { logger } from '../../../lib/logger'
 
 export const TERMINAL_HOME_DIR = OPENCLAW_CONTAINER_HOME
 const DEFAULT_COLS = 80

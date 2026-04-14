@@ -4,12 +4,12 @@ import { logger } from '../../lib/logger'
 import {
   parseTerminalClientMessage,
   serializeTerminalServerMessage,
-} from '../../services/terminal/terminal-protocol'
+} from '../services/terminal/terminal-protocol'
 import {
   createTerminalSession,
   TERMINAL_HOME_DIR,
   type TerminalSession,
-} from '../../services/terminal/terminal-session'
+} from '../services/terminal/terminal-session'
 import type { Env } from '../types'
 
 export const TERMINAL_WS_PATH = '/terminal/ws'

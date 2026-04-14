@@ -15,8 +15,8 @@ import {
   OpenClawAgentNotFoundError,
   OpenClawInvalidAgentNameError,
   OpenClawProtectedAgentError,
-} from '../../services/openclaw/errors'
-import { getOpenClawService } from '../../services/openclaw/openclaw-service'
+} from '../services/openclaw/errors'
+import { getOpenClawService } from '../services/openclaw/openclaw-service'
 
 export function createOpenClawRoutes() {
   return new Hono()

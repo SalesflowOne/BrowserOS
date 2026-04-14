@@ -13,8 +13,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { OPENCLAW_GATEWAY_PORT } from '@browseros/shared/constants/openclaw'
 import { DEFAULT_PORTS } from '@browseros/shared/constants/ports'
-import { getOpenClawDir } from '../../lib/browseros-dir'
-import { logger } from '../../lib/logger'
+import { getOpenClawDir } from '../../../lib/browseros-dir'
+import { logger } from '../../../lib/logger'
 import { ContainerRuntime } from './container-runtime'
 import {
   OpenClawAgentAlreadyExistsError,
