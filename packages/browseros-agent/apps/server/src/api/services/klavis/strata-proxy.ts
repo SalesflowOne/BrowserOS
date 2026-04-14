@@ -9,8 +9,9 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js'
+import { z } from 'zod'
 import { jsonSchemaObjectToZodRawShape } from 'zod-from-json-schema'
-import type { KlavisClient } from '../../../lib/clients/klavis/klavis-client'
+import { KlavisClient } from '../../../lib/clients/klavis/klavis-client'
 import { OAUTH_MCP_SERVERS } from '../../../lib/clients/klavis/oauth-mcp-servers'
 import { logger } from '../../../lib/logger'
 import { metrics } from '../../../lib/metrics'
@@ -28,6 +29,7 @@ function withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
 }
 
 export interface KlavisProxyHandle {
+  browserosId: string
   tools: Tool[]
   inputSchemas: Map<string, Record<string, never>>
   callTool: (
@@ -85,6 +87,7 @@ export async function connectKlavisProxy(
   })
 
   return {
+    browserosId: deps.browserosId,
     tools,
     inputSchemas,
     callTool: (name, args) =>
@@ -93,10 +96,121 @@ export async function connectKlavisProxy(
   }
 }
 
+const serverNames = OAUTH_MCP_SERVERS.map((s) => s.name) as [
+  string,
+  ...string[],
+]
+
+const serverDescriptions = OAUTH_MCP_SERVERS.map(
+  (s) => `${s.name} (${s.description})`,
+).join(', ')
+
+// Double cast works around TS2589 in registerTool's recursive generics.
+const connectorInputSchema = {
+  server_name: z
+    .enum(serverNames)
+    .describe(
+      `The name of the service to check. Available: ${serverDescriptions}`,
+    ),
+} as unknown as Record<string, never>
+
 export function registerKlavisTools(
   mcpServer: McpServer,
   handle: KlavisProxyHandle,
 ): void {
+  // Register the connector discovery tool
+  mcpServer.registerTool(
+    'connector_mcp_servers',
+    {
+      description:
+        'Check if an external service is connected and ready for use with Strata MCP tools (discover_server_categories_or_actions, execute_action, etc.). Call this BEFORE using any Strata integration tool. If connected, proceed with Strata tools. If not connected, returns an authUrl — prompt the user to open it and authenticate.',
+      inputSchema: connectorInputSchema,
+    },
+    async (args: Record<string, unknown>) => {
+      const startTime = performance.now()
+      const server_name = args.server_name as string
+
+      try {
+        const klavisClient = new KlavisClient()
+        const integrations = await klavisClient.getUserIntegrations(
+          handle.browserosId,
+        )
+
+        const integration = integrations.find((i) => i.name === server_name)
+        const isConnected = integration?.isAuthenticated === true
+
+        if (isConnected) {
+          metrics.log('tool_executed', {
+            tool_name: 'connector_mcp_servers',
+            source: 'mcp',
+            duration_ms: Math.round(performance.now() - startTime),
+            success: true,
+          })
+
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify({
+                  connected: true,
+                  server_name,
+                }),
+              },
+            ],
+          }
+        }
+
+        // Not connected — get auth URL
+        const strata = await klavisClient.createStrata(handle.browserosId, [
+          server_name,
+        ])
+        const authUrl =
+          strata.oauthUrls?.[server_name] ??
+          strata.apiKeyUrls?.[server_name] ??
+          null
+
+        metrics.log('tool_executed', {
+          tool_name: 'connector_mcp_servers',
+          source: 'mcp',
+          duration_ms: Math.round(performance.now() - startTime),
+          success: true,
+        })
+
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify({
+                connected: false,
+                server_name,
+                authUrl,
+                message: authUrl
+                  ? `${server_name} is not connected. Ask the user to open this URL to authenticate: ${authUrl}`
+                  : `${server_name} is not connected. Could not retrieve auth URL.`,
+              }),
+            },
+          ],
+        }
+      } catch (error) {
+        const errorText = error instanceof Error ? error.message : String(error)
+
+        metrics.log('tool_executed', {
+          tool_name: 'connector_mcp_servers',
+          source: 'mcp',
+          duration_ms: Math.round(performance.now() - startTime),
+          success: false,
+          error_message: errorText,
+        })
+
+        return {
+          content: [{ type: 'text' as const, text: errorText }],
+          isError: true,
+        }
+      }
+    },
+  )
+
+  // Register Strata proxy tools
   for (const tool of handle.tools) {
     const inputSchema = handle.inputSchemas.get(tool.name)
 
@@ -141,6 +255,6 @@ export function registerKlavisTools(
   }
 
   logger.debug('Registered Klavis tools on MCP server', {
-    count: handle.tools.length,
+    count: handle.tools.length + 1,
   })
 }

@@ -27,16 +27,21 @@ Error recovery:
 
 40+ services: Gmail, Slack, GitHub, Notion, Google Calendar, Jira, Linear, Figma, Salesforce, and more.
 
+Before using any Strata integration, call connector_mcp_servers(server_name) to verify the service is connected.
+- If connected → proceed with Strata discovery tools below.
+- If not connected → prompt the user with the returned authUrl to authenticate. After they confirm, call connector_mcp_servers again to verify.
+
 Progressive discovery — do not guess action names:
-1. discover_server_categories_or_actions → always start here.
-2. get_category_actions → expand categories from step 1.
-3. get_action_details → get parameter schema before executing.
-4. execute_action → use include_output_fields to limit response size.
-5. search_documentation → fallback keyword search.
+1. connector_mcp_servers → check connection status first.
+2. discover_server_categories_or_actions → discover available actions.
+3. get_category_actions → expand categories from step 2.
+4. get_action_details → get parameter schema before executing.
+5. execute_action → use include_output_fields to limit response size.
+6. search_documentation → fallback keyword search.
 
 Authentication — when execute_action returns an auth error:
-1. handle_auth_failure(server_name, intention: "get_auth_url").
-2. new_page(auth_url) to open in browser for user to authenticate.
+1. Call connector_mcp_servers(server_name) to get a fresh authUrl.
+2. Prompt the user to open the authUrl and authenticate.
 3. Wait for explicit user confirmation before retrying.
 
 ## General
