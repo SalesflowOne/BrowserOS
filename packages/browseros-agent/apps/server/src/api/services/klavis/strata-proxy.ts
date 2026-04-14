@@ -4,16 +4,15 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import { TIMEOUTS } from '@browseros/shared/constants/timeouts'
-import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js'
 import type { JSONValue } from '@ai-sdk/provider'
 import {
   KLAVIS_PROXY_RETRY_BACKOFF_MS,
   TIMEOUTS,
 } from '@browseros/shared/constants/timeouts'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js'
 import type { ToolSet } from 'ai'
 import { z } from 'zod'
 import { jsonSchemaObjectToZodRawShape } from 'zod-from-json-schema'
@@ -59,12 +58,9 @@ interface BackgroundConnectOptions {
   retryDelaysMs?: readonly number[]
 }
 
-// One-time async setup: connect to Klavis Strata and discover tools
 export async function connectKlavisProxy(
   deps: ConnectDeps,
 ): Promise<KlavisProxyHandle> {
-  // Use the full curated OAuth server list so all tools are exposed,
-  // even unauthenticated ones (Klavis handles auth prompts on call)
   const allServers = OAUTH_MCP_SERVERS.map((s) => s.name)
 
   const strata = await klavisStrataCache.getOrFetch(
@@ -73,7 +69,6 @@ export async function connectKlavisProxy(
     allServers,
   )
 
-  // Connect MCP client to Strata endpoint
   const client = new Client({
     name: 'browseros-klavis-proxy',
     version: '1.0.0',
@@ -85,8 +80,6 @@ export async function connectKlavisProxy(
 
   const { tools } = await withTimeout(client.listTools(), 'listTools')
 
-  // Pre-compute Zod schemas once so registerKlavisTools avoids per-request conversion.
-  // Double cast works around TS2589 in registerTool's recursive generics.
   const inputSchemas = new Map(
     tools.map((t) => [
       t.name,
@@ -118,7 +111,6 @@ const serverDescriptions = OAUTH_MCP_SERVERS.map(
   (s) => `${s.name} (${s.description})`,
 ).join(', ')
 
-// Double cast works around TS2589 in registerTool's recursive generics.
 const connectorInputSchema = {
   server_name: z
     .enum(serverNames)
@@ -248,7 +240,6 @@ export function registerKlavisTools(
   mcpServer: McpServer,
   handle: KlavisProxyHandle,
 ): void {
-  // Register the connector discovery tool
   mcpServer.registerTool(
     'connector_mcp_servers',
     {
@@ -290,7 +281,6 @@ export function registerKlavisTools(
           }
         }
 
-        // Not connected — get auth URL
         const strata = await klavisClient.createStrata(handle.browserosId, [
           server_name,
         ])
@@ -340,7 +330,6 @@ export function registerKlavisTools(
     },
   )
 
-  // Register Strata proxy tools
   for (const tool of handle.tools) {
     const inputSchema = handle.inputSchemas.get(tool.name)
 
