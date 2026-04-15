@@ -389,6 +389,37 @@ describe('Agent', () => {
       await agent.nav('https://example.com')
       await agent.act('click the button')
     })
+
+    it('allows act() to override windowId while preserving active tab context', async () => {
+      const fetchMock = mockSSEFetch([
+        { type: 'start-step' },
+        { type: 'finish-step' },
+      ])
+      globalThis.fetch = fetchMock
+
+      const agent = new Agent({
+        url: TEST_URL,
+        browserContext: {
+          windowId: 456,
+          activeTab: {
+            id: 123,
+            url: 'https://example.com',
+          },
+        },
+      })
+
+      await agent.act('click the button', { windowId: 789 })
+
+      const call = fetchMock.mock.calls[0]
+      const body = JSON.parse(call[1].body)
+      expect(body.browserContext).toEqual({
+        windowId: 789,
+        activeTab: {
+          id: 123,
+          url: 'https://example.com',
+        },
+      })
+    })
   })
 
   describe('act() with verify option', () => {

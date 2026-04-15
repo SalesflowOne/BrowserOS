@@ -21,7 +21,7 @@ interface FeatureExtractionPipeline {
 let pipelineInstance: FeatureExtractionPipeline | null = null
 const LOAD_RETRY_MS = 60_000
 let lastLoadFailedAt = 0
-let cleanupRegistered = false
+let cleanupListener: (() => void) | null = null
 
 function getModelName(): string {
   return process.env.ACL_EMBEDDING_MODEL ?? 'Xenova/bge-small-en-v1.5'
@@ -34,6 +34,10 @@ function isSemanticDisabled(): boolean {
 export async function disposeSemanticPipeline(): Promise<void> {
   const current = pipelineInstance
   pipelineInstance = null
+  if (cleanupListener) {
+    process.removeListener('beforeExit', cleanupListener)
+    cleanupListener = null
+  }
   if (!current?.dispose) {
     return
   }
@@ -48,13 +52,15 @@ export async function disposeSemanticPipeline(): Promise<void> {
 }
 
 function registerPipelineCleanup(): void {
-  if (cleanupRegistered) {
+  if (cleanupListener) {
     return
   }
-  cleanupRegistered = true
-  process.once('beforeExit', () => {
+  cleanupListener = () => {
+    // beforeExit cannot await async cleanup, so explicit disposal is still
+    // required anywhere teardown must be deterministic.
     void disposeSemanticPipeline()
-  })
+  }
+  process.once('beforeExit', cleanupListener)
 }
 
 async function ensurePipeline(): Promise<FeatureExtractionPipeline | null> {
