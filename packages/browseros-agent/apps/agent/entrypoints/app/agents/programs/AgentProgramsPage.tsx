@@ -1,5 +1,6 @@
 import type {
   BrowserOSAgentProgram,
+  BrowserOSProgramRun,
   CreateAgentProgramInput,
   UpdateAgentProgramInput,
 } from '@browseros/shared/types/role-programs'
@@ -26,6 +27,7 @@ import {
 } from '../useOpenClaw'
 import { ProgramFormDialog } from './ProgramFormDialog'
 import { ProgramRunHistory } from './ProgramRunHistory'
+import { ProgramRunResultDialog } from './ProgramRunResultDialog'
 
 interface AgentProgramsPageProps {
   agent: AgentEntry
@@ -70,12 +72,16 @@ export function AgentProgramsPage({ agent, onBack }: AgentProgramsPageProps) {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingProgram, setEditingProgram] =
     useState<BrowserOSAgentProgram | null>(null)
+  const [viewingRunId, setViewingRunId] = useState<string | null>(null)
 
   const programNames = useMemo(
     () =>
       Object.fromEntries(programs.map((program) => [program.id, program.name])),
     [programs],
   )
+  const viewingRun: BrowserOSProgramRun | null = viewingRunId
+    ? (runs.find((run) => run.id === viewingRunId) ?? null)
+    : null
 
   const saving = creatingProgram || updatingProgram
 
@@ -323,6 +329,7 @@ export function AgentProgramsPage({ agent, onBack }: AgentProgramsPageProps) {
         runs={runs}
         loading={runsLoading}
         programNames={programNames}
+        onViewRun={(run) => setViewingRunId(run.id)}
       />
 
       <ProgramFormDialog
@@ -336,6 +343,16 @@ export function AgentProgramsPage({ agent, onBack }: AgentProgramsPageProps) {
           }
         }}
         onSave={handleCreate}
+      />
+
+      <ProgramRunResultDialog
+        run={viewingRun}
+        programName={
+          viewingRun
+            ? (programNames[viewingRun.programId] ?? 'Unknown Program')
+            : undefined
+        }
+        onOpenChange={(open) => !open && setViewingRunId(null)}
       />
     </div>
   )
