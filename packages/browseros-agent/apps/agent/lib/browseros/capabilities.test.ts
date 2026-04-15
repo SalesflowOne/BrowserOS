@@ -2,14 +2,14 @@ import { describe, expect, it } from 'bun:test'
 import { resolveStaticFeatureSupport } from './capabilities'
 
 describe('resolveStaticFeatureSupport', () => {
-  it('keeps alpha-gated features off by default in development', () => {
+  it('enables alpha-gated features automatically in development', () => {
     expect(
       resolveStaticFeatureSupport({
         isDevelopment: true,
         alphaFeaturesEnabled: false,
         requiresAlphaFlag: true,
       }),
-    ).toBe(false)
+    ).toBe(true)
   })
 
   it('enables alpha-gated features only when explicitly opted in', () => {

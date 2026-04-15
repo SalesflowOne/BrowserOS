@@ -15,8 +15,8 @@ type FeatureConfig = {
  * Features gated by BrowserOS version or explicit environment flags.
  * Add new features here with corresponding config in FEATURE_CONFIG.
  *
- * Note: In development mode, version-gated features are enabled regardless of
- * version. Alpha-gated features still require their env flag.
+ * Note: In development mode, all features are enabled regardless of version
+ * or alpha flag.
  * @public
  */
 export enum Feature {
@@ -66,8 +66,8 @@ export enum Feature {
  * - maxServerVersion: feature enabled when server < this version (for deprecation)
  *
  * TypeScript enforces that every Feature has a config entry.
- * In development mode, version-gated features are enabled regardless of
- * version. Alpha-gated features still require their env flag.
+ * In development mode, all features are enabled regardless of version or
+ * alpha flag.
  */
 const FEATURE_CONFIG: { [K in Feature]: FeatureConfig } = {
   [Feature.ALPHA_FEATURES_SUPPORT]: { requiresAlphaFlag: true },
@@ -137,11 +137,11 @@ export function resolveStaticFeatureSupport({
   alphaFeaturesEnabled: boolean
   requiresAlphaFlag?: boolean
 }): boolean | null {
-  if (requiresAlphaFlag) {
-    return alphaFeaturesEnabled
-  }
   if (isDevelopment) {
     return true
+  }
+  if (requiresAlphaFlag) {
+    return alphaFeaturesEnabled
   }
   return null
 }
@@ -246,8 +246,7 @@ export const Capabilities = {
 
   /**
    * Check if a feature is supported.
-   * In development mode, version-gated features are enabled. Alpha-gated
-   * features still require their env flag.
+   * In development mode, all features are enabled.
    */
   async supports(feature: Feature): Promise<boolean> {
     const staticSupport = getStaticFeatureSupport(feature)
