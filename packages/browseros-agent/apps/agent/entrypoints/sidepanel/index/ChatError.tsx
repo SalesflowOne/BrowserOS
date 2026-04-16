@@ -15,6 +15,49 @@ function pickRandomDirection(): string {
   return SURVEY_DIRECTIONS[Math.floor(Math.random() * SURVEY_DIRECTIONS.length)]
 }
 
+const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+  'openai-compatible': 'your OpenAI-compatible provider',
+  google: 'Google',
+  openrouter: 'OpenRouter',
+  azure: 'Azure OpenAI',
+  bedrock: 'AWS Bedrock',
+  moonshot: 'Moonshot',
+  'chatgpt-pro': 'ChatGPT',
+  'github-copilot': 'GitHub Copilot',
+  'qwen-code': 'Qwen',
+  ollama: 'Ollama',
+  lmstudio: 'LM Studio',
+}
+
+function isRateLimitMessage(message: string): boolean {
+  const lower = message.toLowerCase()
+  return (
+    /\b429\b/.test(message) ||
+    lower.includes('rate limit') ||
+    lower.includes('rate_limit') ||
+    lower.includes('usage limit') ||
+    lower.includes('quota') ||
+    lower.includes('too many requests') ||
+    lower.includes('insufficient_quota') ||
+    lower.includes('resource_exhausted')
+  )
+}
+
+function stripRetryWrapper(message: string): string {
+  // AI SDK wraps retried errors as "Failed after N attempts. Last error: ..."
+  let cleaned = message.replace(
+    /^Failed after \d+ attempts?\.\s*Last error:\s*/i,
+    '',
+  )
+  try {
+    const parsed = JSON.parse(cleaned)
+    if (parsed?.error?.message) cleaned = parsed.error.message
+  } catch {}
+  return cleaned.trim()
+}
+
 interface ChatErrorProps {
   error: Error
   onRetry?: () => void
@@ -30,6 +73,8 @@ function parseErrorMessage(
   isRateLimit?: boolean
   isCreditsExhausted?: boolean
   isConnectionError?: boolean
+  isUpstreamRateLimit?: boolean
+  providerName?: string
 } {
   const isBrowserosProvider = providerType === 'browseros'
 
@@ -70,6 +115,17 @@ function parseErrorMessage(
     }
   }
 
+  // Non-BrowserOS provider returned a rate-limit / quota error — make it
+  // obvious this is the upstream provider's fault, not BrowserOS.
+  if (!isBrowserosProvider && providerType && isRateLimitMessage(message)) {
+    const providerName = PROVIDER_DISPLAY_NAMES[providerType] ?? providerType
+    return {
+      text: stripRetryWrapper(message) || 'Rate limit reached',
+      isUpstreamRateLimit: true,
+      providerName,
+    }
+  }
+
   let text = message
   try {
     const parsed = JSON.parse(message)
@@ -91,8 +147,15 @@ export const ChatError: FC<ChatErrorProps> = ({
   onRetry,
   providerType,
 }) => {
-  const { text, url, isRateLimit, isCreditsExhausted, isConnectionError } =
-    parseErrorMessage(error.message, providerType)
+  const {
+    text,
+    url,
+    isRateLimit,
+    isCreditsExhausted,
+    isConnectionError,
+    isUpstreamRateLimit,
+    providerName,
+  } = parseErrorMessage(error.message, providerType)
 
   const surveyUrl = useMemo(
     () =>
@@ -101,6 +164,8 @@ export const ChatError: FC<ChatErrorProps> = ({
   )
 
   const getTitle = () => {
+    if (isUpstreamRateLimit && providerName)
+      return `${providerName} rate limit reached`
     if (isRateLimit) return 'Daily limit reached'
     if (isConnectionError) return 'Connection failed'
     return 'Something went wrong'
@@ -113,6 +178,12 @@ export const ChatError: FC<ChatErrorProps> = ({
         <span className="font-medium text-sm">{getTitle()}</span>
       </div>
       <p className="text-center text-destructive text-xs">{text}</p>
+      {isUpstreamRateLimit && providerName && (
+        <p className="text-center text-muted-foreground text-xs">
+          This error is from {providerName}, not BrowserOS. Check your{' '}
+          {providerName} account usage or billing.
+        </p>
+      )}
       {isConnectionError && url && (
         <a
           href={url}
