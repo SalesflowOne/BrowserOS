@@ -1,3 +1,4 @@
+import { REFERRAL_LIMITS } from '@browseros/shared/constants/limits'
 import { ExternalLink, Loader2, Send } from 'lucide-react'
 import type { FC } from 'react'
 import { useState } from 'react'
@@ -24,8 +25,11 @@ export const ShareForCredits: FC<ShareForCreditsProps> = ({ compact }) => {
   const { data } = useCredits()
   const invalidateCredits = useInvalidateCredits()
 
+  const credits = data?.credits ?? 0
+  const atDailyMax = credits >= REFERRAL_LIMITS.MAX_DAILY_CREDITS
+
   const handleSubmit = async () => {
-    if (!tweetUrl.trim() || !data?.browserosId) return
+    if (!tweetUrl.trim() || !data?.browserosId || atDailyMax) return
 
     setIsSubmitting(true)
     setResult(null)
@@ -55,10 +59,22 @@ export const ShareForCredits: FC<ShareForCreditsProps> = ({ compact }) => {
     }
   }
 
+  if (atDailyMax) {
+    return (
+      <div className={compact ? 'space-y-2' : 'space-y-3'}>
+        <p className={compact ? 'text-muted-foreground text-xs' : 'text-sm'}>
+          You've reached the daily cap of {REFERRAL_LIMITS.MAX_DAILY_CREDITS}{' '}
+          credits. Come back tomorrow to earn more!
+        </p>
+      </div>
+    )
+  }
+
   return (
     <div className={compact ? 'space-y-2' : 'space-y-3'}>
       <p className={compact ? 'text-muted-foreground text-xs' : 'text-sm'}>
-        Share BrowserOS on Twitter to earn 200 bonus credits!
+        Share BrowserOS on Twitter to earn{' '}
+        {REFERRAL_LIMITS.CREDITS_PER_REFERRAL} bonus credits!
       </p>
 
       <ul className="list-disc space-y-0.5 pl-4 text-muted-foreground text-xs">
@@ -67,6 +83,10 @@ export const ShareForCredits: FC<ShareForCreditsProps> = ({ compact }) => {
         </li>
         <li>Tweet must be posted within the last 30 minutes</li>
         <li>Each tweet can only be submitted once</li>
+        <li>
+          Daily cap of {REFERRAL_LIMITS.MAX_DAILY_CREDITS} credits — resets at
+          midnight UTC
+        </li>
       </ul>
 
       <Button variant="outline" size="sm" className="w-full gap-2" asChild>
