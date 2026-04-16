@@ -65,10 +65,12 @@ export type OpenClawControlPlaneStatus =
   | 'connecting'
   | 'connected'
   | 'reconnecting'
+  // Retained for extension compatibility while the UI still branches on it.
   | 'recovering'
   | 'failed'
 
 export type OpenClawGatewayRecoveryReason =
+  // Retained for extension compatibility while the UI still renders these reasons.
   | 'transient_disconnect'
   | 'signature_expired'
   | 'pairing_required'
@@ -319,7 +321,6 @@ export class OpenClawService {
     await this.loadTokenFromEnv()
     this.controlPlaneStatus = 'reconnecting'
     logProgress('Reconnecting control plane...')
-    await this.assertGatewayReady()
     await this.runControlPlaneCall(() => this.adminClient.probe())
     logProgress('Control plane connected')
   }
@@ -610,7 +611,7 @@ export class OpenClawService {
 
   private async assertGatewayReady(): Promise<void> {
     const portReady = await this.runtime.isReady(this.port)
-    logger.info('Checking OpenClaw gateway readiness before use', {
+    logger.debug('Checking OpenClaw gateway readiness before use', {
       port: this.port,
       portReady,
       controlPlaneStatus: this.controlPlaneStatus,
@@ -687,7 +688,7 @@ export class OpenClawService {
     if (this.stopLogTail) return
     try {
       this.stopLogTail = this.runtime.tailGatewayLogs((line) => {
-        logger.debug(`[openclaw] ${line}`)
+        logger.debug(line)
       })
       logger.info('Streaming OpenClaw gateway logs into server log (dev mode)')
     } catch (err) {

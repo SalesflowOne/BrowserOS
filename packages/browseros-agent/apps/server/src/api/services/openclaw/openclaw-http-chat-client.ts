@@ -90,6 +90,7 @@ async function pumpChatEvents(
   let done = false
   const parser = createParser({
     onEvent(message) {
+      if (done) return
       const nextText = updateAccumulatedText(message, text)
       done = handleMessage(message, controller, nextText, done)
       if (!done) {
@@ -111,10 +112,15 @@ async function pumpChatEvents(
       parser.feed(decoder.decode(value, { stream: true }))
     }
   } catch (error) {
-    controller.enqueue({
-      type: 'error',
-      data: { message: error instanceof Error ? error.message : String(error) },
-    })
+    if (!done) {
+      controller.enqueue({
+        type: 'error',
+        data: {
+          message: error instanceof Error ? error.message : String(error),
+        },
+      })
+      controller.close()
+    }
   } finally {
     if (!done) {
       controller.close()

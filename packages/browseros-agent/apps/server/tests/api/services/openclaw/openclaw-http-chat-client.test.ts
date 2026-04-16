@@ -133,6 +133,51 @@ describe('OpenClawHttpChatClient', () => {
       }),
     ).rejects.toThrow('Unauthorized')
   })
+
+  it('stops processing batched SSE events after a malformed chunk closes the stream', async () => {
+    const fetchMock = mock(() =>
+      Promise.resolve(
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              const encoder = new TextEncoder()
+              controller.enqueue(
+                encoder.encode(
+                  'data: {"choices":[{"delta":{"content":"Hello"}}]}\n\n' +
+                    'data: not-json\n\n' +
+                    'data: {"choices":[{"delta":{"content":" world"}}]}\n\n',
+                ),
+              )
+              controller.close()
+            },
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'text/event-stream' },
+          },
+        ),
+      ),
+    )
+    globalThis.fetch = fetchMock as typeof globalThis.fetch
+    const client = new OpenClawHttpChatClient(
+      18789,
+      async () => 'gateway-token',
+    )
+
+    const stream = await client.streamChat({
+      agentId: 'research',
+      sessionKey: 'session-123',
+      message: 'hi',
+    })
+
+    await expect(readEvents(stream)).resolves.toEqual([
+      { type: 'text-delta', data: { text: 'Hello' } },
+      {
+        type: 'error',
+        data: { message: 'Failed to parse OpenClaw chat stream chunk' },
+      },
+    ])
+  })
 })
 
 async function readEvents(
