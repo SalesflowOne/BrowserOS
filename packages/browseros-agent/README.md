@@ -89,8 +89,8 @@ bun run start:agent
 
 It runs the following in order:
 1. `bun install` — installs dependencies
-2. `bun --cwd apps/agent codegen` — generates agent code
-3. `bun --cwd apps/agent --env-file=.env.development wxt prepare` — generates WXT type output
+2. `bun run codegen:agent` — generates agent GraphQL code
+3. `bun run prepare:agent` — generates WXT type output
 
 If you want the broader dev harness after setup, use `bun run dev:watch`, `bun run dev:watch:new`, or `bun run dev:manual`.
 
