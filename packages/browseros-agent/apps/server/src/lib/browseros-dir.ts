@@ -6,8 +6,19 @@ import { PATHS } from '@browseros/shared/constants/paths'
 import type { ServerDiscoveryConfig } from '@browseros/shared/types/server-config'
 import { logger } from './logger'
 
+const DEV_BROWSEROS_DIR_NAME = '.browseros-dev'
+
 export function getBrowserosDir(): string {
-  return join(homedir(), PATHS.BROWSEROS_DIR_NAME)
+  const dirName =
+    process.env.NODE_ENV === 'development'
+      ? DEV_BROWSEROS_DIR_NAME
+      : PATHS.BROWSEROS_DIR_NAME
+  return join(homedir(), dirName)
+}
+
+export function logDevelopmentBrowserosDir(): void {
+  if (process.env.NODE_ENV !== 'development') return
+  logger.info(`Using development BrowserOS directory: ${getBrowserosDir()}`)
 }
 
 export function getMemoryDir(): string {
@@ -57,6 +68,7 @@ export function removeServerConfigSync(): void {
 }
 
 export async function ensureBrowserosDir(): Promise<void> {
+  logDevelopmentBrowserosDir()
   await mkdir(getMemoryDir(), { recursive: true })
   await mkdir(getSkillsDir(), { recursive: true })
   await mkdir(getBuiltinSkillsDir(), { recursive: true })
