@@ -1,5 +1,5 @@
 diff --git a/chrome/browser/devtools/protocol/browser_handler.cc b/chrome/browser/devtools/protocol/browser_handler.cc
-index 30bd52d09c3fc..4e9d9bc88e35f 100644
+index 30bd52d09c3fc..66746cef3fe0e 100644
 --- a/chrome/browser/devtools/protocol/browser_handler.cc
 +++ b/chrome/browser/devtools/protocol/browser_handler.cc
 @@ -8,19 +8,32 @@
@@ -35,7 +35,16 @@ index 30bd52d09c3fc..4e9d9bc88e35f 100644
  #include "content/public/browser/browser_task_traits.h"
  #include "content/public/browser/browser_thread.h"
  #include "content/public/browser/devtools_agent_host.h"
-@@ -34,6 +47,20 @@ using protocol::Response;
+@@ -30,10 +43,32 @@
+ #include "ui/gfx/image/image.h"
+ #include "ui/gfx/image/image_png_rep.h"
+ 
++#if BUILDFLAG(IS_LINUX)
++#include <string_view>
++#include "ui/ozone/platform_selection.h"
++#endif
++
+ using protocol::Response;
  
  namespace {
  
@@ -47,7 +56,10 @@ index 30bd52d09c3fc..4e9d9bc88e35f 100644
 +#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 +  return true;
 +#elif BUILDFLAG(IS_LINUX)
-+  return true;
++  // IS_LINUX covers both X11 and Wayland — the Ozone platform is chosen at
++  // runtime. Only X11Window has the headless plumbing; Wayland would still
++  // surface the window to the compositor.
++  return std::string_view(ui::GetOzonePlatformName()) == "x11";
 +#else
 +  return false;
 +#endif
@@ -56,7 +68,7 @@ index 30bd52d09c3fc..4e9d9bc88e35f 100644
  BrowserWindow* GetBrowserWindow(int window_id) {
    BrowserWindow* result = nullptr;
    ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
-@@ -72,12 +99,387 @@ std::unique_ptr<protocol::Browser::Bounds> GetBrowserWindowBounds(
+@@ -72,12 +107,394 @@ std::unique_ptr<protocol::Browser::Bounds> GetBrowserWindowBounds(
        .Build();
  }
  
@@ -433,6 +445,13 @@ index 30bd52d09c3fc..4e9d9bc88e35f 100644
 +    out_indices->push_back(found_index);
 +  }
 +
++  // TabStripModel::AddTo{New,Existing}Group require sorted, duplicate-free
++  // indices (CHECK'd in release). Normalize here so any caller layout is
++  // safe — caller order isn't preserved by the tab-group insertion anyway.
++  std::ranges::sort(*out_indices);
++  out_indices->erase(std::ranges::unique(*out_indices).begin(),
++                     out_indices->end());
++
 +  return Response::Success();
 +}
 +
@@ -445,7 +464,7 @@ index 30bd52d09c3fc..4e9d9bc88e35f 100644
    if (dispatcher)
      protocol::Browser::Dispatcher::wire(dispatcher, this);
  }
-@@ -120,6 +522,65 @@ Response BrowserHandler::GetWindowForTarget(
+@@ -120,6 +537,65 @@ Response BrowserHandler::GetWindowForTarget(
    return Response::Success();
  }
  
@@ -511,7 +530,7 @@ index 30bd52d09c3fc..4e9d9bc88e35f 100644
  Response BrowserHandler::GetWindowBounds(
      int window_id,
      std::unique_ptr<protocol::Browser::Bounds>* out_bounds) {
-@@ -297,3 +758,749 @@ protocol::Response BrowserHandler::AddPrivacySandboxEnrollmentOverride(
+@@ -297,3 +773,749 @@ protocol::Response BrowserHandler::AddPrivacySandboxEnrollmentOverride(
        net::SchemefulSite(url_to_add));
    return Response::Success();
  }
@@ -641,7 +660,7 @@ index 30bd52d09c3fc..4e9d9bc88e35f 100644
 +    }
 +  } else {
 +    ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
-+        [&tabs, this](BrowserWindowInterface* bwi) {
++        [&tabs](BrowserWindowInterface* bwi) {
 +          bool is_hidden =
 +              bwi->GetBrowserForMigrationOnly()->is_hidden();
 +          if (is_hidden) {
