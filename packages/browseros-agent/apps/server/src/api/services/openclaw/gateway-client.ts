@@ -12,7 +12,7 @@ const RECONNECT_BASE_MS = 250
 const RECONNECT_MAX_MS = 4_000
 const RECONNECT_MAX_ATTEMPTS = 5
 
-const OPERATOR_SCOPES = [
+export const OPERATOR_SCOPES = [
   'operator.admin',
   'operator.read',
   'operator.write',

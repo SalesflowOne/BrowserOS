@@ -5,12 +5,11 @@
  */
 
 import { logger } from '../../../lib/logger'
-import type { OpenClawStreamEvent } from './gateway-client'
+import { OPERATOR_SCOPES, type OpenClawStreamEvent } from './gateway-client'
 
 interface OpenAiChunk {
   choices?: Array<{
     delta?: { content?: string; role?: string }
-    finish_reason?: string | null
   }>
 }
 
@@ -23,9 +22,6 @@ export function parseOpenAiSseEvent(chunk: unknown): OpenClawStreamEvent[] {
   const delta = choice.delta?.content
   if (typeof delta === 'string' && delta.length > 0) {
     out.push({ type: 'text-delta', data: { text: delta } })
-  }
-  if (choice.finish_reason) {
-    out.push({ type: 'done', data: { text: '' } })
   }
   return out
 }
@@ -50,7 +46,7 @@ export function chatStreamHttp(input: {
             accept: 'text/event-stream',
             'x-openclaw-agent-id': agentId,
             'x-openclaw-session-key': fullSessionKey,
-            'x-openclaw-scopes': 'operator.admin,operator.read,operator.write',
+            'x-openclaw-scopes': OPERATOR_SCOPES.join(','),
           },
           body: JSON.stringify({
             model: 'openclaw/default',

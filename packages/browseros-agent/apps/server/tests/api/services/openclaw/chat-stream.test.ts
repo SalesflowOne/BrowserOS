@@ -10,12 +10,11 @@ describe('parseOpenAiSseEvent', () => {
     expect(events).toEqual([{ type: 'text-delta', data: { text: 'hello ' } }])
   })
 
-  it('parses a finish_reason as done', () => {
+  it('emits nothing for finish_reason-only chunks (terminator comes via [DONE])', () => {
     const chunk = {
       choices: [{ delta: {}, finish_reason: 'stop' }],
     }
-    const events = parseOpenAiSseEvent(chunk)
-    expect(events).toEqual([{ type: 'done', data: { text: '' } }])
+    expect(parseOpenAiSseEvent(chunk)).toEqual([])
   })
 
   it('ignores unrelated chunks', () => {
