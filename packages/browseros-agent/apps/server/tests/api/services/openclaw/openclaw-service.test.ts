@@ -177,6 +177,7 @@ describe('OpenClawService', () => {
 
   it('migrates legacy root-level state before reporting status', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'openclaw-service-'))
+    await mkdir(join(tempDir, 'agents'), { recursive: true })
     await mkdir(join(tempDir, 'workspace-ops'), { recursive: true })
     await writeFile(join(tempDir, 'openclaw.json'), '{}')
     await writeFile(join(tempDir, '.env'), 'OPENAI_API_KEY=legacy-key\n')
@@ -192,11 +193,13 @@ describe('OpenClawService', () => {
     const status = await service.getStatus()
 
     expect(status.status).toBe('stopped')
+    expect(existsSync(join(tempDir, '.openclaw', 'agents'))).toBe(true)
     expect(existsSync(join(tempDir, '.openclaw', 'openclaw.json'))).toBe(true)
     expect(existsSync(join(tempDir, '.openclaw', 'workspace-ops'))).toBe(true)
     expect(await readFile(join(tempDir, '.openclaw', '.env'), 'utf-8')).toBe(
       'OPENAI_API_KEY=legacy-key\n',
     )
+    expect(existsSync(join(tempDir, 'agents'))).toBe(false)
     expect(existsSync(join(tempDir, 'openclaw.json'))).toBe(false)
     expect(existsSync(join(tempDir, 'workspace-ops'))).toBe(false)
   })

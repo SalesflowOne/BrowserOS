@@ -697,14 +697,16 @@ export class OpenClawService {
     return join(this.openclawDir, '.env')
   }
 
-  private async listLegacyWorkspaceDirs(): Promise<string[]> {
+  private async listLegacyStateDirs(): Promise<string[]> {
     try {
       const entries = await readdir(this.openclawDir, { withFileTypes: true })
       return entries
         .filter(
           (entry) =>
             entry.isDirectory() &&
-            (entry.name === 'workspace' || entry.name.startsWith('workspace-')),
+            (entry.name === 'agents' ||
+              entry.name === 'workspace' ||
+              entry.name.startsWith('workspace-')),
         )
         .map((entry) => entry.name)
     } catch {
@@ -715,9 +717,9 @@ export class OpenClawService {
   private async migrateLegacyStateIfNeeded(): Promise<void> {
     await mkdir(this.openclawDir, { recursive: true })
 
-    const legacyWorkspaces = await this.listLegacyWorkspaceDirs()
+    const legacyStateDirs = await this.listLegacyStateDirs()
     const hasLegacyState =
-      existsSync(this.getLegacyStateConfigPath()) || legacyWorkspaces.length > 0
+      existsSync(this.getLegacyStateConfigPath()) || legacyStateDirs.length > 0
 
     if (!hasLegacyState) {
       return
@@ -740,20 +742,20 @@ export class OpenClawService {
       migrated = true
     }
 
-    for (const workspaceName of legacyWorkspaces) {
-      const legacyWorkspacePath = join(this.openclawDir, workspaceName)
-      const stateWorkspacePath = join(this.getStateDir(), workspaceName)
-      if (existsSync(stateWorkspacePath)) {
+    for (const dirName of legacyStateDirs) {
+      const legacyDirPath = join(this.openclawDir, dirName)
+      const stateDirPath = join(this.getStateDir(), dirName)
+      if (existsSync(stateDirPath)) {
         continue
       }
-      await rename(legacyWorkspacePath, stateWorkspacePath)
+      await rename(legacyDirPath, stateDirPath)
       migrated = true
     }
 
     if (migrated) {
       logger.info('Migrated legacy OpenClaw state layout', {
         openclawDir: this.openclawDir,
-        workspaceCount: legacyWorkspaces.length,
+        migratedDirCount: legacyStateDirs.length,
       })
     }
   }
