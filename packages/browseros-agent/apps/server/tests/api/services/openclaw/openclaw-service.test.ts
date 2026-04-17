@@ -67,7 +67,6 @@ describe('OpenClawService', () => {
 
     expect(createAgent).toHaveBeenCalledWith({
       name: 'ops',
-      workspace: `${OPENCLAW_CONTAINER_HOME}/workspace-ops`,
       model: undefined,
     })
     expect(agent.role).toEqual({
@@ -164,7 +163,6 @@ describe('OpenClawService', () => {
 
     expect(createAgent).toHaveBeenCalledWith({
       name: 'main',
-      workspace: `${OPENCLAW_CONTAINER_HOME}/workspace`,
       model: undefined,
     })
   })

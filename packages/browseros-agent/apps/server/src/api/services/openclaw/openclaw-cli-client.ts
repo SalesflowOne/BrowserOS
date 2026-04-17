@@ -90,7 +90,6 @@ export class OpenClawCliClient {
 
   async createAgent(input: {
     name: string
-    workspace?: string
     model?: string
   }): Promise<OpenClawAgentRecord> {
     const workspace = this.agentWorkspace(input.name)
@@ -157,7 +156,7 @@ function formatConfigValue(value: unknown): string {
 }
 
 function parseConfigValue(output: string): unknown {
-  const parsed = tryParseJson(output)
+  const parsed = parseFirstMatchingJson<unknown>(output)
   return parsed ?? output
 }
 

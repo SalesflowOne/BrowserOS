@@ -225,7 +225,6 @@ export class OpenClawService {
       await this.runControlPlaneCall(() =>
         this.adminClient.createAgent({
           name: 'main',
-          workspace: this.getContainerWorkspacePath('main'),
           model: resolveProviderModel(input),
         }),
       )
@@ -448,7 +447,6 @@ export class OpenClawService {
       agent = await this.runControlPlaneCall(() =>
         this.adminClient.createAgent({
           name,
-          workspace: this.getContainerWorkspacePath(name),
           model,
         }),
       )

@@ -81,7 +81,6 @@ describe('OpenClawCliClient', () => {
     const client = new OpenClawCliClient({ execInContainer })
     const agent = await client.createAgent({
       name: 'research',
-      workspace: '/tmp/ignored',
       model: 'openai/gpt-5.4-mini',
     })
 
@@ -199,5 +198,31 @@ describe('OpenClawCliClient', () => {
     const client = new OpenClawCliClient({ execInContainer })
 
     await expect(client.listAgents()).rejects.toThrow('agent already exists')
+  })
+
+  it('parses config get output from mixed logs and pretty-printed JSON', async () => {
+    const execInContainer = mock(
+      async (command: string[], onLog?: (line: string) => void) => {
+        if (command[2] === 'config' && command[3] === 'get') {
+          onLog?.('reading config')
+          onLog?.('{')
+          onLog?.('  "gateway": {')
+          onLog?.('    "mode": "local"')
+          onLog?.('  }')
+          onLog?.('}')
+          onLog?.('done')
+        }
+        return 0
+      },
+    )
+
+    const client = new OpenClawCliClient({ execInContainer })
+    const config = await client.getConfig('gateway')
+
+    expect(config).toEqual({
+      gateway: {
+        mode: 'local',
+      },
+    })
   })
 })
