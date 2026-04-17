@@ -568,8 +568,10 @@ export class OpenClawService {
     modelId?: string
   }): Promise<void> {
     const provider = resolveOpenClawProvider(input)
-    await this.writeStateEnv(provider.envValues)
-    await this.restart()
+    const changed = await this.writeStateEnv(provider.envValues)
+    if (changed) {
+      await this.restart()
+    }
     logger.info('Provider keys updated', { providerType: input.providerType })
   }
 
@@ -745,10 +747,14 @@ export class OpenClawService {
       'hooks.internal.entries.session-memory.enabled',
       true,
     )
-    await this.cliClient.setConfig('mcp.servers.browseros', {
-      transport: 'streamable-http',
-      url: `http://host.containers.internal:${this.browserosServerPort}/mcp`,
-    })
+    await this.cliClient.setConfig(
+      'mcp.servers.browseros.url',
+      `http://host.containers.internal:${this.browserosServerPort}/mcp`,
+    )
+    await this.cliClient.setConfig(
+      'mcp.servers.browseros.transport',
+      'streamable-http',
+    )
     await this.cliClient.setConfig('approvals.exec.enabled', false)
     await this.cliClient.setConfig('skills.install.nodeManager', 'bun')
 

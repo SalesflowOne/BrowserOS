@@ -136,8 +136,4 @@ function normalizeEnvContent(content: string): string {
   return trimmed ? `${trimmed}\n` : ''
 }
 
-/**
- * OpenRouter public model slugs can include dots, but OpenClaw's registry keys
- * for those models use dashes instead.
- */
 export { OPENCLAW_CONTAINER_HOME }

@@ -14,6 +14,7 @@ import { OpenClawService } from '../../../../src/api/services/openclaw/openclaw-
 type MutableOpenClawService = OpenClawService & {
   openclawDir: string
   token: string
+  restart: ReturnType<typeof mock>
   runtime: {
     ensureReady?: () => Promise<void>
     isPodmanAvailable?: () => Promise<boolean>
@@ -195,6 +196,18 @@ describe('OpenClawService', () => {
       nonInteractive: true,
       skipHealth: true,
     })
+    expect(setConfig).toHaveBeenCalledWith(
+      'mcp.servers.browseros.url',
+      'http://host.containers.internal:9100/mcp',
+    )
+    expect(setConfig).toHaveBeenCalledWith(
+      'mcp.servers.browseros.transport',
+      'streamable-http',
+    )
+    expect(setConfig).not.toHaveBeenCalledWith('mcp.servers.browseros', {
+      transport: 'streamable-http',
+      url: 'http://host.containers.internal:9100/mcp',
+    })
     expect(validateConfig).toHaveBeenCalled()
     expect(getConfig).toHaveBeenCalledWith('gateway.auth.token')
     expect(createAgent).toHaveBeenCalledWith({
@@ -341,5 +354,32 @@ describe('OpenClawService', () => {
     ).toEqual({
       envValues: {},
     })
+  })
+
+  it('does not restart when provider env content is unchanged', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'openclaw-service-'))
+    await mkdir(join(tempDir, '.openclaw'), { recursive: true })
+    await writeFile(
+      join(tempDir, '.openclaw', '.env'),
+      'OPENAI_API_KEY=sk-test\n',
+      'utf-8',
+    )
+
+    const restart = mock(async () => {})
+    const service = new OpenClawService() as MutableOpenClawService
+
+    service.openclawDir = tempDir
+    service.restart = restart
+
+    await service.updateProviderKeys({
+      providerType: 'openai',
+      apiKey: 'sk-test',
+      modelId: 'gpt-5.4-mini',
+    })
+
+    expect(restart).not.toHaveBeenCalled()
+    expect(await readFile(join(tempDir, '.openclaw', '.env'), 'utf-8')).toBe(
+      'OPENAI_API_KEY=sk-test\n',
+    )
   })
 })
