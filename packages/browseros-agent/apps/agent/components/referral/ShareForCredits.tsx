@@ -94,6 +94,9 @@ export const ShareForCredits: FC<ShareForCreditsProps> = ({ compact }) => {
           href={getShareOnTwitterUrl()}
           target="_blank"
           rel="noopener noreferrer"
+          onClick={(e) => {
+            e.currentTarget.href = getShareOnTwitterUrl()
+          }}
         >
           <ExternalLink className="h-3.5 w-3.5" />
           Share on Twitter
