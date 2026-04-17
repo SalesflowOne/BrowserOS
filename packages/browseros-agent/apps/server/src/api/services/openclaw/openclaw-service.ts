@@ -9,8 +9,8 @@
  */
 
 import { existsSync } from 'node:fs'
-import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import {
   OPENCLAW_CONTAINER_HOME,
   OPENCLAW_GATEWAY_PORT,
@@ -157,7 +157,6 @@ export class OpenClawService {
       )
     }
 
-    await this.migrateLegacyStateIfNeeded()
     await this.runtime.ensureReady(logProgress)
     logProgress('Container runtime ready')
 
@@ -168,16 +167,13 @@ export class OpenClawService {
     logProgress('Copying compose file...')
     await this.runtime.copyComposeFile(COMPOSE_RESOURCE)
 
-    const envContent = buildComposeEnvFile({
-      hostHome: this.openclawDir,
-      port: this.port,
-    })
-    await this.runtime.writeEnvFile(envContent)
+    await this.writeComposeEnv()
     logProgress('Generated .env file')
     logger.info('Wrote OpenClaw env file', {
       openclawDir: this.openclawDir,
     })
 
+    await this.ensureStateEnvFile()
     await this.writeStateEnv(provider.envValues)
     logger.info('Updated OpenClaw state env', {
       providerKeyCount: Object.keys(provider.envValues).length,
@@ -207,6 +203,10 @@ export class OpenClawService {
     logProgress('Validating OpenClaw config...')
     await this.assertConfigValid(this.bootstrapCliClient)
 
+    this.tokenLoaded = false
+    await this.loadTokenFromConfig()
+    await this.writeComposeEnv()
+
     logProgress('Starting OpenClaw gateway...')
     await this.runtime.composeUp(logProgress)
     this.startGatewayLogTail()
@@ -219,7 +219,6 @@ export class OpenClawService {
       throw new Error(this.lastError)
     }
 
-    this.tokenLoaded = false
     this.controlPlaneStatus = 'connecting'
     logProgress('Probing OpenClaw control plane...')
     await this.runControlPlaneCall(() => this.cliClient.probe())
@@ -252,8 +251,14 @@ export class OpenClawService {
       port: this.port,
     })
 
-    await this.migrateLegacyStateIfNeeded()
     await this.runtime.ensureReady(logProgress)
+
+    logProgress('Refreshing gateway auth token...')
+    this.tokenLoaded = false
+    await this.loadTokenFromConfig()
+    await this.ensureStateEnvFile()
+    await this.writeComposeEnv()
+
     logProgress('Starting OpenClaw gateway...')
     await this.runtime.composeUp(logProgress)
     this.startGatewayLogTail()
@@ -266,9 +271,6 @@ export class OpenClawService {
     }
 
     this.controlPlaneStatus = 'connecting'
-    logProgress('Refreshing gateway auth token...')
-    this.tokenLoaded = false
-    await this.loadTokenFromConfig()
     logProgress('Probing OpenClaw control plane...')
     await this.runControlPlaneCall(() => this.cliClient.probe())
     this.lastError = null
@@ -364,7 +366,6 @@ export class OpenClawService {
       }
     }
 
-    await this.migrateLegacyStateIfNeeded()
     const isSetUp = existsSync(this.getStateConfigPath())
     if (!isSetUp) {
       const machineStatus = await this.runtime.getMachineStatus()
@@ -558,7 +559,6 @@ export class OpenClawService {
   // ── Auto-start on BrowserOS boot ────────────────────────────────────
 
   async tryAutoStart(): Promise<void> {
-    await this.migrateLegacyStateIfNeeded()
     const isSetUp = existsSync(this.getStateConfigPath())
     if (!isSetUp) return
 
@@ -570,6 +570,11 @@ export class OpenClawService {
 
     try {
       await this.runtime.ensureReady()
+
+      this.tokenLoaded = false
+      await this.loadTokenFromConfig()
+      await this.ensureStateEnvFile()
+      await this.writeComposeEnv()
 
       if (!(await this.runtime.isReady(this.port))) {
         await this.runtime.composeUp()
@@ -583,8 +588,6 @@ export class OpenClawService {
         }
       }
 
-      this.tokenLoaded = false
-      await this.loadTokenFromConfig()
       await this.runControlPlaneCall(() => this.cliClient.probe())
       logger.info('OpenClaw gateway auto-started')
     } catch (err) {
@@ -682,77 +685,6 @@ export class OpenClawService {
     return getOpenClawStateEnvPath(this.openclawDir)
   }
 
-  private getLegacyStateConfigPath(): string {
-    return join(this.openclawDir, 'openclaw.json')
-  }
-
-  private getLegacyRootEnvPath(): string {
-    return join(this.openclawDir, '.env')
-  }
-
-  private async listLegacyStateDirs(): Promise<string[]> {
-    try {
-      const entries = await readdir(this.openclawDir, { withFileTypes: true })
-      return entries
-        .filter(
-          (entry) =>
-            entry.isDirectory() &&
-            (entry.name === 'agents' ||
-              entry.name === 'workspace' ||
-              entry.name.startsWith('workspace-')),
-        )
-        .map((entry) => entry.name)
-    } catch {
-      return []
-    }
-  }
-
-  private async migrateLegacyStateIfNeeded(): Promise<void> {
-    await mkdir(this.openclawDir, { recursive: true })
-
-    const legacyStateDirs = await this.listLegacyStateDirs()
-    const hasLegacyState =
-      existsSync(this.getLegacyStateConfigPath()) || legacyStateDirs.length > 0
-
-    if (!hasLegacyState) {
-      return
-    }
-
-    await mkdir(this.getStateDir(), { recursive: true })
-
-    let migrated = false
-    const legacyConfigPath = this.getLegacyStateConfigPath()
-    const stateConfigPath = this.getStateConfigPath()
-    if (existsSync(legacyConfigPath) && !existsSync(stateConfigPath)) {
-      await rename(legacyConfigPath, stateConfigPath)
-      migrated = true
-    }
-
-    const legacyEnvPath = this.getLegacyRootEnvPath()
-    const stateEnvPath = this.getStateEnvPath()
-    if (existsSync(legacyEnvPath) && !existsSync(stateEnvPath)) {
-      await rename(legacyEnvPath, stateEnvPath)
-      migrated = true
-    }
-
-    for (const dirName of legacyStateDirs) {
-      const legacyDirPath = join(this.openclawDir, dirName)
-      const stateDirPath = join(this.getStateDir(), dirName)
-      if (existsSync(stateDirPath)) {
-        continue
-      }
-      await rename(legacyDirPath, stateDirPath)
-      migrated = true
-    }
-
-    if (migrated) {
-      logger.info('Migrated legacy OpenClaw state layout', {
-        openclawDir: this.openclawDir,
-        migratedDirCount: legacyStateDirs.length,
-      })
-    }
-  }
-
   private async applyBrowserosConfig(): Promise<void> {
     await this.bootstrapCliClient.setConfigBatch(this.getBrowserosConfigBatch())
   }
@@ -764,12 +696,8 @@ export class OpenClawService {
         value: `${OPENCLAW_CONTAINER_HOME}/workspace`,
       },
       {
-        path: 'agents.defaults.timeoutSeconds',
-        value: 4200,
-      },
-      {
         path: 'agents.defaults.thinkingDefault',
-        value: 'adaptive',
+        value: 'off',
       },
       {
         path: 'gateway.controlUi.allowInsecureAuth',
@@ -819,18 +747,6 @@ export class OpenClawService {
         value: true,
       },
       {
-        path: 'hooks.internal.entries.boot-md.enabled',
-        value: true,
-      },
-      {
-        path: 'hooks.internal.entries.bootstrap-extra-files.enabled',
-        value: true,
-      },
-      {
-        path: 'hooks.internal.entries.session-memory.enabled',
-        value: true,
-      },
-      {
         path: 'mcp.servers.browseros.url',
         value: `http://host.containers.internal:${this.browserosServerPort}/mcp`,
       },
@@ -844,7 +760,11 @@ export class OpenClawService {
       },
       {
         path: 'skills.install.nodeManager',
-        value: 'bun',
+        value: 'npm',
+      },
+      {
+        path: 'agents.defaults.memorySearch.enabled',
+        value: false,
       },
     ]
 
@@ -918,6 +838,22 @@ export class OpenClawService {
     }
   }
 
+  private async ensureStateEnvFile(): Promise<void> {
+    const envPath = this.getStateEnvPath()
+    if (existsSync(envPath)) return
+    await mkdir(this.getStateDir(), { recursive: true })
+    await writeFile(envPath, '', { mode: 0o600 })
+  }
+
+  private async writeComposeEnv(): Promise<void> {
+    const envContent = buildComposeEnvFile({
+      hostHome: this.openclawDir,
+      port: this.port,
+      gatewayToken: this.tokenLoaded ? this.token : undefined,
+    })
+    await this.runtime.writeEnvFile(envContent)
+  }
+
   private async writeStateEnv(
     values: Record<string, string>,
   ): Promise<boolean> {
@@ -943,7 +879,6 @@ export class OpenClawService {
   }
 
   private async ensureTokenLoaded(): Promise<void> {
-    await this.migrateLegacyStateIfNeeded()
     if (this.tokenLoaded) {
       return
     }

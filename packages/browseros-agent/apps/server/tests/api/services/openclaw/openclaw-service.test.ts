@@ -177,36 +177,6 @@ describe('OpenClawService', () => {
     })
   })
 
-  it('migrates legacy root-level state before reporting status', async () => {
-    tempDir = await mkdtemp(join(tmpdir(), 'openclaw-service-'))
-    await mkdir(join(tempDir, 'agents'), { recursive: true })
-    await mkdir(join(tempDir, 'workspace-ops'), { recursive: true })
-    await writeFile(join(tempDir, 'openclaw.json'), '{}')
-    await writeFile(join(tempDir, '.env'), 'OPENAI_API_KEY=legacy-key\n')
-    const service = new OpenClawService() as MutableOpenClawService
-
-    service.openclawDir = tempDir
-    service.runtime = {
-      isPodmanAvailable: async () => true,
-      getMachineStatus: async () => ({ initialized: true, running: false }),
-      isReady: async () => false,
-    }
-
-    const status = await service.getStatus()
-
-    expect(status.status).toBe('stopped')
-    expect(existsSync(join(tempDir, '.openclaw', 'agents'))).toBe(true)
-    expect(existsSync(join(tempDir, '.openclaw', 'openclaw.json'))).toBe(true)
-    expect(existsSync(join(tempDir, '.openclaw', 'workspace-ops'))).toBe(true)
-    expect(await readFile(join(tempDir, '.openclaw', '.env'), 'utf-8')).toBe(
-      'OPENAI_API_KEY=legacy-key\n',
-    )
-    expect(existsSync(join(tempDir, '.env'))).toBe(false)
-    expect(existsSync(join(tempDir, 'agents'))).toBe(false)
-    expect(existsSync(join(tempDir, 'openclaw.json'))).toBe(false)
-    expect(existsSync(join(tempDir, 'workspace-ops'))).toBe(false)
-  })
-
   it('creates the main agent during setup when the gateway starts without one', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'openclaw-service-'))
     const steps: string[] = []

@@ -3,10 +3,15 @@ services:
     image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}
     ports:
       - "127.0.0.1:${OPENCLAW_GATEWAY_PORT:-18789}:18789"
+    env_file:
+      - ./.openclaw/.env
     environment:
       - HOME=/home/node
       - OPENCLAW_HOME=/home/node
       - OPENCLAW_STATE_DIR=/home/node/.openclaw
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-}
+      - OPENCLAW_NO_RESPAWN=1
+      - NODE_COMPILE_CACHE=/var/tmp/openclaw-compile-cache
       - NODE_ENV=production
       - TZ=${TZ}
     volumes:

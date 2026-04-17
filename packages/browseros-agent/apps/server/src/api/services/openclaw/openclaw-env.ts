@@ -37,14 +37,19 @@ export function buildComposeEnvFile(input: {
   image?: string
   port?: number
   timezone?: string
+  gatewayToken?: string
 }): string {
-  return [
+  const lines = [
     `OPENCLAW_IMAGE=${input.image ?? OPENCLAW_IMAGE}`,
     `OPENCLAW_GATEWAY_PORT=${input.port ?? OPENCLAW_GATEWAY_PORT}`,
     `OPENCLAW_HOST_HOME=${input.hostHome}`,
     `TZ=${input.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone}`,
-    '',
-  ].join('\n')
+  ]
+  if (input.gatewayToken) {
+    lines.push(`OPENCLAW_GATEWAY_TOKEN=${input.gatewayToken}`)
+  }
+  lines.push('')
+  return lines.join('\n')
 }
 
 export function mergeEnvContent(
