@@ -22,6 +22,7 @@ import {
   OpenClawInvalidAgentNameError,
   OpenClawProtectedAgentError,
 } from '../services/openclaw/errors'
+import { isUnsupportedOpenClawProviderError } from '../services/openclaw/openclaw-provider-map'
 import { getOpenClawService } from '../services/openclaw/openclaw-service'
 
 function isValidBoundaryMode(
@@ -39,6 +40,47 @@ function isValidCustomRoleBoundary(value: unknown): boolean {
     typeof boundary.description === 'string' &&
     isValidBoundaryMode(boundary.defaultMode)
   )
+}
+
+function getCreateAgentValidationError(body: {
+  name?: string
+  roleId?: BrowserOSAgentRoleId
+  customRole?: BrowserOSCustomRoleInput
+}): string | null {
+  if (!body.name?.trim()) {
+    return 'Name is required'
+  }
+  if (body.roleId && body.customRole) {
+    return 'Provide either roleId or customRole, not both'
+  }
+  if (
+    body.customRole &&
+    (!body.customRole.name?.trim() ||
+      !body.customRole.shortDescription?.trim() ||
+      !body.customRole.longDescription?.trim())
+  ) {
+    return 'Custom roles require name, shortDescription, and longDescription'
+  }
+  if (
+    body.customRole &&
+    (!Array.isArray(body.customRole.recommendedApps) ||
+      !Array.isArray(body.customRole.boundaries))
+  ) {
+    return 'Custom roles require recommendedApps and boundaries arrays'
+  }
+  if (
+    body.customRole &&
+    !body.customRole.recommendedApps.every((app) => typeof app === 'string')
+  ) {
+    return 'Custom role recommendedApps must be an array of strings'
+  }
+  if (
+    body.customRole &&
+    !body.customRole.boundaries.every(isValidCustomRoleBoundary)
+  ) {
+    return 'Custom role boundaries must include key, label, description, and a valid defaultMode'
+  }
+  return null
 }
 
 export function createOpenClawRoutes() {
@@ -89,6 +131,9 @@ export function createOpenClawRoutes() {
           providerType: body.providerType,
           providerName: body.providerName,
         })
+        if (isUnsupportedOpenClawProviderError(err)) {
+          return c.json({ error: err.message }, 400)
+        }
         if (message.includes('Podman is not available')) {
           return c.json({ error: message }, 503)
         }
@@ -179,70 +224,14 @@ export function createOpenClawRoutes() {
         apiKey?: string
         modelId?: string
       }>()
-      const name = body.name?.trim()
-
-      if (!name) {
-        return c.json({ error: 'Name is required' }, 400)
-      }
-      if (body.roleId && body.customRole) {
-        return c.json(
-          { error: 'Provide either roleId or customRole, not both' },
-          400,
-        )
-      }
-      if (
-        body.customRole &&
-        (!body.customRole.name?.trim() ||
-          !body.customRole.shortDescription?.trim() ||
-          !body.customRole.longDescription?.trim())
-      ) {
-        return c.json(
-          {
-            error:
-              'Custom roles require name, shortDescription, and longDescription',
-          },
-          400,
-        )
-      }
-      if (
-        body.customRole &&
-        (!Array.isArray(body.customRole.recommendedApps) ||
-          !Array.isArray(body.customRole.boundaries))
-      ) {
-        return c.json(
-          {
-            error: 'Custom roles require recommendedApps and boundaries arrays',
-          },
-          400,
-        )
-      }
-      if (
-        body.customRole &&
-        !body.customRole.recommendedApps.every((app) => typeof app === 'string')
-      ) {
-        return c.json(
-          {
-            error: 'Custom role recommendedApps must be an array of strings',
-          },
-          400,
-        )
-      }
-      if (
-        body.customRole &&
-        !body.customRole.boundaries.every(isValidCustomRoleBoundary)
-      ) {
-        return c.json(
-          {
-            error:
-              'Custom role boundaries must include key, label, description, and a valid defaultMode',
-          },
-          400,
-        )
+      const validationError = getCreateAgentValidationError(body)
+      if (validationError) {
+        return c.json({ error: validationError }, 400)
       }
 
       try {
         const agent = await getOpenClawService().createAgent({
-          name,
+          name: body.name.trim(),
           roleId: body.roleId,
           customRole: body.customRole,
           providerType: body.providerType,
@@ -257,6 +246,9 @@ export function createOpenClawRoutes() {
           return c.json({ error: err.message }, 409)
         }
         if (err instanceof OpenClawInvalidAgentNameError) {
+          return c.json({ error: err.message }, 400)
+        }
+        if (isUnsupportedOpenClawProviderError(err)) {
           return c.json({ error: err.message }, 400)
         }
         const message = err instanceof Error ? err.message : String(err)
@@ -323,6 +315,9 @@ export function createOpenClawRoutes() {
           }
         })
       } catch (err) {
+        if (isUnsupportedOpenClawProviderError(err)) {
+          return c.json({ error: err.message }, 400)
+        }
         const message = err instanceof Error ? err.message : String(err)
         return c.json({ error: message }, 500)
       }
@@ -358,6 +353,9 @@ export function createOpenClawRoutes() {
           message: 'Provider updated, restarting gateway',
         })
       } catch (err) {
+        if (isUnsupportedOpenClawProviderError(err)) {
+          return c.json({ error: err.message }, 400)
+        }
         const message = err instanceof Error ? err.message : String(err)
         return c.json({ error: message }, 500)
       }

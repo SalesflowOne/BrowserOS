@@ -4,11 +4,15 @@
  */
 
 import { afterEach, describe, expect, it, mock } from 'bun:test'
+import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { OPENCLAW_CONTAINER_HOME } from '@browseros/shared/constants/openclaw'
-import { resolveOpenClawProvider } from '../../../../src/api/services/openclaw/openclaw-env'
+import {
+  resolveSupportedOpenClawProvider,
+  UnsupportedOpenClawProviderError,
+} from '../../../../src/api/services/openclaw/openclaw-provider-map'
 import { OpenClawService } from '../../../../src/api/services/openclaw/openclaw-service'
 
 type MutableOpenClawService = OpenClawService & {
@@ -293,7 +297,7 @@ describe('OpenClawService', () => {
   })
 
   it('keeps openrouter model refs verbatim without rewriting dots', () => {
-    const provider = resolveOpenClawProvider({
+    const provider = resolveSupportedOpenClawProvider({
       providerType: 'openrouter',
       apiKey: 'or-key',
       modelId: 'anthropic/claude-haiku-4.5',
@@ -304,12 +308,13 @@ describe('OpenClawService', () => {
         OPENROUTER_API_KEY: 'or-key',
       },
       model: 'openrouter/anthropic/claude-haiku-4.5',
+      providerType: 'openrouter',
     })
   })
 
   it('only resolves env vars for the supported bootstrap providers', () => {
     expect(
-      resolveOpenClawProvider({
+      resolveSupportedOpenClawProvider({
         providerType: 'anthropic',
         apiKey: 'ant-key',
         modelId: 'claude-sonnet-4.5',
@@ -319,10 +324,11 @@ describe('OpenClawService', () => {
         ANTHROPIC_API_KEY: 'ant-key',
       },
       model: 'anthropic/claude-sonnet-4.5',
+      providerType: 'anthropic',
     })
 
     expect(
-      resolveOpenClawProvider({
+      resolveSupportedOpenClawProvider({
         providerType: 'moonshot',
         apiKey: 'moon-key',
         modelId: 'kimi-k2',
@@ -332,28 +338,117 @@ describe('OpenClawService', () => {
         MOONSHOT_API_KEY: 'moon-key',
       },
       model: 'moonshot/kimi-k2',
+      providerType: 'moonshot',
     })
 
-    expect(
-      resolveOpenClawProvider({
+    expect(() =>
+      resolveSupportedOpenClawProvider({
         providerType: 'google',
         apiKey: 'google-key',
         modelId: 'gemini-2.5-pro',
       }),
-    ).toEqual({
-      envValues: {},
-    })
+    ).toThrow(new UnsupportedOpenClawProviderError('google'))
 
-    expect(
-      resolveOpenClawProvider({
+    expect(() =>
+      resolveSupportedOpenClawProvider({
         providerType: 'custom-api-key',
         baseUrl: 'https://example.test/v1',
         apiKey: 'custom-key',
         modelId: 'custom-model',
       }),
-    ).toEqual({
-      envValues: {},
+    ).toThrow(new UnsupportedOpenClawProviderError('custom-api-key'))
+  })
+
+  it('rejects unsupported providers before mutating env or creating agents', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'openclaw-service-'))
+    const createAgent = mock(async () => ({
+      agentId: 'ops',
+      name: 'ops',
+      workspace: `${OPENCLAW_CONTAINER_HOME}/workspace-ops`,
+    }))
+    const restart = mock(async () => {})
+    const service = new OpenClawService() as MutableOpenClawService
+
+    service.openclawDir = tempDir
+    service.restart = restart
+    service.runtime = {
+      isReady: async () => true,
+    }
+    service.cliClient = {
+      createAgent,
+    }
+
+    await expect(
+      service.createAgent({
+        name: 'ops',
+        providerType: 'google',
+        apiKey: 'google-key',
+        modelId: 'gemini-2.5-pro',
+      }),
+    ).rejects.toThrow('Unsupported OpenClaw provider')
+
+    expect(createAgent).not.toHaveBeenCalled()
+    expect(restart).not.toHaveBeenCalled()
+    expect(existsSync(join(tempDir, '.openclaw', '.env'))).toBe(false)
+  })
+
+  it('passes openrouter model refs through verbatim into agent creation', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'openclaw-service-'))
+    await mkdir(join(tempDir, '.openclaw'), { recursive: true })
+    await writeFile(
+      join(tempDir, '.openclaw', '.env'),
+      'OPENROUTER_API_KEY=or-key\n',
+      'utf-8',
+    )
+    const createAgent = mock(async () => ({
+      agentId: 'research',
+      name: 'research',
+      workspace: `${OPENCLAW_CONTAINER_HOME}/workspace-research`,
+      model: 'openrouter/anthropic/claude-haiku-4.5',
+    }))
+    const restart = mock(async () => {})
+    const service = new OpenClawService() as MutableOpenClawService
+
+    service.openclawDir = tempDir
+    service.restart = restart
+    service.runtime = {
+      isReady: async () => true,
+    }
+    service.cliClient = {
+      createAgent,
+    }
+
+    await service.createAgent({
+      name: 'research',
+      providerType: 'openrouter',
+      apiKey: 'or-key',
+      modelId: 'anthropic/claude-haiku-4.5',
     })
+
+    expect(createAgent).toHaveBeenCalledWith({
+      name: 'research',
+      model: 'openrouter/anthropic/claude-haiku-4.5',
+    })
+    expect(restart).not.toHaveBeenCalled()
+  })
+
+  it('updateProviderKeys rejects unsupported providers without restarting', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'openclaw-service-'))
+    const restart = mock(async () => {})
+    const service = new OpenClawService() as MutableOpenClawService
+
+    service.openclawDir = tempDir
+    service.restart = restart
+
+    await expect(
+      service.updateProviderKeys({
+        providerType: 'google',
+        apiKey: 'google-key',
+        modelId: 'gemini-2.5-pro',
+      }),
+    ).rejects.toThrow('Unsupported OpenClaw provider')
+
+    expect(restart).not.toHaveBeenCalled()
   })
 
   it('does not restart when provider env content is unchanged', async () => {

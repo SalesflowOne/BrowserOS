@@ -41,9 +41,9 @@ import {
   getOpenClawStateDir,
   getOpenClawStateEnvPath,
   mergeEnvContent,
-  resolveOpenClawProvider,
 } from './openclaw-env'
 import { OpenClawHttpChatClient } from './openclaw-http-chat-client'
+import { resolveSupportedOpenClawProvider } from './openclaw-provider-map'
 import type { OpenClawStreamEvent } from './openclaw-types'
 import { getPodmanRuntime } from './podman-runtime'
 import {
@@ -138,7 +138,7 @@ export class OpenClawService {
 
   async setup(input: SetupInput, onLog?: (msg: string) => void): Promise<void> {
     const logProgress = this.createProgressLogger(onLog)
-    const provider = resolveOpenClawProvider(input)
+    const provider = resolveSupportedOpenClawProvider(input)
     logger.info('Starting OpenClaw setup', {
       port: this.port,
       browserosServerPort: this.browserosServerPort,
@@ -447,7 +447,7 @@ export class OpenClawService {
     })
     await this.assertGatewayReady()
 
-    const provider = resolveOpenClawProvider(input)
+    const provider = resolveSupportedOpenClawProvider(input)
     const keysChanged = await this.writeStateEnv(provider.envValues)
 
     if (keysChanged) {
@@ -567,7 +567,7 @@ export class OpenClawService {
     apiKey: string
     modelId?: string
   }): Promise<void> {
-    const provider = resolveOpenClawProvider(input)
+    const provider = resolveSupportedOpenClawProvider(input)
     const changed = await this.writeStateEnv(provider.envValues)
     if (changed) {
       await this.restart()
