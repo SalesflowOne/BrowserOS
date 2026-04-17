@@ -200,26 +200,17 @@ export class OpenClawService {
     }
 
     logProgress('Bootstrapping OpenClaw config...')
-    this.token = crypto.randomUUID()
     await this.cliClient.runOnboard({
       acceptRisk: true,
       authChoice: 'skip',
       gatewayAuth: 'token',
       gatewayBind: 'lan',
       gatewayPort: this.port,
-      gatewayToken: this.token,
       mode: 'local',
       nonInteractive: true,
       skipHealth: true,
     })
     await this.applyBrowserosConfig()
-    if (provider.customProviderId && provider.customProviderConfig) {
-      await this.cliClient.setConfig('models.mode', 'merge')
-      await this.cliClient.setConfig(
-        `models.providers.${provider.customProviderId}`,
-        provider.customProviderConfig,
-      )
-    }
     if (provider.model) {
       await this.cliClient.setDefaultModel(provider.model)
     }
@@ -458,12 +449,10 @@ export class OpenClawService {
 
     const provider = resolveOpenClawProvider(input)
     const keysChanged = await this.writeStateEnv(provider.envValues)
-    const configChanged = await this.configureCustomProvider(provider)
 
-    if (configChanged || keysChanged) {
+    if (keysChanged) {
       logger.info('OpenClaw provider config changed while creating agent', {
         name,
-        configChanged,
         keysChanged,
       })
       await this.restart()
@@ -580,7 +569,6 @@ export class OpenClawService {
   }): Promise<void> {
     const provider = resolveOpenClawProvider(input)
     await this.writeStateEnv(provider.envValues)
-    await this.configureCustomProvider(provider)
     await this.restart()
     logger.info('Provider keys updated', { providerType: input.providerType })
   }
@@ -871,44 +859,6 @@ export class OpenClawService {
     await this.loadTokenFromConfig()
   }
 
-  private async configureCustomProvider(provider: {
-    customProviderConfig?: Record<string, unknown>
-    customProviderId?: string
-  }): Promise<boolean> {
-    if (!provider.customProviderId || !provider.customProviderConfig) {
-      return false
-    }
-
-    const existingMode = await this.readConfigValue('models.mode')
-    const existingProvider = await this.readConfigValue(
-      `models.providers.${provider.customProviderId}`,
-    )
-    const modeChanged = existingMode !== 'merge'
-    const providerChanged =
-      JSON.stringify(existingProvider ?? null) !==
-      JSON.stringify(provider.customProviderConfig)
-
-    if (!modeChanged && !providerChanged) {
-      return false
-    }
-
-    if (modeChanged) {
-      await this.cliClient.setConfig('models.mode', 'merge')
-    }
-    if (providerChanged) {
-      await this.cliClient.setConfig(
-        `models.providers.${provider.customProviderId}`,
-        provider.customProviderConfig,
-      )
-    }
-    logger.debug('Updated OpenClaw provider config', {
-      providerId: provider.customProviderId,
-      modeChanged,
-      providerChanged,
-    })
-    return modeChanged || providerChanged
-  }
-
   private async loadTokenFromConfig(): Promise<void> {
     try {
       const token = await this.cliClient.getConfig('gateway.auth.token')
@@ -920,14 +870,6 @@ export class OpenClawService {
       logger.warn('Failed to load OpenClaw gateway token from CLI config', {
         error: err instanceof Error ? err.message : String(err),
       })
-    }
-  }
-
-  private async readConfigValue(path: string): Promise<unknown> {
-    try {
-      return await this.cliClient.getConfig(path)
-    } catch {
-      return undefined
     }
   }
 

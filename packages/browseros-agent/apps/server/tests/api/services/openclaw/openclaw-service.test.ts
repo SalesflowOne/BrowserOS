@@ -8,6 +8,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { OPENCLAW_CONTAINER_HOME } from '@browseros/shared/constants/openclaw'
+import { resolveOpenClawProvider } from '../../../../src/api/services/openclaw/openclaw-env'
 import { OpenClawService } from '../../../../src/api/services/openclaw/openclaw-service'
 
 type MutableOpenClawService = OpenClawService & {
@@ -184,7 +185,16 @@ describe('OpenClawService', () => {
 
     await service.setup({})
 
-    expect(runOnboard).toHaveBeenCalled()
+    expect(runOnboard).toHaveBeenCalledWith({
+      acceptRisk: true,
+      authChoice: 'skip',
+      gatewayAuth: 'token',
+      gatewayBind: 'lan',
+      gatewayPort: 18789,
+      mode: 'local',
+      nonInteractive: true,
+      skipHealth: true,
+    })
     expect(validateConfig).toHaveBeenCalled()
     expect(getConfig).toHaveBeenCalledWith('gateway.auth.token')
     expect(createAgent).toHaveBeenCalledWith({
@@ -267,5 +277,69 @@ describe('OpenClawService', () => {
     expect(
       await readFile(join(tempDir, '.openclaw', '.env'), 'utf-8'),
     ).toContain('OPENAI_API_KEY=sk-test')
+  })
+
+  it('keeps openrouter model refs verbatim without rewriting dots', () => {
+    const provider = resolveOpenClawProvider({
+      providerType: 'openrouter',
+      apiKey: 'or-key',
+      modelId: 'anthropic/claude-haiku-4.5',
+    })
+
+    expect(provider).toEqual({
+      envValues: {
+        OPENROUTER_API_KEY: 'or-key',
+      },
+      model: 'openrouter/anthropic/claude-haiku-4.5',
+    })
+  })
+
+  it('only resolves env vars for the supported bootstrap providers', () => {
+    expect(
+      resolveOpenClawProvider({
+        providerType: 'anthropic',
+        apiKey: 'ant-key',
+        modelId: 'claude-sonnet-4.5',
+      }),
+    ).toEqual({
+      envValues: {
+        ANTHROPIC_API_KEY: 'ant-key',
+      },
+      model: 'anthropic/claude-sonnet-4.5',
+    })
+
+    expect(
+      resolveOpenClawProvider({
+        providerType: 'moonshot',
+        apiKey: 'moon-key',
+        modelId: 'kimi-k2',
+      }),
+    ).toEqual({
+      envValues: {
+        MOONSHOT_API_KEY: 'moon-key',
+      },
+      model: 'moonshot/kimi-k2',
+    })
+
+    expect(
+      resolveOpenClawProvider({
+        providerType: 'google',
+        apiKey: 'google-key',
+        modelId: 'gemini-2.5-pro',
+      }),
+    ).toEqual({
+      envValues: {},
+    })
+
+    expect(
+      resolveOpenClawProvider({
+        providerType: 'custom-api-key',
+        baseUrl: 'https://example.test/v1',
+        apiKey: 'custom-key',
+        modelId: 'custom-model',
+      }),
+    ).toEqual({
+      envValues: {},
+    })
   })
 })
