@@ -10,7 +10,6 @@
 
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
 import {
   OPENCLAW_CONTAINER_HOME,
   OPENCLAW_GATEWAY_PORT,
@@ -46,26 +45,8 @@ import { resolveSupportedOpenClawProvider } from './openclaw-provider-map'
 import type { OpenClawStreamEvent } from './openclaw-types'
 import { getPodmanRuntime } from './podman-runtime'
 
-export const SOURCE_COMPOSE_RESOURCE = resolve(
-  import.meta.dir,
-  '../../../../resources/openclaw-compose.yml',
-)
 const READY_TIMEOUT_MS = 30_000
 const AGENT_NAME_PATTERN = /^[a-z][a-z0-9-]*$/
-
-export function resolveComposeResourcePath(resourcesDir?: string): string {
-  if (resourcesDir) {
-    const bundledComposePath = join(resourcesDir, 'openclaw-compose.yml')
-    if (existsSync(bundledComposePath)) {
-      return bundledComposePath
-    }
-    logger.warn(
-      'Bundled openclaw-compose.yml not found in resourcesDir, falling back to source tree',
-      { resourcesDir },
-    )
-  }
-  return SOURCE_COMPOSE_RESOURCE
-}
 
 export type OpenClawControlPlaneStatus =
   | 'disconnected'

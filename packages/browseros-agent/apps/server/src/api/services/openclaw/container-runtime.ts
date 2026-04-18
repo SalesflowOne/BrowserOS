@@ -3,11 +3,10 @@
  * Copyright 2025 BrowserOS
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * Compose-level abstraction over PodmanRuntime.
- * Manages a single compose project for the OpenClaw gateway container.
+ * OpenClaw container lifecycle abstraction over PodmanRuntime.
  */
 
-import { copyFile, writeFile } from 'node:fs/promises'
+import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   OPENCLAW_COMPOSE_PROJECT_NAME,
@@ -16,7 +15,6 @@ import {
 import { logger } from '../../../lib/logger'
 import type { LogFn, PodmanRuntime } from './podman-runtime'
 
-const COMPOSE_FILE_NAME = 'docker-compose.yml'
 const ENV_FILE_NAME = '.env'
 const LEGACY_GATEWAY_CONTAINER_NAME = `${OPENCLAW_COMPOSE_PROJECT_NAME}-openclaw-gateway-1`
 const GATEWAY_CONTAINER_HOME = '/home/node'
@@ -124,39 +122,6 @@ export class ContainerRuntime {
     return lines
   }
 
-  async composeUp(onLog?: LogFn): Promise<void> {
-    const code = await this.compose(['up', '-d'], onLog)
-    if (code !== 0) throw new Error(`compose up failed with code ${code}`)
-  }
-
-  async composeDown(onLog?: LogFn): Promise<void> {
-    const code = await this.compose(['down'], onLog)
-    if (code !== 0) throw new Error(`compose down failed with code ${code}`)
-  }
-
-  async composeStop(onLog?: LogFn): Promise<void> {
-    const code = await this.compose(['stop'], onLog)
-    if (code !== 0) throw new Error(`compose stop failed with code ${code}`)
-  }
-
-  async composeRestart(onLog?: LogFn): Promise<void> {
-    const code = await this.compose(['restart'], onLog)
-    if (code !== 0) throw new Error(`compose restart failed with code ${code}`)
-  }
-
-  async composePull(onLog?: LogFn): Promise<void> {
-    const code = await this.compose(['pull', '--quiet'], onLog)
-    if (code !== 0) throw new Error(`compose pull failed with code ${code}`)
-  }
-
-  async composeLogs(tail = 50): Promise<string[]> {
-    const lines: string[] = []
-    await this.compose(['logs', '--no-color', '--tail', String(tail)], (line) =>
-      lines.push(line),
-    )
-    return lines
-  }
-
   async isHealthy(port: number): Promise<boolean> {
     try {
       const res = await fetch(`http://127.0.0.1:${port}/healthz`)
@@ -193,16 +158,6 @@ export class ContainerRuntime {
       timeoutMs,
     })
     return false
-  }
-
-  async copyComposeFile(sourceTemplatePath: string): Promise<void> {
-    await copyFile(sourceTemplatePath, join(this.projectDir, COMPOSE_FILE_NAME))
-  }
-
-  async writeEnvFile(content: string): Promise<void> {
-    await writeFile(join(this.projectDir, ENV_FILE_NAME), content, {
-      mode: 0o600,
-    })
   }
 
   async writeRuntimeEnvFile(content: string): Promise<void> {
@@ -244,33 +199,14 @@ export class ContainerRuntime {
 
   async runGatewaySetupCommand(
     command: string[],
+    spec: GatewayContainerSpec,
     onLog?: LogFn,
   ): Promise<number>
   async runGatewaySetupCommand(
     command: string[],
     spec: GatewayContainerSpec,
     onLog?: LogFn,
-  ): Promise<number>
-  async runGatewaySetupCommand(
-    command: string[],
-    specOrOnLog?: GatewayContainerSpec | LogFn,
-    maybeOnLog?: LogFn,
   ): Promise<number> {
-    if (!specOrOnLog || typeof specOrOnLog === 'function') {
-      return this.compose(
-        [
-          'run',
-          '--rm',
-          '--no-deps',
-          '--entrypoint',
-          'node',
-          'openclaw-gateway',
-          ...command.slice(1),
-        ],
-        specOrOnLog,
-      )
-    }
-
     const setupArgs = command[0] === 'node' ? command.slice(1) : command
     return this.runPodmanCommand(
       [
@@ -278,12 +214,12 @@ export class ContainerRuntime {
         '--rm',
         '--name',
         `${OPENCLAW_GATEWAY_CONTAINER_NAME}-setup`,
-        ...this.buildGatewayContainerRuntimeArgs(specOrOnLog),
-        specOrOnLog.image,
+        ...this.buildGatewayContainerRuntimeArgs(spec),
+        spec.image,
         'node',
         ...setupArgs,
       ],
-      maybeOnLog,
+      onLog,
     )
   }
 
@@ -292,36 +228,6 @@ export class ContainerRuntime {
       OPENCLAW_GATEWAY_CONTAINER_NAME,
       onLine,
     )
-  }
-
-  private async compose(args: string[], onLog?: LogFn): Promise<number> {
-    const lines: string[] = []
-    const command = ['podman', 'compose', ...args].join(' ')
-    logger.info('Running OpenClaw compose command', {
-      command,
-    })
-    const code = await this.podman.runCommand(['compose', ...args], {
-      cwd: this.projectDir,
-      env: { COMPOSE_PROJECT_NAME: OPENCLAW_COMPOSE_PROJECT_NAME },
-      onOutput: (line) => {
-        lines.push(line)
-        onLog?.(line)
-      },
-    })
-
-    if (code !== 0) {
-      logger.error('OpenClaw compose command failed', {
-        command,
-        exitCode: code,
-        output: lines,
-      })
-    } else {
-      logger.info('OpenClaw compose command succeeded', {
-        command,
-      })
-    }
-
-    return code
   }
 
   private async runPodmanCommand(
