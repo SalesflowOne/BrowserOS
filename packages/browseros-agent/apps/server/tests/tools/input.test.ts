@@ -55,6 +55,72 @@ function findElementId(snapshotText: string, label: string): number {
   return Number.parseInt(match[1], 10)
 }
 
+async function pointInsideElement(
+  ctx: ToolContext,
+  pageId: number,
+  elementDomId: string,
+): Promise<{ x: number; y: number }> {
+  const pointResult = await executeTool(
+    evaluate_script,
+    {
+      page: pageId,
+      expression: `(() => {
+        const el = document.getElementById(${JSON.stringify(elementDomId)});
+        if (!el) return null;
+        const rect = el.getBoundingClientRect();
+        const insetX = Math.max(1, Math.min(10, Math.floor(rect.width / 4)));
+        const insetY = Math.max(1, Math.min(10, Math.floor(rect.height / 4)));
+        const candidates = [
+          {
+            x: Math.round(rect.left + rect.width / 2),
+            y: Math.round(rect.top + rect.height / 2),
+          },
+          {
+            x: Math.round(rect.left + insetX),
+            y: Math.round(rect.top + insetY),
+          },
+          {
+            x: Math.round(rect.right - insetX),
+            y: Math.round(rect.top + insetY),
+          },
+          {
+            x: Math.round(rect.left + insetX),
+            y: Math.round(rect.bottom - insetY),
+          },
+          {
+            x: Math.round(rect.right - insetX),
+            y: Math.round(rect.bottom - insetY),
+          },
+        ];
+        for (const candidate of candidates) {
+          const target = document.elementFromPoint(candidate.x, candidate.y);
+          if (target && (target === el || el.contains(target))) {
+            return { ...candidate, matched: true, hitId: target.id || null };
+          }
+        }
+        const fallback = candidates[0];
+        const fallbackTarget = document.elementFromPoint(fallback.x, fallback.y);
+        return {
+          ...fallback,
+          matched: false,
+          hitId: fallbackTarget instanceof Element ? fallbackTarget.id || null : null,
+        };
+      })()`,
+    },
+    ctx,
+    AbortSignal.timeout(30_000),
+  )
+  const point = structuredOf<{
+    value: { x: number; y: number; matched: boolean; hitId: string | null }
+  } | null>(pointResult)?.value
+  assert.ok(point, `Expected a point for #${elementDomId}`)
+  assert.ok(
+    point.matched,
+    `Expected coordinates inside #${elementDomId}, got ${point.hitId ?? 'null'}`,
+  )
+  return { x: point.x, y: point.y }
+}
+
 const FORM_PAGE = `data:text/html,${encodeURIComponent(`<!DOCTYPE html>
 <html><body>
   <h1>Test Form</h1>
@@ -465,24 +531,7 @@ describe('input tools', () => {
       )
       const pageId = pageIdOf(newResult)
 
-      const buttonCenter = await executeTool(
-        evaluate_script,
-        {
-          page: pageId,
-          expression: `(() => {
-            const rect = document.getElementById('submit-btn').getBoundingClientRect();
-            return {
-              x: Math.round(rect.left + rect.width / 2),
-              y: Math.round(rect.top + rect.height / 2),
-            };
-          })()`,
-        },
-        ctx,
-        AbortSignal.timeout(30_000),
-      )
-      const buttonPoint = structuredOf<{ value: { x: number; y: number } }>(
-        buttonCenter,
-      ).value
+      const buttonPoint = await pointInsideElement(ctx, pageId, 'submit-btn')
 
       const blockedClick = await executeTool(
         click_at,
@@ -500,24 +549,7 @@ describe('input tools', () => {
         },
       ]
 
-      const inputCenter = await executeTool(
-        evaluate_script,
-        {
-          page: pageId,
-          expression: `(() => {
-            const rect = document.getElementById('name').getBoundingClientRect();
-            return {
-              x: Math.round(rect.left + rect.width / 2),
-              y: Math.round(rect.top + rect.height / 2),
-            };
-          })()`,
-        },
-        ctx,
-        AbortSignal.timeout(30_000),
-      )
-      const inputPoint = structuredOf<{ value: { x: number; y: number } }>(
-        inputCenter,
-      ).value
+      const inputPoint = await pointInsideElement(ctx, pageId, 'name')
 
       const blockedType = await executeTool(
         type_at,
