@@ -549,6 +549,9 @@ describe('OpenClawService', () => {
     await service.restart()
 
     expect(writeRuntimeEnvFile).toHaveBeenCalledTimes(1)
+    expect(writeRuntimeEnvFile).toHaveBeenCalledWith(
+      expect.stringContaining('OPENCLAW_GATEWAY_TOKEN=cli-token'),
+    )
     expect(restartGateway).toHaveBeenCalledWith(
       expect.objectContaining({
         image: 'ghcr.io/openclaw/openclaw:2026.4.12',

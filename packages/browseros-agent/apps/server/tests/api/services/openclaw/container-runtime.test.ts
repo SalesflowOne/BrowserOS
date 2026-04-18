@@ -4,10 +4,14 @@
  */
 
 import { describe, expect, it } from 'bun:test'
-import { OPENCLAW_GATEWAY_CONTAINER_NAME } from '@browseros/shared/constants/openclaw'
+import {
+  OPENCLAW_COMPOSE_PROJECT_NAME,
+  OPENCLAW_GATEWAY_CONTAINER_NAME,
+} from '@browseros/shared/constants/openclaw'
 import { ContainerRuntime } from '../../../../src/api/services/openclaw/container-runtime'
 
 const PROJECT_DIR = '/tmp/openclaw'
+const LEGACY_GATEWAY_CONTAINER_NAME = `${OPENCLAW_COMPOSE_PROJECT_NAME}-openclaw-gateway-1`
 const defaultSpec = {
   image: 'ghcr.io/openclaw/openclaw:2026.4.12',
   port: 18789,
@@ -124,12 +128,16 @@ describe('ContainerRuntime', () => {
 
     await runtime.startGateway(defaultSpec)
 
-    expect(calls).toHaveLength(2)
+    expect(calls).toHaveLength(3)
     expect(calls[0]).toEqual({
       cwd: PROJECT_DIR,
       args: ['rm', '-f', OPENCLAW_GATEWAY_CONTAINER_NAME],
     })
     expect(calls[1]).toEqual({
+      cwd: PROJECT_DIR,
+      args: ['rm', '-f', LEGACY_GATEWAY_CONTAINER_NAME],
+    })
+    expect(calls[2]).toEqual({
       cwd: PROJECT_DIR,
       args: expectedStartGatewayRunArgs(defaultSpec),
     })
@@ -181,6 +189,10 @@ describe('ContainerRuntime', () => {
         cwd: PROJECT_DIR,
         args: ['rm', '-f', OPENCLAW_GATEWAY_CONTAINER_NAME],
       },
+      {
+        cwd: PROJECT_DIR,
+        args: ['rm', '-f', LEGACY_GATEWAY_CONTAINER_NAME],
+      },
     ])
   })
 
@@ -220,16 +232,23 @@ describe('ContainerRuntime', () => {
       },
       {
         cwd: PROJECT_DIR,
+        args: ['rm', '-f', LEGACY_GATEWAY_CONTAINER_NAME],
+      },
+      {
+        cwd: PROJECT_DIR,
         args: expectedStartGatewayRunArgs(defaultSpec),
       },
     ])
   })
 
-  it('stopMachineIfSafe allows the BrowserOS gateway container', async () => {
+  it('stopMachineIfSafe allows both direct and legacy gateway containers', async () => {
     let stopCalls = 0
     const runtime = createRuntime(
       async () => 0,
-      async () => [OPENCLAW_GATEWAY_CONTAINER_NAME],
+      async () => [
+        OPENCLAW_GATEWAY_CONTAINER_NAME,
+        LEGACY_GATEWAY_CONTAINER_NAME,
+      ],
       async () => {
         stopCalls += 1
       },
@@ -268,6 +287,48 @@ describe('ContainerRuntime', () => {
       {
         cwd: undefined,
         args: ['exec', OPENCLAW_GATEWAY_CONTAINER_NAME, 'node', '--version'],
+      },
+    ])
+  })
+
+  it('execInContainer falls back to the legacy compose gateway container name', async () => {
+    const calls: Array<{ args: string[]; cwd?: string }> = []
+    const runtime = createRuntime(
+      async (args, options) => {
+        calls.push({ args, cwd: options?.cwd })
+        return 0
+      },
+      async () => [LEGACY_GATEWAY_CONTAINER_NAME],
+    )
+
+    await runtime.execInContainer(['node', '--version'])
+
+    expect(calls).toEqual([
+      {
+        cwd: undefined,
+        args: ['exec', LEGACY_GATEWAY_CONTAINER_NAME, 'node', '--version'],
+      },
+    ])
+  })
+
+  it('getGatewayLogs falls back to the legacy compose gateway container name', async () => {
+    const calls: Array<{ args: string[]; cwd?: string }> = []
+    const runtime = createRuntime(
+      async (args, options) => {
+        calls.push({ args, cwd: options?.cwd })
+        options?.onOutput?.('legacy log')
+        return 0
+      },
+      async () => [LEGACY_GATEWAY_CONTAINER_NAME],
+    )
+
+    const logs = await runtime.getGatewayLogs(10)
+
+    expect(logs).toEqual(['legacy log'])
+    expect(calls).toEqual([
+      {
+        cwd: PROJECT_DIR,
+        args: ['logs', '--tail', '10', LEGACY_GATEWAY_CONTAINER_NAME],
       },
     ])
   })

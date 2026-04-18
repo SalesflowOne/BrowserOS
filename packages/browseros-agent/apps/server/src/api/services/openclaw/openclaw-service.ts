@@ -321,6 +321,9 @@ export class OpenClawService {
 
     this.controlPlaneStatus = 'reconnecting'
     this.stopGatewayLogTail()
+    logProgress('Refreshing gateway auth token...')
+    this.tokenLoaded = false
+    await this.loadTokenFromConfig()
     await this.ensureStateEnvFile()
     await this.writeRuntimeEnv()
     logProgress('Restarting OpenClaw gateway...')
@@ -337,9 +340,6 @@ export class OpenClawService {
       throw new Error(this.lastError)
     }
 
-    logProgress('Refreshing gateway auth token...')
-    this.tokenLoaded = false
-    await this.loadTokenFromConfig()
     logProgress('Probing OpenClaw control plane...')
     await this.runControlPlaneCall(() => this.cliClient.probe())
     this.lastError = null

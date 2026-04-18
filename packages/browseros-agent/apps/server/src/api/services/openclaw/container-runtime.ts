@@ -18,6 +18,7 @@ import type { LogFn, PodmanRuntime } from './podman-runtime'
 
 const COMPOSE_FILE_NAME = 'docker-compose.yml'
 const ENV_FILE_NAME = '.env'
+const LEGACY_GATEWAY_CONTAINER_NAME = `${OPENCLAW_COMPOSE_PROJECT_NAME}-openclaw-gateway-1`
 const GATEWAY_CONTAINER_HOME = '/home/node'
 const GATEWAY_STATE_DIR = `${GATEWAY_CONTAINER_HOME}/.openclaw`
 
@@ -97,11 +98,13 @@ export class ContainerRuntime {
   }
 
   async stopGateway(onLog?: LogFn): Promise<void> {
-    const code = await this.runPodmanCommand(
-      ['rm', '-f', OPENCLAW_GATEWAY_CONTAINER_NAME],
+    const code = await this.removeGatewayContainers({
       onLog,
-    )
-    if (code !== 0) throw new Error(`gateway stop failed with code ${code}`)
+      requireAtLeastOneSuccess: true,
+    })
+    if (code !== 0) {
+      throw new Error(`gateway stop failed with code ${code}`)
+    }
   }
 
   async restartGateway(
@@ -113,8 +116,9 @@ export class ContainerRuntime {
 
   async getGatewayLogs(tail = 50): Promise<string[]> {
     const lines: string[] = []
+    const containerName = await this.resolveGatewayContainerName()
     await this.runPodmanCommand(
-      ['logs', '--tail', String(tail), OPENCLAW_GATEWAY_CONTAINER_NAME],
+      ['logs', '--tail', String(tail), containerName],
       (line) => lines.push(line),
     )
     return lines
@@ -218,7 +222,9 @@ export class ContainerRuntime {
     try {
       const containers = await this.podman.listRunningContainers()
       const allOurs = containers.every(
-        (name) => name === OPENCLAW_GATEWAY_CONTAINER_NAME,
+        (name) =>
+          name === OPENCLAW_GATEWAY_CONTAINER_NAME ||
+          name === LEGACY_GATEWAY_CONTAINER_NAME,
       )
 
       if (containers.length === 0 || allOurs) {
@@ -230,12 +236,10 @@ export class ContainerRuntime {
   }
 
   async execInContainer(command: string[], onLog?: LogFn): Promise<number> {
-    return this.podman.runCommand(
-      ['exec', OPENCLAW_GATEWAY_CONTAINER_NAME, ...command],
-      {
-        onOutput: onLog,
-      },
-    )
+    const containerName = await this.resolveGatewayContainerName()
+    return this.podman.runCommand(['exec', containerName, ...command], {
+      onOutput: onLog,
+    })
   }
 
   async runGatewaySetupCommand(
@@ -353,10 +357,50 @@ export class ContainerRuntime {
   }
 
   private async ensureGatewayRemoved(onLog?: LogFn): Promise<void> {
-    await this.runPodmanCommand(
-      ['rm', '-f', OPENCLAW_GATEWAY_CONTAINER_NAME],
+    await this.removeGatewayContainers({
       onLog,
-    )
+      requireAtLeastOneSuccess: false,
+    })
+  }
+
+  private async resolveGatewayContainerName(): Promise<string> {
+    try {
+      const runningContainers = await this.podman.listRunningContainers()
+      if (runningContainers.includes(OPENCLAW_GATEWAY_CONTAINER_NAME)) {
+        return OPENCLAW_GATEWAY_CONTAINER_NAME
+      }
+      if (runningContainers.includes(LEGACY_GATEWAY_CONTAINER_NAME)) {
+        return LEGACY_GATEWAY_CONTAINER_NAME
+      }
+    } catch {
+      // fallback to the direct runtime name if we can't inspect container state
+    }
+    return OPENCLAW_GATEWAY_CONTAINER_NAME
+  }
+
+  private async removeGatewayContainers(input: {
+    onLog?: LogFn
+    requireAtLeastOneSuccess: boolean
+  }): Promise<number> {
+    const containerNames = [
+      OPENCLAW_GATEWAY_CONTAINER_NAME,
+      LEGACY_GATEWAY_CONTAINER_NAME,
+    ]
+    const codes: number[] = []
+
+    for (const containerName of containerNames) {
+      const code = await this.runPodmanCommand(
+        ['rm', '-f', containerName],
+        input.onLog,
+      )
+      codes.push(code)
+    }
+
+    if (input.requireAtLeastOneSuccess && codes.every((code) => code !== 0)) {
+      return codes[0] ?? 1
+    }
+
+    return 0
   }
 
   private buildGatewayContainerRuntimeArgs(
