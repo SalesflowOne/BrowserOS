@@ -6,6 +6,24 @@ function quadCenter(q: number[]): { x: number; y: number } {
   return { x, y }
 }
 
+export interface Bbox {
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+}
+
+function quadBounds(q: number[]): Bbox {
+  const xs = [q[0] ?? 0, q[2] ?? 0, q[4] ?? 0, q[6] ?? 0]
+  const ys = [q[1] ?? 0, q[3] ?? 0, q[5] ?? 0, q[7] ?? 0]
+  return {
+    x1: Math.floor(Math.min(...xs)),
+    y1: Math.floor(Math.min(...ys)),
+    x2: Math.ceil(Math.max(...xs)),
+    y2: Math.ceil(Math.max(...ys)),
+  }
+}
+
 /** 3-tier fallback: getContentQuads -> getBoxModel -> getBoundingClientRect */
 export async function getElementCenter(
   session: ProtocolApi,
@@ -49,6 +67,56 @@ export async function getElementCenter(
     | undefined
   if (!rect) throw new Error('Could not get element bounds.')
   return { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 }
+}
+
+/** Axis-aligned bbox in viewport pixels via the same 3-tier fallback as getElementCenter. */
+export async function getElementBbox(
+  session: ProtocolApi,
+  backendNodeId: number,
+): Promise<Bbox> {
+  try {
+    const quadsResult = await session.DOM.getContentQuads({ backendNodeId })
+    if (quadsResult.quads?.length) {
+      const q = quadsResult.quads[0] as unknown as number[]
+      if (q && q.length >= 8) return quadBounds(q)
+    }
+  } catch {
+    // fall through
+  }
+
+  try {
+    const boxResult = await session.DOM.getBoxModel({ backendNodeId })
+    const content = boxResult.model?.content as unknown as number[] | undefined
+    if (content && content.length >= 8) return quadBounds(content)
+  } catch {
+    // fall through
+  }
+
+  const resolved = await session.DOM.resolveNode({ backendNodeId })
+  const objectId = resolved.object?.objectId
+  if (!objectId) {
+    throw new Error(
+      'Could not resolve element — it may have been removed from the page.',
+    )
+  }
+
+  const boundsResult = await session.Runtime.callFunctionOn({
+    functionDeclaration:
+      'function(){var r=this.getBoundingClientRect();return{x:r.left,y:r.top,w:r.width,h:r.height}}',
+    objectId,
+    returnByValue: true,
+  })
+
+  const rect = boundsResult.result?.value as
+    | { x: number; y: number; w: number; h: number }
+    | undefined
+  if (!rect) throw new Error('Could not get element bounds.')
+  return {
+    x1: Math.floor(rect.x),
+    y1: Math.floor(rect.y),
+    x2: Math.ceil(rect.x + rect.w),
+    y2: Math.ceil(rect.y + rect.h),
+  }
 }
 
 export async function scrollIntoView(

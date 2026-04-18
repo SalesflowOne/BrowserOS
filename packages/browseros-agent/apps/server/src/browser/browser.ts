@@ -911,6 +911,29 @@ export class Browser {
     }
   }
 
+  async setViewport(
+    page: number,
+    width: number,
+    height: number,
+    deviceScaleFactor: number = 1,
+  ): Promise<void> {
+    const session = await this.resolveSession(page)
+    await session.Emulation.setDeviceMetricsOverride({
+      width,
+      height,
+      deviceScaleFactor,
+      mobile: false,
+    })
+  }
+
+  async getElementBbox(
+    page: number,
+    backendNodeId: number,
+  ): Promise<elements.Bbox> {
+    const session = await this.resolveSession(page)
+    return elements.getElementBbox(session, backendNodeId)
+  }
+
   async evaluate(
     page: number,
     expression: string,

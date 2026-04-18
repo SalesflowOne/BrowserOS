@@ -1,4 +1,16 @@
 // Config types
+
+// Collection target + record types
+export {
+  type CollectedRecord,
+  CollectedRecordSchema,
+  type CollectionState,
+  CollectionStateSchema,
+  type CollectionTarget,
+  CollectionTargetSchema,
+  type ElementRecord,
+  ElementRecordSchema,
+} from './collection-target'
 export {
   type AgentConfig,
   AgentConfigSchema,
@@ -44,7 +56,6 @@ export {
   type UserMessage,
   UserMessageSchema,
 } from './message'
-
 // Result types
 export {
   type AgentResult,

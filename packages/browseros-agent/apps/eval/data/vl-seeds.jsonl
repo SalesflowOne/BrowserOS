@@ -1,0 +1,10 @@
+{"site":"hn","url":"https://news.ycombinator.com/","states":[{"kind":"initial"},{"kind":"scroll","pixels":600},{"kind":"scroll","pixels":1200}]}
+{"site":"wikipedia","url":"https://en.wikipedia.org/wiki/Main_Page","states":[{"kind":"initial"},{"kind":"scroll","pixels":600},{"kind":"scroll","pixels":1200}]}
+{"site":"github_trending","url":"https://github.com/trending","states":[{"kind":"initial"},{"kind":"scroll","pixels":600},{"kind":"scroll","pixels":1200}]}
+{"site":"reddit","url":"https://www.reddit.com/r/programming/","states":[{"kind":"initial"},{"kind":"scroll","pixels":600},{"kind":"scroll","pixels":1200}]}
+{"site":"mdn","url":"https://developer.mozilla.org/","states":[{"kind":"initial"},{"kind":"scroll","pixels":600},{"kind":"scroll","pixels":1200}]}
+{"site":"arxiv","url":"https://arxiv.org/list/cs.CL/recent","states":[{"kind":"initial"},{"kind":"scroll","pixels":600},{"kind":"scroll","pixels":1200}]}
+{"site":"stackoverflow","url":"https://stackoverflow.com/questions","states":[{"kind":"initial"},{"kind":"scroll","pixels":600},{"kind":"scroll","pixels":1200}]}
+{"site":"ycombinator","url":"https://www.ycombinator.com/companies","states":[{"kind":"initial"},{"kind":"scroll","pixels":600},{"kind":"scroll","pixels":1200}]}
+{"site":"npm","url":"https://www.npmjs.com/package/react","states":[{"kind":"initial"},{"kind":"scroll","pixels":600},{"kind":"scroll","pixels":1200}]}
+{"site":"youtube","url":"https://www.youtube.com/","states":[{"kind":"initial"},{"kind":"scroll","pixels":600},{"kind":"scroll","pixels":1200}]}
