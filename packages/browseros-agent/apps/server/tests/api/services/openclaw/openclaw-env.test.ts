@@ -4,12 +4,12 @@
  */
 
 import { describe, expect, it } from 'bun:test'
-import { buildComposeEnvFile } from '../../../../src/api/services/openclaw/openclaw-env'
+import { buildRuntimeEnvFile } from '../../../../src/api/services/openclaw/openclaw-env'
 
-describe('buildComposeEnvFile', () => {
+describe('buildRuntimeEnvFile', () => {
   it('pins the default OpenClaw image to 2026.4.12', () => {
     expect(
-      buildComposeEnvFile({
+      buildRuntimeEnvFile({
         hostHome: '/tmp/openclaw-home',
         timezone: 'UTC',
       }),
@@ -18,7 +18,7 @@ describe('buildComposeEnvFile', () => {
 
   it('respects an explicit image override', () => {
     expect(
-      buildComposeEnvFile({
+      buildRuntimeEnvFile({
         hostHome: '/tmp/openclaw-home',
         timezone: 'UTC',
         image: 'ghcr.io/openclaw/openclaw:custom',

@@ -19,6 +19,8 @@ import type { LogFn, PodmanRuntime } from './podman-runtime'
 const COMPOSE_FILE_NAME = 'docker-compose.yml'
 const ENV_FILE_NAME = '.env'
 
+export type GatewayContainerSpec = Record<string, unknown>
+
 export class ContainerRuntime {
   constructor(
     private podman: PodmanRuntime,
@@ -39,6 +41,32 @@ export class ContainerRuntime {
     running: boolean
   }> {
     return this.podman.getMachineStatus()
+  }
+
+  async pullImage(_image: string, _onLog?: LogFn): Promise<void> {
+    throw new Error('Not implemented')
+  }
+
+  async startGateway(
+    _input: GatewayContainerSpec,
+    _onLog?: LogFn,
+  ): Promise<void> {
+    throw new Error('Not implemented')
+  }
+
+  async stopGateway(_onLog?: LogFn): Promise<void> {
+    throw new Error('Not implemented')
+  }
+
+  async restartGateway(
+    _input: GatewayContainerSpec,
+    _onLog?: LogFn,
+  ): Promise<void> {
+    throw new Error('Not implemented')
+  }
+
+  async getGatewayLogs(_tail = 50): Promise<string[]> {
+    throw new Error('Not implemented')
   }
 
   async composeUp(onLog?: LogFn): Promise<void> {
@@ -117,6 +145,12 @@ export class ContainerRuntime {
   }
 
   async writeEnvFile(content: string): Promise<void> {
+    await writeFile(join(this.projectDir, ENV_FILE_NAME), content, {
+      mode: 0o600,
+    })
+  }
+
+  async writeRuntimeEnvFile(content: string): Promise<void> {
     await writeFile(join(this.projectDir, ENV_FILE_NAME), content, {
       mode: 0o600,
     })

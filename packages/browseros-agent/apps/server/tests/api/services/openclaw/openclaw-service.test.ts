@@ -24,11 +24,21 @@ type MutableOpenClawService = OpenClawService & {
     isPodmanAvailable?: () => Promise<boolean>
     getMachineStatus?: () => Promise<{ initialized: boolean; running: boolean }>
     isReady: () => Promise<boolean>
-    copyComposeFile?: (_source: string) => Promise<void>
-    writeEnvFile?: (_content: string) => Promise<void>
-    composePull?: () => Promise<void>
-    composeRestart?: () => Promise<void>
-    composeUp?: () => Promise<void>
+    writeRuntimeEnvFile?: (_content: string) => Promise<void>
+    pullImage?: (
+      _image: string,
+      _onLog?: (_line: string) => void,
+    ) => Promise<void>
+    startGateway?: (
+      _input: unknown,
+      _onLog?: (_line: string) => void,
+    ) => Promise<void>
+    restartGateway?: (
+      _input: unknown,
+      _onLog?: (_line: string) => void,
+    ) => Promise<void>
+    stopGateway?: (_onLog?: (_line: string) => void) => Promise<void>
+    getGatewayLogs?: (_tail?: number) => Promise<string[]>
     waitForReady?: () => Promise<boolean>
   }
   cliClient: {
