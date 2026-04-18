@@ -131,30 +131,87 @@ export class ContainerRuntime {
     })
   }
 
-  async pullImage(_image: string, _onLog?: LogFn): Promise<void> {
-    throw new Error('Not implemented')
+  async pullImage(image: string, onLog?: LogFn): Promise<void> {
+    const code = await this.runPodmanCommand(['pull', image], onLog)
+    if (code !== 0) throw new Error(`image pull failed with code ${code}`)
   }
 
   async startGateway(
-    _input: GatewayContainerSpec,
-    _onLog?: LogFn,
+    input: GatewayContainerSpec,
+    onLog?: LogFn,
   ): Promise<void> {
-    throw new Error('Not implemented')
+    await this.ensureGatewayRemoved(onLog)
+    const code = await this.runPodmanCommand(
+      [
+        'run',
+        '-d',
+        '--name',
+        'openclaw-gateway',
+        '--restart',
+        'unless-stopped',
+        '-p',
+        `127.0.0.1:${input.port}:18789`,
+        '--env-file',
+        input.envFilePath,
+        '-e',
+        'HOME=/home/node',
+        '-e',
+        'OPENCLAW_HOME=/home/node',
+        '-e',
+        'OPENCLAW_STATE_DIR=/home/node/.openclaw',
+        '-e',
+        'OPENCLAW_NO_RESPAWN=1',
+        '-e',
+        'NODE_COMPILE_CACHE=/var/tmp/openclaw-compile-cache',
+        '-e',
+        'NODE_ENV=production',
+        '-e',
+        `TZ=${input.timezone}`,
+        '-v',
+        `${input.hostHome}:/home/node`,
+        '--add-host',
+        'host.containers.internal:host-gateway',
+        ...(input.gatewayToken
+          ? ['-e', `OPENCLAW_GATEWAY_TOKEN=${input.gatewayToken}`]
+          : []),
+        input.image,
+        'node',
+        'dist/index.js',
+        'gateway',
+        '--bind',
+        'lan',
+        '--port',
+        '18789',
+        '--allow-unconfigured',
+      ],
+      onLog,
+    )
+    if (code !== 0) throw new Error(`gateway start failed with code ${code}`)
   }
 
-  async stopGateway(_onLog?: LogFn): Promise<void> {
-    throw new Error('Not implemented')
+  async stopGateway(onLog?: LogFn): Promise<void> {
+    try {
+      await this.runPodmanCommand(['stop', 'openclaw-gateway'], onLog)
+    } catch {
+      // Container doesn't exist or already stopped
+    }
   }
 
   async restartGateway(
-    _input: GatewayContainerSpec,
-    _onLog?: LogFn,
+    input: GatewayContainerSpec,
+    onLog?: LogFn,
   ): Promise<void> {
-    throw new Error('Not implemented')
+    await this.stopGateway(onLog)
+    await this.startGateway(input, onLog)
   }
 
-  async getGatewayLogs(_tail = 50): Promise<string[]> {
-    throw new Error('Not implemented')
+  async getGatewayLogs(tail = 50): Promise<string[]> {
+    const lines: string[] = []
+    await this.runPodmanCommand(
+      ['logs', '--no-color', '--tail', String(tail), 'openclaw-gateway'],
+      (line) => lines.push(line),
+    )
+    return lines
   }
 
   /**
@@ -211,6 +268,29 @@ export class ContainerRuntime {
       OPENCLAW_GATEWAY_CONTAINER_NAME,
       onLine,
     )
+  }
+
+  private async runPodmanCommand(
+    args: string[],
+    onLog?: LogFn,
+  ): Promise<number> {
+    return this.podman.runCommand(args, {
+      cwd: this.projectDir,
+      onOutput: onLog,
+    })
+  }
+
+  private async ensureGatewayRemoved(onLog?: LogFn): Promise<void> {
+    try {
+      await this.runPodmanCommand(['stop', 'openclaw-gateway'], onLog)
+    } catch {
+      // Container doesn't exist, that's fine
+    }
+    try {
+      await this.runPodmanCommand(['rm', 'openclaw-gateway'], onLog)
+    } catch {
+      // Container was already removed, that's fine
+    }
   }
 
   private async compose(args: string[], onLog?: LogFn): Promise<number> {
