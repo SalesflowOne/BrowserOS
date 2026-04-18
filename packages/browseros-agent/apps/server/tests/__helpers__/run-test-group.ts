@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, readdirSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { existsSync, mkdirSync, readdirSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 
 const projectRoot = resolve(import.meta.dir, '..', '..')
 const testsRoot = resolve(projectRoot, 'tests')
@@ -115,17 +115,15 @@ function runAtomicGroup(group: string): number {
     )
   }
   runCommand(['bash', cleanupScript], `Cleaning up test resources for ${group}`)
-  let exitCode = 0
-  for (const target of targets) {
-    const status = runCommand(
-      [process.execPath, '--env-file=.env.development', 'test', target],
-      `Running ${group} tests (${target})`,
-    )
-    if (status !== 0 && exitCode === 0) {
-      exitCode = status
-    }
+  const junitPath = process.env.BROWSEROS_JUNIT_PATH?.trim()
+  const cmd = [process.execPath, '--env-file=.env.development', 'test']
+  if (junitPath) {
+    const outputPath = resolve(projectRoot, junitPath)
+    mkdirSync(dirname(outputPath), { recursive: true })
+    cmd.push('--reporter=junit', `--reporter-outfile=${outputPath}`)
   }
-  return exitCode
+  cmd.push(...targets)
+  return runCommand(cmd, `Running ${group} tests`)
 }
 
 function runGroup(group: string): number {

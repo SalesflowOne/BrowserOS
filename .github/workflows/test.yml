@@ -141,6 +141,7 @@ jobs:
           BROWSEROS_BINARY: ${{ github.workspace }}/packages/browseros-agent/.ci/bin/browseros
           BROWSEROS_TEST_HEADLESS: "true"
           BROWSEROS_TEST_EXTRA_ARGS: --no-sandbox --disable-dev-shm-usage
+          BROWSEROS_JUNIT_PATH: ${{ github.workspace }}/packages/browseros-agent/${{ matrix.junit_path }}
         run: |
           set +e
           mkdir -p test-results
@@ -150,9 +151,8 @@ jobs:
             if [ "$exit_code" = "0" ]; then
               cat > "${{ matrix.junit_path }}" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
-          <testsuites tests="1" failures="0">
-            <testsuite name="${{ matrix.suite }}" tests="1" failures="0">
-              <testcase classname="workflow" name="${{ matrix.suite }} script" />
+          <testsuites tests="0" failures="0">
+            <testsuite name="${{ matrix.suite }}" tests="0" failures="0">
             </testsuite>
           </testsuites>
           EOF
