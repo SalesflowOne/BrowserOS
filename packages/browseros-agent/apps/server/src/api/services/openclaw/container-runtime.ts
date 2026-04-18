@@ -122,6 +122,32 @@ export class ContainerRuntime {
     })
   }
 
+  async writeRuntimeEnvFile(content: string): Promise<void> {
+    await writeFile(join(this.projectDir, ENV_FILE_NAME), content, {
+      mode: 0o600,
+    })
+  }
+
+  async pullImage(_image: string, _onLog?: LogFn): Promise<void> {
+    throw new Error('Not implemented')
+  }
+
+  async startGateway(_input: object, _onLog?: LogFn): Promise<void> {
+    throw new Error('Not implemented')
+  }
+
+  async stopGateway(_onLog?: LogFn): Promise<void> {
+    throw new Error('Not implemented')
+  }
+
+  async restartGateway(_input: object, _onLog?: LogFn): Promise<void> {
+    throw new Error('Not implemented')
+  }
+
+  async getGatewayLogs(_tail = 50): Promise<string[]> {
+    throw new Error('Not implemented')
+  }
+
   /**
    * Stops the Podman machine only if no non-BrowserOS containers are running.
    * Prevents killing the user's own Podman workloads.

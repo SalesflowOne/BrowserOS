@@ -33,7 +33,7 @@ export function getHostWorkspaceDir(
   )
 }
 
-export function buildComposeEnvFile(input: {
+export function buildRuntimeEnvFile(input: {
   hostHome: string
   image?: string
   port?: number
@@ -51,6 +51,16 @@ export function buildComposeEnvFile(input: {
   }
   lines.push('')
   return lines.join('\n')
+}
+
+export function buildComposeEnvFile(input: {
+  hostHome: string
+  image?: string
+  port?: number
+  timezone?: string
+  gatewayToken?: string
+}): string {
+  return buildRuntimeEnvFile(input)
 }
 
 export function mergeEnvContent(
