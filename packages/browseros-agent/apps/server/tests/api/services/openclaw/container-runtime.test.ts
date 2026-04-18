@@ -8,7 +8,6 @@ import { OPENCLAW_GATEWAY_CONTAINER_NAME } from '@browseros/shared/constants/ope
 import { ContainerRuntime } from '../../../../src/api/services/openclaw/container-runtime'
 
 const PROJECT_DIR = '/tmp/openclaw'
-const DIRECT_GATEWAY_CONTAINER_NAME = 'openclaw-gateway'
 const defaultSpec = {
   image: 'ghcr.io/openclaw/openclaw:2026.4.12',
   port: 18789,
@@ -72,7 +71,7 @@ function expectedStartGatewayRunArgs(spec: typeof defaultSpec): string[] {
     'run',
     '-d',
     '--name',
-    DIRECT_GATEWAY_CONTAINER_NAME,
+    OPENCLAW_GATEWAY_CONTAINER_NAME,
     '--restart',
     'unless-stopped',
     '-p',
@@ -128,7 +127,7 @@ describe('ContainerRuntime', () => {
     expect(calls).toHaveLength(2)
     expect(calls[0]).toEqual({
       cwd: PROJECT_DIR,
-      args: ['rm', '-f', DIRECT_GATEWAY_CONTAINER_NAME],
+      args: ['rm', '-f', OPENCLAW_GATEWAY_CONTAINER_NAME],
     })
     expect(calls[1]).toEqual({
       cwd: PROJECT_DIR,
@@ -155,7 +154,7 @@ describe('ContainerRuntime', () => {
           'run',
           '--rm',
           '--name',
-          `${DIRECT_GATEWAY_CONTAINER_NAME}-setup`,
+          `${OPENCLAW_GATEWAY_CONTAINER_NAME}-setup`,
           ...expectedGatewayRuntimeArgs(defaultSpec),
           defaultSpec.image,
           'node',
@@ -180,7 +179,7 @@ describe('ContainerRuntime', () => {
     expect(calls).toEqual([
       {
         cwd: PROJECT_DIR,
-        args: ['rm', '-f', DIRECT_GATEWAY_CONTAINER_NAME],
+        args: ['rm', '-f', OPENCLAW_GATEWAY_CONTAINER_NAME],
       },
     ])
   })
@@ -200,7 +199,7 @@ describe('ContainerRuntime', () => {
     expect(calls).toEqual([
       {
         cwd: PROJECT_DIR,
-        args: ['logs', '--tail', '25', DIRECT_GATEWAY_CONTAINER_NAME],
+        args: ['logs', '--tail', '25', OPENCLAW_GATEWAY_CONTAINER_NAME],
       },
     ])
   })
@@ -217,7 +216,7 @@ describe('ContainerRuntime', () => {
     expect(calls).toEqual([
       {
         cwd: PROJECT_DIR,
-        args: ['rm', '-f', DIRECT_GATEWAY_CONTAINER_NAME],
+        args: ['rm', '-f', OPENCLAW_GATEWAY_CONTAINER_NAME],
       },
       {
         cwd: PROJECT_DIR,
@@ -226,14 +225,11 @@ describe('ContainerRuntime', () => {
     ])
   })
 
-  it('stopMachineIfSafe allows both compose and direct BrowserOS gateway containers', async () => {
+  it('stopMachineIfSafe allows the BrowserOS gateway container', async () => {
     let stopCalls = 0
     const runtime = createRuntime(
       async () => 0,
-      async () => [
-        OPENCLAW_GATEWAY_CONTAINER_NAME,
-        DIRECT_GATEWAY_CONTAINER_NAME,
-      ],
+      async () => [OPENCLAW_GATEWAY_CONTAINER_NAME],
       async () => {
         stopCalls += 1
       },
@@ -259,7 +255,7 @@ describe('ContainerRuntime', () => {
     expect(stopCalls).toBe(0)
   })
 
-  it('execInContainer continues targeting the compose-era gateway container name', async () => {
+  it('execInContainer targets the shared gateway container name', async () => {
     const calls: Array<{ args: string[]; cwd?: string }> = []
     const runtime = createRuntime(async (args, options) => {
       calls.push({ args, cwd: options?.cwd })
@@ -276,7 +272,7 @@ describe('ContainerRuntime', () => {
     ])
   })
 
-  it('tailGatewayLogs continues targeting the compose-era gateway container name', () => {
+  it('tailGatewayLogs targets the shared gateway container name', () => {
     const names: string[] = []
     const runtime = new ContainerRuntime(
       {

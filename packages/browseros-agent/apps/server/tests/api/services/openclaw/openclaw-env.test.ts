@@ -25,4 +25,21 @@ describe('buildRuntimeEnvFile', () => {
       }),
     ).toContain('OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:custom')
   })
+
+  it('adds the gateway token only when provided', () => {
+    expect(
+      buildRuntimeEnvFile({
+        hostHome: '/tmp/openclaw-home',
+        timezone: 'UTC',
+      }),
+    ).not.toContain('OPENCLAW_GATEWAY_TOKEN=')
+
+    expect(
+      buildRuntimeEnvFile({
+        hostHome: '/tmp/openclaw-home',
+        timezone: 'UTC',
+        gatewayToken: 'secret-token',
+      }),
+    ).toContain('OPENCLAW_GATEWAY_TOKEN=secret-token')
+  })
 })

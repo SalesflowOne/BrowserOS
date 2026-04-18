@@ -53,8 +53,6 @@ export function buildRuntimeEnvFile(input: {
   return lines.join('\n')
 }
 
-export const buildComposeEnvFile = buildRuntimeEnvFile
-
 export function mergeEnvContent(
   current: string,
   updates: Record<string, string>,

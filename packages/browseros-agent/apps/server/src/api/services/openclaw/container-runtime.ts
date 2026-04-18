@@ -18,7 +18,6 @@ import type { LogFn, PodmanRuntime } from './podman-runtime'
 
 const COMPOSE_FILE_NAME = 'docker-compose.yml'
 const ENV_FILE_NAME = '.env'
-const DIRECT_GATEWAY_CONTAINER_NAME = 'openclaw-gateway'
 const GATEWAY_CONTAINER_HOME = '/home/node'
 const GATEWAY_STATE_DIR = `${GATEWAY_CONTAINER_HOME}/.openclaw`
 
@@ -68,7 +67,7 @@ export class ContainerRuntime {
         'run',
         '-d',
         '--name',
-        DIRECT_GATEWAY_CONTAINER_NAME,
+        OPENCLAW_GATEWAY_CONTAINER_NAME,
         '--restart',
         'unless-stopped',
         '-p',
@@ -99,7 +98,7 @@ export class ContainerRuntime {
 
   async stopGateway(onLog?: LogFn): Promise<void> {
     const code = await this.runPodmanCommand(
-      ['rm', '-f', DIRECT_GATEWAY_CONTAINER_NAME],
+      ['rm', '-f', OPENCLAW_GATEWAY_CONTAINER_NAME],
       onLog,
     )
     if (code !== 0) throw new Error(`gateway stop failed with code ${code}`)
@@ -115,7 +114,7 @@ export class ContainerRuntime {
   async getGatewayLogs(tail = 50): Promise<string[]> {
     const lines: string[] = []
     await this.runPodmanCommand(
-      ['logs', '--tail', String(tail), DIRECT_GATEWAY_CONTAINER_NAME],
+      ['logs', '--tail', String(tail), OPENCLAW_GATEWAY_CONTAINER_NAME],
       (line) => lines.push(line),
     )
     return lines
@@ -219,9 +218,7 @@ export class ContainerRuntime {
     try {
       const containers = await this.podman.listRunningContainers()
       const allOurs = containers.every(
-        (name) =>
-          name === OPENCLAW_GATEWAY_CONTAINER_NAME ||
-          name === DIRECT_GATEWAY_CONTAINER_NAME,
+        (name) => name === OPENCLAW_GATEWAY_CONTAINER_NAME,
       )
 
       if (containers.length === 0 || allOurs) {
@@ -276,7 +273,7 @@ export class ContainerRuntime {
         'run',
         '--rm',
         '--name',
-        `${DIRECT_GATEWAY_CONTAINER_NAME}-setup`,
+        `${OPENCLAW_GATEWAY_CONTAINER_NAME}-setup`,
         ...this.buildGatewayContainerRuntimeArgs(specOrOnLog),
         specOrOnLog.image,
         'node',
@@ -357,7 +354,7 @@ export class ContainerRuntime {
 
   private async ensureGatewayRemoved(onLog?: LogFn): Promise<void> {
     await this.runPodmanCommand(
-      ['rm', '-f', DIRECT_GATEWAY_CONTAINER_NAME],
+      ['rm', '-f', OPENCLAW_GATEWAY_CONTAINER_NAME],
       onLog,
     )
   }

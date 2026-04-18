@@ -201,39 +201,38 @@ describe('OpenClawService', () => {
       steps.push('validate')
       return { ok: true }
     })
-    const getConfig = mock(async (path: string) => {
-      if (path === 'gateway.auth.token') return 'cli-token'
-      return null
-    })
     const createAgent = mock(async () => ({
       agentId: 'main',
       name: 'main',
       workspace: `${OPENCLAW_CONTAINER_HOME}/workspace`,
     }))
-    const writeEnvFile = mock(async (_content: string) => {})
+    const writeRuntimeEnvFile = mock(async (_content: string) => {})
     const service = new OpenClawService() as MutableOpenClawService
 
     service.openclawDir = tempDir
+    const pullImage = mock(async () => {
+      steps.push('pull')
+    })
+    const restartGateway = mock(async () => {
+      steps.push('restart')
+    })
+    const startGateway = mock(async () => {
+      steps.push('start')
+    })
     service.runtime = {
       isPodmanAvailable: async () => true,
       ensureReady: async () => {},
       isReady: async () => true,
-      copyComposeFile: async () => {},
-      writeEnvFile,
-      composePull: async () => {},
-      composeRestart: mock(async () => {
-        steps.push('restart')
-      }),
-      composeUp: mock(async () => {
-        steps.push('up')
-      }),
+      writeRuntimeEnvFile,
+      pullImage,
+      restartGateway,
+      startGateway,
       waitForReady: mock(async () => {
         steps.push('ready')
         return true
       }),
     }
     service.cliClient = {
-      getConfig,
       probe: mock(async () => {}),
       listAgents: mock(async () => []),
       createAgent,
@@ -279,11 +278,31 @@ describe('OpenClawService', () => {
       name: 'main',
       model: undefined,
     })
-    expect(steps).toEqual(['onboard', 'batch', 'validate', 'up', 'ready'])
-    expect(writeEnvFile).toHaveBeenCalledWith(
+    expect(steps).toEqual([
+      'pull',
+      'onboard',
+      'batch',
+      'validate',
+      'start',
+      'ready',
+    ])
+    expect(writeRuntimeEnvFile).toHaveBeenCalledWith(
       expect.stringContaining(`OPENCLAW_HOST_HOME=${tempDir}`),
     )
-    expect(service.runtime.composeRestart).not.toHaveBeenCalled()
+    expect(pullImage).toHaveBeenCalledWith(
+      'ghcr.io/openclaw/openclaw:2026.4.12',
+      expect.any(Function),
+    )
+    expect(startGateway).toHaveBeenCalledWith(
+      expect.objectContaining({
+        image: 'ghcr.io/openclaw/openclaw:2026.4.12',
+        port: 18789,
+        hostHome: tempDir,
+        envFilePath: join(tempDir, '.openclaw', '.env'),
+      }),
+      expect.any(Function),
+    )
+    expect(restartGateway).not.toHaveBeenCalled()
   })
 
   it('applies setup-time config in one batch before the gateway starts', async () => {
@@ -291,10 +310,6 @@ describe('OpenClawService', () => {
     const runOnboard = mock(async () => {})
     const setConfigBatch = mock(async () => {})
     const validateConfig = mock(async () => ({ ok: true }))
-    const getConfig = mock(async (path: string) => {
-      if (path === 'gateway.auth.token') return 'cli-token'
-      return null
-    })
     const createAgent = mock(async () => ({
       agentId: 'main',
       name: 'main',
@@ -304,19 +319,19 @@ describe('OpenClawService', () => {
     const service = new OpenClawService() as MutableOpenClawService
 
     service.openclawDir = tempDir
+    const restartGateway = mock(async () => {})
+    const startGateway = mock(async () => {})
     service.runtime = {
       isPodmanAvailable: async () => true,
       ensureReady: async () => {},
       isReady: async () => true,
-      copyComposeFile: async () => {},
-      writeEnvFile: async () => {},
-      composePull: async () => {},
-      composeRestart: mock(async () => {}),
-      composeUp: async () => {},
+      writeRuntimeEnvFile: async () => {},
+      pullImage: async () => {},
+      restartGateway,
+      startGateway,
       waitForReady,
     }
     service.cliClient = {
-      getConfig,
       probe: mock(async () => {}),
       listAgents: mock(async () => []),
       createAgent,
@@ -336,7 +351,8 @@ describe('OpenClawService', () => {
       name: 'main',
       model: undefined,
     })
-    expect(service.runtime.composeRestart).not.toHaveBeenCalled()
+    expect(startGateway).toHaveBeenCalledTimes(1)
+    expect(restartGateway).not.toHaveBeenCalled()
   })
 
   it('loads the persisted gateway token from the mounted config before control plane calls', async () => {
@@ -408,11 +424,10 @@ describe('OpenClawService', () => {
       isPodmanAvailable: async () => true,
       ensureReady: async () => {},
       isReady: async () => true,
-      copyComposeFile: async () => {},
-      writeEnvFile: async () => {},
-      composePull: async () => {},
-      composeRestart: async () => {},
-      composeUp: async () => {},
+      writeRuntimeEnvFile: async () => {},
+      pullImage: async () => {},
+      restartGateway: async () => {},
+      startGateway: async () => {},
       waitForReady: async () => true,
     }
     service.cliClient = {

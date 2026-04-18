@@ -18,7 +18,10 @@ import {
 import { DEFAULT_PORTS } from '@browseros/shared/constants/ports'
 import { getOpenClawDir } from '../../../lib/browseros-dir'
 import { logger } from '../../../lib/logger'
-import { ContainerRuntime } from './container-runtime'
+import {
+  ContainerRuntime,
+  type GatewayContainerSpec,
+} from './container-runtime'
 import {
   OpenClawAgentAlreadyExistsError,
   OpenClawAgentNotFoundError,
@@ -31,7 +34,7 @@ import {
   type OpenClawConfigBatchEntry,
 } from './openclaw-cli-client'
 import {
-  buildComposeEnvFile,
+  buildRuntimeEnvFile,
   getHostWorkspaceDir,
   getOpenClawStateConfigPath,
   getOpenClawStateDir,
@@ -127,7 +130,6 @@ export class OpenClawService {
   private bootstrapCliClient: OpenClawCliClient
   private chatClient: OpenClawHttpChatClient
   private openclawDir: string
-  private composeResourcePath: string
   private port = OPENCLAW_GATEWAY_PORT
   private token: string
   private tokenLoaded = false
@@ -145,13 +147,16 @@ export class OpenClawService {
     this.cliClient = new OpenClawCliClient(this.runtime)
     this.bootstrapCliClient = new OpenClawCliClient({
       execInContainer: (command, onLog) =>
-        this.runtime.runGatewaySetupCommand(command, onLog),
+        this.runtime.runGatewaySetupCommand(
+          command,
+          this.buildGatewayRuntimeSpec(),
+          onLog,
+        ),
     })
     this.chatClient = new OpenClawHttpChatClient(
       this.port,
       async () => this.token,
     )
-    this.composeResourcePath = resolveComposeResourcePath(config.resourcesDir)
     this.browserosServerPort =
       config.browserosServerPort ?? DEFAULT_PORTS.server
   }
@@ -159,9 +164,6 @@ export class OpenClawService {
   configure(config: OpenClawServiceConfig): void {
     if (config.browserosServerPort !== undefined) {
       this.browserosServerPort = config.browserosServerPort
-    }
-    if (config.resourcesDir !== undefined) {
-      this.composeResourcePath = resolveComposeResourcePath(config.resourcesDir)
     }
   }
 
@@ -195,15 +197,6 @@ export class OpenClawService {
     await mkdir(this.getStateDir(), { recursive: true })
     await mkdir(this.getHostWorkspaceDir('main'), { recursive: true })
 
-    logProgress('Copying compose file...')
-    await this.runtime.copyComposeFile(this.composeResourcePath)
-
-    await this.writeComposeEnv()
-    logProgress('Generated .env file')
-    logger.info('Wrote OpenClaw env file', {
-      openclawDir: this.openclawDir,
-    })
-
     await this.ensureStateEnvFile()
     await this.writeStateEnv(provider.envValues)
     logger.info('Updated OpenClaw state env', {
@@ -211,7 +204,7 @@ export class OpenClawService {
     })
 
     logProgress('Pulling OpenClaw image...')
-    await this.runtime.composePull(logProgress)
+    await this.runtime.pullImage(this.getGatewayImage(), logProgress)
     logProgress('Image ready')
 
     logProgress('Bootstrapping OpenClaw config...')
@@ -236,16 +229,20 @@ export class OpenClawService {
 
     this.tokenLoaded = false
     await this.loadTokenFromConfig()
-    await this.writeComposeEnv()
+    await this.writeRuntimeEnv()
+    logProgress('Generated runtime env file')
+    logger.info('Wrote OpenClaw runtime env file', {
+      openclawDir: this.openclawDir,
+    })
 
     logProgress('Starting OpenClaw gateway...')
-    await this.runtime.composeUp(logProgress)
+    await this.runtime.startGateway(this.buildGatewayRuntimeSpec(), logProgress)
     this.startGatewayLogTail()
     logProgress('Waiting for gateway readiness...')
     const ready = await this.runtime.waitForReady(this.port, READY_TIMEOUT_MS)
     if (!ready) {
       this.lastError = 'Gateway did not become ready within 30 seconds'
-      const logs = await this.runtime.composeLogs()
+      const logs = await this.runtime.getGatewayLogs()
       logger.error('Gateway readiness check failed', { logs })
       throw new Error(this.lastError)
     }
@@ -288,10 +285,10 @@ export class OpenClawService {
     this.tokenLoaded = false
     await this.loadTokenFromConfig()
     await this.ensureStateEnvFile()
-    await this.writeComposeEnv()
+    await this.writeRuntimeEnv()
 
     logProgress('Starting OpenClaw gateway...')
-    await this.runtime.composeUp(logProgress)
+    await this.runtime.startGateway(this.buildGatewayRuntimeSpec(), logProgress)
     this.startGatewayLogTail()
 
     logProgress('Waiting for gateway readiness...')
@@ -312,7 +309,7 @@ export class OpenClawService {
     logger.info('Stopping OpenClaw service', { port: this.port })
     this.controlPlaneStatus = 'disconnected'
     this.stopGatewayLogTail()
-    await this.runtime.composeStop()
+    await this.runtime.stopGateway()
     logger.info('OpenClaw container stopped')
   }
 
@@ -324,8 +321,13 @@ export class OpenClawService {
 
     this.controlPlaneStatus = 'reconnecting'
     this.stopGatewayLogTail()
+    await this.ensureStateEnvFile()
+    await this.writeRuntimeEnv()
     logProgress('Restarting OpenClaw gateway...')
-    await this.runtime.composeRestart(logProgress)
+    await this.runtime.restartGateway(
+      this.buildGatewayRuntimeSpec(),
+      logProgress,
+    )
     this.startGatewayLogTail()
 
     logProgress('Waiting for gateway readiness...')
@@ -371,7 +373,7 @@ export class OpenClawService {
     this.controlPlaneStatus = 'disconnected'
     this.stopGatewayLogTail()
     try {
-      await this.runtime.composeStop()
+      await this.runtime.stopGateway()
     } catch {
       // Best effort during shutdown
     }
@@ -583,7 +585,7 @@ export class OpenClawService {
 
   async getLogs(tail = 100): Promise<string[]> {
     logger.debug('Fetching OpenClaw container logs', { tail })
-    return this.runtime.composeLogs(tail)
+    return this.runtime.getGatewayLogs(tail)
   }
 
   // ── Auto-start on BrowserOS boot ────────────────────────────────────
@@ -604,10 +606,10 @@ export class OpenClawService {
       this.tokenLoaded = false
       await this.loadTokenFromConfig()
       await this.ensureStateEnvFile()
-      await this.writeComposeEnv()
+      await this.writeRuntimeEnv()
 
       if (!(await this.runtime.isReady(this.port))) {
-        await this.runtime.composeUp()
+        await this.runtime.startGateway(this.buildGatewayRuntimeSpec())
         const ready = await this.runtime.waitForReady(
           this.port,
           READY_TIMEOUT_MS,
@@ -875,13 +877,29 @@ export class OpenClawService {
     await writeFile(envPath, '', { mode: 0o600 })
   }
 
-  private async writeComposeEnv(): Promise<void> {
-    const envContent = buildComposeEnvFile({
+  private async writeRuntimeEnv(): Promise<void> {
+    const envContent = buildRuntimeEnvFile({
       hostHome: this.openclawDir,
+      image: this.getGatewayImage(),
       port: this.port,
       gatewayToken: this.tokenLoaded ? this.token : undefined,
     })
-    await this.runtime.writeEnvFile(envContent)
+    await this.runtime.writeRuntimeEnvFile(envContent)
+  }
+
+  private getGatewayImage(): string {
+    return process.env.OPENCLAW_IMAGE || 'ghcr.io/openclaw/openclaw:2026.4.12'
+  }
+
+  private buildGatewayRuntimeSpec(): GatewayContainerSpec {
+    return {
+      image: this.getGatewayImage(),
+      port: this.port,
+      hostHome: this.openclawDir,
+      envFilePath: this.getStateEnvPath(),
+      gatewayToken: this.tokenLoaded ? this.token : undefined,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    }
   }
 
   private async writeStateEnv(

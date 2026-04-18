@@ -51,18 +51,14 @@ describe('terminal protocol', () => {
 
   it('builds a podman exec command rooted in the container home dir', () => {
     expect(
-      buildTerminalExecCommand(
-        'podman',
-        'browseros-openclaw-openclaw-gateway-1',
-        TERMINAL_HOME_DIR,
-      ),
+      buildTerminalExecCommand('podman', 'openclaw-gateway', TERMINAL_HOME_DIR),
     ).toEqual([
       'podman',
       'exec',
       '-it',
       '-w',
       '/home/node/.openclaw',
-      'browseros-openclaw-openclaw-gateway-1',
+      'openclaw-gateway',
       '/bin/sh',
     ])
   })
