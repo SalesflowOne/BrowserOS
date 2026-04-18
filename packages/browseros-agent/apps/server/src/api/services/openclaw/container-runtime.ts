@@ -201,11 +201,6 @@ export class ContainerRuntime {
     command: string[],
     spec: GatewayContainerSpec,
     onLog?: LogFn,
-  ): Promise<number>
-  async runGatewaySetupCommand(
-    command: string[],
-    spec: GatewayContainerSpec,
-    onLog?: LogFn,
   ): Promise<number> {
     const setupArgs = command[0] === 'node' ? command.slice(1) : command
     return this.runPodmanCommand(
