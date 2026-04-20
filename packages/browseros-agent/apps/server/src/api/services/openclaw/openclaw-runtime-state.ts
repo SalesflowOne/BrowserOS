@@ -26,26 +26,9 @@ export async function loadOpenClawRuntimeState(
   try {
     const parsed = JSON.parse(
       await readFile(getOpenClawRuntimeStatePath(openclawDir), 'utf-8'),
-    ) as Partial<OpenClawRuntimeState>
-    return {
-      hostGatewayPort:
-        typeof parsed.hostGatewayPort === 'number'
-          ? parsed.hostGatewayPort
-          : null,
-      lastSuccessfulStartAt:
-        typeof parsed.lastSuccessfulStartAt === 'string'
-          ? parsed.lastSuccessfulStartAt
-          : null,
-      repairGeneration:
-        typeof parsed.repairGeneration === 'number'
-          ? parsed.repairGeneration
-          : 0,
-      lastRepairOutcome:
-        parsed.lastRepairOutcome === 'success' ||
-        parsed.lastRepairOutcome === 'failed'
-          ? parsed.lastRepairOutcome
-          : null,
-    }
+    ) as unknown
+    if (!isOpenClawRuntimeState(parsed)) return null
+    return parsed
   } catch {
     return null
   }
@@ -60,5 +43,23 @@ export async function saveOpenClawRuntimeState(
     getOpenClawRuntimeStatePath(openclawDir),
     `${JSON.stringify(state, null, 2)}\n`,
     'utf-8',
+  )
+}
+
+function isOpenClawRuntimeState(value: unknown): value is OpenClawRuntimeState {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false
+  }
+
+  const state = value as Record<string, unknown>
+  return (
+    (typeof state.hostGatewayPort === 'number' ||
+      state.hostGatewayPort === null) &&
+    (typeof state.lastSuccessfulStartAt === 'string' ||
+      state.lastSuccessfulStartAt === null) &&
+    typeof state.repairGeneration === 'number' &&
+    (state.lastRepairOutcome === 'success' ||
+      state.lastRepairOutcome === 'failed' ||
+      state.lastRepairOutcome === null)
   )
 }
