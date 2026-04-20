@@ -4,6 +4,7 @@
  */
 
 import { describe, expect, it } from 'bun:test'
+import { createServer } from 'node:net'
 import { OPENCLAW_GATEWAY_CONTAINER_NAME } from '@browseros/shared/constants/openclaw'
 import { ContainerRuntime } from '../../../../src/api/services/openclaw/container-runtime'
 
@@ -97,6 +98,26 @@ function expectedStartGatewayRunArgs(spec: typeof defaultSpec): string[] {
   ]
 }
 
+async function withOccupiedPort<T>(
+  port: number,
+  run: () => Promise<T>,
+): Promise<T> {
+  const server = createServer()
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject)
+    server.listen({ port, host: '127.0.0.1', exclusive: true }, () => {
+      server.off('error', reject)
+      resolve()
+    })
+  })
+
+  try {
+    return await run()
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+}
+
 describe('ContainerRuntime', () => {
   it('pullImage runs podman pull for the requested image', async () => {
     const calls: Array<{ args: string[]; cwd?: string }> = []
@@ -132,6 +153,63 @@ describe('ContainerRuntime', () => {
     expect(calls[1]).toEqual({
       cwd: PROJECT_DIR,
       args: expectedStartGatewayRunArgs(defaultSpec),
+    })
+  })
+
+  it('startGateway chooses a free host port when the preferred port is occupied', async () => {
+    const calls: Array<{ args: string[]; cwd?: string }> = []
+    const runtime = createRuntime(async (args, options) => {
+      calls.push({ args, cwd: options?.cwd })
+      return 0
+    })
+
+    await withOccupiedPort(defaultSpec.port, async () => {
+      const chosenPort = await (
+        runtime as unknown as {
+          startGateway: typeof runtime.startGateway
+        }
+      ).startGateway(defaultSpec)
+
+      expect(chosenPort).toBeGreaterThan(0)
+      expect(chosenPort).not.toBe(defaultSpec.port)
+      expect(calls[1]?.args).toContain(`127.0.0.1:${chosenPort}:18789`)
+    })
+  })
+
+  it('inspectGateway reports container state and mapped host port', async () => {
+    const runtime = createRuntime(async (args, options) => {
+      if (args[0] === 'inspect') {
+        options?.onOutput?.(
+          JSON.stringify([
+            {
+              State: { Running: true },
+              NetworkSettings: {
+                Ports: {
+                  '18789/tcp': [
+                    {
+                      HostIp: '127.0.0.1',
+                      HostPort: '43210',
+                    },
+                  ],
+                },
+              },
+            },
+          ]),
+        )
+      }
+      return 0
+    })
+
+    const result = await (
+      runtime as unknown as {
+        inspectGateway: typeof runtime.inspectGateway
+      }
+    ).inspectGateway()
+
+    expect(result).toEqual({
+      exists: true,
+      running: true,
+      hostPort: 43210,
     })
   })
 
