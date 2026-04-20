@@ -25,6 +25,20 @@ type MutableOpenClawService = OpenClawService & {
   restart: ReturnType<typeof mock>
   repairRuntime: ReturnType<typeof mock>
   resetRuntime: ReturnType<typeof mock>
+  controlPlaneStatus:
+    | 'connected'
+    | 'connecting'
+    | 'reconnecting'
+    | 'recovering'
+    | 'failed'
+    | 'disconnected'
+  lastError: string | null
+  lastGatewayError: string | null
+  lastRecoveryReason:
+    | 'token_mismatch'
+    | 'container_not_ready'
+    | 'unknown'
+    | null
   runtime: {
     ensureReady?: (_onLog?: (_line: string) => void) => Promise<void>
     isPodmanAvailable?: () => Promise<boolean>
@@ -49,6 +63,7 @@ type MutableOpenClawService = OpenClawService & {
     ) => Promise<number>
     stopGateway?: (_onLog?: (_line: string) => void) => Promise<void>
     getGatewayLogs?: (_tail?: number) => Promise<string[]>
+    tailGatewayLogs?: (_onLog?: (_line: string) => void) => () => void
     waitForReady?: (_port: number, _timeoutMs: number) => Promise<boolean>
     stopMachineIfSafe?: () => Promise<void>
   }
@@ -207,6 +222,73 @@ describe('OpenClawService', () => {
       hostGatewayPort: 52345,
       repairGeneration: 0,
       lastRepairOutcome: null,
+    })
+  })
+
+  it('preserves the persisted gateway port when Podman is unavailable', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'openclaw-service-'))
+    await saveOpenClawRuntimeState(tempDir, {
+      hostGatewayPort: 44321,
+      lastSuccessfulStartAt: '2026-04-20T18:00:00.000Z',
+      repairGeneration: 1,
+      lastRepairOutcome: 'success',
+    })
+    const service = new OpenClawService() as MutableOpenClawService
+
+    service.openclawDir = tempDir
+    service.runtime = {
+      isPodmanAvailable: async () => false,
+    }
+
+    await expect(service.getStatus()).resolves.toMatchObject({
+      status: 'uninitialized',
+      podmanAvailable: false,
+      machineReady: false,
+      port: 44321,
+      agentCount: 0,
+      error: null,
+      controlPlaneStatus: 'disconnected',
+      lastGatewayError: null,
+      lastRecoveryReason: null,
+    })
+  })
+
+  it('reports error status when gateway failure state is present', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'openclaw-service-'))
+    await mkdir(join(tempDir, '.openclaw'), { recursive: true })
+    await writeFile(join(tempDir, '.openclaw', 'openclaw.json'), '{}')
+    await saveOpenClawRuntimeState(tempDir, {
+      hostGatewayPort: 45555,
+      lastSuccessfulStartAt: '2026-04-20T18:00:00.000Z',
+      repairGeneration: 2,
+      lastRepairOutcome: 'success',
+    })
+    const service = new OpenClawService() as MutableOpenClawService
+
+    service.openclawDir = tempDir
+    service.controlPlaneStatus = 'failed'
+    service.lastGatewayError = 'OpenClaw gateway is not ready'
+    service.runtime = {
+      isPodmanAvailable: async () => true,
+      getMachineStatus: async () => ({ initialized: true, running: false }),
+      inspectGateway: async () => ({
+        exists: true,
+        running: false,
+        hostPort: 45555,
+      }),
+      isReady: async (_port: number) => false,
+    }
+
+    await expect(service.getStatus()).resolves.toMatchObject({
+      status: 'error',
+      podmanAvailable: true,
+      machineReady: false,
+      port: 45555,
+      agentCount: 0,
+      error: null,
+      controlPlaneStatus: 'failed',
+      lastGatewayError: 'OpenClaw gateway is not ready',
+      lastRecoveryReason: null,
     })
   })
 
@@ -645,6 +727,67 @@ describe('OpenClawService', () => {
     })
   })
 
+  it('does not persist a successful start until readiness and probe succeed', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'openclaw-service-'))
+    await mkdir(join(tempDir, '.openclaw'), { recursive: true })
+    await writeFile(
+      join(tempDir, '.openclaw', 'openclaw.json'),
+      JSON.stringify({
+        gateway: {
+          auth: {
+            token: 'cli-token',
+          },
+        },
+      }),
+    )
+    await saveOpenClawRuntimeState(tempDir, {
+      hostGatewayPort: 41234,
+      lastSuccessfulStartAt: '2026-04-20T18:00:00.000Z',
+      repairGeneration: 2,
+      lastRepairOutcome: 'success',
+    })
+    const stopLogTail = mock(() => {})
+    const tailGatewayLogs = mock(() => stopLogTail)
+    const startGateway = mock(async () => 51234)
+    const waitForReady = mock(async () => false)
+    const service = new OpenClawService() as MutableOpenClawService
+    const previousNodeEnv = process.env.NODE_ENV
+
+    process.env.NODE_ENV = 'development'
+    service.openclawDir = tempDir
+    service.runtime = {
+      ensureReady: async () => {},
+      isReady: async () => true,
+      startGateway,
+      tailGatewayLogs,
+      waitForReady,
+    }
+    service.cliClient = {
+      probe: mock(async () => {
+        throw new Error('probe should not run when readiness fails')
+      }),
+    }
+
+    try {
+      await expect(service.start()).rejects.toThrow(
+        'Gateway did not become ready after start',
+      )
+    } finally {
+      process.env.NODE_ENV = previousNodeEnv
+    }
+
+    expect(tailGatewayLogs).toHaveBeenCalledTimes(1)
+    expect(stopLogTail).toHaveBeenCalledTimes(1)
+    expect(waitForReady).toHaveBeenCalledWith(51234, expect.any(Number))
+    expect(startGateway).toHaveBeenCalledTimes(1)
+    await expect(loadOpenClawRuntimeState(tempDir)).resolves.toMatchObject({
+      hostGatewayPort: 41234,
+      lastSuccessfulStartAt: '2026-04-20T18:00:00.000Z',
+      repairGeneration: 2,
+      lastRepairOutcome: 'success',
+    })
+  })
+
   it('restart uses the direct runtime restartGateway flow', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'openclaw-service-'))
     await mkdir(join(tempDir, '.openclaw'), { recursive: true })
@@ -702,6 +845,51 @@ describe('OpenClawService', () => {
       repairGeneration: 3,
       lastRepairOutcome: null,
     })
+  })
+
+  it('clears stale lastError after reconnecting the control plane', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'openclaw-service-'))
+    await mkdir(join(tempDir, '.openclaw'), { recursive: true })
+    await writeFile(join(tempDir, '.openclaw', 'openclaw.json'), '{}')
+    await saveOpenClawRuntimeState(tempDir, {
+      hostGatewayPort: 54545,
+      lastSuccessfulStartAt: '2026-04-20T18:00:00.000Z',
+      repairGeneration: 1,
+      lastRepairOutcome: 'success',
+    })
+    const probe = mock(async () => {})
+    const service = new OpenClawService() as MutableOpenClawService
+
+    service.openclawDir = tempDir
+    service.controlPlaneStatus = 'failed'
+    service.lastError = 'stale reconnect failure'
+    service.lastGatewayError = 'stale gateway failure'
+    service.lastRecoveryReason = 'unknown'
+    service.runtime = {
+      isPodmanAvailable: async () => true,
+      getMachineStatus: async () => ({ initialized: true, running: true }),
+      inspectGateway: async () => ({
+        exists: true,
+        running: true,
+        hostPort: 54545,
+      }),
+      isReady: async (_port: number) => true,
+    }
+    service.cliClient = {
+      probe,
+      listAgents: mock(async () => []),
+    }
+
+    await service.reconnectControlPlane()
+
+    await expect(service.getStatus()).resolves.toMatchObject({
+      status: 'running',
+      error: null,
+      controlPlaneStatus: 'connected',
+      lastGatewayError: null,
+      lastRecoveryReason: null,
+    })
+    expect(probe).toHaveBeenCalledTimes(1)
   })
 
   it('escalates restart failures with machine corruption signatures into repair', async () => {
@@ -935,7 +1123,7 @@ describe('OpenClawService', () => {
       }),
     )
     expect(waitForReady).toHaveBeenCalledTimes(1)
-    expect(probe).toHaveBeenCalledTimes(1)
+    expect(probe).toHaveBeenCalledTimes(2)
     expect(isReady).toHaveBeenCalledTimes(1)
   })
 

@@ -229,24 +229,13 @@ export class OpenClawService {
     await this.loadTokenFromConfig()
 
     logProgress('Starting OpenClaw gateway...')
-    const hostPort = await this.runtime.startGateway(
-      this.buildGatewayRuntimeSpec(),
-      logProgress,
-    )
-    await this.recordSuccessfulGatewayStart(hostPort)
-    this.startGatewayLogTail()
-    logProgress('Waiting for gateway readiness...')
-    const ready = await this.runtime.waitForReady(this.port, READY_TIMEOUT_MS)
-    if (!ready) {
-      this.lastError = 'Gateway did not become ready within 30 seconds'
-      const logs = await this.runtime.getGatewayLogs()
-      logger.error('Gateway readiness check failed', { logs })
-      throw new Error(this.lastError)
-    }
-
     this.controlPlaneStatus = 'connecting'
-    logProgress('Probing OpenClaw control plane...')
-    await this.runControlPlaneCall(() => this.cliClient.probe())
+    await this.launchGatewayRuntime({
+      logProgress,
+      readyFailureMessage: 'Gateway did not become ready within 30 seconds',
+      start: () =>
+        this.runtime.startGateway(this.buildGatewayRuntimeSpec(), logProgress),
+    })
 
     const existingAgents = await this.listAgents()
     logger.info('Fetched existing OpenClaw agents after setup', {
@@ -285,23 +274,13 @@ export class OpenClawService {
     await this.ensureStateEnvFile()
 
     logProgress('Starting OpenClaw gateway...')
-    const hostPort = await this.runtime.startGateway(
-      this.buildGatewayRuntimeSpec(),
-      logProgress,
-    )
-    await this.recordSuccessfulGatewayStart(hostPort)
-    this.startGatewayLogTail()
-
-    logProgress('Waiting for gateway readiness...')
-    const ready = await this.runtime.waitForReady(this.port, READY_TIMEOUT_MS)
-    if (!ready) {
-      this.lastError = 'Gateway did not become ready after start'
-      throw new Error(this.lastError)
-    }
-
     this.controlPlaneStatus = 'connecting'
-    logProgress('Probing OpenClaw control plane...')
-    await this.runControlPlaneCall(() => this.cliClient.probe())
+    await this.launchGatewayRuntime({
+      logProgress,
+      readyFailureMessage: 'Gateway did not become ready after start',
+      start: () =>
+        this.runtime.startGateway(this.buildGatewayRuntimeSpec(), logProgress),
+    })
     this.lastError = null
     logger.info('OpenClaw gateway started', { port: this.port })
   }
@@ -329,22 +308,15 @@ export class OpenClawService {
     await this.ensureStateEnvFile()
     logProgress('Restarting OpenClaw gateway...')
     try {
-      const hostPort = await this.runtime.restartGateway(
-        this.buildGatewayRuntimeSpec(),
+      await this.launchGatewayRuntime({
         logProgress,
-      )
-      await this.recordSuccessfulGatewayStart(hostPort)
-      this.startGatewayLogTail()
-
-      logProgress('Waiting for gateway readiness...')
-      const ready = await this.runtime.waitForReady(this.port, READY_TIMEOUT_MS)
-      if (!ready) {
-        this.lastError = 'Gateway did not become ready after restart'
-        throw new Error(this.lastError)
-      }
-
-      logProgress('Probing OpenClaw control plane...')
-      await this.runControlPlaneCall(() => this.cliClient.probe())
+        readyFailureMessage: 'Gateway did not become ready after restart',
+        start: () =>
+          this.runtime.restartGateway(
+            this.buildGatewayRuntimeSpec(),
+            logProgress,
+          ),
+      })
       this.lastError = null
       logProgress('Gateway restarted successfully')
       logger.info('OpenClaw gateway restarted', { port: this.port })
@@ -387,6 +359,7 @@ export class OpenClawService {
     this.controlPlaneStatus = 'reconnecting'
     logProgress('Reconnecting control plane...')
     await this.runControlPlaneCall(() => this.cliClient.probe())
+    this.lastError = null
     logProgress('Control plane connected')
   }
 
@@ -434,22 +407,16 @@ export class OpenClawService {
 
     logProgress('Starting repaired OpenClaw gateway...')
     try {
-      const hostPort = await this.runtime.startGateway(
-        this.buildGatewayRuntimeSpec(),
-        logProgress,
-      )
-      await this.recordSuccessfulGatewayStart(hostPort)
-      this.startGatewayLogTail()
-
-      logProgress('Waiting for gateway readiness...')
-      const ready = await this.runtime.waitForReady(this.port, READY_TIMEOUT_MS)
-      if (!ready) {
-        throw new Error('Gateway did not become ready after repair')
-      }
-
       this.controlPlaneStatus = 'connecting'
-      logProgress('Probing OpenClaw control plane...')
-      await this.runControlPlaneCall(() => this.cliClient.probe())
+      await this.launchGatewayRuntime({
+        logProgress,
+        readyFailureMessage: 'Gateway did not become ready after repair',
+        start: () =>
+          this.runtime.startGateway(
+            this.buildGatewayRuntimeSpec(),
+            logProgress,
+          ),
+      })
       await this.saveRuntimeState({
         ...(this.runtimeState ?? this.defaultRuntimeState()),
         repairGeneration: nextRepairGeneration,
@@ -502,11 +469,12 @@ export class OpenClawService {
   async getStatus(): Promise<OpenClawStatusResponse> {
     const podmanAvailable = await this.runtime.isPodmanAvailable()
     if (!podmanAvailable) {
+      await this.loadRuntimeState()
       return {
         status: 'uninitialized',
         podmanAvailable: false,
         machineReady: false,
-        port: null,
+        port: this.runtimeState?.hostGatewayPort ?? null,
         agentCount: 0,
         error: null,
         controlPlaneStatus: 'disconnected',
@@ -779,21 +747,16 @@ export class OpenClawService {
       await this.ensureStateEnvFile()
 
       if (!(await this.runtime.isReady(this.port))) {
-        const hostPort = await this.runtime.startGateway(
-          this.buildGatewayRuntimeSpec(),
-        )
-        await this.recordSuccessfulGatewayStart(hostPort)
-        const ready = await this.runtime.waitForReady(
-          this.port,
-          READY_TIMEOUT_MS,
-        )
-        if (!ready) {
-          logger.warn('OpenClaw gateway failed to become ready on auto-start')
-          return
-        }
+        await this.launchGatewayRuntime({
+          logProgress: (msg) => logger.debug(`OpenClaw: ${msg}`),
+          readyFailureMessage: 'Gateway did not become ready on auto-start',
+          start: () =>
+            this.runtime.startGateway(this.buildGatewayRuntimeSpec()),
+        })
       }
 
       await this.runControlPlaneCall(() => this.cliClient.probe())
+      this.lastError = null
       logger.info('OpenClaw gateway auto-started')
     } catch (err) {
       logger.warn('OpenClaw auto-start failed', {
@@ -1087,12 +1050,49 @@ export class OpenClawService {
     }
   }
 
+  private async launchGatewayRuntime(input: {
+    logProgress: (msg: string) => void
+    readyFailureMessage: string
+    start: () => Promise<number>
+  }): Promise<number> {
+    const previousPort = this.port
+    let hostPort: number | null = null
+
+    try {
+      hostPort = await input.start()
+      this.applyGatewayPort(hostPort)
+      this.startGatewayLogTail()
+
+      input.logProgress('Waiting for gateway readiness...')
+      const ready = await this.runtime.waitForReady(this.port, READY_TIMEOUT_MS)
+      if (!ready) {
+        this.lastError = input.readyFailureMessage
+        throw new Error(this.lastError)
+      }
+
+      input.logProgress('Probing OpenClaw control plane...')
+      await this.runControlPlaneCall(() => this.cliClient.probe())
+      await this.recordSuccessfulGatewayStart(hostPort)
+      return hostPort
+    } catch (error) {
+      this.stopGatewayLogTail()
+      if (hostPort !== null) {
+        this.applyGatewayPort(previousPort)
+      }
+      throw error
+    }
+  }
+
   private resolveStatus(
     machineRunning: boolean,
     ready: boolean,
   ): OpenClawStatus {
+    if (this.hasFailureState()) {
+      return 'error'
+    }
+
     if (!machineRunning) {
-      return this.lastError ? 'error' : 'stopped'
+      return 'stopped'
     }
 
     if (ready) {
@@ -1107,7 +1107,7 @@ export class OpenClawService {
       return 'starting'
     }
 
-    return this.lastError ? 'error' : 'stopped'
+    return 'stopped'
   }
 
   private resolveControlPlaneStatus(
@@ -1126,6 +1126,16 @@ export class OpenClawService {
     }
 
     return this.lastGatewayError || this.lastError ? 'failed' : 'disconnected'
+  }
+
+  private hasFailureState(): boolean {
+    return (
+      this.controlPlaneStatus === 'failed' ||
+      this.controlPlaneStatus === 'recovering' ||
+      this.lastGatewayError !== null ||
+      this.lastError !== null ||
+      this.lastRecoveryReason !== null
+    )
   }
 
   private isStrongMachineCorruptionSignature(error: unknown): boolean {
