@@ -292,7 +292,7 @@ describe('OpenClawService', () => {
     expect(startGateway).toHaveBeenCalledWith(
       expect.objectContaining({
         image: 'ghcr.io/openclaw/openclaw:2026.4.12',
-        port: 18789,
+        hostPort: expect.any(Number),
         hostHome: tempDir,
         envFilePath: join(tempDir, '.openclaw', '.env'),
         gatewayToken: undefined,
@@ -587,7 +587,7 @@ describe('OpenClawService', () => {
     expect(startGateway).toHaveBeenCalledWith(
       expect.objectContaining({
         image: 'ghcr.io/openclaw/openclaw:2026.4.12',
-        port: 18789,
+        hostPort: expect.any(Number),
         hostHome: tempDir,
         envFilePath: join(tempDir, '.openclaw', '.env'),
         gatewayToken: 'cli-token',
@@ -631,7 +631,7 @@ describe('OpenClawService', () => {
     expect(restartGateway).toHaveBeenCalledWith(
       expect.objectContaining({
         image: 'ghcr.io/openclaw/openclaw:2026.4.12',
-        port: 18789,
+        hostPort: expect.any(Number),
         hostHome: tempDir,
         envFilePath: join(tempDir, '.openclaw', '.env'),
         gatewayToken: 'cli-token',
@@ -743,7 +743,7 @@ describe('OpenClawService', () => {
     expect(startGateway).toHaveBeenCalledWith(
       expect.objectContaining({
         image: 'ghcr.io/openclaw/openclaw:2026.4.12',
-        port: 18789,
+        hostPort: expect.any(Number),
         hostHome: tempDir,
         envFilePath: join(tempDir, '.openclaw', '.env'),
         gatewayToken: 'cli-token',

@@ -22,7 +22,7 @@ export interface OpenClawChatRequest {
 
 export class OpenClawHttpChatClient {
   constructor(
-    private readonly port: number,
+    private readonly hostPort: number,
     private readonly getToken: () => Promise<string>,
   ) {}
 
@@ -42,7 +42,7 @@ export class OpenClawHttpChatClient {
   private async fetchChat(input: OpenClawChatRequest): Promise<Response> {
     const token = await this.getToken()
     const response = await fetch(
-      `http://127.0.0.1:${this.port}/v1/chat/completions`,
+      `http://127.0.0.1:${this.hostPort}/v1/chat/completions`,
       {
         method: 'POST',
         headers: {

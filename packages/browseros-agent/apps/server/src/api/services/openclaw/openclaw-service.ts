@@ -12,7 +12,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import {
   OPENCLAW_CONTAINER_HOME,
-  OPENCLAW_GATEWAY_PORT,
+  OPENCLAW_GATEWAY_CONTAINER_PORT,
 } from '@browseros/shared/constants/openclaw'
 import { DEFAULT_PORTS } from '@browseros/shared/constants/ports'
 import { getOpenClawDir } from '../../../lib/browseros-dir'
@@ -48,6 +48,7 @@ import {
 import type { OpenClawStreamEvent } from './openclaw-types'
 import { loadPodmanOverrides, savePodmanOverrides } from './podman-overrides'
 import { configurePodmanRuntime, getPodmanRuntime } from './podman-runtime'
+import { allocateGatewayPort, readPersistedGatewayPort } from './runtime-state'
 
 const READY_TIMEOUT_MS = 30_000
 const AGENT_NAME_PATTERN = /^[a-z][a-z0-9-]*$/
@@ -120,7 +121,7 @@ export class OpenClawService {
   private bootstrapCliClient: OpenClawCliClient
   private chatClient: OpenClawHttpChatClient
   private openclawDir: string
-  private port = OPENCLAW_GATEWAY_PORT
+  private hostPort = OPENCLAW_GATEWAY_CONTAINER_PORT
   private token: string
   private tokenLoaded = false
   private lastError: string | null = null
@@ -138,7 +139,7 @@ export class OpenClawService {
     this.cliClient = new OpenClawCliClient(this.runtime)
     this.bootstrapCliClient = this.buildBootstrapCliClient()
     this.chatClient = new OpenClawHttpChatClient(
-      this.port,
+      this.hostPort,
       async () => this.token,
     )
     this.browserosServerPort =
@@ -155,13 +156,17 @@ export class OpenClawService {
     }
   }
 
+  getPort(): number {
+    return this.hostPort
+  }
+
   // ── Lifecycle ────────────────────────────────────────────────────────
 
   async setup(input: SetupInput, onLog?: (msg: string) => void): Promise<void> {
     const logProgress = this.createProgressLogger(onLog)
     const provider = resolveSupportedOpenClawProvider(input)
     logger.info('Starting OpenClaw setup', {
-      port: this.port,
+      hostPort: this.hostPort,
       browserosServerPort: this.browserosServerPort,
       providerType: input.providerType,
       providerName: input.providerName,
@@ -195,13 +200,15 @@ export class OpenClawService {
     await this.runtime.pullImage(this.getGatewayImage(), logProgress)
     logProgress('Image ready')
 
+    await this.ensureGatewayPortAllocated(logProgress)
+
     logProgress('Bootstrapping OpenClaw config...')
     await this.bootstrapCliClient.runOnboard({
       acceptRisk: true,
       authChoice: 'skip',
       gatewayAuth: 'token',
       gatewayBind: 'lan',
-      gatewayPort: this.port,
+      gatewayPort: OPENCLAW_GATEWAY_CONTAINER_PORT,
       installDaemon: false,
       mode: 'local',
       nonInteractive: true,
@@ -223,7 +230,10 @@ export class OpenClawService {
     await this.runtime.startGateway(this.buildGatewayRuntimeSpec(), logProgress)
     this.startGatewayLogTail()
     logProgress('Waiting for gateway readiness...')
-    const ready = await this.runtime.waitForReady(this.port, READY_TIMEOUT_MS)
+    const ready = await this.runtime.waitForReady(
+      this.hostPort,
+      READY_TIMEOUT_MS,
+    )
     if (!ready) {
       this.lastError = 'Gateway did not become ready within 30 seconds'
       const logs = await this.runtime.getGatewayLogs()
@@ -253,14 +263,14 @@ export class OpenClawService {
     }
 
     this.lastError = null
-    logProgress(`OpenClaw gateway running at http://127.0.0.1:${this.port}`)
-    logger.info('OpenClaw setup complete', { port: this.port })
+    logProgress(`OpenClaw gateway running at http://127.0.0.1:${this.hostPort}`)
+    logger.info('OpenClaw setup complete', { hostPort: this.hostPort })
   }
 
   async start(onLog?: (msg: string) => void): Promise<void> {
     const logProgress = this.createProgressLogger(onLog)
     logger.info('Starting OpenClaw service', {
-      port: this.port,
+      hostPort: this.hostPort,
     })
 
     await this.runtime.ensureReady(logProgress)
@@ -270,12 +280,17 @@ export class OpenClawService {
     await this.loadTokenFromConfig()
     await this.ensureStateEnvFile()
 
+    await this.ensureGatewayPortAllocated(logProgress)
+
     logProgress('Starting OpenClaw gateway...')
     await this.runtime.startGateway(this.buildGatewayRuntimeSpec(), logProgress)
     this.startGatewayLogTail()
 
     logProgress('Waiting for gateway readiness...')
-    const ready = await this.runtime.waitForReady(this.port, READY_TIMEOUT_MS)
+    const ready = await this.runtime.waitForReady(
+      this.hostPort,
+      READY_TIMEOUT_MS,
+    )
     if (!ready) {
       this.lastError = 'Gateway did not become ready after start'
       throw new Error(this.lastError)
@@ -285,11 +300,11 @@ export class OpenClawService {
     logProgress('Probing OpenClaw control plane...')
     await this.runControlPlaneCall(() => this.cliClient.probe())
     this.lastError = null
-    logger.info('OpenClaw gateway started', { port: this.port })
+    logger.info('OpenClaw gateway started', { hostPort: this.hostPort })
   }
 
   async stop(): Promise<void> {
-    logger.info('Stopping OpenClaw service', { port: this.port })
+    logger.info('Stopping OpenClaw service', { hostPort: this.hostPort })
     this.controlPlaneStatus = 'disconnected'
     this.stopGatewayLogTail()
     await this.runtime.stopGateway()
@@ -299,7 +314,7 @@ export class OpenClawService {
   async restart(onLog?: (msg: string) => void): Promise<void> {
     const logProgress = this.createProgressLogger(onLog)
     logger.info('Restarting OpenClaw service', {
-      port: this.port,
+      hostPort: this.hostPort,
     })
 
     this.controlPlaneStatus = 'reconnecting'
@@ -308,6 +323,7 @@ export class OpenClawService {
     this.tokenLoaded = false
     await this.loadTokenFromConfig()
     await this.ensureStateEnvFile()
+    await this.ensureGatewayPortAllocated(logProgress)
     logProgress('Restarting OpenClaw gateway...')
     await this.runtime.restartGateway(
       this.buildGatewayRuntimeSpec(),
@@ -316,7 +332,10 @@ export class OpenClawService {
     this.startGatewayLogTail()
 
     logProgress('Waiting for gateway readiness...')
-    const ready = await this.runtime.waitForReady(this.port, READY_TIMEOUT_MS)
+    const ready = await this.runtime.waitForReady(
+      this.hostPort,
+      READY_TIMEOUT_MS,
+    )
     if (!ready) {
       this.lastError = 'Gateway did not become ready after restart'
       throw new Error(this.lastError)
@@ -326,15 +345,17 @@ export class OpenClawService {
     await this.runControlPlaneCall(() => this.cliClient.probe())
     this.lastError = null
     logProgress('Gateway restarted successfully')
-    logger.info('OpenClaw gateway restarted', { port: this.port })
+    logger.info('OpenClaw gateway restarted', { hostPort: this.hostPort })
   }
 
   async reconnectControlPlane(onLog?: (msg: string) => void): Promise<void> {
     const logProgress = this.createProgressLogger(onLog)
-    logger.info('Reconnecting OpenClaw control plane', { port: this.port })
+    logger.info('Reconnecting OpenClaw control plane', {
+      hostPort: this.hostPort,
+    })
 
     logProgress('Checking gateway readiness...')
-    const ready = await this.runtime.isReady(this.port)
+    const ready = await this.runtime.isReady(this.hostPort)
     if (!ready) {
       this.controlPlaneStatus = 'failed'
       this.lastGatewayError = 'OpenClaw gateway is not ready'
@@ -399,7 +420,7 @@ export class OpenClawService {
 
     const machineStatus = await this.runtime.getMachineStatus()
     const ready = machineStatus.running
-      ? await this.runtime.isReady(this.port)
+      ? await this.runtime.isReady(this.hostPort)
       : false
 
     let agentCount = 0
@@ -418,7 +439,7 @@ export class OpenClawService {
       status: ready ? 'running' : this.lastError ? 'error' : 'stopped',
       podmanAvailable: true,
       machineReady: machineStatus.running,
-      port: this.port,
+      port: this.hostPort,
       agentCount,
       error: this.lastError,
       controlPlaneStatus: ready ? this.controlPlaneStatus : 'disconnected',
@@ -624,7 +645,7 @@ export class OpenClawService {
     const available = await this.runtime.isPodmanAvailable()
     if (!available) return
     logger.info('Attempting OpenClaw auto-start', {
-      port: this.port,
+      hostPort: this.hostPort,
     })
 
     try {
@@ -634,10 +655,16 @@ export class OpenClawService {
       await this.loadTokenFromConfig()
       await this.ensureStateEnvFile()
 
-      if (!(await this.runtime.isReady(this.port))) {
+      const persistedPort = await readPersistedGatewayPort(this.openclawDir)
+      if (persistedPort !== null) {
+        this.setPort(persistedPort)
+      }
+
+      if (!(await this.runtime.isReady(this.hostPort))) {
+        await this.ensureGatewayPortAllocated()
         await this.runtime.startGateway(this.buildGatewayRuntimeSpec())
         const ready = await this.runtime.waitForReady(
-          this.port,
+          this.hostPort,
           READY_TIMEOUT_MS,
         )
         if (!ready) {
@@ -675,10 +702,30 @@ export class OpenClawService {
     this.bootstrapCliClient = this.buildBootstrapCliClient()
   }
 
+  private setPort(hostPort: number): void {
+    if (hostPort === this.hostPort) return
+    this.hostPort = hostPort
+    this.chatClient = new OpenClawHttpChatClient(
+      this.hostPort,
+      async () => this.token,
+    )
+  }
+
+  private async ensureGatewayPortAllocated(
+    logProgress?: (msg: string) => void,
+  ): Promise<void> {
+    const hostPort = await allocateGatewayPort(this.openclawDir)
+    if (hostPort !== this.hostPort) {
+      logProgress?.(`Allocated OpenClaw gateway host port ${hostPort}`)
+      logger.info('Allocated OpenClaw gateway host port', { hostPort })
+      this.setPort(hostPort)
+    }
+  }
+
   private async assertGatewayReady(): Promise<void> {
-    const portReady = await this.runtime.isReady(this.port)
+    const portReady = await this.runtime.isReady(this.hostPort)
     logger.debug('Checking OpenClaw gateway readiness before use', {
-      port: this.port,
+      hostPort: this.hostPort,
       portReady,
       controlPlaneStatus: this.controlPlaneStatus,
     })
@@ -782,8 +829,8 @@ export class OpenClawService {
       {
         path: 'gateway.controlUi.allowedOrigins',
         value: [
-          `http://127.0.0.1:${this.port}`,
-          `http://localhost:${this.port}`,
+          `http://127.0.0.1:${this.hostPort}`,
+          `http://localhost:${this.hostPort}`,
         ],
       },
       {
@@ -893,7 +940,10 @@ export class OpenClawService {
   }
 
   private async waitForGatewayAfterCliMutation(): Promise<void> {
-    const ready = await this.runtime.waitForReady(this.port, READY_TIMEOUT_MS)
+    const ready = await this.runtime.waitForReady(
+      this.hostPort,
+      READY_TIMEOUT_MS,
+    )
     if (!ready) {
       this.lastError = 'Gateway did not become ready after applying config'
       throw new Error(this.lastError)
@@ -929,7 +979,7 @@ export class OpenClawService {
   private buildGatewayRuntimeSpec(): GatewayContainerSpec {
     return {
       image: this.getGatewayImage(),
-      port: this.port,
+      hostPort: this.hostPort,
       hostHome: this.openclawDir,
       envFilePath: this.getStateEnvPath(),
       gatewayToken: this.tokenLoaded ? this.token : undefined,

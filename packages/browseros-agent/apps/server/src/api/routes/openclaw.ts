@@ -9,7 +9,6 @@
 
 import { accessSync, existsSync, constants as fsConstants } from 'node:fs'
 import path from 'node:path'
-import { OPENCLAW_GATEWAY_PORT } from '@browseros/shared/constants/openclaw'
 import { Hono } from 'hono'
 import { stream } from 'hono/streaming'
 import { logger } from '../../lib/logger'
@@ -83,7 +82,7 @@ export function createOpenClawRoutes() {
         return c.json(
           {
             status: 'running',
-            port: OPENCLAW_GATEWAY_PORT,
+            port: getOpenClawService().getPort(),
             agents: agents.map((a) => ({
               agentId: a.agentId,
               name: a.name,

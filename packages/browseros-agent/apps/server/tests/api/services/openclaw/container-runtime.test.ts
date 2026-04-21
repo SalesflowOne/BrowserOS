@@ -10,7 +10,7 @@ import { ContainerRuntime } from '../../../../src/api/services/openclaw/containe
 const PROJECT_DIR = '/tmp/openclaw'
 const defaultSpec = {
   image: 'ghcr.io/openclaw/openclaw:2026.4.12',
-  port: 18789,
+  hostPort: 18789,
   hostHome: '/tmp/openclaw',
   envFilePath: '/tmp/openclaw/.openclaw/.env',
   gatewayToken: 'token-123',
@@ -75,7 +75,7 @@ function expectedStartGatewayRunArgs(spec: typeof defaultSpec): string[] {
     '--restart',
     'unless-stopped',
     '-p',
-    `127.0.0.1:${spec.port}:18789`,
+    `127.0.0.1:${spec.hostPort}:18789`,
     ...expectedGatewayRuntimeArgs(spec),
     '--health-cmd',
     'curl -sf http://127.0.0.1:18789/healthz',

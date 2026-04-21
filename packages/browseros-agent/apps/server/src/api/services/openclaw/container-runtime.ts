@@ -6,7 +6,10 @@
  * OpenClaw container lifecycle abstraction over PodmanRuntime.
  */
 
-import { OPENCLAW_GATEWAY_CONTAINER_NAME } from '@browseros/shared/constants/openclaw'
+import {
+  OPENCLAW_GATEWAY_CONTAINER_NAME,
+  OPENCLAW_GATEWAY_CONTAINER_PORT,
+} from '@browseros/shared/constants/openclaw'
 import { logger } from '../../../lib/logger'
 import type { LogFn, PodmanRuntime } from './podman-runtime'
 
@@ -15,7 +18,7 @@ const GATEWAY_STATE_DIR = `${GATEWAY_CONTAINER_HOME}/.openclaw`
 
 export type GatewayContainerSpec = {
   image: string
-  port: number
+  hostPort: number
   hostHome: string
   envFilePath: string
   gatewayToken?: string
@@ -54,6 +57,7 @@ export class ContainerRuntime {
     onLog?: LogFn,
   ): Promise<void> {
     await this.ensureGatewayRemoved(onLog)
+    const containerPort = String(OPENCLAW_GATEWAY_CONTAINER_PORT)
     const code = await this.runPodmanCommand(
       [
         'run',
@@ -63,10 +67,10 @@ export class ContainerRuntime {
         '--restart',
         'unless-stopped',
         '-p',
-        `127.0.0.1:${input.port}:18789`,
+        `127.0.0.1:${input.hostPort}:${containerPort}`,
         ...this.buildGatewayContainerRuntimeArgs(input),
         '--health-cmd',
-        'curl -sf http://127.0.0.1:18789/healthz',
+        `curl -sf http://127.0.0.1:${containerPort}/healthz`,
         '--health-interval',
         '30s',
         '--health-timeout',
@@ -80,7 +84,7 @@ export class ContainerRuntime {
         '--bind',
         'lan',
         '--port',
-        '18789',
+        containerPort,
         '--allow-unconfigured',
       ],
       onLog,
@@ -111,31 +115,34 @@ export class ContainerRuntime {
     return lines
   }
 
-  async isHealthy(port: number): Promise<boolean> {
+  async isHealthy(hostPort: number): Promise<boolean> {
     try {
-      const res = await fetch(`http://127.0.0.1:${port}/healthz`)
+      const res = await fetch(`http://127.0.0.1:${hostPort}/healthz`)
       return res.ok
     } catch {
       return false
     }
   }
 
-  async isReady(port: number): Promise<boolean> {
+  async isReady(hostPort: number): Promise<boolean> {
     try {
-      const res = await fetch(`http://127.0.0.1:${port}/readyz`)
+      const res = await fetch(`http://127.0.0.1:${hostPort}/readyz`)
       return res.ok
     } catch {
       return false
     }
   }
 
-  async waitForReady(port: number, timeoutMs = 30_000): Promise<boolean> {
-    logger.info('Waiting for OpenClaw gateway readiness', { port, timeoutMs })
+  async waitForReady(hostPort: number, timeoutMs = 30_000): Promise<boolean> {
+    logger.info('Waiting for OpenClaw gateway readiness', {
+      hostPort,
+      timeoutMs,
+    })
     const start = Date.now()
     while (Date.now() - start < timeoutMs) {
-      if (await this.isReady(port)) {
+      if (await this.isReady(hostPort)) {
         logger.info('OpenClaw gateway became ready', {
-          port,
+          hostPort,
           waitMs: Date.now() - start,
         })
         return true
@@ -143,7 +150,7 @@ export class ContainerRuntime {
       await Bun.sleep(1000)
     }
     logger.error('Timed out waiting for OpenClaw gateway readiness', {
-      port,
+      hostPort,
       timeoutMs,
     })
     return false
