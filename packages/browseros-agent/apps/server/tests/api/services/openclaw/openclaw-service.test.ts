@@ -6,6 +6,7 @@
 import { afterEach, describe, expect, it, mock } from 'bun:test'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { OPENCLAW_CONTAINER_HOME } from '@browseros/shared/constants/openclaw'
@@ -23,7 +24,8 @@ type MutableOpenClawService = OpenClawService & {
     ensureReady?: () => Promise<void>
     isPodmanAvailable?: () => Promise<boolean>
     getMachineStatus?: () => Promise<{ initialized: boolean; running: boolean }>
-    isReady: () => Promise<boolean>
+    isHealthy?: (_hostPort?: number) => Promise<boolean>
+    isReady: (_hostPort?: number) => Promise<boolean>
     pullImage?: (
       _image: string,
       _onLog?: (_line: string) => void,
@@ -573,7 +575,7 @@ describe('OpenClawService', () => {
     service.openclawDir = tempDir
     service.runtime = {
       ensureReady,
-      isReady: async () => true,
+      isReady: async () => false,
       startGateway,
       waitForReady,
     }
@@ -595,6 +597,99 @@ describe('OpenClawService', () => {
       expect.any(Function),
     )
     expect(waitForReady).toHaveBeenCalledTimes(1)
+    expect(probe).toHaveBeenCalledTimes(1)
+  })
+
+  it('serializes concurrent start calls and only starts the gateway once', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'openclaw-service-'))
+    await mkdir(join(tempDir, '.openclaw'), { recursive: true })
+    await writeFile(
+      join(tempDir, '.openclaw', 'openclaw.json'),
+      JSON.stringify({
+        gateway: {
+          auth: {
+            token: 'cli-token',
+          },
+        },
+      }),
+    )
+    let gatewayReady = false
+    let releaseStartGateway!: () => void
+    let notifyStartGatewayEntered!: () => void
+    const startGatewayEntered = new Promise<void>((resolve) => {
+      notifyStartGatewayEntered = resolve
+    })
+    const unblockStartGateway = new Promise<void>((resolve) => {
+      releaseStartGateway = resolve
+    })
+    const ensureReady = mock(async () => {})
+    const startGateway = mock(async () => {
+      notifyStartGatewayEntered()
+      await unblockStartGateway
+      gatewayReady = true
+    })
+    const waitForReady = mock(async () => true)
+    const probe = mock(async () => {})
+    const service = new OpenClawService() as MutableOpenClawService
+
+    service.openclawDir = tempDir
+    service.runtime = {
+      ensureReady,
+      isReady: async () => gatewayReady,
+      startGateway,
+      waitForReady,
+    }
+    service.cliClient = {
+      probe,
+    }
+
+    const firstStart = service.start()
+    await startGatewayEntered
+    const secondStart = service.start()
+    releaseStartGateway()
+    await Promise.all([firstStart, secondStart])
+
+    expect(ensureReady).toHaveBeenCalledTimes(2)
+    expect(startGateway).toHaveBeenCalledTimes(1)
+    expect(waitForReady).toHaveBeenCalledTimes(1)
+    expect(probe).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not restart a ready gateway when start is called again', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'openclaw-service-'))
+    await mkdir(join(tempDir, '.openclaw'), { recursive: true })
+    await writeFile(
+      join(tempDir, '.openclaw', 'openclaw.json'),
+      JSON.stringify({
+        gateway: {
+          auth: {
+            token: 'cli-token',
+          },
+        },
+      }),
+    )
+    const ensureReady = mock(async () => {})
+    const startGateway = mock(async () => {})
+    const waitForReady = mock(async () => true)
+    const probe = mock(async () => {})
+    const service = new OpenClawService() as MutableOpenClawService
+
+    service.openclawDir = tempDir
+    service.runtime = {
+      ensureReady,
+      isReady: async () => true,
+      startGateway,
+      waitForReady,
+    }
+    service.cliClient = {
+      probe,
+    }
+
+    await service.start()
+
+    expect(ensureReady).toHaveBeenCalledTimes(1)
+    expect(startGateway).not.toHaveBeenCalled()
+    expect(waitForReady).not.toHaveBeenCalled()
     expect(probe).toHaveBeenCalledTimes(1)
   })
 
@@ -640,6 +735,72 @@ describe('OpenClawService', () => {
     )
     expect(waitForReady).toHaveBeenCalledTimes(1)
     expect(probe).toHaveBeenCalledTimes(1)
+  })
+
+  it('restart keeps the persisted gateway port when the current gateway already owns it', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'openclaw-service-'))
+    await mkdir(join(tempDir, '.openclaw'), { recursive: true })
+    await writeFile(
+      join(tempDir, '.openclaw', 'openclaw.json'),
+      JSON.stringify({
+        gateway: {
+          auth: {
+            token: 'cli-token',
+          },
+        },
+      }),
+    )
+    const occupiedServer = createServer()
+    const occupiedPort = await new Promise<number>((resolve, reject) => {
+      occupiedServer.once('error', reject)
+      occupiedServer.listen(0, '127.0.0.1', () => {
+        const address = occupiedServer.address()
+        if (!address || typeof address === 'string') {
+          reject(new Error('failed to allocate test port'))
+          return
+        }
+        resolve(address.port)
+      })
+    })
+    await writeFile(
+      join(tempDir, '.openclaw', 'runtime-state.json'),
+      `${JSON.stringify({ gatewayPort: occupiedPort }, null, 2)}\n`,
+    )
+    const restartGateway = mock(async () => {})
+    const waitForReady = mock(async () => true)
+    const probe = mock(async () => {})
+    const service = new OpenClawService() as MutableOpenClawService
+
+    service.openclawDir = tempDir
+    service.runtime = {
+      isReady: async (hostPort?: number) => hostPort === occupiedPort,
+      restartGateway,
+      waitForReady,
+    }
+    service.cliClient = {
+      probe,
+    }
+
+    try {
+      await service.restart()
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        occupiedServer.close((error) => {
+          if (error) {
+            reject(error)
+            return
+          }
+          resolve()
+        })
+      })
+    }
+
+    expect(restartGateway).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hostPort: occupiedPort,
+      }),
+      expect.any(Function),
+    )
   })
 
   it('stop calls runtime.stopGateway', async () => {
@@ -751,7 +912,7 @@ describe('OpenClawService', () => {
     )
     expect(waitForReady).toHaveBeenCalledTimes(1)
     expect(probe).toHaveBeenCalledTimes(1)
-    expect(isReady).toHaveBeenCalledTimes(1)
+    expect(isReady).toHaveBeenCalledTimes(2)
   })
 
   it('keeps openrouter model refs verbatim without rewriting dots', () => {
