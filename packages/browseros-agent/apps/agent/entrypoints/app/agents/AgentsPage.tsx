@@ -229,17 +229,13 @@ const ProviderSelector: FC<ProviderSelectorProps> = ({
   )
 }
 
-interface PodmanOverridesCardProps {
-  variant: 'inline' | 'standalone'
-}
-
-const PodmanOverridesCard: FC<PodmanOverridesCardProps> = ({ variant }) => {
+const PodmanOverridesCard: FC = () => {
   const { overrides, loading, saving, error, saveOverrides, clearOverrides } =
     usePodmanOverrides()
 
   const [value, setValue] = useState('')
   const [touched, setTouched] = useState(false)
-  const [collapsed, setCollapsed] = useState(variant === 'standalone')
+  const [collapsed, setCollapsed] = useState(true)
   const [localError, setLocalError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -276,14 +272,11 @@ const PodmanOverridesCard: FC<PodmanOverridesCardProps> = ({ variant }) => {
   const body = (
     <div className="space-y-3">
       <div className="space-y-1">
-        <label
-          htmlFor={`podman-path-${variant}`}
-          className="font-medium text-sm"
-        >
+        <label htmlFor="podman-path" className="font-medium text-sm">
           Podman binary path
         </label>
         <Input
-          id={`podman-path-${variant}`}
+          id="podman-path"
           value={value}
           onChange={(event) => {
             setTouched(true)
@@ -331,15 +324,6 @@ const PodmanOverridesCard: FC<PodmanOverridesCardProps> = ({ variant }) => {
       </div>
     </div>
   )
-
-  if (variant === 'inline') {
-    return (
-      <div className="mt-3 rounded-md border bg-background p-3">
-        <p className="mb-2 font-medium text-sm">Use your own Podman</p>
-        {body}
-      </div>
-    )
-  }
 
   return (
     <Card>
@@ -687,7 +671,6 @@ export const AgentsPage: FC = () => {
                 Restart Gateway
               </Button>
             </div>
-            <PodmanOverridesCard variant="inline" />
           </AlertDescription>
         </Alert>
       )}
@@ -707,9 +690,6 @@ export const AgentsPage: FC = () => {
             {status.podmanAvailable && (
               <Button onClick={() => setSetupOpen(true)}>Set Up Now</Button>
             )}
-            <div className="w-full max-w-md">
-              <PodmanOverridesCard variant="inline" />
-            </div>
           </CardContent>
         </Card>
       )}
@@ -752,9 +732,6 @@ export const AgentsPage: FC = () => {
               >
                 Restart Gateway
               </Button>
-            </div>
-            <div className="w-full max-w-md">
-              <PodmanOverridesCard variant="inline" />
             </div>
           </CardContent>
         </Card>
@@ -827,7 +804,7 @@ export const AgentsPage: FC = () => {
         </div>
       )}
 
-      <PodmanOverridesCard variant="standalone" />
+      <PodmanOverridesCard />
 
       <Dialog open={setupOpen} onOpenChange={setSetupOpen}>
         <DialogContent>
