@@ -12,6 +12,7 @@ import {
   configurePodmanRuntime,
   getPodmanRuntime,
   PodmanRuntime,
+  readMachineResources,
   resolveBundledPodmanPath,
 } from '../../../../src/api/services/openclaw/podman-runtime'
 
@@ -167,3 +168,46 @@ describe('podman runtime', () => {
     expect(runtime.startCalls).toBe(1)
   })
 })
+
+describe('readMachineResources', () => {
+  const ORIGINAL_CPUS = process.env.BROWSEROS_PODMAN_CPUS
+  const ORIGINAL_MEMORY = process.env.BROWSEROS_PODMAN_MEMORY_MB
+
+  afterEach(() => {
+    restoreEnv('BROWSEROS_PODMAN_CPUS', ORIGINAL_CPUS)
+    restoreEnv('BROWSEROS_PODMAN_MEMORY_MB', ORIGINAL_MEMORY)
+  })
+
+  it('returns defaults when env vars are unset', () => {
+    delete process.env.BROWSEROS_PODMAN_CPUS
+    delete process.env.BROWSEROS_PODMAN_MEMORY_MB
+
+    expect(readMachineResources()).toEqual({ cpus: 4, memoryMb: 4096 })
+  })
+
+  it('parses valid env values', () => {
+    process.env.BROWSEROS_PODMAN_CPUS = '6'
+    process.env.BROWSEROS_PODMAN_MEMORY_MB = '8192'
+
+    expect(readMachineResources()).toEqual({ cpus: 6, memoryMb: 8192 })
+  })
+
+  it('falls back to defaults for non-numeric input', () => {
+    process.env.BROWSEROS_PODMAN_CPUS = 'abc'
+    process.env.BROWSEROS_PODMAN_MEMORY_MB = ''
+
+    expect(readMachineResources()).toEqual({ cpus: 4, memoryMb: 4096 })
+  })
+
+  it('falls back to defaults for zero and negative values', () => {
+    process.env.BROWSEROS_PODMAN_CPUS = '0'
+    process.env.BROWSEROS_PODMAN_MEMORY_MB = '-512'
+
+    expect(readMachineResources()).toEqual({ cpus: 4, memoryMb: 4096 })
+  })
+})
+
+function restoreEnv(key: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[key]
+  else process.env[key] = value
+}

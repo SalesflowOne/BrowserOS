@@ -28,7 +28,7 @@ function readPositiveInt(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
-function readMachineResources(): { cpus: number; memoryMb: number } {
+export function readMachineResources(): { cpus: number; memoryMb: number } {
   return {
     cpus: readPositiveInt(
       process.env.BROWSEROS_PODMAN_CPUS,
@@ -114,7 +114,7 @@ export class PodmanRuntime {
     if (isLinux) return
 
     const { cpus, memoryMb } = readMachineResources()
-    onLog?.(`Initializing Podman machine (${cpus} CPUs, ${memoryMb} MB RAM)`)
+    onLog?.(`Allocating ${cpus} CPUs, ${memoryMb} MB RAM`)
 
     const proc = Bun.spawn(
       [
