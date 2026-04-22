@@ -1,5 +1,6 @@
 import { execSync } from 'node:child_process'
-import { readFile } from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
+import { stat } from 'node:fs/promises'
 import {
   DeleteObjectCommand,
   PutObjectCommand,
@@ -138,9 +139,14 @@ async function uploadFile(
   key: string,
   localPath: string,
 ): Promise<void> {
-  const body = await readFile(localPath)
+  const { size } = await stat(localPath)
   await client.send(
-    new PutObjectCommand({ Bucket: bucket, Key: key, Body: body }),
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: createReadStream(localPath),
+      ContentLength: size,
+    }),
   )
 }
 
@@ -151,7 +157,15 @@ async function uploadBody(
   body: string,
 ): Promise<void> {
   await client.send(
-    new PutObjectCommand({ Bucket: bucket, Key: key, Body: body }),
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: body,
+      ContentLength: Buffer.byteLength(body),
+      ContentType: key.endsWith('.json')
+        ? 'application/json; charset=utf-8'
+        : 'text/plain; charset=utf-8',
+    }),
   )
 }
 
@@ -160,11 +174,17 @@ async function rollback(
   bucket: string,
   keys: string[],
 ): Promise<void> {
-  await Promise.allSettled(
+  const settled = await Promise.allSettled(
     keys.map((key) =>
       client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key })),
     ),
   )
+  const failures = settled.flatMap((result, index) =>
+    result.status === 'rejected' ? [keys[index]] : [],
+  )
+  if (failures.length > 0) {
+    console.warn(`rollback left orphaned keys: ${failures.join(', ')}`)
+  }
 }
 
 function gitSha(): string {

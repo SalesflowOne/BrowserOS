@@ -25,7 +25,7 @@ export const vmManifestSchema = z.object({
   build: z.object({
     git_sha: z.string().min(1),
     git_dirty: z.boolean(),
-    built_at: z.string().min(1),
+    built_at: z.string().datetime({ offset: true }),
     built_by: z.string().min(1),
     recipe_sha256: sha256Hex,
   }),
@@ -42,7 +42,7 @@ export const vmManifestSchema = z.object({
 
 export const latestPointerSchema = z.object({
   version: z.string().regex(CALVER_REGEX),
-  updated_at: z.string().min(1),
+  updated_at: z.string().datetime({ offset: true }),
   url: z.string().url(),
 })
 

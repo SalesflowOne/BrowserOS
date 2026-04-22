@@ -21,5 +21,5 @@ export interface BuildOptions {
   arch: Arch
   outputDir: string
   recipePath?: string
-  baseImageShaOverride?: string
+  baseImageSha512Override?: string
 }

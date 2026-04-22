@@ -86,6 +86,20 @@ describe('publishDisks', () => {
       `vm/${version}/manifest.json`,
       'vm/latest.json',
     ])
+    const sidecarUpload = puts.find(
+      (call) =>
+        call.args[0].input.Key ===
+        `vm/${version}/browseros-vm-${version}-arm64.qcow2.zst.sha256`,
+    )
+    expect(sidecarUpload?.args[0].input.ContentType).toBe(
+      'text/plain; charset=utf-8',
+    )
+    const manifestUpload = puts.find(
+      (call) => call.args[0].input.Key === `vm/${version}/manifest.json`,
+    )
+    expect(manifestUpload?.args[0].input.ContentType).toBe(
+      'application/json; charset=utf-8',
+    )
     expect(s3Mock.commandCalls(DeleteCmd).length).toBe(0)
   })
 
@@ -137,7 +151,7 @@ describe('publishDisks', () => {
 
   test('rollback on mid-manifest failure deletes every qcow+sha already uploaded', async () => {
     s3Mock.reset()
-    s3Mock.on(PutCmd).callsFake((input: { Key?: string }) => {
+    s3Mock.on(PutCmd).callsFake((input) => {
       if (input.Key?.endsWith('manifest.json')) {
         throw new Error('simulated manifest upload failure')
       }

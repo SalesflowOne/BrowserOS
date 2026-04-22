@@ -59,15 +59,15 @@ cd packages/browseros-agent/packages/vm-container
 
 # Build one arch. virt-customize inherits LIBGUESTFS_BACKEND from the shell.
 LIBGUESTFS_BACKEND=direct bun run build -- \
-  --version 2026.04.22-dev1 \
+  --version 2026.04.22-1 \
   --arch x64 \
   --output-dir ./dist/x64
 
 # Smoke test the result (limactl on PATH required).
-bun run smoke -- --qcow ./dist/x64/browseros-vm-2026.04.22-dev1-x64.qcow2.zst
+bun run smoke -- --qcow ./dist/x64/browseros-vm-2026.04.22-1-x64.qcow2.zst
 
 # Upload both arches to R2 (requires R2_* env vars).
-bun run upload -- --version 2026.04.22-dev1 --artifact-dir ./dist
+bun run upload -- --version 2026.04.22-1 --artifact-dir ./dist
 ```
 
 `--update-latest` is the default on upload; pass `--no-update-latest` to keep
@@ -104,7 +104,7 @@ upstream Debian drift.
 
 ## Repro + pinning
 
-- Base Debian image is pinned by sha256 in `src/build/base-image.ts`. Update
+- Base Debian image is pinned by sha512 in `src/build/base-image.ts`. Update
   the pin (and the upstream version) together when bumping to a newer daily.
 - Recipe file (`recipe/browseros-vm.recipe`) is git-tracked and its sha256
   lands in `manifest.build.recipe_sha256`.
@@ -120,3 +120,7 @@ upstream Debian drift.
   `server-prod-resources.json` entries, `limactl` binary upload (`packages/
   browseros/build/cli/storage.py`), agent container tarballs (WS2 lives in
   `packages/browseros-agent/packages/agent-container/` once it lands).
+
+The file baked into `/etc/browseros-vm-manifest.json` is a build-time marker.
+The published per-version `manifest.json` is finalized later, after the
+artifacts have been hashed and uploaded.

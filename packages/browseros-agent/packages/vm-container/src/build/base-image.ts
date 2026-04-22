@@ -14,6 +14,7 @@ export interface BaseImage {
 // daily is needed; the scheduled base-image-bump workflow (follow-up PR)
 // will automate it. Pins are the SHA-512 values from the snapshot's
 // SHA512SUMS file at https://cloud.debian.org/images/cloud/bookworm/.
+// Debian publishes SHA512SUMS for these snapshots, not SHA256SUMS.
 const BOOKWORM_VERSION = '20260413-2447'
 
 const PINNED_SHA512: Record<Arch, string> = {

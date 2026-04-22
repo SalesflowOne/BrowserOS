@@ -32,6 +32,8 @@ describe('assertCalver', () => {
   test('rejects semver and stray strings', () => {
     expect(() => assertCalver('1.2.3')).toThrow(/invalid CalVer/)
     expect(() => assertCalver('2026-04-22')).toThrow(/invalid CalVer/)
+    expect(() => assertCalver('2026.04.22-dev1')).toThrow(/invalid CalVer/)
+    expect(() => assertCalver('2026.04.22-rc1')).toThrow(/invalid CalVer/)
     expect(() => assertCalver('latest')).toThrow(/invalid CalVer/)
   })
 })

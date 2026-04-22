@@ -6,7 +6,7 @@
 run-command apt-get update
 run-command DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends podman crun fuse-overlayfs slirp4netns ca-certificates
 run-command systemctl enable podman.socket
-copy-in containers-auth.json:/etc/containers/
+copy-in auth.json:/etc/containers/
 run-command useradd --create-home --uid 1000 --shell /bin/bash browseros
 run-command usermod -aG sudo browseros
 copy-in sudoers-browseros:/etc/sudoers.d/

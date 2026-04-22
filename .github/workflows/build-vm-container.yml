@@ -7,8 +7,8 @@ on:
         description: "CalVer identifier (e.g., 2026.04.22-1)"
         required: true
         type: string
-      base_image_sha256:
-        description: "Override pinned Debian sha256 (debugging only)"
+      base_image_sha512:
+        description: "Override pinned Debian sha512 (debugging only)"
         required: false
         type: string
       publish:
@@ -57,20 +57,32 @@ jobs:
         run: bun run --filter @browseros/vm-container test
       - name: Determine version
         id: version
+        env:
+          VERSION_INPUT: ${{ inputs.version || '' }}
         run: |
-          if [ -n "${{ inputs.version }}" ]; then
-            echo "value=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          if [ -n "$VERSION_INPUT" ]; then
+            echo "value=$VERSION_INPUT" >> "$GITHUB_OUTPUT"
           else
             echo "value=$(date -u +%Y.%m.%d)-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
           fi
       - name: Build
         working-directory: ${{ env.PKG_DIR }}
+        env:
+          VERSION_VALUE: ${{ steps.version.outputs.value }}
+          ARCH_VALUE: ${{ matrix.arch }}
+          OUTPUT_DIR: ${{ github.workspace }}/dist/vm/${{ matrix.arch }}
+          BASE_IMAGE_SHA512_INPUT: ${{ inputs.base_image_sha512 || '' }}
         run: |
-          bun run build -- \
-            --version "${{ steps.version.outputs.value }}" \
-            --arch "${{ matrix.arch }}" \
-            --output-dir "$GITHUB_WORKSPACE/dist/vm/${{ matrix.arch }}" \
-            ${{ inputs.base_image_sha256 && format('--base-image-sha256 {0}', inputs.base_image_sha256) || '' }}
+          cmd=(
+            bun run build --
+            --version "$VERSION_VALUE"
+            --arch "$ARCH_VALUE"
+            --output-dir "$OUTPUT_DIR"
+          )
+          if [ -n "$BASE_IMAGE_SHA512_INPUT" ]; then
+            cmd+=(--base-image-sha512 "$BASE_IMAGE_SHA512_INPUT")
+          fi
+          "${cmd[@]}"
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -95,8 +107,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y qemu-system-x86 qemu-utils zstd curl
           LIMA_VERSION=$(cat "${PKG_DIR}/recipe/LIMA_VERSION.pin")
-          curl -L -o /tmp/lima.tar.gz \
+          LIMA_SHA256=$(cat "${PKG_DIR}/recipe/LIMA_LINUX_X86_64_SHA256.pin")
+          curl -fsSL -o /tmp/lima.tar.gz \
             "https://github.com/lima-vm/lima/releases/download/${LIMA_VERSION}/lima-${LIMA_VERSION#v}-Linux-x86_64.tar.gz"
+          echo "${LIMA_SHA256}  /tmp/lima.tar.gz" | sha256sum --check --strict
           sudo tar -C /usr/local -xzf /tmp/lima.tar.gz
       - name: Install deps
         run: bun install --frozen-lockfile
@@ -111,6 +125,9 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish == true }}
     runs-on: ubuntu-24.04
     environment: release
+    concurrency:
+      group: vm-publish-${{ inputs.version }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -129,7 +146,8 @@ jobs:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          VERSION_INPUT: ${{ inputs.version }}
         run: |
           bun run upload -- \
-            --version "${{ inputs.version }}" \
+            --version "$VERSION_INPUT" \
             --artifact-dir "$GITHUB_WORKSPACE/dist/vm"

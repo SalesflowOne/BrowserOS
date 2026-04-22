@@ -29,7 +29,7 @@ export async function buildDisk(opts: BuildOptions): Promise<BuildResult> {
   assertCalver(opts.version)
   const base = DEBIAN_BASE_IMAGES[opts.arch]
   const pinnedSha512 =
-    opts.baseImageShaOverride ??
+    opts.baseImageSha512Override ??
     (await resolvePinnedSha512(base.upstreamVersion, base))
 
   const prepared = await prepareCustomizedDisk(opts, base, pinnedSha512)
@@ -81,19 +81,30 @@ async function prepareCustomizedDisk(
   const recipeText = await readFile(recipePath, 'utf8')
   const recipeSha256 = sha256String(recipeText)
 
-  const manifestStubPath = path.join(
+  const buildMarkerPath = path.join(
     opts.outputDir,
-    `manifest-stub-${opts.arch}.json`,
+    `build-marker-${opts.arch}.json`,
   )
+  // The baked JSON is a build-time marker. The published per-version manifest
+  // adds final provider hashes and URLs after artifact hashing and upload.
   await writeFile(
-    manifestStubPath,
-    JSON.stringify({ version: opts.version, arch: opts.arch }, null, 2),
+    buildMarkerPath,
+    JSON.stringify(
+      {
+        name: 'browseros-vm',
+        version: opts.version,
+        arch: opts.arch,
+        phase: 'build',
+      },
+      null,
+      2,
+    ),
   )
 
   const argv = composeVirtCustomizeArgv({
     diskPath: workPath,
     recipe: parseRecipe(recipeText),
-    substitutions: { version: opts.version, manifest_tmp: manifestStubPath },
+    substitutions: { version: opts.version, manifest_tmp: buildMarkerPath },
     recipeDir: path.dirname(recipePath),
   })
   const buildLogPath = path.join(opts.outputDir, `build-${opts.arch}.log`)

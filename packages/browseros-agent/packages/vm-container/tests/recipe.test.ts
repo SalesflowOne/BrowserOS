@@ -11,13 +11,13 @@ describe('parseRecipe', () => {
 # comment
 run-command apt-get update
 
-copy-in containers-auth.json:/etc/containers/
+copy-in auth.json:/etc/containers/
 write /etc/browseros-vm-version:{version}
 truncate /etc/machine-id
 `
     expect(parseRecipe(text)).toEqual([
       { op: 'run-command', cmd: 'apt-get update' },
-      { op: 'copy-in', src: 'containers-auth.json', dest: '/etc/containers/' },
+      { op: 'copy-in', src: 'auth.json', dest: '/etc/containers/' },
       { op: 'write', dest: '/etc/browseros-vm-version', content: '{version}' },
       { op: 'truncate', target: '/etc/machine-id' },
     ])

@@ -77,6 +77,15 @@ describe('parseManifest', () => {
     expect(() => parseManifest(bad)).toThrow()
   })
 
+  test('rejects invalid timestamps', () => {
+    expect(() =>
+      parseManifest({
+        ...validManifest,
+        build: { ...validManifest.build, built_at: 'not-a-date' },
+      }),
+    ).toThrow()
+  })
+
   test('rejects less than 2 providers', () => {
     const bad = { ...validManifest, providers: [validManifest.providers[0]] }
     expect(() => parseManifest(bad)).toThrow()
@@ -99,6 +108,16 @@ describe('parseLatestPointer', () => {
         version: 'latest',
         updated_at: '2026-04-22T00:00:00.000Z',
         url: 'https://cdn.browseros.com/vm/latest/manifest.json',
+      }),
+    ).toThrow()
+  })
+
+  test('rejects invalid timestamps', () => {
+    expect(() =>
+      parseLatestPointer({
+        version: '2026.04.22-1',
+        updated_at: 'yesterday',
+        url: 'https://cdn.browseros.com/vm/2026.04.22-1/manifest.json',
       }),
     ).toThrow()
   })
