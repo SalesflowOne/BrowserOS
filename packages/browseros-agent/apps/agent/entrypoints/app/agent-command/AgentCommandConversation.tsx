@@ -2,7 +2,6 @@ import { ArrowLeft, Bot } from 'lucide-react'
 import { type FC, useEffect, useRef } from 'react'
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router'
 import { Button } from '@/components/ui/button'
-import { Separator } from '@/components/ui/separator'
 import {
   type AgentEntry,
   getModelDisplayName,
@@ -13,74 +12,116 @@ import { ConversationInput } from './ConversationInput'
 import { ConversationMessage } from './ConversationMessage'
 import { useAgentConversation } from './useAgentConversation'
 
+function StatusBadge({ status }: { status: string }) {
+  return (
+    <div className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-card px-3 py-1 text-[11px] text-muted-foreground uppercase tracking-[0.18em]">
+      <span
+        className={cn(
+          'size-1.5 rounded-full',
+          status === 'Working on your request'
+            ? 'bg-amber-500'
+            : status === 'Ready'
+              ? 'bg-emerald-500'
+              : status === 'Offline'
+                ? 'bg-muted-foreground/50'
+                : 'bg-[var(--accent-orange)]',
+        )}
+      />
+      <span>{status}</span>
+    </div>
+  )
+}
+
+function AgentIdentity({
+  name,
+  meta,
+  className,
+}: {
+  name: string
+  meta: string
+  className?: string
+}) {
+  return (
+    <div className={cn('min-w-0', className)}>
+      <div className="truncate font-semibold text-[15px] leading-5">{name}</div>
+      <div className="truncate text-muted-foreground text-xs leading-5">
+        {meta}
+      </div>
+    </div>
+  )
+}
+
 function ConversationHeader({
   agentName,
+  agentMeta,
   status,
   onGoHome,
 }: {
   agentName: string
+  agentMeta: string
   status: string
   onGoHome: () => void
 }) {
   return (
-    <div className="flex h-24 items-center gap-4 border-border/50 border-b px-6">
+    <div className="flex h-16 items-center justify-between gap-4 border-border/50 border-b px-5">
       <div className="flex min-w-0 items-center gap-3">
         <Button
           variant="ghost"
           size="icon"
           onClick={onGoHome}
-          className="rounded-xl lg:hidden"
+          className="size-8 rounded-xl lg:hidden"
           title="Back to home"
         >
           <ArrowLeft className="size-4" />
         </Button>
-        <div className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-          <Bot className="size-4.5" />
+        <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+          <Bot className="size-4" />
         </div>
-        <div className="min-w-0">
-          <div className="truncate font-semibold text-base">{agentName}</div>
-          <div className="truncate text-muted-foreground text-sm">{status}</div>
+        <AgentIdentity name={agentName} meta={agentMeta} />
+      </div>
+
+      <StatusBadge status={status} />
+    </div>
+  )
+}
+
+function AgentRailHeader({ onGoHome }: { onGoHome: () => void }) {
+  return (
+    <div className="hidden h-16 items-center border-border/50 border-r border-b bg-background/70 px-4 lg:flex">
+      <div className="flex min-w-0 items-center gap-3">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onGoHome}
+          className="size-8 rounded-xl"
+          title="Back to home"
+        >
+          <ArrowLeft className="size-4" />
+        </Button>
+        <div className="truncate font-semibold text-[15px] leading-5">
+          Agents
         </div>
       </div>
     </div>
   )
 }
 
-function AgentRail({
+function AgentRailList({
   activeAgentId,
   agents,
-  onGoHome,
   onSelectAgent,
 }: {
   activeAgentId: string
   agents: AgentEntry[]
-  onGoHome: () => void
   onSelectAgent: (entry: AgentEntry) => void
 }) {
   return (
-    <aside className="hidden h-full min-h-0 flex-col border-border/50 border-r bg-background/70 lg:flex">
-      <div className="flex h-24 items-center justify-between gap-3 px-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onGoHome}
-            className="rounded-xl"
-            title="Back to home"
-          >
-            <ArrowLeft className="size-4" />
-          </Button>
-          <div className="min-w-0">
-            <div className="truncate font-semibold text-sm">Agents</div>
-          </div>
-        </div>
-      </div>
-
-      <Separator />
-
+    <aside className="hidden min-h-0 flex-col border-border/50 border-r bg-background/70 lg:flex">
       <div className="styled-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-3">
         {agents.map((entry) => {
           const active = entry.agentId === activeAgentId
+          const modelName = getModelDisplayName(entry.model) ?? 'OpenClaw agent'
+
           return (
             <button
               key={entry.agentId}
@@ -104,14 +145,7 @@ function AgentRail({
                 >
                   <Bot className="size-4" />
                 </div>
-                <div className="min-w-0">
-                  <div className="truncate font-medium text-sm">
-                    {entry.name}
-                  </div>
-                  <div className="truncate text-muted-foreground text-xs">
-                    {getModelDisplayName(entry.model) ?? 'OpenClaw agent'}
-                  </div>
-                </div>
+                <AgentIdentity name={entry.name} meta={modelName} />
               </div>
             </button>
           )
@@ -141,12 +175,12 @@ function getConversationStatusCopy(
   status: string | undefined,
   streaming: boolean,
 ): string {
-  if (streaming) return 'Working on your request'
-  if (status === 'running') return 'Ready for the next task'
-  if (status === 'starting') return 'Connecting to OpenClaw'
-  if (status === 'error') return 'OpenClaw needs attention'
-  if (status === 'stopped') return 'OpenClaw is offline'
-  return 'Open agent setup to continue'
+  if (streaming) return 'Working'
+  if (status === 'running') return 'Ready'
+  if (status === 'starting') return 'Connecting'
+  if (status === 'error') return 'Attention'
+  if (status === 'stopped') return 'Offline'
+  return 'Setup'
 }
 
 export const AgentCommandConversation: FC = () => {
@@ -160,6 +194,7 @@ export const AgentCommandConversation: FC = () => {
   const resolvedAgentId = agentId ?? ''
   const agent = agents.find((entry) => entry.agentId === resolvedAgentId)
   const agentName = agent?.name || resolvedAgentId || 'Agent'
+  const agentMeta = getModelDisplayName(agent?.model) ?? 'OpenClaw agent'
   const { turns, streaming, loading, send } = useAgentConversation(
     resolvedAgentId,
     agentName,
@@ -204,21 +239,23 @@ export const AgentCommandConversation: FC = () => {
 
   return (
     <div className="absolute inset-0 overflow-hidden bg-background px-4 py-4 md:pl-[calc(theme(spacing.4)+theme(spacing.14))]">
-      <div className="mx-auto grid h-full w-full max-w-[1600px] lg:grid-cols-[300px_minmax(0,1fr)]">
-        <AgentRail
+      <div className="mx-auto grid h-full w-full max-w-[1600px] lg:grid-cols-[300px_minmax(0,1fr)] lg:grid-rows-[4rem_minmax(0,1fr)]">
+        <AgentRailHeader onGoHome={() => navigate('/home')} />
+
+        <ConversationHeader
+          agentName={agentName}
+          agentMeta={agentMeta}
+          status={statusCopy}
+          onGoHome={() => navigate('/home')}
+        />
+
+        <AgentRailList
           activeAgentId={resolvedAgentId}
           agents={agents}
-          onGoHome={() => navigate('/home')}
           onSelectAgent={handleSelectAgent}
         />
 
         <div className="flex min-h-0 flex-col overflow-hidden">
-          <ConversationHeader
-            agentName={agentName}
-            status={statusCopy}
-            onGoHome={() => navigate('/home')}
-          />
-
           <main
             ref={scrollRef}
             className={cn(
