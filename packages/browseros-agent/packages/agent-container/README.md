@@ -24,11 +24,11 @@ bun run --filter @browseros/agent-container list-matrix
 bun run --filter @browseros/agent-container build -- \
   --agent openclaw \
   --arch arm64 \
-  --output-dir dist/agent-container/openclaw/arm64
+  --output-dir packages/agent-container/dist/agent-container/openclaw/arm64
 
 # Smoke-test a built tarball
 bun run --filter @browseros/agent-container smoke -- \
-  --tarball dist/agent-container/openclaw/arm64/openclaw-2026.4.12-arm64.tar.gz \
+  --tarball packages/agent-container/dist/agent-container/openclaw/arm64/openclaw-2026.4.12-arm64.tar.gz \
   --expected-image ghcr.io/openclaw/openclaw:2026.4.12 \
   --expected-fingerprint ...
 
@@ -39,7 +39,7 @@ R2_ACCESS_KEY_ID=... \
 R2_SECRET_ACCESS_KEY=... \
 R2_BUCKET=... \
 bun run --filter @browseros/agent-container upload -- \
-  --artifact-dir dist/agent-container \
+  --artifact-dir packages/agent-container/dist/agent-container \
   --update-aggregate
 ```
 
@@ -49,3 +49,4 @@ bun run --filter @browseros/agent-container upload -- \
 - `workflow_dispatch` version overrides are intended for dry runs. Publishing still needs the recipe to be authoritative.
 - `src/load.ts` is intentionally stubbed. WS6 fills in the runtime consumer path.
 - Private registry auth is recipe-driven: if `requires_auth.secret` is set for an agent, export that env var before running `build`.
+- When invoking package scripts with `bun run --filter @browseros/agent-container`, pass artifact paths that are explicit from `packages/browseros-agent`. Filtered scripts run inside the package directory, so bare `dist/...` paths are ambiguous.

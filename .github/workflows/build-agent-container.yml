@@ -74,7 +74,8 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.list-matrix.outputs.matrix) }}
     env:
-      OUTPUT_DIR: dist/agent-container/${{ matrix.agent }}/${{ matrix.arch }}
+      ARTIFACT_ROOT: ${{ github.workspace }}/packages/browseros-agent/packages/agent-container/dist/agent-container
+      OUTPUT_DIR: ${{ github.workspace }}/packages/browseros-agent/packages/agent-container/dist/agent-container/${{ matrix.agent }}/${{ matrix.arch }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -122,7 +123,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: agent-container-${{ matrix.agent }}-${{ matrix.arch }}
-          path: packages/browseros-agent/dist/agent-container
+          path: ${{ env.ARTIFACT_ROOT }}
 
   publish:
     needs: build
@@ -131,6 +132,8 @@ jobs:
     defaults:
       run:
         working-directory: packages/browseros-agent
+    env:
+      ARTIFACT_ROOT: ${{ github.workspace }}/packages/browseros-agent/packages/agent-container/dist/agent-container
     steps:
       - name: Guard recipe source of truth
         if: ${{ inputs.version != '' }}
@@ -152,7 +155,7 @@ jobs:
         with:
           pattern: agent-container-*
           merge-multiple: true
-          path: packages/browseros-agent/dist/agent-container
+          path: ${{ env.ARTIFACT_ROOT }}
 
       - name: Publish to R2
         env:
@@ -163,5 +166,5 @@ jobs:
         run: |
           set -euo pipefail
           bun run --filter @browseros/agent-container upload -- \
-            --artifact-dir dist/agent-container \
+            --artifact-dir "$ARTIFACT_ROOT" \
             --update-aggregate
