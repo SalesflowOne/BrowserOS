@@ -1,7 +1,6 @@
 import { ArrowRight, Bot, Plus, Settings2 } from 'lucide-react'
 import { type FC, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
-import ProductLogoSvg from '@/assets/product_logo.svg'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
@@ -9,7 +8,6 @@ import type { AgentEntry } from '@/entrypoints/app/agents/useOpenClaw'
 import { ImportDataHint } from '@/entrypoints/newtab/index/ImportDataHint'
 import { SignInHint } from '@/entrypoints/newtab/index/SignInHint'
 import { useActiveHint } from '@/entrypoints/newtab/index/useActiveHint'
-import { cn } from '@/lib/utils'
 import { AgentCardDock } from './AgentCardDock'
 import { useAgentCommandData } from './agent-command-layout'
 import { ConversationInput } from './ConversationInput'
@@ -87,73 +85,6 @@ function OpenClawUnavailableState({
         </Button>
       </CardContent>
     </Card>
-  )
-}
-
-function getSurfaceStatus(status: string | undefined): {
-  copy: string
-  tone: string
-} {
-  if (status === 'running') {
-    return {
-      copy: 'Ready',
-      tone: 'bg-emerald-500',
-    }
-  }
-  if (status === 'starting') {
-    return {
-      copy: 'Connecting',
-      tone: 'bg-amber-500',
-    }
-  }
-  if (status === 'error') {
-    return {
-      copy: 'Needs attention',
-      tone: 'bg-destructive',
-    }
-  }
-  if (status === 'stopped') {
-    return {
-      copy: 'Offline',
-      tone: 'bg-muted-foreground/50',
-    }
-  }
-  return {
-    copy: 'Setup required',
-    tone: 'bg-muted-foreground/50',
-  }
-}
-
-function NewTabHeader({
-  selectedAgentName,
-  status,
-}: {
-  selectedAgentName?: string
-  status: string | undefined
-}) {
-  const surfaceStatus = getSurfaceStatus(status)
-
-  return (
-    <div className="flex items-center justify-between gap-4">
-      <div className="flex items-center gap-3">
-        <div className="flex size-11 items-center justify-center rounded-2xl border border-border/60 bg-card/80 shadow-sm">
-          <img src={ProductLogoSvg} alt="BrowserOS" className="size-7" />
-        </div>
-        <div className="min-w-0">
-          <div className="font-semibold text-sm">BrowserOS</div>
-          <div className="truncate text-muted-foreground text-sm">
-            {selectedAgentName
-              ? `Working with ${selectedAgentName}`
-              : 'Agent workspace'}
-          </div>
-        </div>
-      </div>
-
-      <div className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-card/80 px-3 py-1.5 text-muted-foreground text-xs shadow-sm">
-        <span className={cn('size-2 rounded-full', surfaceStatus.tone)} />
-        <span>{surfaceStatus.copy}</span>
-      </div>
-    </div>
   )
 }
 
@@ -243,11 +174,6 @@ export const AgentCommandHome: FC = () => {
   return (
     <div className="min-h-full px-4 py-6">
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-8">
-        <NewTabHeader
-          selectedAgentName={selectedCard?.name}
-          status={status?.status}
-        />
-
         {isSetup ? (
           shouldShowUnavailableState ? (
             <OpenClawUnavailableState
