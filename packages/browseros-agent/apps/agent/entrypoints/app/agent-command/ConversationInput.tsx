@@ -147,7 +147,7 @@ function ContextControls({
   })
 
   return (
-    <div className="flex items-center justify-between border-border/50 border-t px-5 py-3">
+    <div className="flex items-center justify-between border-border/40 border-t px-4 py-2.5">
       <div className="flex items-center gap-1">
         {showAgentSelector ? (
           <AgentSelector
@@ -243,7 +243,7 @@ function HomeShell({ children }: { children: ReactNode }) {
 
 function ConversationShell({ children }: { children: ReactNode }) {
   return (
-    <div className="overflow-hidden rounded-[1.5rem] border border-border/60 bg-card shadow-sm">
+    <div className="overflow-hidden rounded-[1.35rem] border border-border/50 bg-background/95 shadow-[0_10px_30px_rgba(15,23,42,0.06)] backdrop-blur-md">
       {children}
     </div>
   )
@@ -297,7 +297,12 @@ export const ConversationInput: FC<ConversationInputProps> = ({
 
   return (
     <Shell>
-      <div className="flex items-end gap-3 px-5 py-4">
+      <div
+        className={cn(
+          'flex items-end gap-3',
+          variant === 'home' ? 'px-5 py-4' : 'px-4 py-3',
+        )}
+      >
         <BotInputIcon variant={variant} />
         <div className="flex-1">
           <Textarea
@@ -309,7 +314,7 @@ export const ConversationInput: FC<ConversationInputProps> = ({
                 handleSend()
               }
             }}
-            rows={variant === 'home' ? 3 : 3}
+            rows={variant === 'home' ? 3 : 2}
             placeholder={
               voice.isTranscribing
                 ? 'Transcribing...'
@@ -318,7 +323,10 @@ export const ConversationInput: FC<ConversationInputProps> = ({
             }
             disabled={disabled || voice.isTranscribing}
             className={cn(
-              'min-h-[72px] resize-none border-none bg-transparent px-0 py-0 text-[15px] leading-7 shadow-none focus-visible:ring-0',
+              'resize-none border-none bg-transparent px-0 py-0 text-[15px] shadow-none focus-visible:ring-0',
+              variant === 'home'
+                ? 'min-h-[72px] leading-7'
+                : 'min-h-[56px] leading-6',
               'placeholder:text-muted-foreground/80',
             )}
           />
@@ -369,7 +377,7 @@ function BotInputIcon({ variant }: { variant: 'home' | 'conversation' }) {
         'flex items-center justify-center text-[var(--accent-orange)]',
         variant === 'home'
           ? 'h-10 w-10 rounded-xl bg-[var(--accent-orange)]/10'
-          : 'h-9 w-9 rounded-xl bg-[var(--accent-orange)]/12',
+          : 'h-8 w-8 rounded-lg bg-[var(--accent-orange)]/10',
       )}
     >
       <Bot className="h-4 w-4" />

@@ -238,8 +238,8 @@ export const AgentCommandConversation: FC = () => {
   const statusCopy = getConversationStatusCopy(status?.status, streaming)
 
   return (
-    <div className="absolute inset-0 overflow-hidden bg-background px-4 py-4 md:pl-[calc(theme(spacing.4)+theme(spacing.14))]">
-      <div className="mx-auto grid h-full w-full max-w-[1600px] lg:grid-cols-[300px_minmax(0,1fr)] lg:grid-rows-[4rem_minmax(0,1fr)]">
+    <div className="absolute inset-0 overflow-hidden bg-background px-3 py-3 md:pl-[calc(theme(spacing.3)+theme(spacing.14))]">
+      <div className="mx-auto grid h-full w-full max-w-[1480px] lg:grid-cols-[288px_minmax(0,1fr)] lg:grid-rows-[4rem_minmax(0,1fr)]">
         <AgentRailHeader onGoHome={() => navigate('/home')} />
 
         <ConversationHeader
@@ -259,7 +259,7 @@ export const AgentCommandConversation: FC = () => {
           <main
             ref={scrollRef}
             className={cn(
-              'styled-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-background px-6 py-6',
+              'styled-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-background px-5 py-5',
               '[&_[data-streamdown="code-block"]]:!max-w-full [&_[data-streamdown="table-wrapper"]]:!max-w-full [&_[data-streamdown="code-block"]]:overflow-x-auto [&_[data-streamdown="table-wrapper"]]:overflow-x-auto',
             )}
           >
@@ -270,7 +270,7 @@ export const AgentCommandConversation: FC = () => {
             ) : turns.length === 0 ? (
               <EmptyConversationState agentName={agentName} />
             ) : (
-              <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
+              <div className="mx-auto flex w-full max-w-3xl flex-col gap-3">
                 {turns.map((turn, index) => (
                   <ConversationMessage
                     key={turn.id}
@@ -282,8 +282,8 @@ export const AgentCommandConversation: FC = () => {
             )}
           </main>
 
-          <div className="border-border/50 border-t bg-card/90 px-4 py-4">
-            <div className="mx-auto max-w-4xl">
+          <div className="border-border/50 border-t bg-background/88 px-4 py-3 backdrop-blur-md">
+            <div className="mx-auto max-w-3xl">
               <ConversationInput
                 variant="conversation"
                 agents={agents}
