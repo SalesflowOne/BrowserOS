@@ -32,12 +32,9 @@ jobs:
   build:
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - arch: arm64
-            runner: ubuntu-24.04-arm64
-          - arch: x64
-            runner: ubuntu-24.04
+      # PRs run the x64 lane only until this repo has dependable arm64 runner
+      # capacity. Manual/scheduled runs still request the native arm64 lane.
+      matrix: ${{ fromJSON(github.event_name == 'pull_request' && '{"include":[{"arch":"x64","runner":"ubuntu-24.04"}]}' || '{"include":[{"arch":"arm64","runner":"ubuntu-24.04-arm64"},{"arch":"x64","runner":"ubuntu-24.04"}]}') }}
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -50,10 +47,13 @@ jobs:
           sudo apt-get install -y libguestfs-tools qemu-utils zstd
           echo "LIBGUESTFS_BACKEND=direct" >> "$GITHUB_ENV"
       - name: Install deps
+        working-directory: packages/browseros-agent
         run: bun install --frozen-lockfile
       - name: Typecheck
+        working-directory: packages/browseros-agent
         run: bun run --filter @browseros/vm-container typecheck
       - name: Unit tests
+        working-directory: packages/browseros-agent
         run: bun run --filter @browseros/vm-container test
       - name: Determine version
         id: version
@@ -113,6 +113,7 @@ jobs:
           echo "${LIMA_SHA256}  /tmp/lima.tar.gz" | sha256sum --check --strict
           sudo tar -C /usr/local -xzf /tmp/lima.tar.gz
       - name: Install deps
+        working-directory: packages/browseros-agent
         run: bun install --frozen-lockfile
       - name: Smoke test
         working-directory: ${{ env.PKG_DIR }}
@@ -138,6 +139,7 @@ jobs:
           pattern: vm-disk-*
           path: dist/vm/
       - name: Install deps
+        working-directory: packages/browseros-agent
         run: bun install --frozen-lockfile
       - name: Upload to R2
         working-directory: ${{ env.PKG_DIR }}
