@@ -61,14 +61,16 @@ class WindowsServerBinariesTest(unittest.TestCase):
         for rel, abs_path in zip(WINDOWS_SERVER_BINARIES, resolved):
             self.assertEqual(abs_path, root / rel)
 
-    def test_windows_has_no_podman(self):
+    def test_windows_has_no_stale_third_party(self):
         forbidden = {
             "third_party/podman/podman.exe",
             "third_party/podman/gvproxy.exe",
             "third_party/podman/win-sshproxy.exe",
+            "third_party/bun.exe",
+            "third_party/rg.exe",
         }
         leftover = forbidden & set(WINDOWS_SERVER_BINARIES)
-        self.assertFalse(leftover, f"podman-era entries still present: {leftover}")
+        self.assertFalse(leftover, f"stale entries still present: {leftover}")
 
 
 if __name__ == "__main__":
