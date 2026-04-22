@@ -243,7 +243,7 @@ export const AgentCommandConversation: FC = () => {
 
   return (
     <div className="absolute inset-0 overflow-hidden bg-background px-4 py-4">
-      <div className="mx-auto grid h-full w-full max-w-[1600px] overflow-hidden rounded-[1.75rem] border border-border/60 bg-card/95 shadow-sm lg:grid-cols-[300px_minmax(0,1fr)]">
+      <div className="mx-auto grid h-full w-full max-w-[1600px] lg:grid-cols-[300px_minmax(0,1fr)]">
         <AgentRail
           activeAgentId={resolvedAgentId}
           agents={agents}
@@ -251,7 +251,7 @@ export const AgentCommandConversation: FC = () => {
           onSelectAgent={handleSelectAgent}
         />
 
-        <div className="flex min-h-0 flex-col">
+        <div className="flex min-h-0 flex-col overflow-hidden">
           <ConversationHeader
             agentName={agentName}
             status={statusCopy}
