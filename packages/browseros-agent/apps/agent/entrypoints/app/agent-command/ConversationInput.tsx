@@ -235,7 +235,7 @@ function ContextControls({
 
 function HomeShell({ children }: { children: ReactNode }) {
   return (
-    <div className="overflow-hidden rounded-[2rem] border border-border/60 bg-card/95 shadow-sm backdrop-blur">
+    <div className="overflow-hidden rounded-[1.75rem] border border-border/60 bg-card/95 shadow-sm backdrop-blur">
       {children}
     </div>
   )
@@ -243,7 +243,7 @@ function HomeShell({ children }: { children: ReactNode }) {
 
 function ConversationShell({ children }: { children: ReactNode }) {
   return (
-    <div className="overflow-hidden rounded-[1.5rem] border border-border/60 bg-card/98 shadow-sm backdrop-blur">
+    <div className="overflow-hidden rounded-[1.5rem] border border-border/60 bg-card shadow-sm">
       {children}
     </div>
   )
@@ -300,14 +300,6 @@ export const ConversationInput: FC<ConversationInputProps> = ({
       <div className="flex items-end gap-3 px-5 py-4">
         <BotInputIcon variant={variant} />
         <div className="flex-1">
-          {variant === 'home' ? (
-            <div className="mb-2 flex items-center gap-2 text-muted-foreground text-xs uppercase tracking-[0.18em]">
-              <span>Compose for</span>
-              <span className="rounded-full border border-border/60 bg-background/80 px-2.5 py-1 font-medium text-foreground text-xs normal-case tracking-normal">
-                {selectedAgent?.name ?? 'Agent'}
-              </span>
-            </div>
-          ) : null}
           <Textarea
             value={input}
             onChange={(event) => setInput(event.currentTarget.value)}
@@ -317,7 +309,7 @@ export const ConversationInput: FC<ConversationInputProps> = ({
                 handleSend()
               }
             }}
-            rows={variant === 'home' ? 4 : 3}
+            rows={variant === 'home' ? 3 : 3}
             placeholder={
               voice.isTranscribing
                 ? 'Transcribing...'
@@ -330,9 +322,6 @@ export const ConversationInput: FC<ConversationInputProps> = ({
               'placeholder:text-muted-foreground/80',
             )}
           />
-          <div className="mt-2 text-muted-foreground text-xs">
-            Enter sends. Shift + Enter adds a new line.
-          </div>
         </div>
         <VoiceButton
           isRecording={voice.isRecording}
@@ -379,7 +368,7 @@ function BotInputIcon({ variant }: { variant: 'home' | 'conversation' }) {
       className={cn(
         'flex items-center justify-center text-[var(--accent-orange)]',
         variant === 'home'
-          ? 'h-11 w-11 rounded-2xl bg-[var(--accent-orange)]/10'
+          ? 'h-10 w-10 rounded-xl bg-[var(--accent-orange)]/10'
           : 'h-9 w-9 rounded-xl bg-[var(--accent-orange)]/12',
       )}
     >

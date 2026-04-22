@@ -1,14 +1,8 @@
-import {
-  ArrowLeft,
-  Bot,
-  Clock3,
-  Home,
-  MessageSquareText,
-  RotateCcw,
-} from 'lucide-react'
+import { ArrowLeft, Bot, History, Home, RotateCcw, Search } from 'lucide-react'
 import { type FC, useEffect, useRef } from 'react'
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import {
   type AgentEntry,
@@ -32,28 +26,35 @@ function ConversationHeader({
   onReset: () => void
 }) {
   return (
-    <div className="overflow-hidden border-border/50 border-b px-5 py-4">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onGoHome}
-            className="rounded-xl"
-            title="Back to home"
-          >
-            <Home className="size-4" />
-          </Button>
-          <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-            <Bot className="size-5" />
-          </div>
-          <div className="min-w-0">
-            <div className="truncate font-semibold text-base">{agentName}</div>
-            <div className="truncate text-muted-foreground text-sm">
-              {status}
-            </div>
-          </div>
+    <div className="flex items-center justify-between gap-4 border-border/50 border-b px-6 py-4">
+      <div className="flex min-w-0 items-center gap-3">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onGoHome}
+          className="rounded-xl lg:hidden"
+          title="Back to home"
+        >
+          <ArrowLeft className="size-4" />
+        </Button>
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+          <Bot className="size-4.5" />
         </div>
+        <div className="min-w-0">
+          <div className="truncate font-semibold text-base">{agentName}</div>
+          <div className="truncate text-muted-foreground text-sm">{status}</div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="rounded-xl text-muted-foreground"
+        >
+          <History className="mr-2 size-4" />
+          History
+        </Button>
         <Button
           variant="ghost"
           size="sm"
@@ -68,7 +69,7 @@ function ConversationHeader({
   )
 }
 
-function ConversationSidebar({
+function AgentRail({
   activeAgentId,
   agents,
   onGoHome,
@@ -80,34 +81,45 @@ function ConversationSidebar({
   onSelectAgent: (entry: AgentEntry) => void
 }) {
   return (
-    <aside className="hidden h-full rounded-[1.75rem] border border-border/60 bg-card/95 p-4 shadow-sm backdrop-blur lg:flex lg:flex-col">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="font-medium text-muted-foreground text-xs uppercase tracking-[0.24em]">
-            Agent Thread
-          </p>
-          <h2 className="mt-2 font-semibold text-lg">New tab chat</h2>
-          <p className="mt-1 text-muted-foreground text-sm">
-            Stay in the conversation instead of hopping between tools.
-          </p>
+    <aside className="hidden h-full min-h-0 flex-col border-border/50 border-r bg-background/70 lg:flex">
+      <div className="space-y-4 px-4 py-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <div className="flex size-9 items-center justify-center rounded-2xl border border-border/60 bg-card text-muted-foreground">
+              <Home className="size-4" />
+            </div>
+            <div>
+              <div className="font-semibold text-sm">Agents</div>
+              <div className="text-muted-foreground text-xs">
+                Switch conversations
+              </div>
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onGoHome}
+            className="rounded-xl"
+            title="Back to home"
+          >
+            <Home className="size-4" />
+          </Button>
         </div>
-        <div className="flex size-11 items-center justify-center rounded-2xl bg-[var(--accent-orange)]/12 text-[var(--accent-orange)]">
-          <MessageSquareText className="size-5" />
+
+        <div className="relative">
+          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value=""
+            readOnly
+            placeholder="Search agents"
+            className="rounded-xl border-border/60 bg-card pl-9 text-sm shadow-none"
+          />
         </div>
       </div>
 
-      <Button
-        variant="outline"
-        onClick={onGoHome}
-        className="mt-4 justify-start rounded-2xl"
-      >
-        <ArrowLeft className="mr-2 size-4" />
-        Back to inbox
-      </Button>
+      <Separator />
 
-      <Separator className="my-4" />
-
-      <div className="space-y-2">
+      <div className="styled-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-3">
         {agents.map((entry) => {
           const active = entry.agentId === activeAgentId
           return (
@@ -119,7 +131,7 @@ function ConversationSidebar({
                 'w-full rounded-2xl border px-3 py-3 text-left transition-all',
                 active
                   ? 'border-[var(--accent-orange)]/30 bg-[var(--accent-orange)]/8 shadow-sm'
-                  : 'border-border/60 bg-background/60 hover:border-border hover:bg-background',
+                  : 'border-transparent bg-transparent hover:border-border/60 hover:bg-card',
               )}
             >
               <div className="flex items-center gap-3">
@@ -146,31 +158,20 @@ function ConversationSidebar({
           )
         })}
       </div>
-
-      <div className="mt-auto rounded-2xl border border-border/60 bg-background/70 p-4">
-        <div className="flex items-center gap-2 text-muted-foreground text-xs uppercase tracking-[0.18em]">
-          <Clock3 className="size-3.5 text-[var(--accent-orange)]" />
-          UI direction
-        </div>
-        <p className="mt-3 text-muted-foreground text-sm leading-6">
-          This draft prioritizes a thread-like workspace with agent switching on
-          the side and the active conversation occupying the main canvas.
-        </p>
-      </div>
     </aside>
   )
 }
 
 function EmptyConversationState({ agentName }: { agentName: string }) {
   return (
-    <div className="flex min-h-full items-center justify-center py-10">
-      <div className="max-w-md rounded-[1.5rem] border border-border/60 bg-card/90 px-8 py-10 text-center shadow-sm backdrop-blur">
-        <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+    <div className="flex h-full items-center justify-center px-6 py-12">
+      <div className="max-w-md text-center">
+        <div className="mx-auto flex size-14 items-center justify-center rounded-3xl bg-muted text-muted-foreground">
           <Bot className="size-6" />
         </div>
-        <h2 className="mt-4 font-semibold text-lg">{agentName}</h2>
-        <p className="mt-2 text-muted-foreground text-sm">
-          Send a message to start a focused conversation with this agent.
+        <h2 className="mt-5 font-semibold text-xl">{agentName}</h2>
+        <p className="mt-2 text-muted-foreground text-sm leading-6">
+          Start a new conversation when you are ready.
         </p>
       </div>
     </div>
@@ -241,16 +242,16 @@ export const AgentCommandConversation: FC = () => {
   const statusCopy = getConversationStatusCopy(status?.status, streaming)
 
   return (
-    <div className="absolute inset-0 overflow-hidden px-4 py-4">
-      <div className="fade-in slide-in-from-bottom-5 mx-auto grid h-full w-full max-w-6xl animate-in gap-4 duration-300 lg:grid-cols-[280px_minmax(0,1fr)]">
-        <ConversationSidebar
+    <div className="absolute inset-0 overflow-hidden bg-background px-4 py-4">
+      <div className="mx-auto grid h-full w-full max-w-[1600px] overflow-hidden rounded-[1.75rem] border border-border/60 bg-card/95 shadow-sm lg:grid-cols-[300px_minmax(0,1fr)]">
+        <AgentRail
           activeAgentId={resolvedAgentId}
           agents={agents}
           onGoHome={() => navigate('/home')}
           onSelectAgent={handleSelectAgent}
         />
 
-        <div className="flex min-h-0 flex-col overflow-hidden rounded-[1.75rem] border border-border/60 bg-card/95 shadow-sm backdrop-blur">
+        <div className="flex min-h-0 flex-col">
           <ConversationHeader
             agentName={agentName}
             status={statusCopy}
@@ -261,7 +262,7 @@ export const AgentCommandConversation: FC = () => {
           <main
             ref={scrollRef}
             className={cn(
-              'styled-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-gradient-to-b from-[var(--accent-orange)]/5 via-transparent to-transparent px-5 py-5',
+              'styled-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-background px-6 py-6',
               '[&_[data-streamdown="code-block"]]:!max-w-full [&_[data-streamdown="table-wrapper"]]:!max-w-full [&_[data-streamdown="code-block"]]:overflow-x-auto [&_[data-streamdown="table-wrapper"]]:overflow-x-auto',
             )}
           >
@@ -272,7 +273,7 @@ export const AgentCommandConversation: FC = () => {
             ) : turns.length === 0 ? (
               <EmptyConversationState agentName={agentName} />
             ) : (
-              <div className="mx-auto w-full max-w-3xl space-y-4">
+              <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
                 {turns.map((turn, index) => (
                   <ConversationMessage
                     key={turn.id}
@@ -284,8 +285,8 @@ export const AgentCommandConversation: FC = () => {
             )}
           </main>
 
-          <div className="w-full flex-shrink-0 border-border/50 border-t bg-background/70 p-4">
-            <div className="mx-auto max-w-3xl">
+          <div className="border-border/50 border-t bg-card/90 px-4 py-4">
+            <div className="mx-auto max-w-4xl">
               <ConversationInput
                 variant="conversation"
                 agents={agents}
