@@ -96,7 +96,8 @@ def upload_lima(
                 )
                 tarball_shas[arch.internal] = tarball_sha
                 object_shas[arch.internal] = object_sha
-                uploaded_keys.append(r2_key)
+                if not dry_run:
+                    uploaded_keys.append(r2_key)
 
             manifest = _build_manifest(tag, tarball_shas, object_shas)
             _upload_manifest(client, env, manifest, tmp_dir, dry_run)
@@ -217,7 +218,9 @@ def _build_manifest(
         "tarball_shas_upstream": tarball_shas,
         "r2_object_shas": object_shas,
         "uploaded_at": datetime.now(timezone.utc).isoformat(),
-        "uploaded_by": os.environ.get("USER") or os.environ.get("USERNAME") or "unknown",
+        # Prefer CI context so we don't leak an individual's OS login when
+        # running locally. manifest.json is surfaced via the public CDN.
+        "uploaded_by": os.environ.get("GITHUB_ACTOR") or "local",
     }
 
 
