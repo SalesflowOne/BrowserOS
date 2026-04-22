@@ -10,6 +10,8 @@ This package owns the WS2 pipeline:
 - Smoke-test the archive with `podman load`
 - Publish tarballs, checksum sidecars, and manifests to R2
 
+Package env requirements are documented in [.env.sample](./.env.sample).
+
 ## Local usage
 
 ```bash
@@ -31,6 +33,7 @@ bun run --filter @browseros/agent-container smoke -- \
   --expected-fingerprint ...
 
 # Upload pre-built artifacts
+# Fill these from packages/agent-container/.env.sample
 R2_ACCOUNT_ID=... \
 R2_ACCESS_KEY_ID=... \
 R2_SECRET_ACCESS_KEY=... \
@@ -45,3 +48,4 @@ bun run --filter @browseros/agent-container upload -- \
 - `recipe/agents.json` is the source of truth for the active set.
 - `workflow_dispatch` version overrides are intended for dry runs. Publishing still needs the recipe to be authoritative.
 - `src/load/` is intentionally stubbed. WS6 fills in the runtime consumer path.
+- Private registry auth is recipe-driven: if `requires_auth.secret` is set for an agent, export that env var before running `build`.
