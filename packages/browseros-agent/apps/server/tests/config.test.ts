@@ -28,6 +28,7 @@ describe('loadServerConfig', () => {
     delete process.env.BROWSEROS_INSTALL_ID
     delete process.env.BROWSEROS_CLIENT_ID
     delete process.env.BROWSEROS_AI_SDK_DEVTOOLS
+    delete process.env.BROWSEROS_KLAVIS_AUTH_FIELD_OVERRIDES
   })
 
   afterEach(() => {
@@ -111,6 +112,7 @@ describe('loadServerConfig', () => {
       process.env.BROWSEROS_CDP_PORT = '9222'
       process.env.BROWSEROS_SERVER_PORT = '9223'
       process.env.BROWSEROS_EXTENSION_PORT = '9224'
+      process.env.BROWSEROS_KLAVIS_AUTH_FIELD_OVERRIDES = 'false'
 
       const result = loadServerConfig(['bun', 'src/index.ts'])
 
@@ -121,6 +123,7 @@ describe('loadServerConfig', () => {
       // agentPort is deprecated - always equals serverPort
       assert.strictEqual(result.value.agentPort, 9223)
       assert.strictEqual(result.value.extensionPort, 9224)
+      assert.strictEqual(result.value.klavisAuthFieldOverridesEnabled, false)
     })
 
     it('CLI takes precedence over env', () => {
@@ -156,6 +159,7 @@ describe('loadServerConfig', () => {
           },
           flags: {
             allow_remote_in_mcp: true,
+            klavis_auth_field_overrides: false,
           },
         }),
       )
@@ -174,6 +178,7 @@ describe('loadServerConfig', () => {
       assert.strictEqual(result.value.agentPort, 3000)
       assert.strictEqual(result.value.extensionPort, 3002)
       assert.strictEqual(result.value.mcpAllowRemote, true)
+      assert.strictEqual(result.value.klavisAuthFieldOverridesEnabled, false)
     })
 
     it('CLI takes precedence over config file', () => {
@@ -443,6 +448,18 @@ describe('loadServerConfig', () => {
       assert.strictEqual(result.ok, true)
       if (!result.ok) return
       assert.strictEqual(result.value.aiSdkDevtoolsEnabled, false)
+    })
+
+    it('defaults Klavis auth field overrides to enabled', () => {
+      const result = loadServerConfig([
+        'bun',
+        'src/index.ts',
+        '--server-port=3000',
+      ])
+
+      assert.strictEqual(result.ok, true)
+      if (!result.ok) return
+      assert.strictEqual(result.value.klavisAuthFieldOverridesEnabled, true)
     })
   })
 

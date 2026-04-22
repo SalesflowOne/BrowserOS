@@ -132,7 +132,13 @@ export async function createHttpServer(config: HttpServerConfig) {
             c.json({ error: 'OAuth not available' }, 503),
           ),
     )
-    .route('/klavis', createKlavisRoutes({ browserosId: browserosId || '' }))
+    .route(
+      '/klavis',
+      createKlavisRoutes({
+        browserosId: browserosId || '',
+        klavisAuthFieldOverridesEnabled: config.klavisAuthFieldOverridesEnabled,
+      }),
+    )
     .route(
       '/credits',
       createCreditsRoutes({

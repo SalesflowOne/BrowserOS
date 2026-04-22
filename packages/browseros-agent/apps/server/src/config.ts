@@ -30,6 +30,7 @@ export const ServerConfigSchema = z.object({
   instanceBrowserosVersion: z.string().optional(),
   instanceChromiumVersion: z.string().optional(),
   aiSdkDevtoolsEnabled: z.boolean(),
+  klavisAuthFieldOverridesEnabled: z.boolean(),
 })
 
 export type ServerConfig = z.infer<typeof ServerConfigSchema>
@@ -226,6 +227,10 @@ function parseConfigFile(filePath?: string): ConfigResult<PartialConfig> {
           cfg.flags?.allow_remote_in_mcp === true ? true : undefined,
         aiSdkDevtoolsEnabled:
           cfg.flags?.ai_sdk_devtools === true ? true : undefined,
+        klavisAuthFieldOverridesEnabled:
+          typeof cfg.flags?.klavis_auth_field_overrides === 'boolean'
+            ? cfg.flags.klavis_auth_field_overrides
+            : undefined,
         instanceClientId:
           typeof cfg.instance?.client_id === 'string'
             ? cfg.instance.client_id
@@ -272,6 +277,9 @@ function parseRuntimeEnv(): PartialConfig {
     instanceClientId: process.env.BROWSEROS_CLIENT_ID,
     aiSdkDevtoolsEnabled:
       process.env.BROWSEROS_AI_SDK_DEVTOOLS === 'true' ? true : undefined,
+    klavisAuthFieldOverridesEnabled: parseBooleanEnv(
+      process.env.BROWSEROS_KLAVIS_AUTH_FIELD_OVERRIDES,
+    ),
   })
 }
 
@@ -305,6 +313,7 @@ function getDefaults(cwd: string): PartialConfig {
     executionDir: cwd,
     mcpAllowRemote: false,
     aiSdkDevtoolsEnabled: false,
+    klavisAuthFieldOverridesEnabled: true,
   }
 }
 
@@ -323,6 +332,13 @@ function mergeConfigs(...configs: PartialConfig[]): PartialConfig {
 function safeParseInt(value: string): number | undefined {
   const num = parseInt(value, 10)
   return Number.isNaN(num) ? undefined : num
+}
+
+function parseBooleanEnv(value: string | undefined): boolean | undefined {
+  if (value === undefined) return undefined
+  if (value === 'true') return true
+  if (value === 'false') return false
+  return undefined
 }
 
 function omitUndefined<T extends Record<string, unknown>>(obj: T): Partial<T> {

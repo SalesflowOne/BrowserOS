@@ -99,6 +99,7 @@ export interface HttpServerConfig {
   resourcesDir: string
   codegenServiceUrl?: string
   aiSdkDevtoolsEnabled?: boolean
+  klavisAuthFieldOverridesEnabled?: boolean
 
   onShutdown?: () => void
 }

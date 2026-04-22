@@ -18,6 +18,7 @@ const ServerNameSchema = z.object({
 
 interface KlavisRouteDeps {
   browserosId: string
+  klavisAuthFieldOverridesEnabled?: boolean
 }
 
 const normalizeServerKey = (value: string): string =>
@@ -44,7 +45,7 @@ const getAuthUrlForServer = (
 }
 
 export function createKlavisRoutes(deps: KlavisRouteDeps) {
-  const { browserosId } = deps
+  const { browserosId, klavisAuthFieldOverridesEnabled = true } = deps
   const klavisClient = new KlavisClient()
 
   // Chain route definitions for proper Hono RPC type inference
@@ -155,7 +156,10 @@ export function createKlavisRoutes(deps: KlavisRouteDeps) {
         const { serverName, apiKey, apiKeyUrl } = c.req.valid('json')
 
         try {
-          await klavisClient.submitApiKey(apiKeyUrl, apiKey)
+          await klavisClient.submitApiKey(apiKeyUrl, apiKey, {
+            serverName,
+            useAuthFieldOverrides: klavisAuthFieldOverridesEnabled,
+          })
 
           logger.info('Submitted API key for server', { serverName })
 

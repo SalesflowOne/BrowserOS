@@ -10,6 +10,18 @@ import { klavisStrataCache } from '../../../src/api/services/klavis/strata-cache
 
 const originalFetch = globalThis.fetch
 
+const submitApiKeyRequest = (
+  route: ReturnType<typeof createKlavisRoutes>,
+  body: Record<string, string>,
+) =>
+  route.request('/servers/submit-api-key', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  })
+
 beforeEach(() => {
   klavisStrataCache.clear()
 })
@@ -92,6 +104,85 @@ describe('createKlavisRoutes', () => {
       addedServers: ['Google Docs'],
       oauthUrl: 'https://oauth.example.com/google-docs',
       apiKeyUrl: 'https://auth.example.com/setup?instance_id=abc123',
+    })
+  })
+
+  it('submits Discord API keys as bot token auth data', async () => {
+    let requestBody: unknown
+    globalThis.fetch = (async (_input, init) => {
+      requestBody = JSON.parse(init?.body as string)
+      return Response.json({ success: true })
+    }) as typeof fetch
+
+    const route = createKlavisRoutes({ browserosId: 'user-123' })
+    const response = await submitApiKeyRequest(route, {
+      serverName: 'Discord',
+      apiKey: 'discord-token',
+      apiKeyUrl: 'https://auth.example.com/setup?instance_id=discord-123',
+    })
+    const body = await response.json()
+
+    assert.strictEqual(response.status, 200)
+    assert.deepStrictEqual(body, {
+      success: true,
+      serverName: 'Discord',
+    })
+    assert.deepStrictEqual(requestBody, {
+      instanceId: 'discord-123',
+      authData: {
+        data: {
+          bot_token: 'discord-token',
+        },
+      },
+    })
+  })
+
+  it('keeps generic API key auth data for non-Discord servers', async () => {
+    let requestBody: unknown
+    globalThis.fetch = (async (_input, init) => {
+      requestBody = JSON.parse(init?.body as string)
+      return Response.json({ success: true })
+    }) as typeof fetch
+
+    const route = createKlavisRoutes({ browserosId: 'user-123' })
+    const response = await submitApiKeyRequest(route, {
+      serverName: 'Resend',
+      apiKey: 'resend-key',
+      apiKeyUrl: 'https://auth.example.com/setup?instance_id=resend-123',
+    })
+
+    assert.strictEqual(response.status, 200)
+    assert.deepStrictEqual(requestBody, {
+      instanceId: 'resend-123',
+      authData: {
+        api_key: 'resend-key',
+      },
+    })
+  })
+
+  it('keeps generic API key auth data when auth field overrides are disabled', async () => {
+    let requestBody: unknown
+    globalThis.fetch = (async (_input, init) => {
+      requestBody = JSON.parse(init?.body as string)
+      return Response.json({ success: true })
+    }) as typeof fetch
+
+    const route = createKlavisRoutes({
+      browserosId: 'user-123',
+      klavisAuthFieldOverridesEnabled: false,
+    })
+    const response = await submitApiKeyRequest(route, {
+      serverName: 'Discord',
+      apiKey: 'discord-token',
+      apiKeyUrl: 'https://auth.example.com/setup?instance_id=discord-123',
+    })
+
+    assert.strictEqual(response.status, 200)
+    assert.deepStrictEqual(requestBody, {
+      instanceId: 'discord-123',
+      authData: {
+        api_key: 'discord-token',
+      },
     })
   })
 })

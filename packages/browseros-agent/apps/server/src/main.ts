@@ -86,6 +86,8 @@ export class Application {
         resourcesDir: this.config.resourcesDir,
         codegenServiceUrl: this.config.codegenServiceUrl,
         aiSdkDevtoolsEnabled: this.config.aiSdkDevtoolsEnabled,
+        klavisAuthFieldOverridesEnabled:
+          this.config.klavisAuthFieldOverridesEnabled,
 
         onShutdown: () => this.stop('shutdown-endpoint'),
       })

@@ -28,6 +28,41 @@ export interface UserIntegration {
   isAuthenticated: boolean
 }
 
+interface SubmitApiKeyOptions {
+  serverName?: string
+  useAuthFieldOverrides?: boolean
+}
+
+const DEFAULT_AUTH_FIELD = 'api_key'
+
+const AUTH_FIELD_OVERRIDES = new Map<string, string>([['discord', 'bot_token']])
+
+const normalizeAuthServerName = (serverName: string): string =>
+  serverName.toLowerCase().replace(/[^a-z0-9]+/g, '')
+
+const getAuthFieldName = (
+  serverName: string | undefined,
+  useAuthFieldOverrides: boolean,
+): string => {
+  if (!serverName || !useAuthFieldOverrides) {
+    return DEFAULT_AUTH_FIELD
+  }
+  return (
+    AUTH_FIELD_OVERRIDES.get(normalizeAuthServerName(serverName)) ||
+    DEFAULT_AUTH_FIELD
+  )
+}
+
+const buildAuthData = (
+  authFieldName: string,
+  apiKey: string,
+): Record<string, unknown> => {
+  if (authFieldName === DEFAULT_AUTH_FIELD) {
+    return { [DEFAULT_AUTH_FIELD]: apiKey }
+  }
+  return { data: { [authFieldName]: apiKey } }
+}
+
 export class KlavisClient {
   private baseUrl: string
 
@@ -112,7 +147,7 @@ export class KlavisClient {
     integration: KlavisIntegrationItem,
   ): UserIntegration | null {
     if (typeof integration === 'string') {
-      return { name: integration, isAuthenticated: false }
+      return { name: integration, isAuthenticated: true }
     }
     const name = integration.name
     if (!name || typeof name !== 'string') {
@@ -131,17 +166,26 @@ export class KlavisClient {
    * Submit an API key to Klavis's set-auth endpoint via the proxy.
    * Extracts instanceId from the apiKeyUrl and routes through the proxy.
    */
-  async submitApiKey(apiKeyUrl: string, apiKey: string): Promise<void> {
+  async submitApiKey(
+    apiKeyUrl: string,
+    apiKey: string,
+    options: SubmitApiKeyOptions = {},
+  ): Promise<void> {
     const parsedUrl = new URL(apiKeyUrl)
     const instanceId = parsedUrl.searchParams.get('instance_id')
     if (!instanceId) {
       throw new Error('Missing instance_id in apiKeyUrl')
     }
 
+    const authFieldName = getAuthFieldName(
+      options.serverName,
+      options.useAuthFieldOverrides ?? true,
+    )
+
     // request() already throws on non-2xx responses
     await this.request('POST', '/mcp-server/instance/set-auth', {
       instanceId,
-      authData: { api_key: apiKey },
+      authData: buildAuthData(authFieldName, apiKey),
     })
   }
 
