@@ -1,0 +1,10 @@
+{
+  "vmVersion": "2026.04.22",
+  "agents": [
+    {
+      "name": "openclaw",
+      "image": "ghcr.io/openclaw/openclaw",
+      "version": "2026.4.12"
+    }
+  ]
+}

@@ -49,6 +49,18 @@ export function getOpenClawDir(): string {
   return join(getBrowserosDir(), PATHS.OPENCLAW_DIR_NAME)
 }
 
+export function getCacheDir(): string {
+  return join(getBrowserosDir(), PATHS.CACHE_DIR_NAME)
+}
+
+export function getVmCacheDir(): string {
+  return join(getCacheDir(), 'vm')
+}
+
+export function getAgentCacheDir(): string {
+  return join(getVmCacheDir(), 'images')
+}
+
 export function getLazyMonitoringDir(): string {
   return join(getBrowserosDir(), 'lazy-monitoring')
 }
@@ -86,6 +98,7 @@ export async function ensureBrowserosDir(): Promise<void> {
   await mkdir(getBuiltinSkillsDir(), { recursive: true })
   await mkdir(getSessionsDir(), { recursive: true })
   await mkdir(getLazyMonitoringRunsDir(), { recursive: true })
+  await mkdir(getAgentCacheDir(), { recursive: true })
 }
 
 export async function cleanOldSessions(): Promise<void> {
