@@ -8,7 +8,14 @@ import {
   Mic,
   Square,
 } from 'lucide-react'
-import { type FC, type ReactNode, useEffect, useState } from 'react'
+import {
+  type FC,
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 import { AppSelector } from '@/components/elements/AppSelector'
 import { TabPickerPopover } from '@/components/elements/tab-picker-popover'
 import { WorkspaceSelector } from '@/components/elements/workspace-selector'
@@ -264,9 +271,22 @@ export const ConversationInput: FC<ConversationInputProps> = ({
   const [input, setInput] = useState('')
   const [selectedTabs, setSelectedTabs] = useState<chrome.tabs.Tab[]>([])
   const voice = useVoiceInput()
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const selectedAgent = agents.find(
     (agent) => agent.agentId === selectedAgentId,
   )
+  const isConversation = variant === 'conversation'
+
+  useLayoutEffect(() => {
+    const element = textareaRef.current
+    if (!element) return
+
+    const maxHeight = isConversation ? 176 : 224
+    element.style.height = '0px'
+    element.style.height = `${Math.min(element.scrollHeight, maxHeight)}px`
+    element.style.overflowY =
+      element.scrollHeight > maxHeight ? 'auto' : 'hidden'
+  })
 
   useEffect(() => {
     if (voice.transcript && !voice.isTranscribing) {
@@ -306,6 +326,7 @@ export const ConversationInput: FC<ConversationInputProps> = ({
         <BotInputIcon variant={variant} />
         <div className="flex-1">
           <Textarea
+            ref={textareaRef}
             value={input}
             onChange={(event) => setInput(event.currentTarget.value)}
             onKeyDown={(event) => {
@@ -314,7 +335,7 @@ export const ConversationInput: FC<ConversationInputProps> = ({
                 handleSend()
               }
             }}
-            rows={variant === 'home' ? 3 : 2}
+            rows={1}
             placeholder={
               voice.isTranscribing
                 ? 'Transcribing...'
@@ -324,9 +345,10 @@ export const ConversationInput: FC<ConversationInputProps> = ({
             disabled={disabled || voice.isTranscribing}
             className={cn(
               'resize-none border-none bg-transparent px-0 py-0 text-[15px] shadow-none focus-visible:ring-0',
+              '[field-sizing:fixed]',
               variant === 'home'
                 ? 'min-h-[72px] leading-7'
-                : 'min-h-[56px] leading-6',
+                : 'min-h-[40px] leading-6',
               'placeholder:text-muted-foreground/80',
             )}
           />
