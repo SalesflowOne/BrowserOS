@@ -238,7 +238,7 @@ export const AgentCommandConversation: FC = () => {
   const statusCopy = getConversationStatusCopy(status?.status, streaming)
 
   return (
-    <div className="absolute inset-0 overflow-hidden bg-background px-3 py-3 md:pl-[calc(theme(spacing.3)+theme(spacing.14))]">
+    <div className="absolute inset-0 overflow-hidden bg-background md:pl-[theme(spacing.14)]">
       <div className="mx-auto grid h-full w-full max-w-[1480px] lg:grid-cols-[288px_minmax(0,1fr)] lg:grid-rows-[4rem_minmax(0,1fr)]">
         <AgentRailHeader onGoHome={() => navigate('/home')} />
 
