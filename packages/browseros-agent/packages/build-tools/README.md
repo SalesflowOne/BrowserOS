@@ -32,8 +32,8 @@ bun run --filter @browseros/build-tools build:tarball -- --agent openclaw --arch
 VM smoke tests require `limactl`, `qemu`, and `zstd`. Agent tarball smoke tests require `podman`.
 
 ```bash
-bun run --filter @browseros/build-tools smoke:vm -- --qcow ./dist/browseros-vm-2026.04.22-x64.qcow2.zst
-bun run --filter @browseros/build-tools smoke:tarball -- --agent openclaw --arch x64 --tarball ./dist/images/openclaw-2026.4.12-x64.tar.gz
+bun run --filter @browseros/build-tools smoke:vm -- --arch arm64 --qcow ./dist/browseros-vm-2026.04.22-arm64.qcow2.zst
+bun run --filter @browseros/build-tools smoke:tarball -- --agent openclaw --arch arm64 --tarball ./dist/images/openclaw-2026.4.12-arm64.tar.gz
 ```
 
 ## Emit a manifest

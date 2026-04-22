@@ -44,7 +44,10 @@ jobs:
     needs: check
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(github.event_name == 'pull_request' && '{"include":[{"arch":"x64","runner":"ubuntu-24.04"}]}' || '{"include":[{"arch":"arm64","runner":"ubuntu-24.04-arm"},{"arch":"x64","runner":"ubuntu-24.04"}]}') }}
+      matrix:
+        include:
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -87,7 +90,7 @@ jobs:
 
   smoke:
     needs: build
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -95,17 +98,17 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - uses: actions/download-artifact@v4
         with:
-          name: vm-disk-x64
+          name: vm-disk-arm64
           path: dist/vm
       - name: Install qemu, zstd, curl, and Lima
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y qemu-system-x86 qemu-utils zstd curl
+          sudo apt-get install -y qemu-system-arm qemu-utils zstd curl
           lima_version="$(cat "${PKG_DIR}/recipe/LIMA_VERSION.pin")"
-          lima_sha256="$(cat "${PKG_DIR}/recipe/LIMA_LINUX_X86_64_SHA256.pin")"
+          lima_sha256="$(cat "${PKG_DIR}/recipe/LIMA_LINUX_AARCH64_SHA256.pin")"
           curl -fsSL -o /tmp/lima.tar.gz \
-            "https://github.com/lima-vm/lima/releases/download/${lima_version}/lima-${lima_version#v}-Linux-x86_64.tar.gz"
+            "https://github.com/lima-vm/lima/releases/download/${lima_version}/lima-${lima_version#v}-Linux-aarch64.tar.gz"
           echo "${lima_sha256}  /tmp/lima.tar.gz" | sha256sum --check --strict
           sudo tar -C /usr/local -xzf /tmp/lima.tar.gz
       - working-directory: packages/browseros-agent
@@ -114,12 +117,12 @@ jobs:
         working-directory: ${{ env.PKG_DIR }}
         run: |
           set -euo pipefail
-          qcow="$(find "$GITHUB_WORKSPACE/dist/vm" -name 'browseros-vm-*-x64.qcow2.zst' -print -quit)"
+          qcow="$(find "$GITHUB_WORKSPACE/dist/vm" -name 'browseros-vm-*-arm64.qcow2.zst' -print -quit)"
           if [ -z "$qcow" ]; then
-            echo "missing x64 VM disk artifact" >&2
+            echo "missing arm64 VM disk artifact" >&2
             exit 1
           fi
-          bun run smoke:vm -- --qcow "$qcow" --limactl /usr/local/bin/limactl
+          bun run smoke:vm -- --arch arm64 --qcow "$qcow" --limactl /usr/local/bin/limactl
 
   publish:
     needs: [build, smoke]

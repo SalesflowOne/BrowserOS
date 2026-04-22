@@ -45,7 +45,10 @@ jobs:
     needs: check
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(github.event_name == 'pull_request' && '{"include":[{"arch":"x64","runner":"ubuntu-24.04"}]}' || '{"include":[{"arch":"arm64","runner":"ubuntu-24.04-arm"},{"arch":"x64","runner":"ubuntu-24.04"}]}') }}
+      matrix:
+        include:
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -72,7 +75,7 @@ jobs:
 
   smoke:
     needs: build
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -80,7 +83,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - uses: actions/download-artifact@v4
         with:
-          name: tarball-${{ inputs.agent || 'openclaw' }}-x64
+          name: tarball-${{ inputs.agent || 'openclaw' }}-arm64
           path: dist/images
       - name: Install podman
         run: |
@@ -94,12 +97,12 @@ jobs:
           AGENT: ${{ inputs.agent || 'openclaw' }}
         run: |
           set -euo pipefail
-          tarball="$(find "$GITHUB_WORKSPACE/dist/images" -name "${AGENT}-*-x64.tar.gz" -print -quit)"
+          tarball="$(find "$GITHUB_WORKSPACE/dist/images" -name "${AGENT}-*-arm64.tar.gz" -print -quit)"
           if [ -z "$tarball" ]; then
-            echo "missing x64 tarball artifact for ${AGENT}" >&2
+            echo "missing arm64 tarball artifact for ${AGENT}" >&2
             exit 1
           fi
-          bun run smoke:tarball -- --agent "$AGENT" --arch x64 --tarball "$tarball"
+          bun run smoke:tarball -- --agent "$AGENT" --arch arm64 --tarball "$tarball"
 
   publish:
     needs: [build, smoke]
