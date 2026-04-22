@@ -1,4 +1,4 @@
-import { ArrowLeft, Bot, History, RotateCcw } from 'lucide-react'
+import { ArrowLeft, Bot } from 'lucide-react'
 import { type FC, useEffect, useRef } from 'react'
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router'
 import { Button } from '@/components/ui/button'
@@ -17,15 +17,13 @@ function ConversationHeader({
   agentName,
   status,
   onGoHome,
-  onReset,
 }: {
   agentName: string
   status: string
   onGoHome: () => void
-  onReset: () => void
 }) {
   return (
-    <div className="flex h-24 items-center justify-between gap-4 border-border/50 border-b px-6">
+    <div className="flex h-24 items-center gap-4 border-border/50 border-b px-6">
       <div className="flex min-w-0 items-center gap-3">
         <Button
           variant="ghost"
@@ -43,26 +41,6 @@ function ConversationHeader({
           <div className="truncate font-semibold text-base">{agentName}</div>
           <div className="truncate text-muted-foreground text-sm">{status}</div>
         </div>
-      </div>
-
-      <div className="flex items-center gap-1">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="rounded-xl text-muted-foreground"
-        >
-          <History className="mr-2 size-4" />
-          History
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onReset}
-          className="rounded-xl text-muted-foreground"
-        >
-          <RotateCcw className="mr-2 size-4" />
-          New conversation
-        </Button>
       </div>
     </div>
   )
@@ -182,8 +160,10 @@ export const AgentCommandConversation: FC = () => {
   const resolvedAgentId = agentId ?? ''
   const agent = agents.find((entry) => entry.agentId === resolvedAgentId)
   const agentName = agent?.name || resolvedAgentId || 'Agent'
-  const { turns, streaming, loading, send, resetConversation } =
-    useAgentConversation(resolvedAgentId, agentName)
+  const { turns, streaming, loading, send } = useAgentConversation(
+    resolvedAgentId,
+    agentName,
+  )
   const lastTurn = turns[turns.length - 1]
   const lastTurnPartCount = lastTurn?.parts.length ?? 0
 
@@ -237,7 +217,6 @@ export const AgentCommandConversation: FC = () => {
             agentName={agentName}
             status={statusCopy}
             onGoHome={() => navigate('/home')}
-            onReset={resetConversation}
           />
 
           <main
