@@ -3,13 +3,9 @@
 # Ops: run-command | copy-in <src>:<dest-dir> | upload <src>:<dest-file> | write <path>:<content> | truncate <path>
 # {version} and {manifest_tmp} are substituted at build time.
 
-# libguestfs can inherit a hosted-runner loopback resolver that is unreachable
-# inside QEMU user networking. Use QEMU's slirp DNS during package installation.
-run-command cp -a /etc/resolv.conf /tmp/browseros-vm-resolv.conf || true
-run-command rm -f /etc/resolv.conf && printf 'nameserver 10.0.2.3\nnameserver 1.1.1.1\noptions timeout:2 attempts:3\n' > /etc/resolv.conf
-run-command apt-get update
-run-command DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends podman crun fuse-overlayfs slirp4netns ca-certificates
-run-command if [ -e /tmp/browseros-vm-resolv.conf ]; then rm -f /etc/resolv.conf && cp -a /tmp/browseros-vm-resolv.conf /etc/resolv.conf; fi
+# libguestfs can reset /etc/resolv.conf before each command; set DNS in the same
+# command that needs package networking.
+run-command printf 'nameserver 169.254.2.3\noptions timeout:2 attempts:3\n' > /etc/resolv.conf && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends podman crun fuse-overlayfs slirp4netns ca-certificates
 run-command systemctl enable podman.socket
 copy-in auth.json:/etc/containers/
 run-command useradd --create-home --uid 1000 --shell /bin/bash browseros
@@ -19,6 +15,6 @@ run-command chmod 0440 /etc/sudoers.d/sudoers-browseros
 write /etc/browseros-vm-version:{version}
 upload {manifest_tmp}:/etc/browseros-vm-manifest.json
 run-command apt-get clean
-run-command rm -rf /var/lib/apt/lists/* /tmp/browseros-vm-resolv.conf /tmp/* /var/tmp/*
+run-command rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 run-command rm -f /etc/ssh/ssh_host_*
 truncate /etc/machine-id
