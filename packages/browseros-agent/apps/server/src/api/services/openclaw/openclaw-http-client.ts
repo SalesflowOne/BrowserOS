@@ -53,6 +53,11 @@ export type OpenClawSessionHistoryEvent =
     }
   | { type: 'error'; data: { message: string } }
 
+type OpenClawSessionHistoryMessageEvent = Extract<
+  OpenClawSessionHistoryEvent,
+  { type: 'message' }
+>
+
 export class OpenClawSessionNotFoundError extends Error {
   constructor(readonly sessionKey: string) {
     super(`OpenClaw session not found: ${sessionKey}`)
@@ -323,7 +328,9 @@ function parseHistoryEvent(
     case 'message':
       return {
         type: 'message',
-        data: JSON.parse(message.data) as OpenClawSessionHistoryEvent['data'],
+        data: JSON.parse(
+          message.data,
+        ) as OpenClawSessionHistoryMessageEvent['data'],
       }
     case 'error':
       return {

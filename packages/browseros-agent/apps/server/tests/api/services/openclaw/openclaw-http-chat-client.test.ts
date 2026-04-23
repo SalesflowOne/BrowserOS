@@ -47,10 +47,7 @@ describe('OpenClawHttpChatClient', () => {
       ),
     )
     globalThis.fetch = fetchMock as typeof globalThis.fetch
-    const client = new OpenClawHttpChatClient(
-      18789,
-      async () => 'gateway-token',
-    )
+    const client = new OpenClawHttpChatClient(18789)
 
     const stream = await client.streamChat({
       agentId: 'research',
@@ -66,7 +63,6 @@ describe('OpenClawHttpChatClient', () => {
     expect(call?.[1]).toMatchObject({
       method: 'POST',
       headers: {
-        Authorization: 'Bearer gateway-token',
         'Content-Type': 'application/json',
       },
     })
@@ -103,10 +99,7 @@ describe('OpenClawHttpChatClient', () => {
       ),
     )
     globalThis.fetch = fetchMock as typeof globalThis.fetch
-    const client = new OpenClawHttpChatClient(
-      18789,
-      async () => 'gateway-token',
-    )
+    const client = new OpenClawHttpChatClient(18789)
 
     await client.streamChat({
       agentId: 'main',
@@ -124,10 +117,7 @@ describe('OpenClawHttpChatClient', () => {
     globalThis.fetch = mock(() =>
       Promise.resolve(new Response('Unauthorized', { status: 401 })),
     ) as typeof globalThis.fetch
-    const client = new OpenClawHttpChatClient(
-      18789,
-      async () => 'gateway-token',
-    )
+    const client = new OpenClawHttpChatClient(18789)
 
     await expect(
       client.streamChat({
@@ -161,10 +151,7 @@ describe('OpenClawHttpChatClient', () => {
         ),
       ),
     ) as typeof globalThis.fetch
-    const client = new OpenClawHttpChatClient(
-      18789,
-      async () => 'gateway-token',
-    )
+    const client = new OpenClawHttpChatClient(18789)
 
     const stream = await client.streamChat({
       agentId: 'main',
@@ -207,10 +194,7 @@ describe('OpenClawHttpChatClient', () => {
       ),
     )
     globalThis.fetch = fetchMock as typeof globalThis.fetch
-    const client = new OpenClawHttpChatClient(
-      18789,
-      async () => 'gateway-token',
-    )
+    const client = new OpenClawHttpChatClient(18789)
 
     const stream = await client.streamChat({
       agentId: 'research',

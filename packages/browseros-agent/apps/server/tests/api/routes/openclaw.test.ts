@@ -434,4 +434,142 @@ describe('createOpenClawRoutes', () => {
       modelId: 'gpt-5.4-mini',
     })
   })
+
+  it('returns json session history for a session key', async () => {
+    const actualOpenClawService = await import(
+      '../../../src/api/services/openclaw/openclaw-service'
+    )
+    const getSessionHistory = mock(async () => ({
+      sessionKey: 'agent:main:main',
+      messages: [{ role: 'assistant', content: 'Ready' }],
+      cursor: 'cursor-2',
+      hasMore: true,
+    }))
+
+    mock.module('../../../src/api/services/openclaw/openclaw-service', () => ({
+      ...actualOpenClawService,
+      getOpenClawService: () =>
+        ({
+          getSessionHistory,
+        }) as never,
+    }))
+
+    const { createOpenClawRoutes } = await import(
+      '../../../src/api/routes/openclaw'
+    )
+    const route = createOpenClawRoutes()
+
+    const response = await route.request(
+      '/session/agent:main:main/history?limit=50&cursor=cursor-1',
+    )
+
+    expect(response.status).toBe(200)
+    expect(getSessionHistory).toHaveBeenCalledWith('agent:main:main', {
+      limit: 50,
+      cursor: 'cursor-1',
+    })
+    expect(await response.json()).toEqual({
+      sessionKey: 'agent:main:main',
+      messages: [{ role: 'assistant', content: 'Ready' }],
+      cursor: 'cursor-2',
+      hasMore: true,
+    })
+  })
+
+  it('returns 404 when session history is missing', async () => {
+    const actualOpenClawService = await import(
+      '../../../src/api/services/openclaw/openclaw-service'
+    )
+    const { OpenClawSessionNotFoundError } = await import(
+      '../../../src/api/services/openclaw/openclaw-http-client'
+    )
+    const getSessionHistory = mock(async () => {
+      throw new OpenClawSessionNotFoundError('missing-session')
+    })
+
+    mock.module('../../../src/api/services/openclaw/openclaw-service', () => ({
+      ...actualOpenClawService,
+      getOpenClawService: () =>
+        ({
+          getSessionHistory,
+        }) as never,
+    }))
+
+    const { createOpenClawRoutes } = await import(
+      '../../../src/api/routes/openclaw'
+    )
+    const route = createOpenClawRoutes()
+
+    const response = await route.request('/session/missing-session/history')
+
+    expect(response.status).toBe(404)
+    expect(await response.json()).toEqual({
+      error: 'session_not_found',
+    })
+  })
+
+  it('streams session history as named sse frames', async () => {
+    const actualOpenClawService = await import(
+      '../../../src/api/services/openclaw/openclaw-service'
+    )
+    const streamSessionHistory = mock(
+      async () =>
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue({
+              type: 'history',
+              data: {
+                sessionKey: 'session-1',
+                messages: [{ role: 'assistant', content: 'Ready' }],
+              },
+            })
+            controller.enqueue({
+              type: 'message',
+              data: {
+                sessionKey: 'session-1',
+                message: { role: 'user', content: 'Hi' },
+                messageSeq: 2,
+              },
+            })
+            controller.close()
+          },
+        }),
+    )
+
+    mock.module('../../../src/api/services/openclaw/openclaw-service', () => ({
+      ...actualOpenClawService,
+      getOpenClawService: () =>
+        ({
+          streamSessionHistory,
+        }) as never,
+    }))
+
+    const { createOpenClawRoutes } = await import(
+      '../../../src/api/routes/openclaw'
+    )
+    const route = createOpenClawRoutes()
+
+    const response = await route.request(
+      '/session/session-1/history?limit=10',
+      {
+        headers: { Accept: 'text/event-stream' },
+      },
+    )
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('Content-Type')).toContain('text/event-stream')
+    expect(response.headers.get('Cache-Control')).toBe('no-cache')
+    expect(response.headers.get('Connection')).toBe('keep-alive')
+    expect(streamSessionHistory).toHaveBeenCalledWith('session-1', {
+      limit: 10,
+      cursor: undefined,
+      signal: expect.any(AbortSignal),
+    })
+    expect(await response.text()).toBe(
+      'event: history\n' +
+        'data: {"sessionKey":"session-1","messages":[{"role":"assistant","content":"Ready"}]}\n\n' +
+        'event: message\n' +
+        'data: {"sessionKey":"session-1","message":{"role":"user","content":"Hi"},"messageSeq":2}\n\n',
+    )
+  })
 })

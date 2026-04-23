@@ -21,10 +21,7 @@ export interface OpenClawChatRequest {
 }
 
 export class OpenClawHttpChatClient {
-  constructor(
-    private readonly hostPort: number,
-    private readonly getToken: () => Promise<string>,
-  ) {}
+  constructor(private readonly hostPort: number) {}
 
   async streamChat(
     input: OpenClawChatRequest,
@@ -40,13 +37,11 @@ export class OpenClawHttpChatClient {
   }
 
   private async fetchChat(input: OpenClawChatRequest): Promise<Response> {
-    const token = await this.getToken()
     const response = await fetch(
       `http://127.0.0.1:${this.hostPort}/v1/chat/completions`,
       {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({

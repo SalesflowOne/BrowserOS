@@ -42,6 +42,11 @@ import {
 } from './openclaw-env'
 import { OpenClawHttpChatClient } from './openclaw-http-chat-client'
 import {
+  OpenClawHttpClient,
+  type OpenClawSessionHistory,
+  type OpenClawSessionHistoryEvent,
+} from './openclaw-http-client'
+import {
   type ResolvedOpenClawProviderConfig,
   resolveSupportedOpenClawProvider,
 } from './openclaw-provider-map'
@@ -119,11 +124,10 @@ export class OpenClawService {
   private runtime: ContainerRuntime
   private cliClient: OpenClawCliClient
   private bootstrapCliClient: OpenClawCliClient
+  private httpClient: OpenClawHttpClient
   private chatClient: OpenClawHttpChatClient
   private openclawDir: string
   private hostPort = OPENCLAW_GATEWAY_CONTAINER_PORT
-  private token: string
-  private tokenLoaded = false
   private lastError: string | null = null
   private browserosServerPort: number
   private resourcesDir: string | null
@@ -136,13 +140,10 @@ export class OpenClawService {
   constructor(config: OpenClawServiceConfig = {}) {
     this.openclawDir = getOpenClawDir()
     this.runtime = new ContainerRuntime(getPodmanRuntime(), this.openclawDir)
-    this.token = crypto.randomUUID()
     this.cliClient = new OpenClawCliClient(this.runtime)
     this.bootstrapCliClient = this.buildBootstrapCliClient()
-    this.chatClient = new OpenClawHttpChatClient(
-      this.hostPort,
-      async () => this.token,
-    )
+    this.httpClient = new OpenClawHttpClient(this.hostPort)
+    this.chatClient = new OpenClawHttpChatClient(this.hostPort)
     this.browserosServerPort =
       config.browserosServerPort ?? DEFAULT_PORTS.server
     this.resourcesDir = config.resourcesDir ?? null
@@ -208,7 +209,6 @@ export class OpenClawService {
       await this.bootstrapCliClient.runOnboard({
         acceptRisk: true,
         authChoice: 'skip',
-        gatewayAuth: 'token',
         gatewayBind: 'lan',
         gatewayPort: OPENCLAW_GATEWAY_CONTAINER_PORT,
         installDaemon: false,
@@ -224,9 +224,6 @@ export class OpenClawService {
 
       logProgress('Validating OpenClaw config...')
       await this.assertConfigValid(this.bootstrapCliClient)
-
-      this.tokenLoaded = false
-      await this.loadTokenFromConfig()
 
       logProgress('Starting OpenClaw gateway...')
       await this.runtime.startGateway(
@@ -248,7 +245,7 @@ export class OpenClawService {
 
       this.controlPlaneStatus = 'connecting'
       logProgress('Probing OpenClaw control plane...')
-      await this.runControlPlaneCall(() => this.cliClient.probe())
+      await this.runControlPlaneCall(() => this.httpClient.probe())
 
       const existingAgents = await this.listAgents()
       logger.info('Fetched existing OpenClaw agents after setup', {
@@ -283,10 +280,7 @@ export class OpenClawService {
       })
 
       await this.runtime.ensureReady(logProgress)
-
-      logProgress('Refreshing gateway auth token...')
-      this.tokenLoaded = false
-      await this.loadTokenFromConfig()
+      await this.ensureAuthModeNone(logProgress)
       await this.ensureStateEnvFile()
 
       await this.ensureGatewayPortAllocated(logProgress)
@@ -296,7 +290,7 @@ export class OpenClawService {
         this.controlPlaneStatus = 'connecting'
         logProgress('Probing OpenClaw control plane...')
         try {
-          await this.runControlPlaneCall(() => this.cliClient.probe())
+          await this.runControlPlaneCall(() => this.httpClient.probe())
           this.lastError = null
           logger.info('OpenClaw gateway already running', {
             hostPort: this.hostPort,
@@ -329,7 +323,7 @@ export class OpenClawService {
 
       this.controlPlaneStatus = 'connecting'
       logProgress('Probing OpenClaw control plane...')
-      await this.runControlPlaneCall(() => this.cliClient.probe())
+      await this.runControlPlaneCall(() => this.httpClient.probe())
       this.lastError = null
       logger.info('OpenClaw gateway started', { hostPort: this.hostPort })
     })
@@ -354,9 +348,7 @@ export class OpenClawService {
 
       this.controlPlaneStatus = 'reconnecting'
       this.stopGatewayLogTail()
-      logProgress('Refreshing gateway auth token...')
-      this.tokenLoaded = false
-      await this.loadTokenFromConfig()
+      await this.ensureAuthModeNone(logProgress)
       await this.ensureStateEnvFile()
       await this.ensureGatewayPortAllocated(logProgress)
       logProgress('Restarting OpenClaw gateway...')
@@ -377,7 +369,7 @@ export class OpenClawService {
       }
 
       logProgress('Probing OpenClaw control plane...')
-      await this.runControlPlaneCall(() => this.cliClient.probe())
+      await this.runControlPlaneCall(() => this.httpClient.probe())
       this.lastError = null
       logProgress('Gateway restarted successfully')
       logger.info('OpenClaw gateway restarted', { hostPort: this.hostPort })
@@ -400,12 +392,10 @@ export class OpenClawService {
         throw new Error('OpenClaw gateway is not ready')
       }
 
-      logProgress('Reloading gateway auth token...')
-      this.tokenLoaded = false
-      await this.loadTokenFromConfig()
+      await this.ensureAuthModeNone(logProgress)
       this.controlPlaneStatus = 'reconnecting'
       logProgress('Reconnecting control plane...')
-      await this.runControlPlaneCall(() => this.cliClient.probe())
+      await this.runControlPlaneCall(() => this.httpClient.probe())
       logProgress('Control plane connected')
     })
   }
@@ -465,7 +455,7 @@ export class OpenClawService {
     if (ready) {
       try {
         const agents = await this.runControlPlaneCall(() =>
-          this.cliClient.listAgents(),
+          this.httpClient.listAgents(),
         )
         agentCount = agents.length
       } catch {
@@ -525,14 +515,15 @@ export class OpenClawService {
     }
 
     const model = provider.model
-    let agent: OpenClawAgentRecord
+    let createdAgentId = name
     try {
-      agent = await this.runControlPlaneCall(() =>
+      const created = await this.runControlPlaneCall(() =>
         this.cliClient.createAgent({
           name,
           model,
         }),
       )
+      createdAgentId = created.agentId
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       if (message.includes('already exists')) {
@@ -541,6 +532,7 @@ export class OpenClawService {
       throw error
     }
 
+    const agent = await this.findAgentById(createdAgentId)
     logger.info('Agent created via CLI', {
       agentId: agent.agentId,
       providerType: input.providerType,
@@ -570,7 +562,7 @@ export class OpenClawService {
   async listAgents(): Promise<OpenClawAgentEntry[]> {
     await this.assertGatewayReady()
     logger.debug('Listing OpenClaw agents')
-    return this.runControlPlaneCall(() => this.cliClient.listAgents())
+    return this.runControlPlaneCall(() => this.httpClient.listAgents())
   }
 
   // ── Chat Stream (HTTP) ───────────────────────────────────────────────
@@ -595,6 +587,26 @@ export class OpenClawService {
         message,
         history,
       }),
+    )
+  }
+
+  async getSessionHistory(
+    sessionKey: string,
+    input: { limit?: number; cursor?: string } = {},
+  ): Promise<OpenClawSessionHistory> {
+    await this.assertGatewayReady()
+    return this.runControlPlaneCall(() =>
+      this.httpClient.getSessionHistory(sessionKey, input),
+    )
+  }
+
+  async streamSessionHistory(
+    sessionKey: string,
+    input: { limit?: number; cursor?: string; signal?: AbortSignal } = {},
+  ): Promise<ReadableStream<OpenClawSessionHistoryEvent>> {
+    await this.assertGatewayReady()
+    return this.runControlPlaneCall(() =>
+      this.httpClient.streamSessionHistory(sessionKey, input),
     )
   }
 
@@ -689,9 +701,7 @@ export class OpenClawService {
 
       try {
         await this.runtime.ensureReady()
-
-        this.tokenLoaded = false
-        await this.loadTokenFromConfig()
+        await this.ensureAuthModeNone()
         await this.ensureStateEnvFile()
 
         const persistedPort = await readPersistedGatewayPort(this.openclawDir)
@@ -712,7 +722,7 @@ export class OpenClawService {
           }
         }
 
-        await this.runControlPlaneCall(() => this.cliClient.probe())
+        await this.runControlPlaneCall(() => this.httpClient.probe())
         logger.info('OpenClaw gateway auto-started')
       } catch (err) {
         logger.warn('OpenClaw auto-start failed', {
@@ -745,10 +755,8 @@ export class OpenClawService {
   private setPort(hostPort: number): void {
     if (hostPort === this.hostPort) return
     this.hostPort = hostPort
-    this.chatClient = new OpenClawHttpChatClient(
-      this.hostPort,
-      async () => this.token,
-    )
+    this.httpClient = new OpenClawHttpClient(this.hostPort)
+    this.chatClient = new OpenClawHttpChatClient(this.hostPort)
   }
 
   private async ensureGatewayPortAllocated(
@@ -801,7 +809,6 @@ export class OpenClawService {
 
   private async runControlPlaneCall<T>(fn: () => Promise<T>): Promise<T> {
     try {
-      await this.ensureTokenLoaded()
       const result = await fn()
       this.controlPlaneStatus = 'connected'
       this.lastGatewayError = null
@@ -821,8 +828,6 @@ export class OpenClawService {
     error: unknown,
   ): OpenClawGatewayRecoveryReason {
     const message = error instanceof Error ? error.message : String(error)
-    if (message.includes('Unauthorized')) return 'token_mismatch'
-    if (message.includes('token')) return 'token_mismatch'
     if (message.includes('not ready')) return 'container_not_ready'
     return 'unknown'
   }
@@ -881,6 +886,10 @@ export class OpenClawService {
       {
         path: 'agents.defaults.thinkingDefault',
         value: 'off',
+      },
+      {
+        path: 'gateway.auth.mode',
+        value: 'none',
       },
       {
         path: 'gateway.controlUi.allowInsecureAuth',
@@ -967,6 +976,17 @@ export class OpenClawService {
     return entries
   }
 
+  private async findAgentById(agentId: string): Promise<OpenClawAgentEntry> {
+    const agents = await this.runControlPlaneCall(() =>
+      this.httpClient.listAgents(),
+    )
+    const agent = agents.find((entry) => entry.agentId === agentId)
+    if (!agent) {
+      throw new Error(`Created agent ${agentId} was not found in agent list`)
+    }
+    return agent
+  }
+
   private async applyCliMutation(action: () => Promise<void>): Promise<void> {
     let retried = false
 
@@ -1024,6 +1044,36 @@ export class OpenClawService {
     }
   }
 
+  private async ensureAuthModeNone(
+    logProgress?: (msg: string) => void,
+  ): Promise<void> {
+    if (!existsSync(this.getStateConfigPath())) {
+      return
+    }
+
+    try {
+      const config = JSON.parse(
+        await readFile(this.getStateConfigPath(), 'utf-8'),
+      ) as {
+        gateway?: {
+          auth?: {
+            mode?: string
+          }
+        }
+      }
+      if (config.gateway?.auth?.mode === 'none') {
+        return
+      }
+
+      logProgress?.('Migrating gateway auth mode to none...')
+      await this.cliClient.setConfig('gateway.auth.mode', 'none')
+    } catch (error) {
+      logger.warn('Failed to migrate gateway.auth.mode to none', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
   private async ensureStateEnvFile(): Promise<void> {
     const envPath = this.getStateEnvPath()
     if (existsSync(envPath)) return
@@ -1042,7 +1092,7 @@ export class OpenClawService {
       hostPort: this.hostPort,
       hostHome: this.openclawDir,
       envFilePath: this.getStateEnvPath(),
-      gatewayToken: this.tokenLoaded ? this.token : undefined,
+      gatewayToken: undefined,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     }
   }
@@ -1145,41 +1195,6 @@ export class OpenClawService {
       providerId: provider.customProvider.providerId,
     })
     return true
-  }
-
-  private async ensureTokenLoaded(): Promise<void> {
-    if (this.tokenLoaded) {
-      return
-    }
-    if (!existsSync(this.getStateConfigPath())) {
-      return
-    }
-
-    await this.loadTokenFromConfig()
-  }
-
-  private async loadTokenFromConfig(): Promise<void> {
-    try {
-      const config = JSON.parse(
-        await readFile(this.getStateConfigPath(), 'utf-8'),
-      ) as {
-        gateway?: {
-          auth?: {
-            token?: unknown
-          }
-        }
-      }
-      const token = config.gateway?.auth?.token
-      if (typeof token === 'string' && token) {
-        this.token = token
-        this.tokenLoaded = true
-        logger.info('Loaded OpenClaw gateway token from mounted config')
-      }
-    } catch (err) {
-      logger.warn('Failed to load OpenClaw gateway token from mounted config', {
-        error: err instanceof Error ? err.message : String(err),
-      })
-    }
   }
 
   private createProgressLogger(

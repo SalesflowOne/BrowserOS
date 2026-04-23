@@ -20,6 +20,7 @@ import {
   OpenClawInvalidAgentNameError,
   OpenClawProtectedAgentError,
 } from '../services/openclaw/errors'
+import { OpenClawSessionNotFoundError } from '../services/openclaw/openclaw-http-client'
 import { isUnsupportedOpenClawProviderError } from '../services/openclaw/openclaw-provider-map'
 import { getOpenClawService } from '../services/openclaw/openclaw-service'
 
@@ -49,6 +50,36 @@ function getPodmanOverrideValidationError(body: {
     return `File is not executable: ${body.podmanPath}`
   }
   return null
+}
+
+function serializeSseFrame(type: string, data: unknown): string {
+  return `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`
+}
+
+function createSseByteStream(
+  stream: ReadableStream<{ type: string; data: unknown }>,
+): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder()
+
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const reader = stream.getReader()
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          controller.enqueue(
+            encoder.encode(serializeSseFrame(value.type, value.data)),
+          )
+        }
+      } finally {
+        await reader.cancel().catch(() => undefined)
+        reader.releaseLock()
+        controller.close()
+      }
+    },
+  })
 }
 
 export function createOpenClawRoutes() {
@@ -338,6 +369,50 @@ export function createOpenClawRoutes() {
         })
         if (isUnsupportedOpenClawProviderError(err)) {
           return c.json({ error: err.message }, 400)
+        }
+        const message = err instanceof Error ? err.message : String(err)
+        return c.json({ error: message }, 500)
+      }
+    })
+
+    .get('/session/:key/history', async (c) => {
+      const key = c.req.param('key')
+      const limitRaw = c.req.query('limit')
+      const cursor = c.req.query('cursor')
+      const limit =
+        limitRaw !== undefined ? Number.parseInt(limitRaw, 10) : undefined
+      const wantsStream = (c.req.header('accept') ?? '').includes(
+        'text/event-stream',
+      )
+
+      try {
+        if (!wantsStream) {
+          const history = await getOpenClawService().getSessionHistory(key, {
+            limit,
+            cursor,
+          })
+          return c.json(history)
+        }
+
+        const eventStream = await getOpenClawService().streamSessionHistory(
+          key,
+          {
+            limit,
+            cursor,
+            signal: c.req.raw.signal,
+          },
+        )
+
+        return new Response(createSseByteStream(eventStream), {
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            Connection: 'keep-alive',
+          },
+        })
+      } catch (err) {
+        if (err instanceof OpenClawSessionNotFoundError) {
+          return c.json({ error: 'session_not_found' }, 404)
         }
         const message = err instanceof Error ? err.message : String(err)
         return c.json({ error: message }, 500)

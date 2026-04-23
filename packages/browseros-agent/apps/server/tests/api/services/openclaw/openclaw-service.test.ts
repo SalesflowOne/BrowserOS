@@ -6,7 +6,6 @@
 import { afterEach, describe, expect, it, mock } from 'bun:test'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { OPENCLAW_CONTAINER_HOME } from '@browseros/shared/constants/openclaw'
@@ -43,11 +42,19 @@ type MutableOpenClawService = OpenClawService & {
     waitForReady?: () => Promise<boolean>
     stopMachineIfSafe?: () => Promise<void>
   }
+  httpClient: {
+    probe?: ReturnType<typeof mock>
+    listAgents?: ReturnType<typeof mock>
+    getSessionHistory?: ReturnType<typeof mock>
+    streamSessionHistory?: ReturnType<typeof mock>
+  }
   cliClient: {
     probe?: ReturnType<typeof mock>
     createAgent?: ReturnType<typeof mock>
+    deleteAgent?: ReturnType<typeof mock>
     getConfig?: ReturnType<typeof mock>
     listAgents?: ReturnType<typeof mock>
+    setConfig?: ReturnType<typeof mock>
     setDefaultModel?: ReturnType<typeof mock>
   }
   bootstrapCliClient: {
@@ -71,17 +78,22 @@ describe('OpenClawService', () => {
 
   it('creates agents through the cli client without role bootstrap files', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'openclaw-service-'))
-    const createAgent = mock(async () => ({
+    const agentRecord = {
       agentId: 'ops',
       name: 'ops',
       workspace: `${OPENCLAW_CONTAINER_HOME}/workspace-ops`,
       model: 'openclaw/default',
-    }))
+    }
+    const createAgent = mock(async () => agentRecord)
+    const listAgents = mock(async () => [agentRecord])
     const service = new OpenClawService() as MutableOpenClawService
 
     service.openclawDir = tempDir
     service.runtime = {
       isReady: async () => true,
+    }
+    service.httpClient = {
+      listAgents,
     }
     service.cliClient = {
       createAgent,
@@ -95,12 +107,8 @@ describe('OpenClawService', () => {
       name: 'ops',
       model: undefined,
     })
-    expect(agent).toEqual({
-      agentId: 'ops',
-      name: 'ops',
-      workspace: `${OPENCLAW_CONTAINER_HOME}/workspace-ops`,
-      model: 'openclaw/default',
-    })
+    expect(listAgents).toHaveBeenCalledTimes(1)
+    expect(agent).toEqual(agentRecord)
     expect(
       existsSync(
         join(tempDir, '.openclaw', 'workspace-ops', '.browseros-role.json'),
@@ -125,8 +133,7 @@ describe('OpenClawService', () => {
     service.runtime = {
       isReady: async () => true,
     }
-    service.cliClient = {
-      getConfig: mock(async () => 'cli-token'),
+    service.httpClient = {
       listAgents: mock(async () => [
         {
           agentId: 'ops',
@@ -159,8 +166,7 @@ describe('OpenClawService', () => {
       getMachineStatus: async () => ({ initialized: true, running: true }),
       isReady: async () => true,
     }
-    service.cliClient = {
-      getConfig: mock(async () => 'cli-token'),
+    service.httpClient = {
       listAgents: mock(async () => [
         {
           agentId: 'main',
@@ -234,9 +240,11 @@ describe('OpenClawService', () => {
       }),
     }
     service.cliClient = {
+      createAgent,
+    }
+    service.httpClient = {
       probe: mock(async () => {}),
       listAgents: mock(async () => []),
-      createAgent,
     }
     service.bootstrapCliClient = {
       runOnboard,
@@ -250,7 +258,6 @@ describe('OpenClawService', () => {
     expect(runOnboard).toHaveBeenCalledWith({
       acceptRisk: true,
       authChoice: 'skip',
-      gatewayAuth: 'token',
       gatewayBind: 'lan',
       gatewayPort: 18789,
       installDaemon: false,
@@ -271,6 +278,10 @@ describe('OpenClawService', () => {
         {
           path: 'gateway.http.endpoints.chatCompletions.enabled',
           value: true,
+        },
+        {
+          path: 'gateway.auth.mode',
+          value: 'none',
         },
       ]),
     )
@@ -330,9 +341,11 @@ describe('OpenClawService', () => {
       waitForReady,
     }
     service.cliClient = {
+      createAgent,
+    }
+    service.httpClient = {
       probe: mock(async () => {}),
       listAgents: mock(async () => []),
-      createAgent,
     }
     service.bootstrapCliClient = {
       runOnboard,
@@ -353,7 +366,7 @@ describe('OpenClawService', () => {
     expect(restartGateway).not.toHaveBeenCalled()
   })
 
-  it('loads the persisted gateway token from the mounted config before control plane calls', async () => {
+  it('migrates persisted gateway auth mode to none before start probes the control plane', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'openclaw-service-'))
     await mkdir(join(tempDir, '.openclaw'), { recursive: true })
     await writeFile(
@@ -361,29 +374,38 @@ describe('OpenClawService', () => {
       JSON.stringify({
         gateway: {
           auth: {
-            token: 'cli-token',
+            mode: 'token',
           },
         },
       }),
     )
+    const setConfig = mock(async () => {})
+    const startGateway = mock(async () => {})
+    const probe = mock(async () => {})
     const service = new OpenClawService() as MutableOpenClawService
 
     service.openclawDir = tempDir
-    service.token = 'random-token'
     service.runtime = {
-      isReady: async () => true,
+      ensureReady: async () => {},
+      isReady: async () => false,
+      startGateway,
+      waitForReady: async () => true,
     }
     service.cliClient = {
-      listAgents: mock(async () => {
-        expect(service.token).toBe('cli-token')
-        return []
-      }),
+      setConfig,
+    }
+    service.httpClient = {
+      probe,
     }
 
-    await service.listAgents()
+    await service.start()
+
+    expect(setConfig).toHaveBeenCalledWith('gateway.auth.mode', 'none')
+    expect(probe).toHaveBeenCalledTimes(1)
+    expect(startGateway).toHaveBeenCalledTimes(1)
   })
 
-  it('caches the loaded gateway token from config across steady-state control plane calls', async () => {
+  it('skips auth mode migration when the persisted config is already none', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'openclaw-service-'))
     await mkdir(join(tempDir, '.openclaw'), { recursive: true })
     await writeFile(
@@ -391,26 +413,31 @@ describe('OpenClawService', () => {
       JSON.stringify({
         gateway: {
           auth: {
-            token: 'cli-token',
+            mode: 'none',
           },
         },
       }),
     )
-    const listAgents = mock(async () => [])
+    const setConfig = mock(async () => {})
+    const probe = mock(async () => {})
     const service = new OpenClawService() as MutableOpenClawService
 
     service.openclawDir = tempDir
     service.runtime = {
+      ensureReady: async () => {},
       isReady: async () => true,
     }
     service.cliClient = {
-      listAgents,
+      setConfig,
+    }
+    service.httpClient = {
+      probe,
     }
 
-    await service.listAgents()
-    await service.listAgents()
+    await service.start()
 
-    expect(listAgents).toHaveBeenCalledTimes(2)
+    expect(setConfig).not.toHaveBeenCalled()
+    expect(probe).toHaveBeenCalledTimes(1)
   })
 
   it('writes provider credentials into the mounted state env file during setup', async () => {
@@ -428,9 +455,11 @@ describe('OpenClawService', () => {
       waitForReady: async () => true,
     }
     service.cliClient = {
-      getConfig: mock(async (path: string) =>
-        path === 'gateway.auth.token' ? 'cli-token' : null,
-      ),
+      createAgent: mock(async () => {
+        throw new Error('createAgent should not be called when main exists')
+      }),
+    }
+    service.httpClient = {
       probe: mock(async () => {}),
       listAgents: mock(async () => [
         {
@@ -439,9 +468,6 @@ describe('OpenClawService', () => {
           workspace: `${OPENCLAW_CONTAINER_HOME}/workspace`,
         },
       ]),
-      createAgent: mock(async () => {
-        throw new Error('createAgent should not be called when main exists')
-      }),
     }
     service.bootstrapCliClient = {
       runOnboard: mock(async () => {}),
@@ -499,9 +525,11 @@ describe('OpenClawService', () => {
       waitForReady: async () => true,
     }
     service.cliClient = {
+      createAgent,
+    }
+    service.httpClient = {
       probe: mock(async () => {}),
       listAgents: mock(async () => []),
-      createAgent,
     }
     service.bootstrapCliClient = {
       runOnboard,
@@ -561,7 +589,7 @@ describe('OpenClawService', () => {
       JSON.stringify({
         gateway: {
           auth: {
-            token: 'cli-token',
+            mode: 'none',
           },
         },
       }),
@@ -579,7 +607,7 @@ describe('OpenClawService', () => {
       startGateway,
       waitForReady,
     }
-    service.cliClient = {
+    service.httpClient = {
       probe,
     }
 
@@ -592,7 +620,7 @@ describe('OpenClawService', () => {
         hostPort: expect.any(Number),
         hostHome: tempDir,
         envFilePath: join(tempDir, '.openclaw', '.env'),
-        gatewayToken: 'cli-token',
+        gatewayToken: undefined,
       }),
       expect.any(Function),
     )
@@ -608,7 +636,7 @@ describe('OpenClawService', () => {
       JSON.stringify({
         gateway: {
           auth: {
-            token: 'cli-token',
+            mode: 'none',
           },
         },
       }),
@@ -639,7 +667,7 @@ describe('OpenClawService', () => {
       startGateway,
       waitForReady,
     }
-    service.cliClient = {
+    service.httpClient = {
       probe,
     }
 
@@ -663,7 +691,7 @@ describe('OpenClawService', () => {
       JSON.stringify({
         gateway: {
           auth: {
-            token: 'cli-token',
+            mode: 'none',
           },
         },
       }),
@@ -681,7 +709,7 @@ describe('OpenClawService', () => {
       startGateway,
       waitForReady,
     }
-    service.cliClient = {
+    service.httpClient = {
       probe,
     }
 
@@ -701,7 +729,7 @@ describe('OpenClawService', () => {
       JSON.stringify({
         gateway: {
           auth: {
-            token: 'cli-token',
+            mode: 'none',
           },
         },
       }),
@@ -717,7 +745,7 @@ describe('OpenClawService', () => {
       restartGateway,
       waitForReady,
     }
-    service.cliClient = {
+    service.httpClient = {
       probe,
     }
 
@@ -729,7 +757,7 @@ describe('OpenClawService', () => {
         hostPort: expect.any(Number),
         hostHome: tempDir,
         envFilePath: join(tempDir, '.openclaw', '.env'),
-        gatewayToken: 'cli-token',
+        gatewayToken: undefined,
       }),
       expect.any(Function),
     )
@@ -745,23 +773,12 @@ describe('OpenClawService', () => {
       JSON.stringify({
         gateway: {
           auth: {
-            token: 'cli-token',
+            mode: 'none',
           },
         },
       }),
     )
-    const occupiedServer = createServer()
-    const occupiedPort = await new Promise<number>((resolve, reject) => {
-      occupiedServer.once('error', reject)
-      occupiedServer.listen(0, '127.0.0.1', () => {
-        const address = occupiedServer.address()
-        if (!address || typeof address === 'string') {
-          reject(new Error('failed to allocate test port'))
-          return
-        }
-        resolve(address.port)
-      })
-    })
+    const occupiedPort = 42137
     await writeFile(
       join(tempDir, '.openclaw', 'runtime-state.json'),
       `${JSON.stringify({ gatewayPort: occupiedPort }, null, 2)}\n`,
@@ -772,28 +789,18 @@ describe('OpenClawService', () => {
     const service = new OpenClawService() as MutableOpenClawService
 
     service.openclawDir = tempDir
+    ;(service as MutableOpenClawService & { hostPort: number }).hostPort =
+      occupiedPort
     service.runtime = {
       isReady: async (hostPort?: number) => hostPort === occupiedPort,
       restartGateway,
       waitForReady,
     }
-    service.cliClient = {
+    service.httpClient = {
       probe,
     }
 
-    try {
-      await service.restart()
-    } finally {
-      await new Promise<void>((resolve, reject) => {
-        occupiedServer.close((error) => {
-          if (error) {
-            reject(error)
-            return
-          }
-          resolve()
-        })
-      })
-    }
+    await service.restart()
 
     expect(restartGateway).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -801,6 +808,35 @@ describe('OpenClawService', () => {
       }),
       expect.any(Function),
     )
+  })
+
+  it('reconnects the control plane through the loopback http client', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'openclaw-service-'))
+    await mkdir(join(tempDir, '.openclaw'), { recursive: true })
+    await writeFile(
+      join(tempDir, '.openclaw', 'openclaw.json'),
+      JSON.stringify({
+        gateway: {
+          auth: {
+            mode: 'none',
+          },
+        },
+      }),
+    )
+    const probe = mock(async () => {})
+    const service = new OpenClawService() as MutableOpenClawService
+
+    service.openclawDir = tempDir
+    service.runtime = {
+      isReady: async () => true,
+    }
+    service.httpClient = {
+      probe,
+    }
+
+    await service.reconnectControlPlane()
+
+    expect(probe).toHaveBeenCalledTimes(1)
   })
 
   it('stop calls runtime.stopGateway', async () => {
@@ -874,7 +910,7 @@ describe('OpenClawService', () => {
       JSON.stringify({
         gateway: {
           auth: {
-            token: 'cli-token',
+            mode: 'none',
           },
         },
       }),
@@ -894,7 +930,7 @@ describe('OpenClawService', () => {
       startGateway,
       waitForReady,
     }
-    service.cliClient = {
+    service.httpClient = {
       probe,
     }
 
@@ -907,7 +943,7 @@ describe('OpenClawService', () => {
         hostPort: expect.any(Number),
         hostHome: tempDir,
         envFilePath: join(tempDir, '.openclaw', '.env'),
-        gatewayToken: 'cli-token',
+        gatewayToken: undefined,
       }),
     )
     expect(waitForReady).toHaveBeenCalledTimes(1)
@@ -1040,12 +1076,13 @@ describe('OpenClawService', () => {
       'OPENROUTER_API_KEY=or-key\n',
       'utf-8',
     )
-    const createAgent = mock(async () => ({
+    const agentRecord = {
       agentId: 'research',
       name: 'research',
       workspace: `${OPENCLAW_CONTAINER_HOME}/workspace-research`,
       model: 'openrouter/anthropic/claude-haiku-4.5',
-    }))
+    }
+    const createAgent = mock(async () => agentRecord)
     const restart = mock(async () => {})
     const service = new OpenClawService() as MutableOpenClawService
 
@@ -1056,6 +1093,9 @@ describe('OpenClawService', () => {
     }
     service.cliClient = {
       createAgent,
+    }
+    service.httpClient = {
+      listAgents: mock(async () => [agentRecord]),
     }
 
     await service.createAgent({
@@ -1088,12 +1128,13 @@ describe('OpenClawService', () => {
     )
     await writeFile(join(tempDir, '.openclaw', '.env'), '', 'utf-8')
 
-    const createAgent = mock(async () => ({
+    const agentRecord = {
       agentId: 'research',
       name: 'research',
       workspace: `${OPENCLAW_CONTAINER_HOME}/workspace-research`,
       model: 'kimi-k2-5/accounts/fireworks/models/kimi-k2p5',
-    }))
+    }
+    const createAgent = mock(async () => agentRecord)
     const restart = mock(async () => {})
     const service = new OpenClawService() as MutableOpenClawService
 
@@ -1104,6 +1145,9 @@ describe('OpenClawService', () => {
     }
     service.cliClient = {
       createAgent,
+    }
+    service.httpClient = {
+      listAgents: mock(async () => [agentRecord]),
     }
 
     await service.createAgent({
@@ -1188,12 +1232,13 @@ describe('OpenClawService', () => {
     )
     await writeFile(join(tempDir, '.openclaw', '.env'), '', 'utf-8')
 
-    const createAgent = mock(async () => ({
+    const agentRecord = {
       agentId: 'research',
       name: 'research',
       workspace: `${OPENCLAW_CONTAINER_HOME}/workspace-research`,
       model: 'kimi-k2-5/accounts/fireworks/models/kimi-k2p5',
-    }))
+    }
+    const createAgent = mock(async () => agentRecord)
     const restart = mock(async () => {})
     const service = new OpenClawService() as MutableOpenClawService
 
@@ -1204,6 +1249,9 @@ describe('OpenClawService', () => {
     }
     service.cliClient = {
       createAgent,
+    }
+    service.httpClient = {
+      listAgents: mock(async () => [agentRecord]),
     }
 
     await service.createAgent({
