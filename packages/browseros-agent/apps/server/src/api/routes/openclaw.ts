@@ -79,7 +79,7 @@ export function createOpenClawRoutes() {
         if (isUnsupportedOpenClawProviderError(err)) {
           return c.json({ error: err.message }, 400)
         }
-        if (message.includes('Podman is not available')) {
+        if (message.includes('VM runtime is not available')) {
           return c.json({ error: message }, 503)
         }
         return c.json({ error: message }, 500)

@@ -38,7 +38,7 @@ export function generateLimaYaml(cfg: LimaConfigInput): string {
     '    mountPoint: "/mnt/browseros/cache/images"',
     '    writable: false',
     'portForwards:',
-    '  - guestSocket: "/run/podman/podman.sock"',
+    '  - guestSocket: "/var/run/containerd/containerd.sock"',
     `    hostSocket: "${cfg.socketHostPath}"`,
     'user:',
     '  name: "browseros"',

@@ -35,16 +35,6 @@ export class ContainerCliError extends VmError {
   }
 }
 
-export class PodmanCommandError extends VmError {
-  constructor(
-    command: string,
-    public readonly exitCode: number,
-    public readonly stderr: string,
-  ) {
-    super(`${command} failed with exit code ${exitCode}: ${stderr}`)
-  }
-}
-
 export class ImageLoadError extends VmError {
   constructor(
     public readonly imageRef: string,

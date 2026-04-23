@@ -125,7 +125,7 @@ describe('LimaCli', () => {
     const lines: string[] = []
 
     await expect(
-      cli.shell('browseros-vm', ['podman', 'ps'], {
+      cli.shell('browseros-vm', ['nerdctl', 'ps'], {
         onStdout: (line) => lines.push(`stdout:${line}`),
         onStderr: (line) => lines.push(`stderr:${line}`),
       }),
@@ -134,7 +134,7 @@ describe('LimaCli', () => {
     expect(lines).toContain('stdout:out')
     expect(lines).toContain('stderr:err')
     await expect(readFile(logPath, 'utf8')).resolves.toContain(
-      `ARGS:-F ${sshConfig} lima-browseros-vm 'podman' 'ps'`,
+      `ARGS:-F ${sshConfig} lima-browseros-vm 'nerdctl' 'ps'`,
     )
   })
 

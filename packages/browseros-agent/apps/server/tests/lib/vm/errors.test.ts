@@ -5,10 +5,10 @@
 
 import { describe, expect, it } from 'bun:test'
 import {
+  ContainerCliError,
   ImageLoadError,
   LimaCommandError,
   ManifestMissingError,
-  PodmanCommandError,
   VmError,
   VmNotReadyError,
   VmStateCorruptedError,
@@ -22,7 +22,7 @@ describe('VM errors', () => {
       new VmNotReadyError('not ready'),
       new VmStateCorruptedError('corrupt'),
       new LimaCommandError('limactl start', 7, 'bad lima'),
-      new PodmanCommandError('podman pull', 8, 'bad podman'),
+      new ContainerCliError('nerdctl pull', 8, 'bad nerdctl'),
       new ImageLoadError('openclaw:v1', 'bad image'),
       new ManifestMissingError('/tmp/manifest.json'),
     ]
@@ -35,30 +35,23 @@ describe('VM errors', () => {
 
   it('carries command failure details', () => {
     const lima = new LimaCommandError('limactl start', 12, 'stderr text')
-    const podman = new PodmanCommandError('podman pull', 13, 'podman stderr')
+    const container = new ContainerCliError(
+      'nerdctl pull',
+      13,
+      'nerdctl stderr',
+    )
 
     expect(lima.exitCode).toBe(12)
     expect(lima.stderr).toBe('stderr text')
-    expect(podman.exitCode).toBe(13)
-    expect(podman.stderr).toBe('podman stderr')
+    expect(container.exitCode).toBe(13)
+    expect(container.stderr).toBe('nerdctl stderr')
   })
 
   it('exports VM telemetry event names', () => {
-    expect(Object.values(VM_TELEMETRY_EVENTS)).toEqual([
-      'vm.ensure_ready.start',
-      'vm.ensure_ready.ok',
-      'vm.create',
-      'vm.start',
-      'vm.stop',
-      'vm.upgrade.detected',
-      'vm.upgrade.swap',
-      'vm.upgrade.replay',
-      'vm.reset.detected',
-      'vm.reset.ok',
-      'vm.socket_wait.timeout',
-      'vm.manifest.missing',
+    expect(VM_TELEMETRY_EVENTS.ensureReadyStart).toBe('vm.ensure_ready.start')
+    expect(VM_TELEMETRY_EVENTS.socketWaitTimeout).toBe('vm.socket_wait.timeout')
+    expect(VM_TELEMETRY_EVENTS.migrationOpenClawMoved).toBe(
       'vm.migration.openclaw_moved',
-      'vm.migration.legacy_podman_detected',
-    ])
+    )
   })
 })

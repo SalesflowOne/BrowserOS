@@ -7,11 +7,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
-import { PodmanShell } from '../../src/lib/podman'
+import { ContainerCli } from '../../src/lib/container'
 import { LimaCli, type VmManifest, VmRuntime } from '../../src/lib/vm'
 import {
   getCachedManifestPath,
-  getLimaSocketPath,
+  getContainerdSocketPath,
   VM_NAME,
 } from '../../src/lib/vm/paths'
 
@@ -59,25 +59,25 @@ describe('BrowserOS VM live smoke', () => {
         socketTimeoutMs: 5 * 60 * 1000,
         socketPollMs: 1000,
       })
-      const shell = new PodmanShell({
+      const cli = new ContainerCli({
         limactlPath,
         limaHome,
         vmName: VM_NAME,
       })
 
       await runtime.ensureReady()
-      expect((await stat(getLimaSocketPath(root))).isSocket()).toBe(true)
-      const podmanInfoOutput: string[] = []
-      const podmanInfoExit = await runtime.runCommand(['podman', 'info'], {
-        onOutput: (line) => podmanInfoOutput.push(line),
+      expect((await stat(getContainerdSocketPath(root))).isSocket()).toBe(true)
+      const nerdctlInfoOutput: string[] = []
+      const nerdctlInfoExit = await runtime.runCommand(['nerdctl', 'info'], {
+        onOutput: (line) => nerdctlInfoOutput.push(line),
       })
-      if (podmanInfoExit !== 0) {
+      if (nerdctlInfoExit !== 0) {
         throw new Error(
-          `podman info failed with exit ${podmanInfoExit}:\n${podmanInfoOutput.join('\n')}`,
+          `nerdctl info failed with exit ${nerdctlInfoExit}:\n${nerdctlInfoOutput.join('\n')}`,
         )
       }
 
-      await shell.pullImage('docker.io/library/hello-world:latest')
+      await cli.pullImage('docker.io/library/hello-world:latest')
 
       const secondStart = Date.now()
       await runtime.ensureReady()

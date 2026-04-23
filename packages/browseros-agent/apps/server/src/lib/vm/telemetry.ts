@@ -24,7 +24,6 @@ export const VM_TELEMETRY_EVENTS = {
   manifestCompared: 'vm.manifest.compared',
   manifestWritten: 'vm.manifest.written',
   migrationOpenClawMoved: 'vm.migration.openclaw_moved',
-  migrationLegacyPodmanDetected: 'vm.migration.legacy_podman_detected',
   limaSpawn: 'vm.lima.spawn',
   limaExit: 'vm.lima.exit',
   limaStderrChunk: 'vm.lima.stderr_chunk',
