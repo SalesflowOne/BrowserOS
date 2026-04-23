@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { VmManifest } from '@browseros/build-tools/scripts/common/manifest'
+import { logger } from '../../../src/lib/logger'
 import { VmNotReadyError } from '../../../src/lib/vm/errors'
 import {
   compressedDiskPath,
@@ -15,6 +16,7 @@ import {
   getLimaSocketPath,
   VM_NAME,
 } from '../../../src/lib/vm/paths'
+import { VM_TELEMETRY_EVENTS } from '../../../src/lib/vm/telemetry'
 import { VmRuntime } from '../../../src/lib/vm/vm-runtime'
 import { fakeLimactl } from '../../__helpers__/fake-limactl'
 
@@ -214,6 +216,86 @@ describe('VmRuntime', () => {
     await expect(runtime.ensureReady()).rejects.toThrow(VmNotReadyError)
   })
 
+  it('exposes a reset stub with a follow-up-plan message', async () => {
+    const limactlPath = await fakeLimactl({}, logPath)
+    const runtime = new VmRuntime({
+      limactlPath,
+      limaHome,
+      browserosRoot: root,
+    })
+
+    await expect(runtime.reset('bad disk')).rejects.toThrow(
+      'VmRuntime.reset is not implemented yet',
+    )
+  })
+
+  it('logs version mismatch and keeps using the existing VM', async () => {
+    await writeInstalledManifest(root, '2026.04.21')
+    const limactlPath = await fakeLimactl(
+      {
+        list: {
+          stdout: JSON.stringify([
+            { name: VM_NAME, status: 'Running', dir: limaHome },
+          ]),
+        },
+      },
+      logPath,
+    )
+    const runtime = new VmRuntime({
+      limactlPath,
+      limaHome,
+      browserosRoot: root,
+      arch: 'arm64',
+    })
+    socketServer = await createSocket(getLimaSocketPath(root))
+    const originalWarn = logger.warn
+    const warnings: Array<{
+      message: string
+      meta?: Record<string, unknown>
+    }> = []
+    logger.warn = (message, meta) => warnings.push({ message, meta })
+
+    try {
+      await runtime.ensureReady()
+    } finally {
+      logger.warn = originalWarn
+    }
+
+    expect(warnings).toContainEqual({
+      message: VM_TELEMETRY_EVENTS.upgradeDetected,
+      meta: { from: '2026.04.21', to: '2026.04.22' },
+    })
+    await expect(
+      readFile(getInstalledManifestPath(root), 'utf8'),
+    ).resolves.toContain('2026.04.22')
+  })
+
+  it('does not auto-reset when socket readiness fails', async () => {
+    const limactlPath = await fakeLimactl(
+      { list: { stdout: '' }, create: {}, start: {} },
+      logPath,
+    )
+    const runtime = new VmRuntime({
+      limactlPath,
+      limaHome,
+      browserosRoot: root,
+      arch: 'arm64',
+      socketTimeoutMs: 10,
+      socketPollMs: 1,
+      decompressDisk: async (_from, to) => {
+        await writeFile(to, 'qcow2')
+      },
+    })
+    let resetCalled = false
+    runtime.reset = async () => {
+      resetCalled = true
+      throw new Error('reset called')
+    }
+
+    await expect(runtime.ensureReady()).rejects.toThrow(VmNotReadyError)
+    expect(resetCalled).toBe(false)
+  })
+
   it('delegates runCommand and listRunningContainers through limactl shell', async () => {
     const limactlPath = await fakeLimactl(
       { shell: { stdout: 'gateway\nworker\n' } },
@@ -269,10 +351,16 @@ async function writeCachedManifest(root: string): Promise<void> {
   await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`)
 }
 
-async function writeInstalledManifest(root: string): Promise<void> {
+async function writeInstalledManifest(
+  root: string,
+  vmVersion = manifest.vmVersion,
+): Promise<void> {
   const manifestPath = getInstalledManifestPath(root)
   await mkdir(dirname(manifestPath), { recursive: true })
-  await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`)
+  await writeFile(
+    manifestPath,
+    `${JSON.stringify({ ...manifest, vmVersion })}\n`,
+  )
 }
 
 async function createSocket(

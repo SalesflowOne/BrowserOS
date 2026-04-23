@@ -11,7 +11,7 @@ import { pipeline } from 'node:stream/promises'
 import * as zlib from 'node:zlib'
 import type { VmManifest } from '@browseros/build-tools/scripts/common/manifest'
 import { logger } from '../logger'
-import { LimaCommandError, VmNotReadyError } from './errors'
+import { LimaCommandError, VmError, VmNotReadyError } from './errors'
 import { LimaCli } from './lima-cli'
 import { generateLimaYaml } from './lima-config'
 import {
@@ -30,6 +30,7 @@ import {
   getVmStateDir,
   VM_NAME,
 } from './paths'
+import { VM_TELEMETRY_EVENTS } from './telemetry'
 
 export type LogFn = (msg: string) => void
 
@@ -74,11 +75,10 @@ export class VmRuntime {
     } else if (existing.status !== 'Running') {
       onLog?.('Starting BrowserOS VM...')
       await this.cli.start(VM_NAME)
-    } else if (versionComparison !== 'same') {
-      logger.warn('BrowserOS VM manifest version mismatch; using existing VM', {
-        installed: installed?.vmVersion ?? null,
-        cached: cached.vmVersion,
-        comparison: versionComparison,
+    } else if (versionComparison === 'upgrade') {
+      logger.warn(VM_TELEMETRY_EVENTS.upgradeDetected, {
+        from: installed?.vmVersion ?? null,
+        to: cached.vmVersion,
       })
     }
 
@@ -148,6 +148,14 @@ export class VmRuntime {
         return
       }
     }
+  }
+
+  async reset(_reason: string): Promise<never> {
+    throw notImplemented('VmRuntime.reset')
+  }
+
+  async performUpgrade(): Promise<never> {
+    throw notImplemented('VmRuntime.performUpgrade')
   }
 
   async isReady(): Promise<boolean> {
@@ -227,6 +235,12 @@ export class VmRuntime {
   private socketPath(): string {
     return getLimaSocketPath(this.deps.browserosRoot)
   }
+}
+
+function notImplemented(feature: string): VmError {
+  return new VmError(
+    `${feature} is not implemented yet - see WS4 follow-up plan`,
+  )
 }
 
 async function hasNonZeroFile(path: string): Promise<boolean> {
