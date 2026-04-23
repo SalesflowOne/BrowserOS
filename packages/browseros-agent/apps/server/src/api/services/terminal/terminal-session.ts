@@ -2,7 +2,7 @@ import {
   OPENCLAW_CONTAINER_HOME,
   OPENCLAW_TERMINAL_SHELL,
 } from '@browseros/shared/constants/openclaw'
-import { buildSystemNerdctlCommand } from '../../../lib/container'
+import { buildNerdctlCommand } from '../../../lib/container'
 import { logger } from '../../../lib/logger'
 
 export const TERMINAL_HOME_DIR = OPENCLAW_CONTAINER_HOME
@@ -37,7 +37,7 @@ export function buildTerminalExecCommand(
     'shell',
     vmName,
     '--',
-    ...buildSystemNerdctlCommand([
+    ...buildNerdctlCommand([
       'exec',
       '-it',
       '-w',

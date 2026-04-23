@@ -4,14 +4,20 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { logger } from '../../../src/lib/logger'
 import { VmNotReadyError } from '../../../src/lib/vm/errors'
 import type { VmManifest } from '../../../src/lib/vm/manifest'
 import {
   getCachedManifestPath,
-  getContainerdSocketPath,
   getInstalledManifestPath,
   VM_NAME,
 } from '../../../src/lib/vm/paths'
@@ -48,41 +54,40 @@ describe('VmRuntime', () => {
   let limaHome: string
   let logPath: string
   let templatePath: string
-  let socketServer: ReturnType<typeof Bun.listen> | null
 
   beforeEach(async () => {
     root = await mkdtemp('/tmp/vmrt-')
     limaHome = join(root, 'lima')
     logPath = join(root, 'limactl.log')
     templatePath = join(root, 'browseros-vm.yaml')
-    socketServer = null
     await writeCachedManifest(root)
     await writeFile(templatePath, 'minimumLimaVersion: 2.0.0\nmounts: []\n')
   })
 
   afterEach(async () => {
-    socketServer?.stop(true)
     await rm(root, { recursive: true, force: true })
   })
 
-  it('provisions a fresh VM, waits for the socket, and installs the manifest', async () => {
+  it('provisions a fresh VM, waits for rootless nerdctl, and installs the manifest', async () => {
     const limactlPath = await fakeLimactl(
       { list: { stdout: '' }, create: {}, start: {} },
       logPath,
     )
+    const sshPath = await prepareReadySsh(limaHome, logPath)
     const runtime = new VmRuntime({
       limactlPath,
       limaHome,
+      sshPath,
       templatePath,
       browserosRoot: root,
     })
-    socketServer = await createSocket(getContainerdSocketPath(root))
 
     await runtime.ensureReady()
 
     const log = await readFile(logPath, 'utf8')
     expect(log).toContain(`ARGS:create --tty=false --name=${VM_NAME}`)
     expect(log).toContain(`ARGS:start --tty=false ${VM_NAME}`)
+    expect(log).toContain(`lima-${VM_NAME} 'nerdctl' 'info'`)
     await expect(
       readFile(getInstalledManifestPath(root), 'utf8'),
     ).resolves.toContain(manifest.updatedAt)
@@ -105,12 +110,13 @@ describe('VmRuntime', () => {
       },
       logPath,
     )
+    const sshPath = await prepareReadySsh(limaHome, logPath)
     const runtime = new VmRuntime({
       limactlPath,
       limaHome,
+      sshPath,
       browserosRoot: root,
     })
-    socketServer = await createSocket(getContainerdSocketPath(root))
 
     await runtime.ensureReady()
 
@@ -133,12 +139,13 @@ describe('VmRuntime', () => {
       },
       logPath,
     )
+    const sshPath = await prepareReadySsh(limaHome, logPath)
     const runtime = new VmRuntime({
       limactlPath,
       limaHome,
+      sshPath,
       browserosRoot: root,
     })
-    socketServer = await createSocket(getContainerdSocketPath(root))
 
     await runtime.ensureReady()
 
@@ -163,14 +170,8 @@ describe('VmRuntime', () => {
       },
       logPath,
     )
-    const sshPath = await fakeSsh({ stdout: 'provisioned:old\n' }, logPath)
-    await mkdir(join(limaHome, VM_NAME), { recursive: true })
-    await writeFile(join(limaHome, VM_NAME, 'ssh.config'), '')
-    setTimeout(() => {
-      void createSocket(getContainerdSocketPath(root)).then((server) => {
-        socketServer = server
-      })
-    }, 10)
+    const sshPath = await fakeRootfulThenReadySsh(root, logPath)
+    await writeSshConfig(limaHome)
     const runtime = new VmRuntime({
       limactlPath,
       limaHome,
@@ -182,6 +183,10 @@ describe('VmRuntime', () => {
     await runtime.ensureReady()
 
     const log = await readFile(logPath, 'utf8')
+    expect(log).toContain(`lima-${VM_NAME} 'nerdctl' 'info'`)
+    expect(log).toContain(
+      `lima-${VM_NAME} 'sh' '-lc' 'cat /etc/browseros-vm-version 2>/dev/null || true'`,
+    )
     expect(log).toContain(`ARGS:stop ${VM_NAME}`)
     expect(log).toContain(`ARGS:delete --force ${VM_NAME}`)
     expect(log).toContain(`ARGS:create --tty=false --name=${VM_NAME}`)
@@ -213,18 +218,20 @@ describe('VmRuntime', () => {
     await expect(runtime.ensureReady()).rejects.toThrow('Lima template path')
   })
 
-  it('throws VmNotReadyError when the socket never appears', async () => {
+  it('throws VmNotReadyError when rootless nerdctl never becomes ready', async () => {
     const limactlPath = await fakeLimactl(
       { list: { stdout: '' }, create: {}, start: {} },
       logPath,
     )
+    const sshPath = await prepareFailingSsh(limaHome, logPath)
     const runtime = new VmRuntime({
       limactlPath,
       limaHome,
+      sshPath,
       templatePath,
       browserosRoot: root,
-      socketTimeoutMs: 10,
-      socketPollMs: 1,
+      readinessTimeoutMs: 10,
+      readinessPollMs: 1,
     })
 
     await expect(runtime.ensureReady()).rejects.toThrow(VmNotReadyError)
@@ -255,13 +262,14 @@ describe('VmRuntime', () => {
       },
       logPath,
     )
+    const sshPath = await prepareReadySsh(limaHome, logPath)
     const runtime = new VmRuntime({
       limactlPath,
       limaHome,
+      sshPath,
       templatePath,
       browserosRoot: root,
     })
-    socketServer = await createSocket(getContainerdSocketPath(root))
     const originalWarn = logger.warn
     const warnings: Array<{
       message: string
@@ -297,31 +305,34 @@ describe('VmRuntime', () => {
       },
       logPath,
     )
+    const sshPath = await prepareReadySsh(limaHome, logPath)
     const runtime = new VmRuntime({
       limactlPath,
       limaHome,
+      sshPath,
       templatePath,
       browserosRoot: root,
     })
-    socketServer = await createSocket(getContainerdSocketPath(root))
 
     await runtime.ensureReady()
 
     expect(await readInstalledUpdatedAt(root)).toBe('2026-04-23T00:00:00.000Z')
   })
 
-  it('does not auto-reset when socket readiness fails', async () => {
+  it('does not auto-reset when rootless nerdctl readiness fails', async () => {
     const limactlPath = await fakeLimactl(
       { list: { stdout: '' }, create: {}, start: {} },
       logPath,
     )
+    const sshPath = await prepareFailingSsh(limaHome, logPath)
     const runtime = new VmRuntime({
       limactlPath,
       limaHome,
+      sshPath,
       templatePath,
       browserosRoot: root,
-      socketTimeoutMs: 10,
-      socketPollMs: 1,
+      readinessTimeoutMs: 10,
+      readinessPollMs: 1,
     })
     let resetCalled = false
     runtime.reset = async () => {
@@ -402,14 +413,61 @@ async function readInstalledUpdatedAt(root: string): Promise<string> {
   return (JSON.parse(raw) as VmManifest).updatedAt
 }
 
-async function createSocket(
-  path: string,
-): Promise<ReturnType<typeof Bun.listen>> {
-  await mkdir(dirname(path), { recursive: true })
-  return Bun.listen({
-    unix: path,
-    socket: {
-      data() {},
+async function prepareReadySsh(
+  limaHome: string,
+  logPath: string,
+): Promise<string> {
+  await writeSshConfig(limaHome)
+  return fakeSsh({}, logPath)
+}
+
+async function prepareFailingSsh(
+  limaHome: string,
+  logPath: string,
+): Promise<string> {
+  await writeSshConfig(limaHome)
+  return fakeSsh(
+    {
+      stderr:
+        'rootless containerd not running? stat /run/user/501/containerd-rootless: no such file or directory',
+      exit: 1,
     },
-  })
+    logPath,
+  )
+}
+
+async function writeSshConfig(limaHome: string): Promise<void> {
+  await mkdir(join(limaHome, VM_NAME), { recursive: true })
+  await writeFile(join(limaHome, VM_NAME, 'ssh.config'), '')
+}
+
+async function fakeRootfulThenReadySsh(
+  root: string,
+  logPath: string,
+): Promise<string> {
+  const path = join(root, 'ssh-rootful-then-ready')
+  const counterPath = join(root, 'ssh-rootful-then-ready.count')
+  const body = `#!/usr/bin/env bash
+set -u
+echo "ARGS:$*" >> "${logPath}"
+count="$(cat "${counterPath}" 2>/dev/null || echo 0)"
+next=$((count + 1))
+printf '%s' "$next" > "${counterPath}"
+case "$count" in
+  0)
+    echo "rootless containerd not running" >&2
+    exit 1
+    ;;
+  1)
+    printf 'runtime:containerd\\n'
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+`
+  await writeFile(path, body)
+  await chmod(path, 0o755)
+  return path
 }

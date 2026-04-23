@@ -49,7 +49,9 @@ describe('VM errors', () => {
 
   it('exports VM telemetry event names', () => {
     expect(VM_TELEMETRY_EVENTS.ensureReadyStart).toBe('vm.ensure_ready.start')
-    expect(VM_TELEMETRY_EVENTS.socketWaitTimeout).toBe('vm.socket_wait.timeout')
+    expect(VM_TELEMETRY_EVENTS.nerdctlWaitTimeout).toBe(
+      'vm.nerdctl_wait.timeout',
+    )
     expect(VM_TELEMETRY_EVENTS.migrationOpenClawMoved).toBe(
       'vm.migration.openclaw_moved',
     )

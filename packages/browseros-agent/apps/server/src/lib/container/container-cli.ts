@@ -8,8 +8,8 @@ import { ContainerCliError } from '../vm/errors'
 import { LimaCli } from '../vm/lima-cli'
 import type { ContainerSpec, LogFn, MountSpec, PortMapping } from './types'
 
-export function buildSystemNerdctlCommand(args: string[]): string[] {
-  return ['sudo', 'nerdctl', ...args]
+export function buildNerdctlCommand(args: string[]): string[] {
+  return ['nerdctl', ...args]
 }
 
 export interface ContainerCliConfig {
@@ -95,7 +95,7 @@ export class ContainerCli {
   tailLogs(name: string, onLine: LogFn): () => void {
     const proc = this.lima.spawnShell(
       this.cfg.vmName,
-      buildSystemNerdctlCommand(['logs', '-f', '-n', '0', name]),
+      buildNerdctlCommand(['logs', '-f', '-n', '0', name]),
       { onStdout: onLine, onStderr: onLine },
     )
 
@@ -115,7 +115,7 @@ export class ContainerCli {
     const stderrLines: string[] = []
     const exitCode = await this.lima.shell(
       this.cfg.vmName,
-      buildSystemNerdctlCommand(args),
+      buildNerdctlCommand(args),
       {
         onStdout: (line) => {
           stdoutLines.push(line)

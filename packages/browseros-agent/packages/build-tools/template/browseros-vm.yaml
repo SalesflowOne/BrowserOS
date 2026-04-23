@@ -22,8 +22,8 @@ images:
 mounts: []
 
 containerd:
-  system: true
-  user: false
+  system: false
+  user: true
 
 provision:
 - mode: system
@@ -36,19 +36,15 @@ provision:
     systemctl disable --now unattended-upgrades.service apt-daily.timer apt-daily-upgrade.timer || true
     systemctl disable --now snapd.service snapd.socket snapd.seeded.service || true
 
-    printf 'runtime:containerd\nprovisioned:%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /etc/browseros-vm-version
+    printf 'runtime:containerd-rootless\nprovisioned:%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /etc/browseros-vm-version
     touch /etc/browseros-vm-provisioned
 
 probes:
 - script: |
     #!/bin/bash
     set -eux -o pipefail
-    if ! timeout 60s bash -c 'until sudo nerdctl info >/dev/null 2>&1; do sleep 2; done'; then
+    if ! timeout 60s bash -c 'until nerdctl info >/dev/null 2>&1; do sleep 2; done'; then
       echo >&2 "nerdctl is not ready after 60s"
       exit 1
     fi
   hint: See /var/log/cloud-init-output.log inside the guest
-
-portForwards:
-- guestSocket: "/var/run/containerd/containerd.sock"
-  hostSocket: "{{.Dir}}/sock/containerd.sock"

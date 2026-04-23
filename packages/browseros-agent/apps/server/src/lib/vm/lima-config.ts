@@ -14,7 +14,6 @@ export interface LimaConfigInput {
   disk: string
   vmStateDir: string
   imageCacheDir: string
-  socketHostPath: string
 }
 
 export function generateLimaYaml(cfg: LimaConfigInput): string {
@@ -37,9 +36,9 @@ export function generateLimaYaml(cfg: LimaConfigInput): string {
     `  - location: "${cfg.imageCacheDir}"`,
     '    mountPoint: "/mnt/browseros/cache/images"',
     '    writable: false',
-    'portForwards:',
-    '  - guestSocket: "/var/run/containerd/containerd.sock"',
-    `    hostSocket: "${cfg.socketHostPath}"`,
+    'containerd:',
+    '  system: false',
+    '  user: true',
     'user:',
     '  name: "browseros"',
     '',

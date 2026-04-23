@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { logger } from '../logger'
 import { LimaCommandError, VmError, VmNotReadyError } from './errors'
@@ -16,15 +16,11 @@ import {
   readInstalledManifest,
   writeInstalledManifest,
 } from './manifest'
-import {
-  getContainerdSocketPath,
-  getImageCacheDir,
-  getVmStateDir,
-  VM_NAME,
-} from './paths'
+import { getImageCacheDir, getVmStateDir, VM_NAME } from './paths'
 import { VM_TELEMETRY_EVENTS } from './telemetry'
 
 export type LogFn = (msg: string) => void
+const ROOTLESS_CONTAINERD_MARKER = 'runtime:containerd-rootless'
 
 export interface VmRuntimeDeps {
   limactlPath: string
@@ -32,14 +28,14 @@ export interface VmRuntimeDeps {
   sshPath?: string
   templatePath?: string
   browserosRoot?: string
-  socketTimeoutMs?: number
-  socketPollMs?: number
+  readinessTimeoutMs?: number
+  readinessPollMs?: number
 }
 
 export class VmRuntime {
   private readonly cli: LimaCli
-  private readonly socketTimeoutMs: number
-  private readonly socketPollMs: number
+  private readonly readinessTimeoutMs: number
+  private readonly readinessPollMs: number
   private defaultGateway: string | null = null
 
   constructor(private readonly deps: VmRuntimeDeps) {
@@ -48,8 +44,8 @@ export class VmRuntime {
       limaHome: deps.limaHome,
       sshPath: deps.sshPath,
     })
-    this.socketTimeoutMs = deps.socketTimeoutMs ?? 60_000
-    this.socketPollMs = deps.socketPollMs ?? 500
+    this.readinessTimeoutMs = deps.readinessTimeoutMs ?? 60_000
+    this.readinessPollMs = deps.readinessPollMs ?? 500
   }
 
   async ensureReady(onLog?: LogFn): Promise<void> {
@@ -110,7 +106,7 @@ export class VmRuntime {
       }
     }
 
-    await this.waitForSocket(this.socketTimeoutMs)
+    await this.waitForRootlessNerdctl(this.readinessTimeoutMs)
     if (shouldWriteInstalledManifest) {
       await writeInstalledManifest(cached, this.deps.browserosRoot)
       logger.debug(VM_TELEMETRY_EVENTS.manifestWritten, {
@@ -178,12 +174,7 @@ export class VmRuntime {
   }
 
   async isReady(): Promise<boolean> {
-    try {
-      const info = await stat(this.socketPath())
-      return info.isSocket()
-    } catch {
-      return false
-    }
+    return this.isRootlessNerdctlReady()
   }
 
   getLimactlPath(): string {
@@ -250,7 +241,7 @@ export class VmRuntime {
       return false
     }
 
-    return !lines.some((line) => line.trim() === 'runtime:containerd')
+    return !lines.some((line) => line.trim() === ROOTLESS_CONTAINERD_MARKER)
   }
 
   private async buildLimaYaml(): Promise<string> {
@@ -266,45 +257,44 @@ export class VmRuntime {
     })
   }
 
-  private async waitForSocket(timeoutMs: number): Promise<void> {
+  private async waitForRootlessNerdctl(timeoutMs: number): Promise<void> {
     const started = Date.now()
     const deadline = started + timeoutMs
-    const sockPath = this.socketPath()
-    logger.info(VM_TELEMETRY_EVENTS.socketWaitStart, {
-      sockPath,
+    logger.info(VM_TELEMETRY_EVENTS.nerdctlWaitStart, {
       timeoutMs,
-      pollMs: this.socketPollMs,
+      pollMs: this.readinessPollMs,
     })
     let pollCount = 0
     while (Date.now() < deadline) {
       pollCount += 1
       if (await this.isReady()) {
-        logger.info(VM_TELEMETRY_EVENTS.socketWaitOk, {
-          sockPath,
+        logger.info(VM_TELEMETRY_EVENTS.nerdctlWaitOk, {
           pollCount,
           waitMs: Date.now() - started,
         })
         return
       }
       if (pollCount === 1 || pollCount % 10 === 0) {
-        logger.debug(VM_TELEMETRY_EVENTS.socketWaitPoll, {
-          sockPath,
+        logger.debug(VM_TELEMETRY_EVENTS.nerdctlWaitPoll, {
           pollCount,
           elapsedMs: Date.now() - started,
         })
       }
-      await Bun.sleep(this.socketPollMs)
+      await Bun.sleep(this.readinessPollMs)
     }
-    logger.error(VM_TELEMETRY_EVENTS.socketWaitTimeout, {
-      sockPath,
+    logger.error(VM_TELEMETRY_EVENTS.nerdctlWaitTimeout, {
       timeoutMs,
       pollCount,
     })
-    throw new VmNotReadyError(`containerd.sock never appeared at ${sockPath}`)
+    throw new VmNotReadyError('rootless nerdctl never became ready')
   }
 
-  private socketPath(): string {
-    return getContainerdSocketPath(this.deps.browserosRoot)
+  private async isRootlessNerdctlReady(): Promise<boolean> {
+    try {
+      return (await this.runCommand(['nerdctl', 'info'])) === 0
+    } catch {
+      return false
+    }
   }
 }
 

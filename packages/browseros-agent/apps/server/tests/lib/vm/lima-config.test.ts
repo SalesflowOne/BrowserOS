@@ -19,8 +19,6 @@ describe('generateLimaYaml', () => {
       disk: '10GiB',
       vmStateDir: '/Users/me/.browseros/vm',
       imageCacheDir: '/Users/me/.browseros/cache/vm/images',
-      socketHostPath:
-        '/Users/me/.browseros/lima/browseros-vm/sock/containerd.sock',
     })
 
     expect(yaml).toContain('vmType: "vz"')
@@ -30,10 +28,11 @@ describe('generateLimaYaml', () => {
     expect(yaml).toContain('writable: true')
     expect(yaml).toContain('mountPoint: "/mnt/browseros/cache/images"')
     expect(yaml).toContain('writable: false')
-    expect(yaml).toContain('guestSocket: "/var/run/containerd/containerd.sock"')
-    expect(yaml).toContain(
-      'hostSocket: "/Users/me/.browseros/lima/browseros-vm/sock/containerd.sock"',
-    )
+    expect(yaml).toContain('containerd:')
+    expect(yaml).toContain('system: false')
+    expect(yaml).toContain('user: true')
+    expect(yaml).not.toContain('guestSocket:')
+    expect(yaml).not.toContain('hostSocket:')
     expect(yaml).toContain('name: "browseros"')
     expect(yaml).not.toContain('mountType: "9p"')
   })
@@ -47,8 +46,6 @@ describe('generateLimaYaml', () => {
       disk: '20GiB',
       vmStateDir: '/Users/me/.browseros/vm',
       imageCacheDir: '/Users/me/.browseros/cache/vm/images',
-      socketHostPath:
-        '/Users/me/.browseros/lima/browseros-vm/sock/containerd.sock',
     })
 
     expect(yaml).toContain('arch: "x86_64"')
