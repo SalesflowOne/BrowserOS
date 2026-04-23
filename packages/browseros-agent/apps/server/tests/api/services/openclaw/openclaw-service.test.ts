@@ -75,8 +75,27 @@ describe('OpenClawService', () => {
     }
   })
 
+  async function writeOpenClawConfig(
+    baseDir: string,
+    config: Record<string, unknown>,
+  ): Promise<void> {
+    await mkdir(join(baseDir, '.openclaw'), { recursive: true })
+    await writeFile(
+      join(baseDir, '.openclaw', 'openclaw.json'),
+      JSON.stringify(config),
+      'utf-8',
+    )
+  }
+
   it('creates agents through the cli client without role bootstrap files', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'openclaw-service-'))
+    await writeOpenClawConfig(tempDir, {
+      gateway: {
+        auth: {
+          token: 'gateway-token',
+        },
+      },
+    })
     const agentRecord = {
       agentId: 'ops',
       name: 'ops',
@@ -120,7 +139,13 @@ describe('OpenClawService', () => {
     await mkdir(join(tempDir, '.openclaw', 'workspace-ops'), {
       recursive: true,
     })
-    await writeFile(join(tempDir, '.openclaw', 'openclaw.json'), '{}')
+    await writeOpenClawConfig(tempDir, {
+      gateway: {
+        auth: {
+          token: 'gateway-token',
+        },
+      },
+    })
     await writeFile(
       join(tempDir, '.openclaw', 'workspace-ops', '.browseros-role.json'),
       '{"roleId":"chief-of-staff"}\n',
@@ -155,8 +180,13 @@ describe('OpenClawService', () => {
 
   it('maps successful cli client probes into connected status', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'openclaw-service-'))
-    await mkdir(join(tempDir, '.openclaw'), { recursive: true })
-    await writeFile(join(tempDir, '.openclaw', 'openclaw.json'), '{}')
+    await writeOpenClawConfig(tempDir, {
+      gateway: {
+        auth: {
+          token: 'gateway-token',
+        },
+      },
+    })
     const service = new OpenClawService() as MutableOpenClawService
 
     service.openclawDir = tempDir
@@ -197,9 +227,17 @@ describe('OpenClawService', () => {
 
   it('creates the main agent during setup when the gateway starts without one', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'openclaw-service-'))
+    const openclawTempDir = tempDir
     const steps: string[] = []
     const runOnboard = mock(async () => {
       steps.push('onboard')
+      await writeOpenClawConfig(openclawTempDir, {
+        gateway: {
+          auth: {
+            token: 'gateway-token',
+          },
+        },
+      })
     })
     const setConfigBatch = mock(async () => {
       steps.push('batch')
@@ -257,6 +295,7 @@ describe('OpenClawService', () => {
     expect(runOnboard).toHaveBeenCalledWith({
       acceptRisk: true,
       authChoice: 'skip',
+      gatewayAuth: 'token',
       gatewayBind: 'lan',
       gatewayPort: 18789,
       installDaemon: false,
@@ -277,10 +316,6 @@ describe('OpenClawService', () => {
         {
           path: 'gateway.http.endpoints.chatCompletions.enabled',
           value: true,
-        },
-        {
-          path: 'gateway.auth.mode',
-          value: 'none',
         },
       ]),
     )
@@ -307,7 +342,7 @@ describe('OpenClawService', () => {
         hostPort: expect.any(Number),
         hostHome: tempDir,
         envFilePath: join(tempDir, '.openclaw', '.env'),
-        gatewayToken: undefined,
+        gatewayToken: 'gateway-token',
       }),
       expect.any(Function),
     )
@@ -316,7 +351,16 @@ describe('OpenClawService', () => {
 
   it('applies setup-time config in one batch before the gateway starts', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'openclaw-service-'))
-    const runOnboard = mock(async () => {})
+    const openclawTempDir = tempDir
+    const runOnboard = mock(async () => {
+      await writeOpenClawConfig(openclawTempDir, {
+        gateway: {
+          auth: {
+            token: 'gateway-token',
+          },
+        },
+      })
+    })
     const setConfigBatch = mock(async () => {})
     const validateConfig = mock(async () => ({ ok: true }))
     const createAgent = mock(async () => ({
@@ -365,20 +409,15 @@ describe('OpenClawService', () => {
     expect(restartGateway).not.toHaveBeenCalled()
   })
 
-  it('migrates persisted gateway auth mode to none before start probes the control plane', async () => {
+  it('loads the persisted gateway token before start probes the control plane', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'openclaw-service-'))
-    await mkdir(join(tempDir, '.openclaw'), { recursive: true })
-    await writeFile(
-      join(tempDir, '.openclaw', 'openclaw.json'),
-      JSON.stringify({
-        gateway: {
-          auth: {
-            mode: 'token',
-          },
+    await writeOpenClawConfig(tempDir, {
+      gateway: {
+        auth: {
+          token: 'gateway-token',
         },
-      }),
-    )
-    const setConfig = mock(async () => {})
+      },
+    })
     const startGateway = mock(async () => {})
     const probe = mock(async () => {})
     const service = new OpenClawService() as MutableOpenClawService
@@ -390,34 +429,61 @@ describe('OpenClawService', () => {
       startGateway,
       waitForReady: async () => true,
     }
-    service.cliClient = {
-      setConfig,
-    }
     service.httpClient = {
       probe,
     }
 
     await service.start()
 
-    expect(setConfig).toHaveBeenCalledWith('gateway.auth.mode', 'none')
+    expect(service.token).toBe('gateway-token')
     expect(probe).toHaveBeenCalledTimes(1)
-    expect(startGateway).toHaveBeenCalledTimes(1)
+    expect(startGateway).toHaveBeenCalledWith(
+      expect.objectContaining({
+        gatewayToken: 'gateway-token',
+      }),
+      expect.any(Function),
+    )
   })
 
-  it('skips auth mode migration when the persisted config is already none', async () => {
+  it('throws when the persisted gateway token is missing before start probes the control plane', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'openclaw-service-'))
-    await mkdir(join(tempDir, '.openclaw'), { recursive: true })
-    await writeFile(
-      join(tempDir, '.openclaw', 'openclaw.json'),
-      JSON.stringify({
-        gateway: {
-          auth: {
-            mode: 'none',
-          },
-        },
-      }),
+    await writeOpenClawConfig(tempDir, {
+      gateway: {
+        auth: {},
+      },
+    })
+    const startGateway = mock(async () => {})
+    const probe = mock(async () => {})
+    const service = new OpenClawService() as MutableOpenClawService
+
+    service.openclawDir = tempDir
+    service.runtime = {
+      ensureReady: async () => {},
+      isReady: async () => false,
+      startGateway,
+      waitForReady: async () => true,
+    }
+    service.httpClient = {
+      probe,
+    }
+
+    await expect(service.start()).rejects.toThrow(
+      'OpenClaw gateway token is missing from mounted config',
     )
-    const setConfig = mock(async () => {})
+
+    expect(probe).not.toHaveBeenCalled()
+    expect(startGateway).not.toHaveBeenCalled()
+  })
+
+  it('refreshes the persisted gateway token before probing an already-running control plane', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'openclaw-service-'))
+    await writeOpenClawConfig(tempDir, {
+      gateway: {
+        auth: {
+          token: 'gateway-token',
+        },
+      },
+    })
     const probe = mock(async () => {})
     const service = new OpenClawService() as MutableOpenClawService
 
@@ -426,21 +492,19 @@ describe('OpenClawService', () => {
       ensureReady: async () => {},
       isReady: async () => true,
     }
-    service.cliClient = {
-      setConfig,
-    }
     service.httpClient = {
       probe,
     }
 
     await service.start()
 
-    expect(setConfig).not.toHaveBeenCalled()
+    expect(service.token).toBe('gateway-token')
     expect(probe).toHaveBeenCalledTimes(1)
   })
 
   it('writes provider credentials into the mounted state env file during setup', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'openclaw-service-'))
+    const openclawTempDir = tempDir
     const service = new OpenClawService() as MutableOpenClawService
 
     service.openclawDir = tempDir
@@ -469,7 +533,15 @@ describe('OpenClawService', () => {
       ]),
     }
     service.bootstrapCliClient = {
-      runOnboard: mock(async () => {}),
+      runOnboard: mock(async () => {
+        await writeOpenClawConfig(openclawTempDir, {
+          gateway: {
+            auth: {
+              token: 'gateway-token',
+            },
+          },
+        })
+      }),
       setConfigBatch: mock(async () => {}),
       setDefaultModel: mock(async () => {}),
       validateConfig: mock(async () => ({ ok: true })),
@@ -588,7 +660,7 @@ describe('OpenClawService', () => {
       JSON.stringify({
         gateway: {
           auth: {
-            mode: 'none',
+            token: 'gateway-token',
           },
         },
       }),
@@ -619,7 +691,7 @@ describe('OpenClawService', () => {
         hostPort: expect.any(Number),
         hostHome: tempDir,
         envFilePath: join(tempDir, '.openclaw', '.env'),
-        gatewayToken: undefined,
+        gatewayToken: 'gateway-token',
       }),
       expect.any(Function),
     )
@@ -635,7 +707,7 @@ describe('OpenClawService', () => {
       JSON.stringify({
         gateway: {
           auth: {
-            mode: 'none',
+            token: 'gateway-token',
           },
         },
       }),
@@ -690,7 +762,7 @@ describe('OpenClawService', () => {
       JSON.stringify({
         gateway: {
           auth: {
-            mode: 'none',
+            token: 'gateway-token',
           },
         },
       }),
@@ -728,7 +800,7 @@ describe('OpenClawService', () => {
       JSON.stringify({
         gateway: {
           auth: {
-            mode: 'none',
+            token: 'gateway-token',
           },
         },
       }),
@@ -756,7 +828,7 @@ describe('OpenClawService', () => {
         hostPort: expect.any(Number),
         hostHome: tempDir,
         envFilePath: join(tempDir, '.openclaw', '.env'),
-        gatewayToken: undefined,
+        gatewayToken: 'gateway-token',
       }),
       expect.any(Function),
     )
@@ -772,7 +844,7 @@ describe('OpenClawService', () => {
       JSON.stringify({
         gateway: {
           auth: {
-            mode: 'none',
+            token: 'gateway-token',
           },
         },
       }),
@@ -817,7 +889,7 @@ describe('OpenClawService', () => {
       JSON.stringify({
         gateway: {
           auth: {
-            mode: 'none',
+            token: 'gateway-token',
           },
         },
       }),
@@ -909,7 +981,7 @@ describe('OpenClawService', () => {
       JSON.stringify({
         gateway: {
           auth: {
-            mode: 'none',
+            token: 'gateway-token',
           },
         },
       }),
@@ -942,7 +1014,7 @@ describe('OpenClawService', () => {
         hostPort: expect.any(Number),
         hostHome: tempDir,
         envFilePath: join(tempDir, '.openclaw', '.env'),
-        gatewayToken: undefined,
+        gatewayToken: 'gateway-token',
       }),
     )
     expect(waitForReady).toHaveBeenCalledTimes(1)
@@ -1069,6 +1141,13 @@ describe('OpenClawService', () => {
 
   it('passes openrouter model refs through verbatim into agent creation', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'openclaw-service-'))
+    await writeOpenClawConfig(tempDir, {
+      gateway: {
+        auth: {
+          token: 'gateway-token',
+        },
+      },
+    })
     await mkdir(join(tempDir, '.openclaw'), { recursive: true })
     await writeFile(
       join(tempDir, '.openclaw', '.env'),

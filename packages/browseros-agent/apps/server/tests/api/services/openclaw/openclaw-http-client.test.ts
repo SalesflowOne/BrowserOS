@@ -13,18 +13,19 @@ import {
 
 describe('OpenClawHttpClient', () => {
   const originalFetch = globalThis.fetch
+  const getToken = async () => 'gateway-token'
 
   afterEach(() => {
     globalThis.fetch = originalFetch
   })
 
-  it('probes the loopback gateway without authorization headers', async () => {
+  it('probes the loopback gateway with bearer auth', async () => {
     const fetchMock = mock(() =>
       Promise.resolve(new Response(null, { status: 204 })),
     )
     globalThis.fetch = fetchMock as typeof globalThis.fetch
     const signal = new AbortController().signal
-    const client = new OpenClawHttpClient(18789)
+    const client = new OpenClawHttpClient(18789, getToken)
 
     await client.probe(signal)
 
@@ -32,18 +33,21 @@ describe('OpenClawHttpClient', () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       'http://127.0.0.1:18789/v1/models',
     )
-    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+    const init = fetchMock.mock.calls[0]?.[1]
+    const headers = init?.headers as Headers
+
+    expect(init).toMatchObject({
       method: 'GET',
       signal,
     })
-    expect(fetchMock.mock.calls[0]?.[1]?.headers).toBeUndefined()
+    expect(headers.get('Authorization')).toBe('Bearer gateway-token')
   })
 
   it('surfaces gateway probe failures with response details', async () => {
     globalThis.fetch = mock(() =>
       Promise.resolve(new Response('gateway unavailable', { status: 503 })),
     ) as typeof globalThis.fetch
-    const client = new OpenClawHttpClient(18789)
+    const client = new OpenClawHttpClient(18789, getToken)
 
     await expect(client.probe()).rejects.toThrow('gateway unavailable')
   })
@@ -69,7 +73,7 @@ describe('OpenClawHttpClient', () => {
     )
     globalThis.fetch = fetchMock as typeof globalThis.fetch
     const signal = new AbortController().signal
-    const client = new OpenClawHttpClient(18789)
+    const client = new OpenClawHttpClient(18789, getToken)
 
     await expect(client.listAgents(signal)).resolves.toEqual([
       {
@@ -88,11 +92,15 @@ describe('OpenClawHttpClient', () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       'http://127.0.0.1:18789/tools/invoke',
     )
-    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+    const init = fetchMock.mock.calls[0]?.[1]
+    const headers = init?.headers as Headers
+
+    expect(init).toMatchObject({
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       signal,
     })
+    expect(headers.get('Authorization')).toBe('Bearer gateway-token')
+    expect(headers.get('Content-Type')).toBe('application/json')
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
       tool: 'agents_list',
       args: {},
@@ -110,7 +118,7 @@ describe('OpenClawHttpClient', () => {
         }),
       ),
     ) as typeof globalThis.fetch
-    const client = new OpenClawHttpClient(18789)
+    const client = new OpenClawHttpClient(18789, getToken)
 
     await expect(client.listAgents()).resolves.toEqual([
       {
@@ -131,7 +139,7 @@ describe('OpenClawHttpClient', () => {
         }),
       ),
     ) as typeof globalThis.fetch
-    const client = new OpenClawHttpClient(18789)
+    const client = new OpenClawHttpClient(18789, getToken)
 
     await expect(client.listAgents()).rejects.toThrow('agent list denied')
 
@@ -162,7 +170,7 @@ describe('OpenClawHttpClient', () => {
     )
     globalThis.fetch = fetchMock as typeof globalThis.fetch
     const signal = new AbortController().signal
-    const client = new OpenClawHttpClient(18789)
+    const client = new OpenClawHttpClient(18789, getToken)
 
     await expect(
       client.listSessions({
@@ -175,11 +183,15 @@ describe('OpenClawHttpClient', () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       'http://127.0.0.1:18789/tools/invoke',
     )
-    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+    const init = fetchMock.mock.calls[0]?.[1]
+    const headers = init?.headers as Headers
+
+    expect(init).toMatchObject({
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       signal,
     })
+    expect(headers.get('Authorization')).toBe('Bearer gateway-token')
+    expect(headers.get('Content-Type')).toBe('application/json')
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
       tool: 'sessions_list',
       args: {
@@ -200,7 +212,7 @@ describe('OpenClawHttpClient', () => {
     const fetchMock = mock(() => Promise.resolve(Response.json(history)))
     globalThis.fetch = fetchMock as typeof globalThis.fetch
     const signal = new AbortController().signal
-    const client = new OpenClawHttpClient(18789)
+    const client = new OpenClawHttpClient(18789, getToken)
 
     await expect(
       client.getSessionHistory('agent:main:cafe/1', {
@@ -212,18 +224,21 @@ describe('OpenClawHttpClient', () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       'http://127.0.0.1:18789/sessions/agent%3Amain%3Acafe%2F1/history?limit=25&cursor=cursor+two',
     )
-    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+    const init = fetchMock.mock.calls[0]?.[1]
+    const headers = init?.headers as Headers
+
+    expect(init).toMatchObject({
       method: 'GET',
       signal,
     })
-    expect(fetchMock.mock.calls[0]?.[1]?.headers).toBeUndefined()
+    expect(headers.get('Authorization')).toBe('Bearer gateway-token')
   })
 
   it('maps missing session history to a typed not-found error', async () => {
     globalThis.fetch = mock(() =>
       Promise.resolve(new Response(null, { status: 404 })),
     ) as typeof globalThis.fetch
-    const client = new OpenClawHttpClient(18789)
+    const client = new OpenClawHttpClient(18789, getToken)
 
     await expect(
       client.getSessionHistory('missing-session'),
@@ -239,7 +254,7 @@ describe('OpenClawHttpClient', () => {
         ),
       ),
     ) as typeof globalThis.fetch
-    const client = new OpenClawHttpClient(18789)
+    const client = new OpenClawHttpClient(18789, getToken)
 
     await expect(client.getSessionHistory('session-1')).rejects.toThrow(
       'history backend unavailable',

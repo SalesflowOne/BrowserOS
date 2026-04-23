@@ -60,7 +60,10 @@ type ToolResponse<T> =
   | { ok: false; error?: { message?: string } }
 
 export class OpenClawHttpClient {
-  constructor(private readonly hostPort: number) {}
+  constructor(
+    private readonly hostPort: number,
+    private readonly getToken: () => Promise<string>,
+  ) {}
 
   async probe(signal?: AbortSignal): Promise<void> {
     const response = await this.request('/v1/models', {
@@ -134,8 +137,15 @@ export class OpenClawHttpClient {
     return (await response.json()) as OpenClawSessionHistory
   }
 
-  protected request(path: string, init: RequestInit): Promise<Response> {
-    return fetch(`http://127.0.0.1:${this.hostPort}${path}`, init)
+  protected async request(path: string, init: RequestInit): Promise<Response> {
+    const token = await this.getToken()
+    const headers = new Headers(init.headers)
+    headers.set('Authorization', `Bearer ${token}`)
+
+    return fetch(`http://127.0.0.1:${this.hostPort}${path}`, {
+      ...init,
+      headers,
+    })
   }
 
   private async invokeTool<T>(

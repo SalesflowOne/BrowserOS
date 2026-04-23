@@ -8,6 +8,7 @@ import { OpenClawHttpChatClient } from '../../../../src/api/services/openclaw/op
 
 describe('OpenClawHttpChatClient', () => {
   const originalFetch = globalThis.fetch
+  const getToken = async () => 'gateway-token'
 
   afterEach(() => {
     globalThis.fetch = originalFetch
@@ -47,7 +48,7 @@ describe('OpenClawHttpChatClient', () => {
       ),
     )
     globalThis.fetch = fetchMock as typeof globalThis.fetch
-    const client = new OpenClawHttpChatClient(18789)
+    const client = new OpenClawHttpChatClient(18789, getToken)
 
     const stream = await client.streamChat({
       agentId: 'research',
@@ -63,6 +64,7 @@ describe('OpenClawHttpChatClient', () => {
     expect(call?.[1]).toMatchObject({
       method: 'POST',
       headers: {
+        Authorization: 'Bearer gateway-token',
         'Content-Type': 'application/json',
       },
     })
@@ -99,7 +101,7 @@ describe('OpenClawHttpChatClient', () => {
       ),
     )
     globalThis.fetch = fetchMock as typeof globalThis.fetch
-    const client = new OpenClawHttpChatClient(18789)
+    const client = new OpenClawHttpChatClient(18789, getToken)
 
     await client.streamChat({
       agentId: 'main',
@@ -117,7 +119,7 @@ describe('OpenClawHttpChatClient', () => {
     globalThis.fetch = mock(() =>
       Promise.resolve(new Response('Unauthorized', { status: 401 })),
     ) as typeof globalThis.fetch
-    const client = new OpenClawHttpChatClient(18789)
+    const client = new OpenClawHttpChatClient(18789, getToken)
 
     await expect(
       client.streamChat({
@@ -151,7 +153,7 @@ describe('OpenClawHttpChatClient', () => {
         ),
       ),
     ) as typeof globalThis.fetch
-    const client = new OpenClawHttpChatClient(18789)
+    const client = new OpenClawHttpChatClient(18789, getToken)
 
     const stream = await client.streamChat({
       agentId: 'main',
@@ -194,7 +196,7 @@ describe('OpenClawHttpChatClient', () => {
       ),
     )
     globalThis.fetch = fetchMock as typeof globalThis.fetch
-    const client = new OpenClawHttpChatClient(18789)
+    const client = new OpenClawHttpChatClient(18789, getToken)
 
     const stream = await client.streamChat({
       agentId: 'research',
