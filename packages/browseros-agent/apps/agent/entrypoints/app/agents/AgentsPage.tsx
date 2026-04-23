@@ -34,6 +34,12 @@ import {
 } from '@/components/ui/select'
 import { useLlmProviders } from '@/lib/llm-providers/useLlmProviders'
 import { AgentTerminal } from './AgentTerminal'
+import {
+  buildOpenClawCliProviderOptions,
+  findOpenClawCliProviderById,
+  OpenClawCliProviderStatusPanel,
+  useOpenClawCliProviderAuthStatus,
+} from './openclaw-cli-providers'
 import { getOpenClawSupportedProviders } from './openclaw-supported-providers'
 import {
   type AgentEntry,
@@ -631,9 +637,52 @@ export const AgentsPage: FC = () => {
   const [createProviderId, setCreateProviderId] = useState('')
 
   const [showTerminal, setShowTerminal] = useState(false)
+  const [cliAuthModalOpen, setCliAuthModalOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const compatibleProviders = getOpenClawSupportedProviders(providers)
+  const cliProviderOptions = useMemo(
+    () => buildOpenClawCliProviderOptions(),
+    [],
+  )
+  const selectableCreateProviders = useMemo(
+    () => [...compatibleProviders, ...cliProviderOptions],
+    [compatibleProviders, cliProviderOptions],
+  )
+
+  const selectedCreateOption = selectableCreateProviders.find(
+    (provider) => provider.id === createProviderId,
+  )
+  const selectedCliProvider = selectedCreateOption
+    ? findOpenClawCliProviderById(selectedCreateOption.type)
+    : undefined
+
+  // Only poll while a CLI provider is the active selection AND the Create
+  // Agent dialog is open. Also used by the modal's auto-close effect.
+  const cliAuthEnabled = createOpen && !!selectedCliProvider
+  const {
+    data: cliAuthStatus,
+    isLoading: cliAuthLoading,
+    error: cliAuthError,
+  } = useOpenClawCliProviderAuthStatus(
+    selectedCliProvider?.id ?? '',
+    cliAuthEnabled,
+  )
+
+  useEffect(() => {
+    if (selectableCreateProviders.length === 0) return
+    const fallbackId =
+      selectableCreateProviders.find(
+        (provider) => provider.id === defaultProviderId,
+      )?.id ?? selectableCreateProviders[0].id
+
+    if (createOpen && !createProviderId) setCreateProviderId(fallbackId)
+  }, [
+    createOpen,
+    createProviderId,
+    selectableCreateProviders,
+    defaultProviderId,
+  ])
 
   useEffect(() => {
     if (compatibleProviders.length === 0) return
@@ -642,15 +691,14 @@ export const AgentsPage: FC = () => {
         ?.id ?? compatibleProviders[0].id
 
     if (setupOpen && !setupProviderId) setSetupProviderId(fallbackId)
-    if (createOpen && !createProviderId) setCreateProviderId(fallbackId)
-  }, [
-    setupOpen,
-    createOpen,
-    setupProviderId,
-    createProviderId,
-    compatibleProviders,
-    defaultProviderId,
-  ])
+  }, [setupOpen, setupProviderId, compatibleProviders, defaultProviderId])
+
+  // Auto-close the auth modal once login succeeds.
+  useEffect(() => {
+    if (cliAuthModalOpen && cliAuthStatus?.loggedIn) {
+      setCliAuthModalOpen(false)
+    }
+  }, [cliAuthModalOpen, cliAuthStatus?.loggedIn])
 
   useEffect(() => {
     if (!createOpen) return
@@ -729,19 +777,25 @@ export const AgentsPage: FC = () => {
 
   const handleCreate = async () => {
     if (!newName.trim()) return
-    const provider = compatibleProviders.find(
+    const option = selectableCreateProviders.find(
       (item) => item.id === createProviderId,
     )
     const normalizedName = newName.trim().toLowerCase().replace(/\s+/g, '-')
+    const isCli = !!option && !!findOpenClawCliProviderById(option.type)
+    // LlmProviderConfig carries apiKey/baseUrl; CLI synthetic options do not.
+    const apiKeyOption =
+      !isCli && option && 'apiKey' in option ? option.apiKey : undefined
+    const baseUrlOption =
+      !isCli && option && 'baseUrl' in option ? option.baseUrl : undefined
 
     await runWithErrorHandling(async () => {
       await createAgent({
         name: normalizedName,
-        providerType: provider?.type,
-        providerName: provider?.name,
-        baseUrl: provider?.baseUrl,
-        apiKey: provider?.apiKey,
-        modelId: provider?.modelId,
+        providerType: option?.type,
+        providerName: isCli ? undefined : option?.name,
+        baseUrl: baseUrlOption,
+        apiKey: apiKeyOption,
+        modelId: option?.modelId,
       })
       setCreateOpen(false)
       setNewName('')
@@ -906,11 +960,21 @@ export const AgentsPage: FC = () => {
             </div>
 
             <ProviderSelector
-              providers={compatibleProviders}
+              providers={selectableCreateProviders}
               defaultProviderId={defaultProviderId}
               selectedId={createProviderId}
               onSelect={setCreateProviderId}
             />
+
+            {selectedCliProvider && (
+              <OpenClawCliProviderStatusPanel
+                provider={selectedCliProvider}
+                status={cliAuthStatus}
+                loading={cliAuthLoading}
+                fetchError={cliAuthError ?? null}
+                onConnect={() => setCliAuthModalOpen(true)}
+              />
+            )}
 
             <Button
               onClick={handleCreate}
@@ -918,7 +982,8 @@ export const AgentsPage: FC = () => {
                 !newName.trim() ||
                 creating ||
                 !canManageAgents ||
-                compatibleProviders.length === 0
+                selectableCreateProviders.length === 0 ||
+                (!!selectedCliProvider && !cliAuthStatus?.loggedIn)
               }
               className="w-full"
             >
@@ -932,6 +997,25 @@ export const AgentsPage: FC = () => {
               )}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={cliAuthModalOpen} onOpenChange={setCliAuthModalOpen}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>
+              {selectedCliProvider
+                ? `Connect ${selectedCliProvider.displayName}`
+                : 'Connect CLI Provider'}
+            </DialogTitle>
+          </DialogHeader>
+          {selectedCliProvider && (
+            <AgentTerminal
+              onBack={() => setCliAuthModalOpen(false)}
+              initialCommand={selectedCliProvider.authLoginCommand}
+              onSessionExit={() => setCliAuthModalOpen(false)}
+            />
+          )}
         </DialogContent>
       </Dialog>
     </div>

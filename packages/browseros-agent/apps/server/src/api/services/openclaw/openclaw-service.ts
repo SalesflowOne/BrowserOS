@@ -35,6 +35,15 @@ import {
   type OpenClawConfigBatchEntry,
 } from './openclaw-cli-client'
 import {
+  buildOpenClawCliProviderModelRef,
+  getOpenClawCliProvider,
+  OPENCLAW_CLI_PROVIDERS,
+} from './openclaw-cli-providers/registry'
+import type {
+  OpenClawCliProvider,
+  OpenClawCliProviderAuthStatus,
+} from './openclaw-cli-providers/types'
+import {
   getHostWorkspaceDir,
   getOpenClawStateConfigPath,
   getOpenClawStateDir,
@@ -187,7 +196,7 @@ export class OpenClawService {
   async setup(input: SetupInput, onLog?: (msg: string) => void): Promise<void> {
     return this.withLifecycleLock('setup', async () => {
       const logProgress = this.createProgressLogger(onLog)
-      const provider = resolveSupportedOpenClawProvider(input)
+      const provider = this.resolveProviderForAgent(input)
       logger.info('Starting OpenClaw setup', {
         hostPort: this.hostPort,
         browserosServerPort: this.browserosServerPort,
@@ -258,6 +267,8 @@ export class OpenClawService {
       this.controlPlaneStatus = 'connecting'
       logProgress('Probing OpenClaw control plane...')
       await this.runControlPlaneCall(() => this.cliClient.probe())
+
+      await this.ensureAllCliProvidersInstalled(logProgress)
 
       const existingAgents = await this.listAgents()
       logger.info('Fetched existing OpenClaw agents after setup', {
@@ -338,6 +349,7 @@ export class OpenClawService {
       this.controlPlaneStatus = 'connecting'
       logProgress('Probing OpenClaw control plane...')
       await this.runControlPlaneCall(() => this.cliClient.probe())
+      await this.ensureAllCliProvidersInstalled(logProgress)
       this.lastError = null
       logger.info('OpenClaw gateway started', { hostPort: this.hostPort })
     })
@@ -386,6 +398,7 @@ export class OpenClawService {
 
       logProgress('Probing OpenClaw control plane...')
       await this.runControlPlaneCall(() => this.cliClient.probe())
+      await this.ensureAllCliProvidersInstalled(logProgress)
       this.lastError = null
       logProgress('Gateway restarted successfully')
       logger.info('OpenClaw gateway restarted', { hostPort: this.hostPort })
@@ -503,7 +516,7 @@ export class OpenClawService {
     })
     await this.assertGatewayReady()
 
-    const provider = resolveSupportedOpenClawProvider(input)
+    const provider = this.resolveProviderForAgent(input)
     const configChanged = await this.mergeProviderConfigIfChanged(provider)
     const keysChanged = await this.writeStateEnv(provider.envValues)
 
@@ -620,7 +633,7 @@ export class OpenClawService {
     apiKey: string
     modelId?: string
   }): Promise<OpenClawProviderUpdateResult> {
-    const provider = resolveSupportedOpenClawProvider(input)
+    const provider = this.resolveProviderForAgent(input)
     const configChanged = await this.mergeProviderConfigIfChanged(provider)
     const envChanged = await this.writeStateEnv(provider.envValues)
     const restarted = configChanged || envChanged
@@ -640,6 +653,20 @@ export class OpenClawService {
       restarted,
       modelUpdated: !!provider.model,
     }
+  }
+
+  // ── CLI-backed Providers ─────────────────────────────────────────────
+
+  async getCliProviderAuthStatus(
+    provider: OpenClawCliProvider,
+  ): Promise<OpenClawCliProviderAuthStatus> {
+    const lines: string[] = []
+    const exitCode = await this.runtime.execInContainer(
+      provider.authStatusCommand,
+      (line) => lines.push(line),
+    )
+    const output = lines.join('\n').trim()
+    return provider.parseAuthStatus(output, exitCode)
   }
 
   // ── Logs ─────────────────────────────────────────────────────────────
@@ -685,6 +712,7 @@ export class OpenClawService {
         }
 
         await this.runControlPlaneCall(() => this.cliClient.probe())
+        await this.ensureAllCliProvidersInstalled()
         logger.info('OpenClaw gateway auto-started')
       } catch (err) {
         logger.warn('OpenClaw auto-start failed', {
@@ -695,6 +723,63 @@ export class OpenClawService {
   }
 
   // ── Internal ─────────────────────────────────────────────────────────
+
+  // CLI-provider short-circuit: skip env writes and custom-provider merges,
+  // just build the `<id>/<model>` ref that OpenClaw's own plugin routes to.
+  private resolveProviderForAgent(input: {
+    providerType?: string
+    providerName?: string
+    baseUrl?: string
+    apiKey?: string
+    modelId?: string
+  }): ResolvedOpenClawProviderConfig {
+    const cliProvider = input.providerType
+      ? getOpenClawCliProvider(input.providerType)
+      : undefined
+    if (cliProvider) {
+      return {
+        envValues: {},
+        model: input.modelId
+          ? buildOpenClawCliProviderModelRef(cliProvider.id, input.modelId)
+          : undefined,
+      }
+    }
+    return resolveSupportedOpenClawProvider(input)
+  }
+
+  private async ensureAllCliProvidersInstalled(
+    onLog?: (msg: string) => void,
+  ): Promise<void> {
+    for (const provider of OPENCLAW_CLI_PROVIDERS) {
+      await this.ensureCliProviderInstalled(provider, onLog)
+    }
+  }
+
+  private async ensureCliProviderInstalled(
+    provider: OpenClawCliProvider,
+    onLog?: (msg: string) => void,
+  ): Promise<void> {
+    // Idempotent: no-op if binary is already on PATH (mounted npm-global
+    // persists across container restarts).
+    const installCmd = `command -v ${provider.binary} >/dev/null 2>&1 || npm install -g ${provider.npmPackage}@latest`
+    const lines: string[] = []
+    const exitCode = await this.runtime.execInContainer(
+      ['sh', '-lc', installCmd],
+      (line) => {
+        lines.push(line)
+        onLog?.(line)
+      },
+    )
+    if (exitCode !== 0) {
+      logger.warn('CLI-backed provider install failed', {
+        providerId: provider.id,
+        exitCode,
+        tail: lines.slice(-5),
+      })
+      return
+    }
+    logger.info('CLI-backed provider ready', { providerId: provider.id })
+  }
 
   private buildBootstrapCliClient(): OpenClawCliClient {
     return new OpenClawCliClient({

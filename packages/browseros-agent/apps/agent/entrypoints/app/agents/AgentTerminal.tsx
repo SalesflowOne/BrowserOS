@@ -13,6 +13,8 @@ import { getAgentServerUrl } from '@/lib/browseros/helpers'
 
 interface AgentTerminalProps {
   onBack: () => void
+  initialCommand?: string
+  onSessionExit?: () => void
 }
 
 type TerminalServerMessage =
@@ -118,8 +120,18 @@ function parseTerminalMessage(data: unknown): TerminalServerMessage | null {
   return null
 }
 
-export const AgentTerminal: FC<AgentTerminalProps> = ({ onBack }) => {
+export const AgentTerminal: FC<AgentTerminalProps> = ({
+  onBack,
+  initialCommand,
+  onSessionExit,
+}) => {
   const containerRef = useRef<HTMLDivElement>(null)
+  // Refs keep the mount-once effect from tearing down the PTY when the
+  // parent re-renders with new inline callbacks.
+  const initialCommandRef = useRef(initialCommand)
+  const onSessionExitRef = useRef(onSessionExit)
+  initialCommandRef.current = initialCommand
+  onSessionExitRef.current = onSessionExit
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -170,6 +182,10 @@ export const AgentTerminal: FC<AgentTerminalProps> = ({ onBack }) => {
         fitAddon.fit()
         terminal.focus()
         sendResize()
+        const cmd = initialCommandRef.current
+        if (cmd) {
+          sendMessage({ type: 'input', data: `${cmd}\n` })
+        }
       }
 
       ws.onmessage = (event) => {
@@ -185,6 +201,7 @@ export const AgentTerminal: FC<AgentTerminalProps> = ({ onBack }) => {
           terminal.write(
             `\r\n\x1b[90m[session ended with exit ${message.exitCode}]\x1b[0m\r\n`,
           )
+          onSessionExitRef.current?.()
         }
       }
 
