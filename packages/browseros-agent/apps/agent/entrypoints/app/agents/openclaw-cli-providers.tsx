@@ -32,7 +32,7 @@ const CLAUDE_CLI_PROVIDER: OpenClawCliProvider = {
   displayName: 'Anthropic Claude CLI',
   description: 'Uses your Claude.ai subscription via the Claude Code CLI',
   models: ['claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5'],
-  authLoginCommand: 'claude auth login',
+  authLoginCommand: 'claude /login',
 }
 
 export const OPENCLAW_CLI_PROVIDERS: readonly OpenClawCliProvider[] = [

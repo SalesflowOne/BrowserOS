@@ -153,6 +153,10 @@ export const AgentTerminal: FC<AgentTerminalProps> = ({
 
     let ws: WebSocket | null = null
     let sawExit = false
+    // React 18 StrictMode double-invokes effects in dev. The cleanup for the
+    // first mount fires before `connect()` resolves, so without this guard
+    // the pending WS is born orphaned and we end up with two live sessions.
+    let cancelled = false
 
     const applyTheme = (): void => {
       terminal.options.theme = createTerminalTheme()
@@ -173,10 +177,16 @@ export const AgentTerminal: FC<AgentTerminalProps> = ({
 
     const connect = async () => {
       const baseUrl = await getAgentServerUrl()
+      if (cancelled) return
       const wsUrl = new URL('/terminal/ws', baseUrl)
       wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:'
 
       ws = new WebSocket(wsUrl)
+      if (cancelled) {
+        ws.close()
+        ws = null
+        return
+      }
 
       ws.onopen = () => {
         fitAddon.fit()
@@ -248,6 +258,7 @@ export const AgentTerminal: FC<AgentTerminalProps> = ({
     })
 
     return () => {
+      cancelled = true
       resizeObserver.disconnect()
       themeObserver.disconnect()
       disposeSocketBindings?.()
@@ -286,7 +297,7 @@ export const AgentTerminal: FC<AgentTerminalProps> = ({
               </div>
             </div>
 
-            <div className="min-h-0 flex-1 px-4 py-4 sm:px-5 sm:py-5">
+            <div className="min-h-0 flex-1 cursor-text px-4 py-4 sm:px-5 sm:py-5">
               <div ref={containerRef} className="h-full w-full" />
             </div>
           </div>

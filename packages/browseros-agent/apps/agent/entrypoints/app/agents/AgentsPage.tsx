@@ -836,6 +836,16 @@ export const AgentsPage: FC = () => {
     return <AgentTerminal onBack={() => setShowTerminal(false)} />
   }
 
+  if (cliAuthModalOpen && selectedCliProvider) {
+    return (
+      <AgentTerminal
+        onBack={() => setCliAuthModalOpen(false)}
+        initialCommand={selectedCliProvider.authLoginCommand}
+        onSessionExit={() => setCliAuthModalOpen(false)}
+      />
+    )
+  }
+
   if (statusLoading && !status) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -997,25 +1007,6 @@ export const AgentsPage: FC = () => {
               )}
             </Button>
           </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={cliAuthModalOpen} onOpenChange={setCliAuthModalOpen}>
-        <DialogContent className="max-w-4xl">
-          <DialogHeader>
-            <DialogTitle>
-              {selectedCliProvider
-                ? `Connect ${selectedCliProvider.displayName}`
-                : 'Connect CLI Provider'}
-            </DialogTitle>
-          </DialogHeader>
-          {selectedCliProvider && (
-            <AgentTerminal
-              onBack={() => setCliAuthModalOpen(false)}
-              initialCommand={selectedCliProvider.authLoginCommand}
-              onSessionExit={() => setCliAuthModalOpen(false)}
-            />
-          )}
         </DialogContent>
       </Dialog>
     </div>

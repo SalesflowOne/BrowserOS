@@ -24,15 +24,9 @@ function parseClaudeAuthStatus(
     return { installed: false, loggedIn: false }
   }
 
-  if (exitCode !== 0) {
-    return {
-      installed: true,
-      loggedIn: false,
-      error: stdout.slice(0, 500) || 'claude auth status failed',
-    }
-  }
-
-  // `claude auth status` prints JSON by default.
+  // `claude auth status` emits JSON on both success (exit 0) and the
+  // "not logged in" path (exit 1). Try JSON first; fall back to a
+  // generic error only if the output isn't parseable.
   try {
     const parsed = JSON.parse(stdout) as {
       loggedIn?: boolean
@@ -49,7 +43,7 @@ function parseClaudeAuthStatus(
     return {
       installed: true,
       loggedIn: false,
-      error: 'Unexpected claude auth status output',
+      error: stdout.slice(0, 500) || 'claude auth status failed',
     }
   }
 }
@@ -61,7 +55,10 @@ export const CLAUDE_CLI_PROVIDER: OpenClawCliProvider = {
   npmPackage: '@anthropic-ai/claude-code',
   binary: 'claude',
   authStatusCommand: ['claude', 'auth', 'status'],
-  authLoginCommand: 'claude auth login',
+  // `claude auth login` in 2.1.x silently discards stdin. The REPL's
+  // `/login` slash command, launched from a fresh `claude` invocation,
+  // does accept a pasted token.
+  authLoginCommand: 'claude /login',
   models: CLAUDE_CLI_MODELS,
   parseAuthStatus: parseClaudeAuthStatus,
 }
