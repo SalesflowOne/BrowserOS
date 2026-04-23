@@ -32,6 +32,10 @@ const bundle = JSON.parse(
   await readFile(path.join(pkgRoot, 'bundle.json'), 'utf8'),
 ) as Bundle
 
+if (slice !== 'full' && !slice.startsWith('agents:')) {
+  throw new Error(`unknown slice: ${slice}`)
+}
+
 const baseline = values['merge-from']
   ? await loadBaseline(values['merge-from'])
   : null

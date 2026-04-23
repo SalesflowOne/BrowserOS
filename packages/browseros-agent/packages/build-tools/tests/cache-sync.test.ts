@@ -151,8 +151,6 @@ describe('emit-manifest', () => {
 
   it('rejects the retired vm slice', async () => {
     dir = await mkdtemp(path.join(tmpdir(), 'browseros-emit-vm-'))
-    const baselinePath = path.join(dir, 'baseline.json')
-    await writeJson(baselinePath, manifest('old-tar'))
 
     const result = await runEmitManifest(
       [
@@ -160,8 +158,6 @@ describe('emit-manifest', () => {
         'vm',
         '--dist-dir',
         path.join(dir, 'dist'),
-        '--merge-from',
-        baselinePath,
         '--out',
         path.join(dir, 'manifest.json'),
       ],
