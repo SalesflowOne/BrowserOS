@@ -123,7 +123,15 @@ describe('VM paths', () => {
     }
   })
 
+  it('uses PATH limactl in development mode', () => {
+    process.env.NODE_ENV = 'development'
+
+    expect(resolveBundledLimactl('/tmp/missing-dev-resources')).toBe('limactl')
+  })
+
   it('throws with a build-tools hint when bundled limactl is missing', () => {
+    process.env.NODE_ENV = 'production'
+
     expect(() => resolveBundledLimactl('/tmp/missing-resources')).toThrow(
       'build-tools README',
     )

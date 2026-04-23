@@ -80,6 +80,8 @@ export function decompressedDiskPath(
 }
 
 export function resolveBundledLimactl(resourcesDir: string): string {
+  if (process.env.NODE_ENV === 'development') return 'limactl'
+
   const candidate = join(
     resourcesDir,
     'bin',
