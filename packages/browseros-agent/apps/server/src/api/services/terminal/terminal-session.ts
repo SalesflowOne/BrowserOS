@@ -11,6 +11,7 @@ const TERMINAL_NAME = 'xterm-256color'
 
 interface TerminalSessionDeps {
   containerName: string
+  limaHome: string
   limactlPath: string
   vmName: string
   workingDir: string
@@ -45,6 +46,10 @@ export function buildTerminalExecCommand(
   ]
 }
 
+export function buildTerminalEnv(limaHome: string): NodeJS.ProcessEnv {
+  return { ...process.env, LIMA_HOME: limaHome, TERM: TERMINAL_NAME }
+}
+
 export function createTerminalSession(
   deps: TerminalSessionDeps,
 ): TerminalSession {
@@ -57,6 +62,7 @@ export function createTerminalSession(
       deps.workingDir,
     ),
     {
+      cwd: '/',
       terminal: {
         cols: DEFAULT_COLS,
         rows: DEFAULT_ROWS,
@@ -65,7 +71,7 @@ export function createTerminalSession(
           if (chunk) deps.onOutput(chunk)
         },
       },
-      env: { ...process.env, TERM: TERMINAL_NAME },
+      env: buildTerminalEnv(deps.limaHome),
     },
   )
   let closed = false

@@ -9,6 +9,7 @@ import type { ContainerSpec, LogFn, MountSpec, PortMapping } from './types'
 
 export interface PodmanShellConfig {
   limactlPath: string
+  limaHome: string
   vmName: string
 }
 
@@ -77,6 +78,8 @@ export class PodmanShell {
 
   tailLogs(name: string, onLine: LogFn): () => void {
     const proc = Bun.spawn(this.argv(['logs', '-f', '--tail', '0', name]), {
+      cwd: '/',
+      env: this.env(),
       stdout: 'pipe',
       stderr: 'pipe',
     })
@@ -106,6 +109,8 @@ export class PodmanShell {
 
   private async run(args: string[], onLog?: LogFn): Promise<CommandResult> {
     const proc = Bun.spawn(this.argv(args), {
+      cwd: '/',
+      env: this.env(),
       stdout: 'pipe',
       stderr: 'pipe',
     })
@@ -140,6 +145,10 @@ export class PodmanShell {
       'podman',
       ...podmanArgs,
     ]
+  }
+
+  private env(): NodeJS.ProcessEnv {
+    return { ...process.env, LIMA_HOME: this.cfg.limaHome }
   }
 
   private commandError(

@@ -16,6 +16,7 @@ export const TERMINAL_WS_PATH = '/terminal/ws'
 
 interface TerminalRouteDeps {
   containerName: string
+  limaHome: string
   limactlPath: string
   vmName: string
 }
@@ -46,6 +47,7 @@ function createSocketEvents(deps: TerminalRouteDeps) {
       try {
         session = createTerminalSession({
           containerName: deps.containerName,
+          limaHome: deps.limaHome,
           limactlPath: deps.limactlPath,
           vmName: deps.vmName,
           workingDir: TERMINAL_HOME_DIR,

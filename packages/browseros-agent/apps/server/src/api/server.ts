@@ -22,7 +22,7 @@ import { initializeOAuth } from '../lib/clients/oauth'
 import { getDb } from '../lib/db'
 import { logger } from '../lib/logger'
 import { Sentry } from '../lib/sentry'
-import { resolveBundledLimactl, VM_NAME } from '../lib/vm'
+import { getLimaHomeDir, resolveBundledLimactl, VM_NAME } from '../lib/vm'
 import { createAclRoutes } from './routes/acl'
 import { createChatRoutes } from './routes/chat'
 import { createCreditsRoutes } from './routes/credits'
@@ -114,6 +114,7 @@ export async function createHttpServer(config: HttpServerConfig) {
       '/',
       createTerminalRoutes({
         containerName: OPENCLAW_GATEWAY_CONTAINER_NAME,
+        limaHome: getLimaHomeDir(),
         limactlPath: resolveBundledLimactl(resourcesDir),
         vmName: VM_NAME,
       }),

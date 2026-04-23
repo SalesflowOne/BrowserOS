@@ -60,6 +60,7 @@ export class LimaCli {
     const proc = Bun.spawn(
       [this.cfg.limactlPath, 'shell', name, '--', ...args],
       {
+        cwd: '/',
         env: this.env(),
         stdout: streams?.onStdout ? 'pipe' : 'ignore',
         stderr: streams?.onStderr ? 'pipe' : 'pipe',

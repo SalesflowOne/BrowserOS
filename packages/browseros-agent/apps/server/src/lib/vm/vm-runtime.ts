@@ -116,6 +116,7 @@ export class VmRuntime {
         containerName,
       ],
       {
+        cwd: '/',
         env: { ...process.env, LIMA_HOME: this.deps.limaHome },
         stdout: 'pipe',
         stderr: 'pipe',

@@ -42,7 +42,7 @@ provision:
 
     DEBIAN_FRONTEND=noninteractive apt-get update
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      podman crun fuse-overlayfs slirp4netns ca-certificates
+      podman crun fuse-overlayfs slirp4netns uidmap ca-certificates
 
     systemctl enable --now podman.socket
 

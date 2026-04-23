@@ -25,12 +25,15 @@ describe('PodmanShell', () => {
 
   it('checks image existence with podman image inspect', async () => {
     const limactlPath = await fakeLimactl({ shell: {} }, logPath)
-    const shell = new PodmanShell({ limactlPath, vmName: 'browseros-vm' })
+    const shell = createShell(limactlPath, tempDir)
 
     await expect(shell.imageExists('openclaw:v1')).resolves.toBe(true)
 
     await expect(readFile(logPath, 'utf8')).resolves.toContain(
       'ARGS:shell browseros-vm -- podman image inspect openclaw:v1',
+    )
+    await expect(readFile(logPath, 'utf8')).resolves.toContain(
+      `LIMA_HOME:${tempDir}/lima`,
     )
   })
 
@@ -39,7 +42,7 @@ describe('PodmanShell', () => {
       { shell: { stderr: 'missing', exit: 1 } },
       logPath,
     )
-    const shell = new PodmanShell({ limactlPath, vmName: 'browseros-vm' })
+    const shell = createShell(limactlPath, tempDir)
 
     await expect(shell.imageExists('openclaw:v1')).resolves.toBe(false)
   })
@@ -49,7 +52,7 @@ describe('PodmanShell', () => {
       { shell: { stdout: 'pulling\n', stderr: 'denied', exit: 2 } },
       logPath,
     )
-    const shell = new PodmanShell({ limactlPath, vmName: 'browseros-vm' })
+    const shell = createShell(limactlPath, tempDir)
     const lines: string[] = []
 
     const error = await shell
@@ -68,7 +71,7 @@ describe('PodmanShell', () => {
       { shell: { stdout: 'Loaded image: openclaw:v1\n' } },
       logPath,
     )
-    const shell = new PodmanShell({ limactlPath, vmName: 'browseros-vm' })
+    const shell = createShell(limactlPath, tempDir)
 
     await expect(
       shell.loadImage('/mnt/browseros/cache/images/openclaw.tar.gz'),
@@ -80,7 +83,7 @@ describe('PodmanShell', () => {
 
   it('creates containers from typed specs', async () => {
     const limactlPath = await fakeLimactl({ shell: {} }, logPath)
-    const shell = new PodmanShell({ limactlPath, vmName: 'browseros-vm' })
+    const shell = createShell(limactlPath, tempDir)
 
     await shell.createContainer({
       name: 'gateway',
@@ -131,7 +134,7 @@ describe('PodmanShell', () => {
       { shell: { stdout: 'gateway\nworker\n' } },
       logPath,
     )
-    const shell = new PodmanShell({ limactlPath, vmName: 'browseros-vm' })
+    const shell = createShell(limactlPath, tempDir)
 
     await shell.startContainer('gateway')
     await shell.stopContainer('gateway')
@@ -161,7 +164,7 @@ describe('PodmanShell', () => {
       { shell: { stderr: 'no such container', exit: 1 } },
       logPath,
     )
-    const shell = new PodmanShell({ limactlPath, vmName: 'browseros-vm' })
+    const shell = createShell(limactlPath, tempDir)
 
     await expect(shell.stopContainer('gateway')).resolves.toBeUndefined()
   })
@@ -171,7 +174,7 @@ describe('PodmanShell', () => {
       { shell: { stdout: 'line\n' } },
       logPath,
     )
-    const shell = new PodmanShell({ limactlPath, vmName: 'browseros-vm' })
+    const shell = createShell(limactlPath, tempDir)
     const lines: string[] = []
 
     const stop = shell.tailLogs('gateway', (line) => lines.push(line))
@@ -184,3 +187,11 @@ describe('PodmanShell', () => {
     )
   })
 })
+
+function createShell(limactlPath: string, tempDir: string): PodmanShell {
+  return new PodmanShell({
+    limactlPath,
+    limaHome: join(tempDir, 'lima'),
+    vmName: 'browseros-vm',
+  })
+}

@@ -10,6 +10,7 @@ import {
   serializeTerminalServerMessage,
 } from '../../../src/api/services/terminal/terminal-protocol'
 import {
+  buildTerminalEnv,
   buildTerminalExecCommand,
   TERMINAL_HOME_DIR,
 } from '../../../src/api/services/terminal/terminal-session'
@@ -71,5 +72,14 @@ describe('terminal protocol', () => {
       OPENCLAW_GATEWAY_CONTAINER_NAME,
       '/bin/sh',
     ])
+  })
+
+  it('sets LIMA_HOME for terminal limactl sessions', () => {
+    expect(buildTerminalEnv('/tmp/browseros-lima')).toEqual(
+      expect.objectContaining({
+        LIMA_HOME: '/tmp/browseros-lima',
+        TERM: 'xterm-256color',
+      }),
+    )
   })
 })

@@ -49,15 +49,16 @@ export function buildContainerRuntime(
   const limactlPath = input.resourcesDir
     ? resolveBundledLimactl(input.resourcesDir)
     : 'limactl'
+  const limaHome = getLimaHomeDir(browserosRoot)
   const vm = new VmRuntime({
     limactlPath,
-    limaHome: getLimaHomeDir(browserosRoot),
+    limaHome,
     templatePath: input.resourcesDir
       ? resolveBundledLimaTemplate(input.resourcesDir)
       : undefined,
     browserosRoot,
   })
-  const shell = new PodmanShell({ limactlPath, vmName: VM_NAME })
+  const shell = new PodmanShell({ limactlPath, limaHome, vmName: VM_NAME })
   const loader = new DeferredImageLoader(shell, browserosRoot)
 
   return new ContainerRuntime({
