@@ -312,10 +312,10 @@ describe('VmRuntime', () => {
 
     const log = await readFile(logPath, 'utf8')
     expect(log).toContain(
-      `ARGS:-F ${sshConfig} lima-${VM_NAME} -- podman version`,
+      `ARGS:-F ${sshConfig} lima-${VM_NAME} 'podman' 'version'`,
     )
     expect(log).toContain(
-      `ARGS:-F ${sshConfig} lima-${VM_NAME} -- podman ps --format {{.Names}}`,
+      `ARGS:-F ${sshConfig} lima-${VM_NAME} 'podman' 'ps' '--format' '{{.Names}}'`,
     )
   })
 
@@ -340,7 +340,7 @@ describe('VmRuntime', () => {
 
     expect(lines).toEqual(['line'])
     await expect(readFile(logPath, 'utf8')).resolves.toContain(
-      `ARGS:-F ${sshConfig} lima-${VM_NAME} -- podman logs -f --tail 0 gateway`,
+      `ARGS:-F ${sshConfig} lima-${VM_NAME} 'podman' 'logs' '-f' '--tail' '0' 'gateway'`,
     )
   })
 })

@@ -134,7 +134,23 @@ describe('LimaCli', () => {
     expect(lines).toContain('stdout:out')
     expect(lines).toContain('stderr:err')
     await expect(readFile(logPath, 'utf8')).resolves.toContain(
-      `ARGS:-F ${sshConfig} lima-browseros-vm -- podman ps`,
+      `ARGS:-F ${sshConfig} lima-browseros-vm 'podman' 'ps'`,
+    )
+  })
+
+  it('shell-quotes remote commands to preserve argument boundaries', async () => {
+    const sshPath = await fakeSsh({}, logPath)
+    const sshConfig = join(limaHome, 'browseros-vm', 'ssh.config')
+    await mkdir(join(limaHome, 'browseros-vm'), { recursive: true })
+    await writeFile(sshConfig, '')
+    const cli = new LimaCli({ limactlPath: 'unused', limaHome, sshPath })
+
+    await expect(
+      cli.shell('browseros-vm', ['sh', '-lc', "echo 'boundary ok'"]),
+    ).resolves.toBe(0)
+
+    await expect(readFile(logPath, 'utf8')).resolves.toContain(
+      `ARGS:-F ${sshConfig} lima-browseros-vm 'sh' '-lc' 'echo '\\''boundary ok'\\'''`,
     )
   })
 
@@ -160,7 +176,7 @@ describe('LimaCli', () => {
     ).resolves.toBe(0)
 
     expect(spawn).toHaveBeenCalledWith(
-      ['ssh', '-F', sshConfig, 'lima-browseros-vm', '--', 'true'],
+      ['ssh', '-F', sshConfig, 'lima-browseros-vm', "'true'"],
       expect.objectContaining({
         stdout: 'pipe',
         stderr: 'ignore',

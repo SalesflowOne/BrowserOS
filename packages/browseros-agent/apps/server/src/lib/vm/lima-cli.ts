@@ -104,8 +104,7 @@ export class LimaCli {
         '-F',
         configPath,
         `lima-${name}`,
-        '--',
-        ...args,
+        shellQuoteCommand(args),
       ],
       {
         cwd: '/',
@@ -232,6 +231,14 @@ function toLimaListEntry(input: unknown): LimaListEntry {
     status: entry.status ?? '',
     dir: entry.dir ?? '',
   }
+}
+
+function shellQuoteCommand(args: string[]): string {
+  return args.map(shellQuote).join(' ')
+}
+
+function shellQuote(arg: string): string {
+  return `'${arg.replaceAll("'", "'\\''")}'`
 }
 
 async function drainStream(
