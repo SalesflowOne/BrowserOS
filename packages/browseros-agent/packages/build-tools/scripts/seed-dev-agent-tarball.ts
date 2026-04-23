@@ -7,6 +7,7 @@ import type { Arch } from './common/arch'
 import {
   type AgentEntry,
   type AgentManifest,
+  type Artifact,
   type Bundle,
   type BundleAgent,
   tarballKey,
@@ -21,6 +22,14 @@ export interface BuiltAgentArtifact {
   path: string
   sha256: string
   sizeBytes: number
+}
+
+export interface DevAgentEntry extends Omit<AgentEntry, 'tarballs'> {
+  tarballs: Partial<Record<Arch, Artifact>>
+}
+
+export interface DevAgentManifest extends Omit<AgentManifest, 'agents'> {
+  agents: Record<string, DevAgentEntry>
 }
 
 if (import.meta.main) {
@@ -55,8 +64,8 @@ export async function seedDevAgentTarballs(): Promise<void> {
 export function buildDevManifest(
   artifacts: BuiltAgentArtifact[],
   now: Date = new Date(),
-): AgentManifest {
-  const agents: Record<string, AgentEntry> = {}
+): DevAgentManifest {
+  const agents: Record<string, DevAgentEntry> = {}
   for (const artifact of artifacts) {
     agents[artifact.agent.name] = {
       image: artifact.agent.image,
@@ -67,7 +76,7 @@ export function buildDevManifest(
           sha256: artifact.sha256,
           sizeBytes: artifact.sizeBytes,
         },
-      } as AgentEntry['tarballs'],
+      },
     }
   }
 
@@ -113,7 +122,7 @@ async function readBuiltArtifact(
 ): Promise<BuiltAgentArtifact> {
   const key = tarballKey(agent.name, agent.version, DEV_ARCH)
   const filePath = path.join(distImagesDir, path.basename(key))
-  await assertExists(filePath)
+  await assertExists(filePath, agent.name)
   return {
     agent,
     key,
@@ -156,11 +165,17 @@ function devCacheRoot(): string {
   )
 }
 
-async function assertExists(filePath: string): Promise<void> {
+async function assertExists(
+  filePath: string,
+  agentName: string,
+): Promise<void> {
   try {
     await stat(filePath)
-  } catch {
-    throw new Error(`build did not produce ${filePath}`)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw error
+    }
+    throw new Error(`build did not produce ${agentName} tarball at ${filePath}`)
   }
 }
 
@@ -169,11 +184,13 @@ async function matchesExisting(
   expectedSha: string,
 ): Promise<boolean> {
   try {
-    await stat(filePath)
-  } catch {
-    return false
+    return (await sha256File(filePath)) === expectedSha
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return false
+    }
+    throw error
   }
-  return (await sha256File(filePath)) === expectedSha
 }
 
 async function spawnChecked(argv: string[], cwd: string): Promise<void> {
@@ -184,6 +201,6 @@ async function spawnChecked(argv: string[], cwd: string): Promise<void> {
   })
   const code = await proc.exited
   if (code !== 0) {
-    throw new Error(`${argv[0]} exited ${code}`)
+    throw new Error(`${argv.join(' ')} exited with code ${code}`)
   }
 }
