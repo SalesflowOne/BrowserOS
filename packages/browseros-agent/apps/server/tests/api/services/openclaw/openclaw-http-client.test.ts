@@ -4,10 +4,8 @@
  */
 
 import { afterEach, describe, expect, it, mock } from 'bun:test'
-import {
-  OpenClawHttpClient,
-  OpenClawSessionNotFoundError,
-} from '../../../../src/api/services/openclaw/openclaw-http-client'
+import { OpenClawSessionNotFoundError } from '../../../../src/api/services/openclaw/errors'
+import { OpenClawHttpClient } from '../../../../src/api/services/openclaw/openclaw-http-client'
 
 describe('OpenClawHttpClient', () => {
   const originalFetch = globalThis.fetch

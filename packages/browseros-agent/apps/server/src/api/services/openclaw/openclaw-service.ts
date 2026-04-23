@@ -40,7 +40,11 @@ import {
   getOpenClawStateEnvPath,
   mergeEnvContent,
 } from './openclaw-env'
-import { OpenClawHttpClient } from './openclaw-http-client'
+import {
+  OpenClawHttpClient,
+  type OpenClawSessionHistory,
+  type OpenClawSessionHistoryEvent,
+} from './openclaw-http-client'
 import {
   type ResolvedOpenClawProviderConfig,
   resolveSupportedOpenClawProvider,
@@ -595,6 +599,28 @@ export class OpenClawService {
         message,
         history,
       }),
+    )
+  }
+
+  // ── Session History (HTTP) ───────────────────────────────────────────
+
+  async getSessionHistory(
+    sessionKey: string,
+    input: { limit?: number; cursor?: string; signal?: AbortSignal } = {},
+  ): Promise<OpenClawSessionHistory> {
+    await this.assertGatewayReady()
+    return this.runControlPlaneCall(() =>
+      this.httpClient.getSessionHistory(sessionKey, input),
+    )
+  }
+
+  async streamSessionHistory(
+    sessionKey: string,
+    input: { limit?: number; cursor?: string; signal?: AbortSignal } = {},
+  ): Promise<ReadableStream<OpenClawSessionHistoryEvent>> {
+    await this.assertGatewayReady()
+    return this.runControlPlaneCall(() =>
+      this.httpClient.streamSessionHistory(sessionKey, input),
     )
   }
 

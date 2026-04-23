@@ -5,6 +5,7 @@
  */
 
 import { createParser, type EventSourceMessage } from 'eventsource-parser'
+import { OpenClawSessionNotFoundError } from './errors'
 import type { OpenClawStreamEvent } from './openclaw-types'
 
 export interface OpenClawChatHistoryMessage {
@@ -54,13 +55,6 @@ export type OpenClawSessionHistoryEvent =
       }
     }
   | { type: 'error'; data: { message: string } }
-
-export class OpenClawSessionNotFoundError extends Error {
-  constructor(public readonly sessionKey: string) {
-    super(`OpenClaw session not found: ${sessionKey}`)
-    this.name = 'OpenClawSessionNotFoundError'
-  }
-}
 
 export class OpenClawHttpClient {
   constructor(
