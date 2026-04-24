@@ -20,14 +20,26 @@ describe('container-runtime factory', () => {
   beforeEach(async () => {
     root = await mkdtemp('/tmp/openclaw-runtime-factory-')
     resourcesDir = join(root, 'resources')
-    await mkdir(join(resourcesDir, 'bin', 'third_party', 'lima'), {
-      recursive: true,
-    })
-    await mkdir(join(resourcesDir, 'vm'), { recursive: true })
-    await writeFile(
-      join(resourcesDir, 'bin', 'third_party', 'lima', 'limactl'),
-      '#!/bin/sh\n',
+    const limaRoot = join(resourcesDir, 'bin', 'third_party', 'lima')
+    const limactlPath = join(limaRoot, 'bin', 'limactl')
+    const armGuestAgentPath = join(
+      limaRoot,
+      'share',
+      'lima',
+      'lima-guestagent.Linux-aarch64.gz',
     )
+    const x64GuestAgentPath = join(
+      limaRoot,
+      'share',
+      'lima',
+      'lima-guestagent.Linux-x86_64.gz',
+    )
+    await mkdir(dirname(limactlPath), { recursive: true })
+    await mkdir(dirname(armGuestAgentPath), { recursive: true })
+    await mkdir(join(resourcesDir, 'vm'), { recursive: true })
+    await writeFile(limactlPath, '#!/bin/sh\n')
+    await writeFile(armGuestAgentPath, 'guest-agent\n')
+    await writeFile(x64GuestAgentPath, 'guest-agent\n')
     await writeFile(
       join(resourcesDir, 'vm', 'browseros-vm.yaml'),
       'mounts: []\n',
