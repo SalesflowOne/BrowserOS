@@ -21,25 +21,58 @@ interface ClaudeAuthStatusPayload {
   subscriptionType?: string
 }
 
+// Find the index of the closing `}` that balances the `{` at `start`.
+// String- and escape-aware so quoted braces inside the JSON don't throw
+// the counter off. Returns -1 if no balanced brace is found.
+function findMatchingBrace(text: string, start: number): number {
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i]
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (inString) {
+      if (ch === '\\') escaped = true
+      else if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') inString = true
+    else if (ch === '{') depth++
+    else if (ch === '}' && --depth === 0) return i
+  }
+  return -1
+}
+
+// Extract the first valid JSON object anywhere inside `text`. Tolerates:
+//  - pretty-printed (multi-line) JSON, which `claude auth status` emits
+//  - trailing noise on stderr (lima/nerdctl fatal lines when the inner
+//    command exits non-zero)
+//  - leading banners or log lines before the JSON block
+function extractFirstJsonObject(text: string): unknown | null {
+  let start = text.indexOf('{')
+  while (start !== -1) {
+    const end = findMatchingBrace(text, start)
+    if (end !== -1) {
+      try {
+        return JSON.parse(text.slice(start, end + 1))
+      } catch {
+        // malformed, try next `{`
+      }
+    }
+    start = text.indexOf('{', start + 1)
+  }
+  return null
+}
+
 function extractClaudeAuthStatusPayload(
   stdout: string,
 ): ClaudeAuthStatusPayload | null {
-  // `claude auth status` emits one JSON object on stdout on both success
-  // (exit 0) and the "not logged in" path (exit 1). Lima/nerdctl may add
-  // a stderr line like `time="…" level=fatal msg="exec failed with exit
-  // code 1"` when the inner command exits non-zero. Scan line by line
-  // and return the first line that parses as a plain object.
-  for (const line of stdout.split(/\r?\n/)) {
-    const trimmed = line.trim()
-    if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) continue
-    try {
-      const parsed: unknown = JSON.parse(trimmed)
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        return parsed as ClaudeAuthStatusPayload
-      }
-    } catch {
-      // try next line
-    }
+  const parsed = extractFirstJsonObject(stdout)
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    return parsed as ClaudeAuthStatusPayload
   }
   return null
 }
