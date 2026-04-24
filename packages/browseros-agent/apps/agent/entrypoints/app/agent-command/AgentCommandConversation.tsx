@@ -1,4 +1,4 @@
-import { Bot, Home, RotateCcw } from 'lucide-react'
+import { ArrowLeft, Bot, Home, RotateCcw } from 'lucide-react'
 import { type FC, useEffect, useRef } from 'react'
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router'
 import { Button } from '@/components/ui/button'
@@ -11,15 +11,21 @@ import { useAgentConversation } from './useAgentConversation'
 
 function ConversationHeader({
   agentName,
+  backLabel,
+  backTarget,
   status,
-  onGoHome,
+  onNavigateBack,
   onReset,
 }: {
   agentName: string
+  backLabel: string
+  backTarget: 'home' | 'page'
   status: string
-  onGoHome: () => void
+  onNavigateBack: () => void
   onReset: () => void
 }) {
+  const BackIcon = backTarget === 'home' ? Home : ArrowLeft
+
   return (
     <div className="overflow-hidden rounded-[1.5rem] border border-border/60 bg-card/95 shadow-sm backdrop-blur">
       <div className="flex items-center justify-between gap-3 px-5 py-4">
@@ -27,11 +33,11 @@ function ConversationHeader({
           <Button
             variant="ghost"
             size="icon"
-            onClick={onGoHome}
+            onClick={onNavigateBack}
             className="rounded-xl"
-            title="Back to home"
+            title={backLabel}
           >
-            <Home className="size-4" />
+            <BackIcon className="size-4" />
           </Button>
           <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
             <Bot className="size-5" />
@@ -85,7 +91,19 @@ function getConversationStatusCopy(
   return 'Open agent setup to continue'
 }
 
-export const AgentCommandConversation: FC = () => {
+interface AgentCommandConversationProps {
+  variant?: 'command' | 'page'
+  backPath?: string
+  agentPathPrefix?: string
+  createAgentPath?: string
+}
+
+export const AgentCommandConversation: FC<AgentCommandConversationProps> = ({
+  variant = 'command',
+  backPath = '/home',
+  agentPathPrefix = '/home/agents',
+  createAgentPath = '/agents',
+}) => {
   const { agentId } = useParams<{ agentId: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
@@ -100,6 +118,8 @@ export const AgentCommandConversation: FC = () => {
     useAgentConversation(resolvedAgentId, agentName)
   const lastTurn = turns[turns.length - 1]
   const lastTurnPartCount = lastTurn?.parts.length ?? 0
+  const isPageVariant = variant === 'page'
+  const backLabel = isPageVariant ? 'Back to agents' : 'Back to home'
 
   useEffect(() => {
     if (shouldRedirectHome) return
@@ -131,18 +151,32 @@ export const AgentCommandConversation: FC = () => {
   }
 
   const handleSelectAgent = (entry: AgentEntry) => {
-    navigate(`/home/agents/${entry.agentId}`)
+    navigate(`${agentPathPrefix}/${entry.agentId}`)
   }
 
   const statusCopy = getConversationStatusCopy(status?.status, streaming)
 
   return (
-    <div className="absolute inset-0 overflow-hidden">
-      <div className="fade-in slide-in-from-bottom-5 mx-auto flex h-full w-full max-w-3xl animate-in flex-col gap-3 px-4 pt-4 pb-2 duration-300">
+    <div
+      className={cn(
+        'overflow-hidden',
+        isPageVariant
+          ? 'h-[calc(100vh-7rem)] min-h-[620px]'
+          : 'absolute inset-0',
+      )}
+    >
+      <div
+        className={cn(
+          'fade-in slide-in-from-bottom-5 flex h-full w-full animate-in flex-col gap-3 duration-300',
+          isPageVariant ? 'mx-auto' : 'mx-auto max-w-3xl px-4 pt-4 pb-2',
+        )}
+      >
         <ConversationHeader
           agentName={agentName}
+          backLabel={backLabel}
+          backTarget={isPageVariant ? 'page' : 'home'}
           status={statusCopy}
-          onGoHome={() => navigate('/home')}
+          onNavigateBack={() => navigate(backPath)}
           onReset={resetConversation}
         />
 
@@ -181,7 +215,7 @@ export const AgentCommandConversation: FC = () => {
             onSend={(text) => {
               void send(text)
             }}
-            onCreateAgent={() => navigate('/agents')}
+            onCreateAgent={() => navigate(createAgentPath)}
             streaming={streaming}
             disabled={status?.status !== 'running'}
             status={status?.status}
