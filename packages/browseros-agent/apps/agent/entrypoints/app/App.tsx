@@ -128,10 +128,8 @@ export const App: FC = () => {
                   }
                 />
               </Route>
+              <Route path="admin" element={<AdminDashboardPage />} />
             </>
-          ) : null}
-          {alphaEnabled ? (
-            <Route path="admin" element={<AdminDashboardPage />} />
           ) : null}
         </Route>
 

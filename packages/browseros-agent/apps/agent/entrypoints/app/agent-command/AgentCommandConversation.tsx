@@ -9,22 +9,27 @@ import { ConversationInput } from './ConversationInput'
 import { ConversationMessage } from './ConversationMessage'
 import { useAgentConversation } from './useAgentConversation'
 
+type ConversationVariant = 'command' | 'page'
+
+// Page routes render inside SidebarLayout's py-8 content frame.
+const PAGE_FRAME_HEIGHT_CLASS = 'h-[calc(100dvh-4rem)] min-h-[620px]'
+
 function ConversationHeader({
   agentName,
   backLabel,
-  backTarget,
+  variant,
   status,
   onNavigateBack,
   onReset,
 }: {
   agentName: string
   backLabel: string
-  backTarget: 'home' | 'page'
+  variant: ConversationVariant
   status: string
   onNavigateBack: () => void
   onReset: () => void
 }) {
-  const BackIcon = backTarget === 'home' ? Home : ArrowLeft
+  const BackIcon = variant === 'command' ? Home : ArrowLeft
 
   return (
     <div className="overflow-hidden rounded-[1.5rem] border border-border/60 bg-card/95 shadow-sm backdrop-blur">
@@ -92,7 +97,7 @@ function getConversationStatusCopy(
 }
 
 interface AgentCommandConversationProps {
-  variant?: 'command' | 'page'
+  variant?: ConversationVariant
   backPath?: string
   agentPathPrefix?: string
   createAgentPath?: string
@@ -147,7 +152,7 @@ export const AgentCommandConversation: FC<AgentCommandConversationProps> = ({
   }, [lastTurnPartCount, shouldRedirectHome, streaming, turns.length])
 
   if (shouldRedirectHome) {
-    return <Navigate to="/home" replace />
+    return <Navigate to={backPath} replace />
   }
 
   const handleSelectAgent = (entry: AgentEntry) => {
@@ -160,21 +165,21 @@ export const AgentCommandConversation: FC<AgentCommandConversationProps> = ({
     <div
       className={cn(
         'overflow-hidden',
-        isPageVariant
-          ? 'h-[calc(100vh-7rem)] min-h-[620px]'
-          : 'absolute inset-0',
+        isPageVariant ? PAGE_FRAME_HEIGHT_CLASS : 'absolute inset-0',
       )}
     >
       <div
         className={cn(
           'fade-in slide-in-from-bottom-5 flex h-full w-full animate-in flex-col gap-3 duration-300',
-          isPageVariant ? 'mx-auto' : 'mx-auto max-w-3xl px-4 pt-4 pb-2',
+          isPageVariant
+            ? 'mx-auto max-w-3xl'
+            : 'mx-auto max-w-3xl px-4 pt-4 pb-2',
         )}
       >
         <ConversationHeader
           agentName={agentName}
           backLabel={backLabel}
-          backTarget={isPageVariant ? 'page' : 'home'}
+          variant={variant}
           status={statusCopy}
           onNavigateBack={() => navigate(backPath)}
           onReset={resetConversation}
