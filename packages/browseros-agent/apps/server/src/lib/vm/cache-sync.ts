@@ -52,7 +52,6 @@ export async function ensureVmCacheAvailable(
 ): Promise<void> {
   if (inFlight) {
     await inFlight
-    return
   }
 
   if (existsSync(getCachedManifestPath(options.browserosRoot))) return

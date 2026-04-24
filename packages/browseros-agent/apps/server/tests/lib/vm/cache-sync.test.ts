@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
+  ensureVmCacheAvailable,
   ensureVmCacheSynced,
   prefetchVmCache,
 } from '../../../src/lib/vm/cache-sync'
@@ -191,6 +192,56 @@ describe('runtime VM cache sync', () => {
       skipped: false,
     })
     expect(calls).toEqual([MANIFEST_URL, `${CDN_BASE}/${TARBALL_KEY}`])
+  })
+
+  it('rechecks its target cache after awaiting an unrelated in-flight sync', async () => {
+    const otherRoot = await mkdtemp('/tmp/browseros-vm-cache-sync-other-')
+    try {
+      const calls: string[] = []
+      let resolveManifest: (response: Response) => void = () => {}
+      const manifestResponse = new Promise<Response>((resolve) => {
+        resolveManifest = resolve
+      })
+      const fetchImpl = async (input: RequestInfo | URL): Promise<Response> => {
+        const url = String(input)
+        calls.push(url)
+        if (calls.length === 1 && url === MANIFEST_URL) return manifestResponse
+        if (url === MANIFEST_URL) return jsonResponse(manifest)
+        if (url === `${CDN_BASE}/${TARBALL_KEY}`)
+          return new Response(TARBALL_BYTES)
+        return new Response('', { status: 404 })
+      }
+
+      const first = prefetchVmCache({
+        browserosRoot: otherRoot,
+        cdnBaseUrl: CDN_BASE,
+        fetchImpl,
+        rawHostArch: 'arm64',
+      })
+      const available = ensureVmCacheAvailable({
+        browserosRoot: root,
+        cdnBaseUrl: CDN_BASE,
+        fetchImpl,
+        rawHostArch: 'arm64',
+      })
+
+      resolveManifest(jsonResponse(manifest))
+
+      await first
+      await available
+
+      await expect(readFile(getCachedManifestPath(root), 'utf8')).resolves.toBe(
+        `${JSON.stringify(manifest, null, 2)}\n`,
+      )
+      expect(calls).toEqual([
+        MANIFEST_URL,
+        `${CDN_BASE}/${TARBALL_KEY}`,
+        MANIFEST_URL,
+        `${CDN_BASE}/${TARBALL_KEY}`,
+      ])
+    } finally {
+      await rm(otherRoot, { recursive: true, force: true })
+    }
   })
 
   it('clears failed in-flight syncs so a later call can retry', async () => {
