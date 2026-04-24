@@ -8,11 +8,19 @@ import {
   Mic,
   Square,
 } from 'lucide-react'
-import { type FC, type ReactNode, useEffect, useState } from 'react'
+import {
+  type FC,
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 import { AppSelector } from '@/components/elements/AppSelector'
 import { TabPickerPopover } from '@/components/elements/tab-picker-popover'
 import { WorkspaceSelector } from '@/components/elements/workspace-selector'
 import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
 import type { AgentEntry } from '@/entrypoints/app/agents/useOpenClaw'
 import { McpServerIcon } from '@/entrypoints/app/connect-mcp/McpServerIcon'
 import { useGetUserMCPIntegrations } from '@/entrypoints/app/connect-mcp/useGetUserMCPIntegrations'
@@ -146,7 +154,7 @@ function ContextControls({
   })
 
   return (
-    <div className="flex items-center justify-between border-border/50 border-t px-5 py-3">
+    <div className="flex items-center justify-between border-border/40 border-t px-4 py-2.5">
       <div className="flex items-center gap-1">
         {showAgentSelector ? (
           <AgentSelector
@@ -234,7 +242,7 @@ function ContextControls({
 
 function HomeShell({ children }: { children: ReactNode }) {
   return (
-    <div className="overflow-hidden rounded-[1.5rem] border border-border/60 bg-card/95 shadow-sm backdrop-blur">
+    <div className="overflow-hidden rounded-[1.55rem] border border-border/60 bg-card/95 shadow-sm">
       {children}
     </div>
   )
@@ -242,7 +250,7 @@ function HomeShell({ children }: { children: ReactNode }) {
 
 function ConversationShell({ children }: { children: ReactNode }) {
   return (
-    <div className="overflow-hidden rounded-[1.5rem] border border-border/60 bg-card/95 shadow-sm backdrop-blur">
+    <div className="overflow-hidden rounded-[1.35rem] border border-border/50 bg-background/95 shadow-[0_10px_30px_rgba(15,23,42,0.06)] backdrop-blur-md">
       {children}
     </div>
   )
@@ -262,10 +270,27 @@ export const ConversationInput: FC<ConversationInputProps> = ({
 }) => {
   const [input, setInput] = useState('')
   const [selectedTabs, setSelectedTabs] = useState<chrome.tabs.Tab[]>([])
+  const [isExpandedDraft, setIsExpandedDraft] = useState(false)
   const voice = useVoiceInput()
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const selectedAgent = agents.find(
     (agent) => agent.agentId === selectedAgentId,
   )
+  const isConversation = variant === 'conversation'
+
+  useLayoutEffect(() => {
+    const element = textareaRef.current
+    if (!element) return
+
+    const maxHeight = isConversation ? 176 : 100
+    const collapsedHeight = isConversation ? 56 : 72
+    element.style.height = '0px'
+    const nextHeight = Math.min(element.scrollHeight, maxHeight)
+    element.style.height = `${nextHeight}px`
+    element.style.overflowY =
+      element.scrollHeight > maxHeight ? 'auto' : 'hidden'
+    setIsExpandedDraft(nextHeight > collapsedHeight)
+  })
 
   useEffect(() => {
     if (voice.transcript && !voice.isTranscribing) {
@@ -296,26 +321,43 @@ export const ConversationInput: FC<ConversationInputProps> = ({
 
   return (
     <Shell>
-      <div className="flex items-center gap-3 px-5 py-4">
+      <div
+        className={cn(
+          'flex gap-3',
+          variant === 'home' ? 'px-4 py-3' : 'px-4 py-3',
+          isExpandedDraft ? 'items-end' : 'items-center',
+        )}
+      >
         <BotInputIcon variant={variant} />
-        <input
-          type="text"
-          value={input}
-          onChange={(event) => setInput(event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault()
-              handleSend()
+        <div className="flex-1">
+          <Textarea
+            ref={textareaRef}
+            value={input}
+            onChange={(event) => setInput(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault()
+                handleSend()
+              }
+            }}
+            rows={1}
+            placeholder={
+              voice.isTranscribing
+                ? 'Transcribing...'
+                : (placeholder ??
+                  `Message ${selectedAgent?.name ?? 'agent'}...`)
             }
-          }}
-          placeholder={
-            voice.isTranscribing
-              ? 'Transcribing...'
-              : (placeholder ?? `Message ${selectedAgent?.name ?? 'agent'}...`)
-          }
-          disabled={disabled || voice.isTranscribing}
-          className="flex-1 border-none bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-60"
-        />
+            disabled={disabled || voice.isTranscribing}
+            className={cn(
+              'resize-none border-none bg-transparent px-0 text-[15px] shadow-none focus-visible:ring-0',
+              '[field-sizing:fixed]',
+              variant === 'home'
+                ? 'min-h-[40px] py-2 leading-6'
+                : 'min-h-[40px] py-2 leading-6',
+              'placeholder:text-muted-foreground/80',
+            )}
+          />
+        </div>
         <VoiceButton
           isRecording={voice.isRecording}
           isTranscribing={voice.isTranscribing}
@@ -361,8 +403,8 @@ function BotInputIcon({ variant }: { variant: 'home' | 'conversation' }) {
       className={cn(
         'flex items-center justify-center text-[var(--accent-orange)]',
         variant === 'home'
-          ? 'h-10 w-10 rounded-xl bg-[var(--accent-orange)]/10'
-          : 'h-9 w-9 rounded-xl bg-[var(--accent-orange)]/12',
+          ? 'h-8 w-8 rounded-lg bg-[var(--accent-orange)]/10'
+          : 'h-8 w-8 rounded-lg bg-[var(--accent-orange)]/10',
       )}
     >
       <Bot className="h-4 w-4" />

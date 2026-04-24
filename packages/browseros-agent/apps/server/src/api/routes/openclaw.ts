@@ -7,8 +7,6 @@
  * Thin layer delegating to OpenClawService.
  */
 
-import { accessSync, existsSync, constants as fsConstants } from 'node:fs'
-import path from 'node:path'
 import { Hono } from 'hono'
 import { stream } from 'hono/streaming'
 import { logger } from '../../lib/logger'
@@ -19,9 +17,13 @@ import {
   OpenClawAgentNotFoundError,
   OpenClawInvalidAgentNameError,
   OpenClawProtectedAgentError,
+  OpenClawSessionNotFoundError,
 } from '../services/openclaw/errors'
 import { isUnsupportedOpenClawProviderError } from '../services/openclaw/openclaw-provider-map'
-import { getOpenClawService } from '../services/openclaw/openclaw-service'
+import {
+  getOpenClawService,
+  normalizeBrowserOSChatSessionKey,
+} from '../services/openclaw/openclaw-service'
 
 function getCreateAgentValidationError(body: { name?: string }): string | null {
   if (!body.name?.trim()) {
@@ -30,25 +32,14 @@ function getCreateAgentValidationError(body: { name?: string }): string | null {
   return null
 }
 
-function getPodmanOverrideValidationError(body: {
-  podmanPath?: string | null
-}): string | null {
-  if (body.podmanPath === null) return null
-  if (typeof body.podmanPath !== 'string' || !body.podmanPath.trim()) {
-    return 'podmanPath must be a non-empty absolute path or null'
-  }
-  if (!path.isAbsolute(body.podmanPath)) {
-    return 'podmanPath must be an absolute path'
-  }
-  if (!existsSync(body.podmanPath)) {
-    return `File does not exist: ${body.podmanPath}`
-  }
-  try {
-    accessSync(body.podmanPath, fsConstants.X_OK)
-  } catch {
-    return `File is not executable: ${body.podmanPath}`
-  }
-  return null
+function parsePositiveIntQuery(
+  value: string | undefined,
+  fallback: number,
+): number {
+  if (value === undefined) return fallback
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(1, Math.trunc(parsed))
 }
 
 export function createOpenClawRoutes() {
@@ -102,7 +93,7 @@ export function createOpenClawRoutes() {
         if (isUnsupportedOpenClawProviderError(err)) {
           return c.json({ error: err.message }, 400)
         }
-        if (message.includes('Podman is not available')) {
+        if (message.includes('VM runtime is not available')) {
           return c.json({ error: message }, 503)
         }
         return c.json({ error: message }, 500)
@@ -224,6 +215,51 @@ export function createOpenClawRoutes() {
       }
     })
 
+    .get('/agents/:id/sessions', async (c) => {
+      const { id } = c.req.param()
+      const limit = parsePositiveIntQuery(c.req.query('limit'), 20)
+
+      try {
+        const sessions = await getOpenClawService().listSessions(id)
+        return c.json({
+          agentId: id,
+          sessions: sessions.slice(0, Math.min(limit, 100)),
+        })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        return c.json({ error: message }, 500)
+      }
+    })
+
+    .get('/agents/:id/session', async (c) => {
+      const { id } = c.req.param()
+
+      try {
+        const session = await getOpenClawService().resolveAgentSession(id)
+        return c.json(session)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        return c.json({ error: message }, 500)
+      }
+    })
+
+    .get('/agents/:id/history', async (c) => {
+      const { id } = c.req.param()
+      const limit = parsePositiveIntQuery(c.req.query('limit'), 50)
+
+      try {
+        const page = await getOpenClawService().getAgentHistoryPage(id, {
+          sessionKey: c.req.query('sessionKey'),
+          cursor: c.req.query('cursor'),
+          limit,
+        })
+        return c.json(page)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        return c.json({ error: message }, 500)
+      }
+    })
+
     .post('/agents/:id/chat', async (c) => {
       const { id } = c.req.param()
       const body = await c.req.json<{
@@ -236,7 +272,10 @@ export function createOpenClawRoutes() {
         return c.json({ error: 'Message is required' }, 400)
       }
 
-      const sessionKey = body.sessionKey ?? crypto.randomUUID()
+      const sessionKey = normalizeBrowserOSChatSessionKey(
+        id,
+        body.sessionKey ?? crypto.randomUUID(),
+      )
       const history = Array.isArray(body.history)
         ? body.history.filter((entry): entry is MonitoringChatTurn =>
             Boolean(
@@ -344,6 +383,61 @@ export function createOpenClawRoutes() {
       }
     })
 
+    .get('/session/:key/history', async (c) => {
+      const key = c.req.param('key')
+      const limitRaw = c.req.query('limit')
+      const cursor = c.req.query('cursor')
+      const limitParsed =
+        limitRaw !== undefined ? Number.parseInt(limitRaw, 10) : Number.NaN
+      const limit = Number.isFinite(limitParsed) ? limitParsed : undefined
+      const wantsStream = (c.req.header('accept') ?? '').includes(
+        'text/event-stream',
+      )
+
+      try {
+        if (!wantsStream) {
+          const history = await getOpenClawService().getSessionHistory(key, {
+            limit,
+            cursor,
+          })
+          return c.json(history)
+        }
+
+        const eventStream = await getOpenClawService().streamSessionHistory(
+          key,
+          { limit, cursor, signal: c.req.raw.signal },
+        )
+
+        c.header('Content-Type', 'text/event-stream')
+        c.header('Cache-Control', 'no-cache')
+        c.header('X-Session-Key', key)
+
+        return stream(c, async (s) => {
+          const reader = eventStream.getReader()
+          const encoder = new TextEncoder()
+          try {
+            while (true) {
+              const { done, value } = await reader.read()
+              if (done) break
+              await s.write(
+                encoder.encode(
+                  `event: ${value.type}\ndata: ${JSON.stringify(value.data)}\n\n`,
+                ),
+              )
+            }
+          } finally {
+            await reader.cancel()
+          }
+        })
+      } catch (err) {
+        if (err instanceof OpenClawSessionNotFoundError) {
+          return c.json({ error: err.message }, 404)
+        }
+        const message = err instanceof Error ? err.message : String(err)
+        return c.json({ error: message }, 500)
+      }
+    })
+
     .get('/logs', async (c) => {
       try {
         const logs = await getOpenClawService().getLogs()
@@ -380,39 +474,6 @@ export function createOpenClawRoutes() {
           return c.json({ error: err.message }, 400)
         }
         const message = err instanceof Error ? err.message : String(err)
-        return c.json({ error: message }, 500)
-      }
-    })
-
-    .get('/podman-overrides', async (c) => {
-      try {
-        const overrides = await getOpenClawService().getPodmanOverrides()
-        return c.json(overrides)
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        logger.error('Podman overrides read failed', { error: message })
-        return c.json({ error: message }, 500)
-      }
-    })
-
-    .post('/podman-overrides', async (c) => {
-      const body = await c.req.json<{ podmanPath: string | null }>()
-      const validationError = getPodmanOverrideValidationError(body)
-      if (validationError) {
-        return c.json({ error: validationError }, 400)
-      }
-
-      try {
-        logger.info('OpenClaw podman override requested', {
-          podmanPath: body.podmanPath,
-        })
-        const result = await getOpenClawService().applyPodmanOverrides({
-          podmanPath: body.podmanPath,
-        })
-        return c.json(result)
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        logger.error('Podman overrides apply failed', { error: message })
         return c.json({ error: message }, 500)
       }
     })

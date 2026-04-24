@@ -31,6 +31,37 @@ export interface OpenClawAgentRecord {
   model?: string
 }
 
+export interface OpenClawSessionEntry {
+  key: string
+  updatedAt: number
+  sessionId: string
+  agentId: string
+  kind: string
+  status?: string
+  totalTokens?: number
+  model?: string
+  modelProvider?: string
+}
+
+export interface OpenClawChatBlock {
+  type: 'text' | 'toolCall' | 'thinking'
+  text?: string
+  name?: string
+  arguments?: unknown
+  thinking?: string
+}
+
+export interface OpenClawChatMessage {
+  role: 'user' | 'assistant' | 'toolResult'
+  content: OpenClawChatBlock[]
+  timestamp?: number
+  usage?: { input: number; output: number }
+  stopReason?: string
+  toolName?: string
+  toolCallId?: string
+  isError?: boolean
+}
+
 export class OpenClawCliClient {
   constructor(private readonly executor: ContainerExecutor) {}
 
@@ -189,6 +220,53 @@ export class OpenClawCliClient {
 
   async probe(): Promise<void> {
     await this.listAgents()
+  }
+
+  async listSessions(agentId?: string): Promise<OpenClawSessionEntry[]> {
+    const args = ['sessions', '--json']
+    if (agentId) {
+      args.push('--agent', agentId)
+    } else {
+      args.push('--all-agents')
+    }
+
+    const output = await this.runCommand(args)
+    const parsed = parseFirstMatchingJson<
+      { sessions?: unknown[]; count?: number } | unknown[]
+    >(output, isSessionListPayload)
+
+    if (parsed === null) {
+      throw new Error(
+        `Failed to parse OpenClaw sessions output: ${output.slice(0, 200)}`,
+      )
+    }
+
+    const entries = Array.isArray(parsed) ? parsed : (parsed.sessions ?? [])
+    return entries.map(toSessionEntry)
+  }
+
+  async getChatHistory(sessionKey: string): Promise<OpenClawChatMessage[]> {
+    const output = await this.runCommand([
+      'gateway',
+      'call',
+      'chat.history',
+      '--params',
+      JSON.stringify({ sessionKey }),
+      '--json',
+    ])
+
+    const parsed = parseFirstMatchingJson<{ messages?: unknown[] }>(
+      output,
+      (value) => isPlainObject(value) && 'messages' in value,
+    )
+
+    if (parsed === null) {
+      throw new Error(
+        `Failed to parse OpenClaw chat history output: ${output.slice(0, 200)}`,
+      )
+    }
+
+    return (parsed.messages ?? []).map(toChatMessage)
   }
 
   private agentWorkspace(name: string): string {
@@ -404,4 +482,100 @@ function isStructuredLogPayload(value: unknown): boolean {
     typeof value.level === 'string' &&
     (typeof value.message === 'string' || typeof value.msg === 'string')
   )
+}
+
+function isSessionListPayload(value: unknown): boolean {
+  if (Array.isArray(value)) return true
+  if (!isPlainObject(value)) return false
+  return 'sessions' in value || 'count' in value
+}
+
+function toSessionEntry(raw: unknown): OpenClawSessionEntry {
+  const record = isPlainObject(raw) ? raw : {}
+  return {
+    key: String(record.key ?? ''),
+    updatedAt: typeof record.updatedAt === 'number' ? record.updatedAt : 0,
+    sessionId: String(record.sessionId ?? ''),
+    agentId: String(record.agentId ?? ''),
+    kind: String(record.kind ?? ''),
+    status: typeof record.status === 'string' ? record.status : undefined,
+    totalTokens:
+      typeof record.totalTokens === 'number' ? record.totalTokens : undefined,
+    model: typeof record.model === 'string' ? record.model : undefined,
+    modelProvider:
+      typeof record.modelProvider === 'string'
+        ? record.modelProvider
+        : undefined,
+  }
+}
+
+function toChatMessage(raw: unknown): OpenClawChatMessage {
+  const record = isPlainObject(raw) ? raw : {}
+  const role = isOpenClawMessageRole(record.role) ? record.role : 'assistant'
+  const message: OpenClawChatMessage = {
+    role,
+    content: toChatBlocks(record.content),
+  }
+
+  if (typeof record.timestamp === 'number') message.timestamp = record.timestamp
+  if (isPlainObject(record.usage)) {
+    const { input, output } = record.usage
+    if (typeof input === 'number' && typeof output === 'number') {
+      message.usage = { input, output }
+    }
+  }
+  if (typeof record.stopReason === 'string') {
+    message.stopReason = record.stopReason
+  }
+  if (typeof record.toolName === 'string') message.toolName = record.toolName
+  if (typeof record.toolCallId === 'string') {
+    message.toolCallId = record.toolCallId
+  }
+  if (typeof record.isError === 'boolean') message.isError = record.isError
+
+  return message
+}
+
+function toChatBlocks(content: unknown): OpenClawChatBlock[] {
+  if (typeof content === 'string') {
+    return [{ type: 'text', text: content }]
+  }
+
+  if (!Array.isArray(content)) return []
+
+  const blocks: OpenClawChatBlock[] = []
+  for (const rawBlock of content) {
+    if (!isPlainObject(rawBlock)) continue
+
+    if (rawBlock.type === 'toolCall') {
+      const block: OpenClawChatBlock = { type: 'toolCall' }
+      if (typeof rawBlock.name === 'string') block.name = rawBlock.name
+      if (rawBlock.arguments !== undefined) {
+        block.arguments = rawBlock.arguments
+      }
+      blocks.push(block)
+      continue
+    }
+
+    if (rawBlock.type === 'thinking') {
+      const block: OpenClawChatBlock = { type: 'thinking' }
+      if (typeof rawBlock.thinking === 'string') {
+        block.thinking = rawBlock.thinking
+      }
+      blocks.push(block)
+      continue
+    }
+
+    const block: OpenClawChatBlock = { type: 'text' }
+    if (typeof rawBlock.text === 'string') block.text = rawBlock.text
+    blocks.push(block)
+  }
+
+  return blocks
+}
+
+function isOpenClawMessageRole(
+  value: unknown,
+): value is OpenClawChatMessage['role'] {
+  return value === 'user' || value === 'assistant' || value === 'toolResult'
 }

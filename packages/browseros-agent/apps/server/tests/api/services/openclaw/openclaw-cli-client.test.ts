@@ -264,6 +264,109 @@ describe('OpenClawCliClient', () => {
     await expect(client.listAgents()).rejects.toThrow('agent already exists')
   })
 
+  it('lists sessions for a specific agent', async () => {
+    const execInContainer = mock(
+      async (command: string[], onLog?: (line: string) => void) => {
+        expect(command).toEqual([
+          'node',
+          'dist/index.js',
+          'sessions',
+          '--json',
+          '--agent',
+          'main',
+        ])
+        onLog?.(
+          JSON.stringify({
+            sessions: [
+              {
+                key: 'openai-user:browseros:main:session-1',
+                updatedAt: 1710000000000,
+                sessionId: 'session-1',
+                agentId: 'main',
+                kind: 'chat',
+                status: 'active',
+                totalTokens: 120,
+                model: 'openai/gpt-5.4-mini',
+                modelProvider: 'openai',
+              },
+            ],
+            count: 1,
+          }),
+        )
+        return 0
+      },
+    )
+
+    const client = new OpenClawCliClient({ execInContainer })
+    const sessions = await client.listSessions('main')
+
+    expect(sessions).toEqual([
+      {
+        key: 'openai-user:browseros:main:session-1',
+        updatedAt: 1710000000000,
+        sessionId: 'session-1',
+        agentId: 'main',
+        kind: 'chat',
+        status: 'active',
+        totalTokens: 120,
+        model: 'openai/gpt-5.4-mini',
+        modelProvider: 'openai',
+      },
+    ])
+  })
+
+  it('fetches chat history through the OpenClaw gateway call command', async () => {
+    const execInContainer = mock(
+      async (command: string[], onLog?: (line: string) => void) => {
+        expect(command).toEqual([
+          'node',
+          'dist/index.js',
+          'gateway',
+          'call',
+          'chat.history',
+          '--params',
+          '{"sessionKey":"session-1"}',
+          '--json',
+        ])
+        onLog?.(
+          JSON.stringify({
+            messages: [
+              {
+                role: 'user',
+                content: [{ type: 'text', text: 'Hello' }],
+                timestamp: 1710000000001,
+              },
+              {
+                role: 'assistant',
+                content: [{ type: 'text', text: 'Hi there' }],
+                timestamp: 1710000000002,
+                usage: { input: 5, output: 6 },
+              },
+            ],
+          }),
+        )
+        return 0
+      },
+    )
+
+    const client = new OpenClawCliClient({ execInContainer })
+    const history = await client.getChatHistory('session-1')
+
+    expect(history).toEqual([
+      {
+        role: 'user',
+        content: [{ type: 'text', text: 'Hello' }],
+        timestamp: 1710000000001,
+      },
+      {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'Hi there' }],
+        timestamp: 1710000000002,
+        usage: { input: 5, output: 6 },
+      },
+    ])
+  })
+
   it('parses config get output from mixed logs and pretty-printed JSON', async () => {
     const execInContainer = mock(
       async (command: string[], onLog?: (line: string) => void) => {

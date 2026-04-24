@@ -4,9 +4,7 @@
  */
 
 import { afterEach, describe, expect, it, mock } from 'bun:test'
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { OpenClawSessionNotFoundError } from '../../../src/api/services/openclaw/errors'
 import { UnsupportedOpenClawProviderError } from '../../../src/api/services/openclaw/openclaw-provider-map'
 
 describe('createOpenClawRoutes', () => {
@@ -14,7 +12,7 @@ describe('createOpenClawRoutes', () => {
     mock.restore()
   })
 
-  it('preserves BrowserOS SSE framing, session headers, and defaults chat history for chat', async () => {
+  it('preserves BrowserOS SSE framing and normalizes recursive session keys for chat', async () => {
     const actualOpenClawService = await import(
       '../../../src/api/services/openclaw/openclaw-service'
     )
@@ -53,7 +51,8 @@ describe('createOpenClawRoutes', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         message: 'hi',
-        sessionKey: 'session-123',
+        sessionKey:
+          'agent:research:openai-user:browseros:research:agent:research:openai-user:browseros:research:session-123',
       }),
     })
 
@@ -264,18 +263,71 @@ describe('createOpenClawRoutes', () => {
     expect(response.status).toBe(404)
   })
 
-  it('returns the current podman overrides on GET', async () => {
+  it('returns OpenClaw sessions for an agent', async () => {
     const actualOpenClawService = await import(
       '../../../src/api/services/openclaw/openclaw-service'
     )
-    const getPodmanOverrides = mock(async () => ({
-      podmanPath: '/opt/homebrew/bin/podman',
-      effectivePodmanPath: '/opt/homebrew/bin/podman',
+    const listSessions = mock(async () => [
+      {
+        key: 'openai-user:browseros:main:session-1',
+        updatedAt: 20,
+        sessionId: 'session-1',
+        agentId: 'main',
+        kind: 'chat',
+        source: 'user-chat',
+      },
+    ])
+
+    mock.module('../../../src/api/services/openclaw/openclaw-service', () => ({
+      ...actualOpenClawService,
+      getOpenClawService: () => ({ listSessions }) as never,
+    }))
+
+    const { createOpenClawRoutes } = await import(
+      '../../../src/api/routes/openclaw'
+    )
+    const route = createOpenClawRoutes()
+
+    const response = await route.request('/agents/main/sessions?limit=1')
+
+    expect(response.status).toBe(200)
+    expect(listSessions).toHaveBeenCalledWith('main')
+    expect(await response.json()).toEqual({
+      agentId: 'main',
+      sessions: [
+        {
+          key: 'openai-user:browseros:main:session-1',
+          updatedAt: 20,
+          sessionId: 'session-1',
+          agentId: 'main',
+          kind: 'chat',
+          source: 'user-chat',
+        },
+      ],
+    })
+  })
+
+  it('returns the resolved active OpenClaw session for an agent', async () => {
+    const actualOpenClawService = await import(
+      '../../../src/api/services/openclaw/openclaw-service'
+    )
+    const resolveAgentSession = mock(async () => ({
+      agentId: 'main',
+      exists: true,
+      sessionKey: 'session-1',
+      session: {
+        key: 'session-1',
+        updatedAt: 20,
+        sessionId: 'session-1',
+        agentId: 'main',
+        kind: 'chat',
+        source: 'other',
+      },
     }))
 
     mock.module('../../../src/api/services/openclaw/openclaw-service', () => ({
       ...actualOpenClawService,
-      getOpenClawService: () => ({ getPodmanOverrides }) as never,
+      getOpenClawService: () => ({ resolveAgentSession }) as never,
     }))
 
     const { createOpenClawRoutes } = await import(
@@ -283,85 +335,61 @@ describe('createOpenClawRoutes', () => {
     )
     const route = createOpenClawRoutes()
 
-    const response = await route.request('/podman-overrides')
+    const response = await route.request('/agents/main/session')
+
     expect(response.status).toBe(200)
+    expect(resolveAgentSession).toHaveBeenCalledWith('main')
     expect(await response.json()).toEqual({
-      podmanPath: '/opt/homebrew/bin/podman',
-      effectivePodmanPath: '/opt/homebrew/bin/podman',
+      agentId: 'main',
+      exists: true,
+      sessionKey: 'session-1',
+      session: {
+        key: 'session-1',
+        updatedAt: 20,
+        sessionId: 'session-1',
+        agentId: 'main',
+        kind: 'chat',
+        source: 'other',
+      },
     })
   })
 
-  it('rejects a relative podman path on POST', async () => {
-    const { createOpenClawRoutes } = await import(
-      '../../../src/api/routes/openclaw'
-    )
-    const route = createOpenClawRoutes()
-
-    const response = await route.request('/podman-overrides', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ podmanPath: 'podman' }),
-    })
-    expect(response.status).toBe(400)
-    expect(await response.json()).toEqual({
-      error: 'podmanPath must be an absolute path',
-    })
-  })
-
-  it('rejects a nonexistent podman path on POST', async () => {
-    const { createOpenClawRoutes } = await import(
-      '../../../src/api/routes/openclaw'
-    )
-    const route = createOpenClawRoutes()
-
-    const response = await route.request('/podman-overrides', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ podmanPath: '/does/not/exist/podman' }),
-    })
-    expect(response.status).toBe(400)
-    expect(await response.json()).toEqual({
-      error: 'File does not exist: /does/not/exist/podman',
-    })
-  })
-
-  it('rejects a non-executable podman path on POST', async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), 'openclaw-route-'))
-    const nonExec = join(tempDir, 'podman')
-    writeFileSync(nonExec, 'not a binary')
-    chmodSync(nonExec, 0o644)
-    try {
-      const { createOpenClawRoutes } = await import(
-        '../../../src/api/routes/openclaw'
-      )
-      const route = createOpenClawRoutes()
-
-      const response = await route.request('/podman-overrides', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ podmanPath: nonExec }),
-      })
-      expect(response.status).toBe(400)
-      expect(await response.json()).toEqual({
-        error: `File is not executable: ${nonExec}`,
-      })
-    } finally {
-      rmSync(tempDir, { recursive: true, force: true })
-    }
-  })
-
-  it('applies and echoes when POST clears the override', async () => {
+  it('returns a normalized OpenClaw history page for an agent', async () => {
     const actualOpenClawService = await import(
       '../../../src/api/services/openclaw/openclaw-service'
     )
-    const applyPodmanOverrides = mock(async () => ({
-      podmanPath: null,
-      effectivePodmanPath: 'podman',
+    const getAgentHistoryPage = mock(async () => ({
+      agentId: 'main',
+      sessionKey: 'session-1',
+      session: {
+        key: 'session-1',
+        updatedAt: 20,
+        sessionId: 'session-1',
+        agentId: 'main',
+        kind: 'chat',
+        source: 'other',
+      },
+      items: [
+        {
+          id: 'session-1:0',
+          role: 'user',
+          text: 'Hello',
+          timestamp: 1,
+          messageSeq: 0,
+          sessionKey: 'session-1',
+          source: 'other',
+        },
+      ],
+      page: {
+        cursor: 'older-cursor',
+        hasMore: true,
+        limit: 25,
+      },
     }))
 
     mock.module('../../../src/api/services/openclaw/openclaw-service', () => ({
       ...actualOpenClawService,
-      getOpenClawService: () => ({ applyPodmanOverrides }) as never,
+      getOpenClawService: () => ({ getAgentHistoryPage }) as never,
     }))
 
     const { createOpenClawRoutes } = await import(
@@ -369,16 +397,43 @@ describe('createOpenClawRoutes', () => {
     )
     const route = createOpenClawRoutes()
 
-    const response = await route.request('/podman-overrides', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ podmanPath: null }),
-    })
+    const response = await route.request(
+      '/agents/main/history?sessionKey=session-1&cursor=abc&limit=25',
+    )
+
     expect(response.status).toBe(200)
-    expect(applyPodmanOverrides).toHaveBeenCalledWith({ podmanPath: null })
+    expect(getAgentHistoryPage).toHaveBeenCalledWith('main', {
+      sessionKey: 'session-1',
+      cursor: 'abc',
+      limit: 25,
+    })
     expect(await response.json()).toEqual({
-      podmanPath: null,
-      effectivePodmanPath: 'podman',
+      agentId: 'main',
+      sessionKey: 'session-1',
+      session: {
+        key: 'session-1',
+        updatedAt: 20,
+        sessionId: 'session-1',
+        agentId: 'main',
+        kind: 'chat',
+        source: 'other',
+      },
+      items: [
+        {
+          id: 'session-1:0',
+          role: 'user',
+          text: 'Hello',
+          timestamp: 1,
+          messageSeq: 0,
+          sessionKey: 'session-1',
+          source: 'other',
+        },
+      ],
+      page: {
+        cursor: 'older-cursor',
+        hasMore: true,
+        limit: 25,
+      },
     })
   })
 
@@ -433,5 +488,125 @@ describe('createOpenClawRoutes', () => {
       apiKey: 'sk-test',
       modelId: 'gpt-5.4-mini',
     })
+  })
+
+  it('returns JSON history from the session history route and forwards query params', async () => {
+    const actualOpenClawService = await import(
+      '../../../src/api/services/openclaw/openclaw-service'
+    )
+    const getSessionHistory = mock(async () => ({
+      sessionKey: 'agent:main:main',
+      messages: [{ role: 'user', content: 'hi', messageSeq: 1 }],
+      cursor: null,
+      hasMore: false,
+    }))
+
+    mock.module('../../../src/api/services/openclaw/openclaw-service', () => ({
+      ...actualOpenClawService,
+      getOpenClawService: () => ({ getSessionHistory }) as never,
+    }))
+
+    const { createOpenClawRoutes } = await import(
+      '../../../src/api/routes/openclaw'
+    )
+    const route = createOpenClawRoutes()
+
+    const response = await route.request(
+      '/session/agent%3Amain%3Amain/history?limit=25&cursor=next',
+    )
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('Content-Type')).toContain('application/json')
+    expect(getSessionHistory).toHaveBeenCalledWith('agent:main:main', {
+      limit: 25,
+      cursor: 'next',
+    })
+    expect(await response.json()).toEqual({
+      sessionKey: 'agent:main:main',
+      messages: [{ role: 'user', content: 'hi', messageSeq: 1 }],
+      cursor: null,
+      hasMore: false,
+    })
+  })
+
+  it('returns 404 when the service reports a missing session', async () => {
+    const actualOpenClawService = await import(
+      '../../../src/api/services/openclaw/openclaw-service'
+    )
+    const getSessionHistory = mock(async () => {
+      throw new OpenClawSessionNotFoundError('missing')
+    })
+
+    mock.module('../../../src/api/services/openclaw/openclaw-service', () => ({
+      ...actualOpenClawService,
+      getOpenClawService: () => ({ getSessionHistory }) as never,
+    }))
+
+    const { createOpenClawRoutes } = await import(
+      '../../../src/api/routes/openclaw'
+    )
+    const route = createOpenClawRoutes()
+
+    const response = await route.request('/session/missing/history')
+
+    expect(response.status).toBe(404)
+    expect(await response.json()).toEqual({
+      error: 'OpenClaw session not found: missing',
+    })
+  })
+
+  it('streams named SSE frames when Accept: text/event-stream', async () => {
+    const actualOpenClawService = await import(
+      '../../../src/api/services/openclaw/openclaw-service'
+    )
+    const streamSessionHistory = mock(
+      async () =>
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue({
+              type: 'history',
+              data: {
+                sessionKey: 'k',
+                messages: [],
+                cursor: null,
+                hasMore: false,
+              },
+            })
+            controller.enqueue({
+              type: 'message',
+              data: {
+                sessionKey: 'k',
+                messageSeq: 2,
+                message: { role: 'assistant', content: 'hi', messageSeq: 2 },
+              },
+            })
+            controller.close()
+          },
+        }),
+    )
+
+    mock.module('../../../src/api/services/openclaw/openclaw-service', () => ({
+      ...actualOpenClawService,
+      getOpenClawService: () => ({ streamSessionHistory }) as never,
+    }))
+
+    const { createOpenClawRoutes } = await import(
+      '../../../src/api/routes/openclaw'
+    )
+    const route = createOpenClawRoutes()
+
+    const response = await route.request('/session/k/history', {
+      headers: { Accept: 'text/event-stream' },
+    })
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('Content-Type')).toContain('text/event-stream')
+    expect(response.headers.get('X-Session-Key')).toBe('k')
+    expect(streamSessionHistory).toHaveBeenCalledTimes(1)
+    expect(streamSessionHistory.mock.calls[0]?.[0]).toBe('k')
+    expect(await response.text()).toBe(
+      'event: history\ndata: {"sessionKey":"k","messages":[],"cursor":null,"hasMore":false}\n\n' +
+        'event: message\ndata: {"sessionKey":"k","messageSeq":2,"message":{"role":"assistant","content":"hi","messageSeq":2}}\n\n',
+    )
   })
 })

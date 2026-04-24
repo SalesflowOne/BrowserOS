@@ -1,193 +1,395 @@
-import { Bot, Home, RotateCcw } from 'lucide-react'
-import { type FC, useEffect, useRef } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { ArrowLeft, Bot, Home } from 'lucide-react'
+import { type FC, useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router'
 import { Button } from '@/components/ui/button'
-import type { AgentEntry } from '@/entrypoints/app/agents/useOpenClaw'
+import {
+  type AgentEntry,
+  getModelDisplayName,
+} from '@/entrypoints/app/agents/useOpenClaw'
 import { cn } from '@/lib/utils'
 import { useAgentCommandData } from './agent-command-layout'
+import { ClawChat } from './ClawChat'
 import { ConversationInput } from './ConversationInput'
-import { ConversationMessage } from './ConversationMessage'
+import {
+  buildChatHistoryFromClawMessages,
+  flattenHistoryPages,
+} from './claw-chat-types'
 import { useAgentConversation } from './useAgentConversation'
+import {
+  CLAW_CHAT_QUERY_KEYS,
+  useClawAgentSession,
+  useClawChatHistory,
+} from './useClawChatHistory'
+
+function StatusBadge({ status }: { status: string }) {
+  return (
+    <div className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-card px-3 py-1 text-[11px] text-muted-foreground uppercase tracking-[0.18em]">
+      <span
+        className={cn(
+          'size-1.5 rounded-full',
+          status === 'Working on your request'
+            ? 'bg-amber-500'
+            : status === 'Ready'
+              ? 'bg-emerald-500'
+              : status === 'Offline'
+                ? 'bg-muted-foreground/50'
+                : 'bg-[var(--accent-orange)]',
+        )}
+      />
+      <span>{status}</span>
+    </div>
+  )
+}
+
+function AgentIdentity({
+  name,
+  meta,
+  className,
+}: {
+  name: string
+  meta: string
+  className?: string
+}) {
+  return (
+    <div className={cn('min-w-0', className)}>
+      <div className="truncate font-semibold text-[15px] leading-5">{name}</div>
+      <div className="truncate text-muted-foreground text-xs leading-5">
+        {meta}
+      </div>
+    </div>
+  )
+}
 
 function ConversationHeader({
   agentName,
+  agentMeta,
   status,
+  backLabel,
+  backTarget,
   onGoHome,
-  onReset,
 }: {
   agentName: string
+  agentMeta: string
   status: string
+  backLabel: string
+  backTarget: 'home' | 'page'
   onGoHome: () => void
-  onReset: () => void
 }) {
+  const BackIcon = backTarget === 'home' ? Home : ArrowLeft
+
   return (
-    <div className="overflow-hidden rounded-[1.5rem] border border-border/60 bg-card/95 shadow-sm backdrop-blur">
-      <div className="flex items-center justify-between gap-3 px-5 py-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onGoHome}
-            className="rounded-xl"
-            title="Back to home"
-          >
-            <Home className="size-4" />
-          </Button>
-          <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-            <Bot className="size-5" />
-          </div>
-          <div className="min-w-0">
-            <div className="truncate font-semibold text-sm">{agentName}</div>
-            <div className="truncate text-muted-foreground text-sm">
-              {status}
-            </div>
-          </div>
-        </div>
+    <div className="flex h-14 items-center justify-between gap-4 border-border/50 border-b px-5">
+      <div className="flex min-w-0 items-center gap-3">
         <Button
           variant="ghost"
-          size="sm"
-          onClick={onReset}
-          className="rounded-xl text-muted-foreground"
+          size="icon"
+          onClick={onGoHome}
+          className="size-8 rounded-xl lg:hidden"
+          title={backLabel}
         >
-          <RotateCcw className="mr-2 size-4" />
-          New conversation
+          <BackIcon className="size-4" />
         </Button>
-      </div>
-    </div>
-  )
-}
-
-function EmptyConversationState({ agentName }: { agentName: string }) {
-  return (
-    <div className="flex min-h-full items-center justify-center py-10">
-      <div className="max-w-md rounded-[1.5rem] border border-border/60 bg-card/90 px-8 py-10 text-center shadow-sm backdrop-blur">
-        <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-          <Bot className="size-6" />
+        <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+          <Bot className="size-4" />
         </div>
-        <h2 className="mt-4 font-semibold text-lg">{agentName}</h2>
-        <p className="mt-2 text-muted-foreground text-sm">
-          Send a message to start a focused conversation with this agent.
-        </p>
+        <AgentIdentity name={agentName} meta={agentMeta} />
+      </div>
+
+      <StatusBadge status={status} />
+    </div>
+  )
+}
+
+function AgentRailHeader({ onGoHome }: { onGoHome: () => void }) {
+  return (
+    <div className="hidden h-14 items-center border-border/50 border-r border-b bg-background/70 px-4 lg:flex">
+      <div className="flex min-w-0 items-center gap-3">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onGoHome}
+          className="size-8 rounded-xl"
+          title="Back to home"
+        >
+          <ArrowLeft className="size-4" />
+        </Button>
+        <div className="truncate font-semibold text-[15px] leading-5">
+          Agents
+        </div>
       </div>
     </div>
   )
 }
 
-function getConversationStatusCopy(
-  status: string | undefined,
-  streaming: boolean,
-): string {
-  if (streaming) return 'Working on your request'
-  if (status === 'running') return 'Ready for the next task'
-  if (status === 'starting') return 'Connecting to OpenClaw'
-  if (status === 'error') return 'OpenClaw needs attention'
-  if (status === 'stopped') return 'OpenClaw is offline'
-  return 'Open agent setup to continue'
+function AgentRailList({
+  activeAgentId,
+  agents,
+  onSelectAgent,
+}: {
+  activeAgentId: string
+  agents: AgentEntry[]
+  onSelectAgent: (entry: AgentEntry) => void
+}) {
+  return (
+    <aside className="hidden min-h-0 flex-col border-border/50 border-r bg-background/70 lg:flex">
+      <div className="styled-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-3">
+        {agents.map((entry) => {
+          const active = entry.agentId === activeAgentId
+          const modelName = getModelDisplayName(entry.model) ?? 'OpenClaw agent'
+
+          return (
+            <button
+              key={entry.agentId}
+              type="button"
+              onClick={() => onSelectAgent(entry)}
+              className={cn(
+                'w-full rounded-2xl border px-3 py-3 text-left transition-all',
+                active
+                  ? 'border-[var(--accent-orange)]/30 bg-[var(--accent-orange)]/8 shadow-sm'
+                  : 'border-transparent bg-transparent hover:border-border/60 hover:bg-card',
+              )}
+            >
+              <div className="flex items-center gap-3">
+                <div
+                  className={cn(
+                    'flex size-9 items-center justify-center rounded-xl',
+                    active
+                      ? 'bg-[var(--accent-orange)]/12 text-[var(--accent-orange)]'
+                      : 'bg-muted text-muted-foreground',
+                  )}
+                >
+                  <Bot className="size-4" />
+                </div>
+                <AgentIdentity name={entry.name} meta={modelName} />
+              </div>
+            </button>
+          )
+        })}
+      </div>
+    </aside>
+  )
 }
 
-export const AgentCommandConversation: FC = () => {
+function getConversationStatusCopy(status: string | undefined): string {
+  if (status === 'running') return 'Ready'
+  if (status === 'starting') return 'Connecting'
+  if (status === 'error') return 'Attention'
+  if (status === 'stopped') return 'Offline'
+  return 'Setup'
+}
+
+function AgentConversationController({
+  agentId,
+  initialMessage,
+  onInitialMessageConsumed,
+  status,
+  agents,
+  agentPathPrefix,
+  createAgentPath,
+}: {
+  agentId: string
+  initialMessage: string | null
+  onInitialMessageConsumed: () => void
+  status: ReturnType<typeof useAgentCommandData>['status']
+  agents: AgentEntry[]
+  agentPathPrefix: string
+  createAgentPath: string
+}) {
+  const queryClient = useQueryClient()
+  const navigate = useNavigate()
+  const initialMessageSentRef = useRef<string | null>(null)
+  const onInitialMessageConsumedRef = useRef(onInitialMessageConsumed)
+  const [streamSessionKey, setStreamSessionKey] = useState<string | null>(null)
+  const agent = agents.find((entry) => entry.agentId === agentId)
+  const agentName = agent?.name || agentId || 'Agent'
+  const sessionQuery = useClawAgentSession(agentId)
+  const resolvedSessionKey =
+    streamSessionKey ?? sessionQuery.data?.sessionKey ?? null
+  const historyQuery = useClawChatHistory({
+    agentId,
+    sessionKey: resolvedSessionKey,
+    enabled: Boolean(resolvedSessionKey),
+  })
+
+  const historyMessages = useMemo(
+    () => flattenHistoryPages(historyQuery.data?.pages ?? []),
+    [historyQuery.data?.pages],
+  )
+  const chatHistory = useMemo(
+    () => buildChatHistoryFromClawMessages(historyMessages),
+    [historyMessages],
+  )
+
+  const { turns, streaming, send } = useAgentConversation(agentId, {
+    sessionKey: resolvedSessionKey,
+    history: chatHistory,
+    onSessionKeyChange: (sessionKey) => {
+      setStreamSessionKey(sessionKey)
+      void queryClient.invalidateQueries({
+        queryKey: [CLAW_CHAT_QUERY_KEYS.session],
+      })
+    },
+  })
+  const sendRef = useRef(send)
+  sendRef.current = send
+  onInitialMessageConsumedRef.current = onInitialMessageConsumed
+
+  const disabled = status?.status !== 'running'
+  const isInitialLoading =
+    sessionQuery.isLoading ||
+    (Boolean(resolvedSessionKey) && historyQuery.isLoading)
+  const historyReady =
+    !resolvedSessionKey || historyQuery.isFetched || historyQuery.isError
+  const initialMessageKey = initialMessage
+    ? `${agentId}:${initialMessage}`
+    : null
+  const error = sessionQuery.error ?? historyQuery.error ?? null
+
+  useEffect(() => {
+    const query = initialMessage?.trim()
+    if (!initialMessageKey) {
+      initialMessageSentRef.current = null
+      return
+    }
+
+    if (
+      !query ||
+      initialMessageSentRef.current === initialMessageKey ||
+      disabled ||
+      sessionQuery.isLoading ||
+      !historyReady ||
+      streaming
+    ) {
+      return
+    }
+
+    initialMessageSentRef.current = initialMessageKey
+    onInitialMessageConsumedRef.current()
+    void sendRef.current(query)
+  }, [
+    disabled,
+    historyReady,
+    initialMessage,
+    initialMessageKey,
+    sessionQuery.isLoading,
+    streaming,
+  ])
+
+  const handleSelectAgent = (entry: AgentEntry) => {
+    navigate(`${agentPathPrefix}/${entry.agentId}`)
+  }
+
+  return (
+    <div className="flex min-h-0 flex-col overflow-hidden">
+      <ClawChat
+        agentName={agentName}
+        historyMessages={historyMessages}
+        turns={turns}
+        streaming={streaming}
+        isInitialLoading={isInitialLoading}
+        error={error}
+        hasNextPage={Boolean(historyQuery.hasNextPage)}
+        isFetchingNextPage={historyQuery.isFetchingNextPage}
+        onFetchNextPage={() => {
+          void historyQuery.fetchNextPage()
+        }}
+        onRetry={() => {
+          void sessionQuery.refetch()
+          void historyQuery.refetch()
+        }}
+      />
+
+      <div className="border-border/50 border-t bg-background/88 px-4 py-3 backdrop-blur-md">
+        <div className="mx-auto max-w-3xl">
+          <ConversationInput
+            variant="conversation"
+            agents={agents}
+            selectedAgentId={agentId}
+            onSelectAgent={handleSelectAgent}
+            onSend={(text) => {
+              void send(text)
+            }}
+            onCreateAgent={() => navigate(createAgentPath)}
+            streaming={streaming}
+            disabled={disabled}
+            status={status?.status}
+            placeholder={`Message ${agentName}...`}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+interface AgentCommandConversationProps {
+  variant?: 'command' | 'page'
+  backPath?: string
+  agentPathPrefix?: string
+  createAgentPath?: string
+}
+
+export const AgentCommandConversation: FC<AgentCommandConversationProps> = ({
+  variant = 'command',
+  backPath = '/home',
+  agentPathPrefix = '/home/agents',
+  createAgentPath = '/agents',
+}) => {
   const { agentId } = useParams<{ agentId: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const initialQuerySent = useRef(false)
   const { status, agents } = useAgentCommandData()
   const shouldRedirectHome = !agentId
   const resolvedAgentId = agentId ?? ''
   const agent = agents.find((entry) => entry.agentId === resolvedAgentId)
   const agentName = agent?.name || resolvedAgentId || 'Agent'
-  const { turns, streaming, loading, send, resetConversation } =
-    useAgentConversation(resolvedAgentId, agentName)
-  const lastTurn = turns[turns.length - 1]
-  const lastTurnPartCount = lastTurn?.parts.length ?? 0
-
-  useEffect(() => {
-    if (shouldRedirectHome) return
-
-    const query = searchParams.get('q')
-    if (query && !initialQuerySent.current && !loading) {
-      initialQuerySent.current = true
-      setSearchParams({}, { replace: true })
-      void send(query)
-    }
-  }, [loading, searchParams, send, setSearchParams, shouldRedirectHome])
-
-  useEffect(() => {
-    if (
-      shouldRedirectHome ||
-      (turns.length === 0 && lastTurnPartCount === 0 && !streaming)
-    ) {
-      return
-    }
-
-    scrollRef.current?.scrollTo({
-      top: scrollRef.current.scrollHeight,
-      behavior: 'smooth',
-    })
-  }, [lastTurnPartCount, shouldRedirectHome, streaming, turns.length])
+  const agentMeta = getModelDisplayName(agent?.model) ?? 'OpenClaw agent'
+  const initialMessage = searchParams.get('q')
+  const isPageVariant = variant === 'page'
+  const backLabel = isPageVariant ? 'Back to agents' : 'Back to home'
 
   if (shouldRedirectHome) {
     return <Navigate to="/home" replace />
   }
 
   const handleSelectAgent = (entry: AgentEntry) => {
-    navigate(`/home/agents/${entry.agentId}`)
+    navigate(`${agentPathPrefix}/${entry.agentId}`)
   }
 
-  const statusCopy = getConversationStatusCopy(status?.status, streaming)
+  const statusCopy = getConversationStatusCopy(status?.status)
 
   return (
-    <div className="absolute inset-0 overflow-hidden">
-      <div className="fade-in slide-in-from-bottom-5 mx-auto flex h-full w-full max-w-3xl animate-in flex-col gap-3 px-4 pt-4 pb-2 duration-300">
+    <div className="absolute inset-0 overflow-hidden bg-background md:pl-[theme(spacing.14)]">
+      <div className="mx-auto grid h-full w-full max-w-[1480px] lg:grid-cols-[288px_minmax(0,1fr)] lg:grid-rows-[3.5rem_minmax(0,1fr)]">
+        <AgentRailHeader onGoHome={() => navigate(backPath)} />
+
         <ConversationHeader
           agentName={agentName}
+          agentMeta={agentMeta}
           status={statusCopy}
-          onGoHome={() => navigate('/home')}
-          onReset={resetConversation}
+          backLabel={backLabel}
+          backTarget={isPageVariant ? 'page' : 'home'}
+          onGoHome={() => navigate(backPath)}
         />
 
-        <main
-          ref={scrollRef}
-          className={cn(
-            'styled-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded-[1.5rem] border border-border/50 bg-card/85 px-5 py-5 shadow-sm',
-            '[&_[data-streamdown="code-block"]]:!max-w-full [&_[data-streamdown="table-wrapper"]]:!max-w-full [&_[data-streamdown="code-block"]]:overflow-x-auto [&_[data-streamdown="table-wrapper"]]:overflow-x-auto',
-          )}
-        >
-          {loading ? (
-            <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
-              Loading conversation...
-            </div>
-          ) : turns.length === 0 ? (
-            <EmptyConversationState agentName={agentName} />
-          ) : (
-            <div className="w-full space-y-4">
-              {turns.map((turn, index) => (
-                <ConversationMessage
-                  key={turn.id}
-                  turn={turn}
-                  streaming={streaming && index === turns.length - 1}
-                />
-              ))}
-            </div>
-          )}
-        </main>
+        <AgentRailList
+          activeAgentId={resolvedAgentId}
+          agents={agents}
+          onSelectAgent={handleSelectAgent}
+        />
 
-        <div className="w-full flex-shrink-0">
-          <ConversationInput
-            variant="conversation"
-            agents={agents}
-            selectedAgentId={resolvedAgentId}
-            onSelectAgent={handleSelectAgent}
-            onSend={(text) => {
-              void send(text)
-            }}
-            onCreateAgent={() => navigate('/agents')}
-            streaming={streaming}
-            disabled={status?.status !== 'running'}
-            status={status?.status}
-            placeholder={`Message ${agentName}...`}
-          />
-        </div>
+        <AgentConversationController
+          key={resolvedAgentId}
+          agentId={resolvedAgentId}
+          agents={agents}
+          status={status}
+          initialMessage={initialMessage}
+          onInitialMessageConsumed={() =>
+            setSearchParams({}, { replace: true })
+          }
+          agentPathPrefix={agentPathPrefix}
+          createAgentPath={createAgentPath}
+        />
       </div>
     </div>
   )

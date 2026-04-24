@@ -1,4 +1,5 @@
 const HIDE_FOCUS_GRID_PATHS = new Set([
+  '/home',
   '/home/soul',
   '/home/memory',
   '/home/skills',

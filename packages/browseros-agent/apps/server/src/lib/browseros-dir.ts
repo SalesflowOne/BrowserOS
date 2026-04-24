@@ -6,12 +6,10 @@ import { PATHS } from '@browseros/shared/constants/paths'
 import type { ServerDiscoveryConfig } from '@browseros/shared/types/server-config'
 import { logger } from './logger'
 
-const DEV_BROWSEROS_DIR_NAME = '.browseros-dev'
-
 export function getBrowserosDir(): string {
   const dirName =
     process.env.NODE_ENV === 'development'
-      ? DEV_BROWSEROS_DIR_NAME
+      ? PATHS.DEV_BROWSEROS_DIR_NAME
       : PATHS.BROWSEROS_DIR_NAME
   return join(homedir(), dirName)
 }
@@ -46,7 +44,35 @@ export function getBuiltinSkillsDir(): string {
 }
 
 export function getOpenClawDir(): string {
+  return join(getVmStateDir(), PATHS.OPENCLAW_DIR_NAME)
+}
+
+export function getLegacyOpenClawDir(): string {
   return join(getBrowserosDir(), PATHS.OPENCLAW_DIR_NAME)
+}
+
+export function getCacheDir(): string {
+  return join(getBrowserosDir(), PATHS.CACHE_DIR_NAME)
+}
+
+export function getVmCacheDir(): string {
+  return join(getCacheDir(), 'vm')
+}
+
+export function getLimaHomeDir(): string {
+  return join(getBrowserosDir(), 'lima')
+}
+
+export function getVmStateDir(): string {
+  return join(getBrowserosDir(), 'vm')
+}
+
+export function getVmDisksDir(): string {
+  return getVmCacheDir()
+}
+
+export function getAgentCacheDir(): string {
+  return join(getVmCacheDir(), 'images')
 }
 
 export function getLazyMonitoringDir(): string {
@@ -86,6 +112,7 @@ export async function ensureBrowserosDir(): Promise<void> {
   await mkdir(getBuiltinSkillsDir(), { recursive: true })
   await mkdir(getSessionsDir(), { recursive: true })
   await mkdir(getLazyMonitoringRunsDir(), { recursive: true })
+  await mkdir(getAgentCacheDir(), { recursive: true })
 }
 
 export async function cleanOldSessions(): Promise<void> {

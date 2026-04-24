@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
  * Main orchestrator for OpenClaw integration.
- * Container lifecycle via Podman, agent CRUD via in-container CLI,
+ * Container lifecycle via the VM runtime, agent CRUD via in-container CLI,
  * chat via HTTP /v1/chat/completions proxy.
  */
 
@@ -18,10 +18,11 @@ import { DEFAULT_PORTS } from '@browseros/shared/constants/ports'
 import { getOpenClawDir } from '../../../lib/browseros-dir'
 import { logger } from '../../../lib/logger'
 import type { MonitoringChatTurn } from '../../../monitoring/types'
-import {
+import type {
   ContainerRuntime,
-  type GatewayContainerSpec,
+  GatewayContainerSpec,
 } from './container-runtime'
+import { buildContainerRuntime } from './container-runtime-factory'
 import {
   OpenClawAgentAlreadyExistsError,
   OpenClawAgentNotFoundError,
@@ -40,18 +41,23 @@ import {
   getOpenClawStateEnvPath,
   mergeEnvContent,
 } from './openclaw-env'
-import { OpenClawHttpChatClient } from './openclaw-http-chat-client'
+import {
+  OpenClawHttpClient,
+  type OpenClawSessionHistory,
+  type OpenClawSessionHistoryEvent,
+} from './openclaw-http-client'
+import { type ClawEvent, OpenClawJsonlReader } from './openclaw-jsonl-reader'
 import {
   type ResolvedOpenClawProviderConfig,
   resolveSupportedOpenClawProvider,
 } from './openclaw-provider-map'
 import type { OpenClawStreamEvent } from './openclaw-types'
-import { loadPodmanOverrides, savePodmanOverrides } from './podman-overrides'
-import { configurePodmanRuntime, getPodmanRuntime } from './podman-runtime'
 import { allocateGatewayPort, readPersistedGatewayPort } from './runtime-state'
 
 const READY_TIMEOUT_MS = 30_000
 const AGENT_NAME_PATTERN = /^[a-z][a-z0-9-]*$/
+const OPENCLAW_BROWSEROS_USER_SESSION_PATTERN =
+  /^agent:[^:]+:openai-user:browseros:[^:]+:(.+)$/
 
 export type OpenClawControlPlaneStatus =
   | 'disconnected'
@@ -108,18 +114,214 @@ export interface OpenClawProviderUpdateResult {
 export interface OpenClawServiceConfig {
   browserosServerPort?: number
   resourcesDir?: string
+  browserosDir?: string
 }
 
-export interface OpenClawPodmanOverridesResponse {
-  podmanPath: string | null
-  effectivePodmanPath: string
+export type OpenClawSessionSource =
+  | 'user-chat'
+  | 'cron'
+  | 'hook'
+  | 'channel'
+  | 'other'
+
+export interface BrowserOSOpenClawSession {
+  key: string
+  updatedAt: number
+  sessionId: string
+  agentId: string
+  kind: string
+  source: OpenClawSessionSource
+  status?: string
+  totalTokens?: number
+  model?: string
+  modelProvider?: string
+}
+
+export interface BrowserOSOpenClawAgentSessionResponse {
+  agentId: string
+  exists: boolean
+  sessionKey: string | null
+  session: BrowserOSOpenClawSession | null
+}
+
+export interface BrowserOSChatHistoryItem {
+  id: string
+  role: 'user' | 'assistant'
+  text: string
+  timestamp?: number
+  messageSeq: number
+  sessionKey: string
+  source: OpenClawSessionSource
+}
+
+export interface BrowserOSOpenClawHistoryPageResponse {
+  agentId: string
+  sessionKey: string | null
+  session: BrowserOSOpenClawSession | null
+  items: BrowserOSChatHistoryItem[]
+  page: {
+    cursor?: string
+    hasMore: boolean
+    limit: number
+  }
+}
+
+interface HistoryPageInput {
+  sessionKey?: string
+  cursor?: string
+  limit?: number
+}
+
+export function normalizeBrowserOSChatSessionKey(
+  agentId: string,
+  sessionKey: string,
+): string {
+  const trimmed = sessionKey.trim()
+  if (!trimmed) return trimmed
+
+  let normalized = trimmed
+  const agentSpecificPrefix = getOpenClawBrowserOSSessionPrefix(agentId)
+
+  while (normalized.startsWith(agentSpecificPrefix)) {
+    normalized = normalized.slice(agentSpecificPrefix.length)
+  }
+
+  while (true) {
+    const match = normalized.match(OPENCLAW_BROWSEROS_USER_SESSION_PATTERN)
+    if (!match?.[1]) break
+    normalized = match[1]
+  }
+
+  return normalized.trim() || trimmed
+}
+
+function getOpenClawBrowserOSSessionPrefix(agentId: string): string {
+  return `agent:${agentId}:openai-user:browseros:${agentId}:`
+}
+
+function toOpenClawBrowserOSSessionKey(
+  agentId: string,
+  sessionKey: string,
+): string {
+  return `${getOpenClawBrowserOSSessionPrefix(agentId)}${normalizeBrowserOSChatSessionKey(
+    agentId,
+    sessionKey,
+  )}`
+}
+
+function normalizeHistoryLimit(limit?: number): number {
+  if (limit === undefined || !Number.isFinite(limit)) return 50
+  return Math.max(1, Math.min(100, Math.trunc(limit)))
+}
+
+function classifySessionSource(key: string): OpenClawSessionSource {
+  if (key.includes(':cron:')) return 'cron'
+  if (key.includes(':hook:')) return 'hook'
+  if (key.includes('openai-user:browseros')) return 'user-chat'
+  if (key.includes('qa-channel')) return 'channel'
+  return 'other'
+}
+
+/**
+ * Convert JSONL events to BrowserOS chat history items, applying the same
+ * filtering rules as the old HTTP-based pipeline (filterHttpSessionHistoryMessages).
+ */
+function jsonlEventsToHistoryItems(
+  events: ClawEvent[],
+  sessionKey: string,
+  source: OpenClawSessionSource,
+): BrowserOSChatHistoryItem[] {
+  const items: BrowserOSChatHistoryItem[] = []
+  let seq = 0
+
+  for (const event of events) {
+    if (event.type !== 'user.message' && event.type !== 'agent.message') {
+      continue
+    }
+
+    let text = event.content.trim()
+    if (!text) continue
+
+    // Filter assistant heartbeats
+    if (event.type === 'agent.message' && text.startsWith('HEARTBEAT')) continue
+
+    // Filter internal reminders
+    if (
+      event.type === 'user.message' &&
+      text.includes('Handle this reminder internally')
+    ) {
+      continue
+    }
+
+    // Extract actual user text from context-replay wrappers
+    if (
+      event.type === 'user.message' &&
+      text.startsWith('[Chat messages since your last reply')
+    ) {
+      const marker = '[Current message - respond to this]'
+      const index = text.indexOf(marker)
+      if (index >= 0) {
+        text = text
+          .slice(index + marker.length)
+          .trim()
+          .replace(/^User:\s*/i, '')
+      } else {
+        continue
+      }
+      if (!text) continue
+    }
+
+    items.push({
+      id: `${sessionKey}:${seq}`,
+      role: event.type === 'user.message' ? 'user' : 'assistant',
+      text,
+      timestamp: event.createdAt,
+      messageSeq: seq,
+      sessionKey,
+      source,
+    })
+    seq++
+  }
+
+  return items
+}
+
+function encodeHistoryCursor(input: {
+  sessionKey: string
+  end: number
+}): string {
+  return Buffer.from(JSON.stringify(input), 'utf-8').toString('base64url')
+}
+
+function decodeHistoryCursor(
+  cursor?: string,
+): { sessionKey: string; end: number } | null {
+  if (!cursor) return null
+  try {
+    const parsed = JSON.parse(
+      Buffer.from(cursor, 'base64url').toString('utf-8'),
+    ) as {
+      sessionKey?: unknown
+      end?: unknown
+    }
+    if (typeof parsed.sessionKey !== 'string') return null
+    if (typeof parsed.end !== 'number' || !Number.isFinite(parsed.end)) {
+      return null
+    }
+    return {
+      sessionKey: parsed.sessionKey,
+      end: Math.max(0, Math.trunc(parsed.end)),
+    }
+  } catch {
+    return null
+  }
 }
 
 export class OpenClawService {
   private runtime: ContainerRuntime
   private cliClient: OpenClawCliClient
   private bootstrapCliClient: OpenClawCliClient
-  private chatClient: OpenClawHttpChatClient
+  private httpClient: OpenClawHttpClient
   private openclawDir: string
   private hostPort = OPENCLAW_GATEWAY_CONTAINER_PORT
   private token: string
@@ -127,33 +329,65 @@ export class OpenClawService {
   private lastError: string | null = null
   private browserosServerPort: number
   private resourcesDir: string | null
+  private browserosDir: string | undefined
   private controlPlaneStatus: OpenClawControlPlaneStatus = 'disconnected'
   private lastGatewayError: string | null = null
   private lastRecoveryReason: OpenClawGatewayRecoveryReason | null = null
   private stopLogTail: (() => void) | null = null
   private lifecycleLock: Promise<void> = Promise.resolve()
 
+  private _jsonlReader: OpenClawJsonlReader | null = null
+  private get jsonlReader(): OpenClawJsonlReader {
+    if (!this._jsonlReader) {
+      this._jsonlReader = new OpenClawJsonlReader(
+        getOpenClawStateDir(this.openclawDir),
+      )
+    }
+    return this._jsonlReader
+  }
+
   constructor(config: OpenClawServiceConfig = {}) {
     this.openclawDir = getOpenClawDir()
-    this.runtime = new ContainerRuntime(getPodmanRuntime(), this.openclawDir)
+    this.runtime = buildContainerRuntime({
+      resourcesDir: config.resourcesDir,
+      projectDir: this.openclawDir,
+      browserosRoot: config.browserosDir,
+    })
     this.token = crypto.randomUUID()
     this.cliClient = new OpenClawCliClient(this.runtime)
     this.bootstrapCliClient = this.buildBootstrapCliClient()
-    this.chatClient = new OpenClawHttpChatClient(
+    this.httpClient = new OpenClawHttpClient(
       this.hostPort,
       async () => this.token,
     )
     this.browserosServerPort =
       config.browserosServerPort ?? DEFAULT_PORTS.server
     this.resourcesDir = config.resourcesDir ?? null
+    this.browserosDir = config.browserosDir
   }
 
   configure(config: OpenClawServiceConfig): void {
     if (config.browserosServerPort !== undefined) {
       this.browserosServerPort = config.browserosServerPort
     }
-    if (config.resourcesDir !== undefined) {
+
+    let runtimeChanged = false
+    if (
+      config.resourcesDir !== undefined &&
+      config.resourcesDir !== this.resourcesDir
+    ) {
       this.resourcesDir = config.resourcesDir
+      runtimeChanged = true
+    }
+    if (
+      config.browserosDir !== undefined &&
+      config.browserosDir !== this.browserosDir
+    ) {
+      this.browserosDir = config.browserosDir
+      runtimeChanged = true
+    }
+    if (runtimeChanged) {
+      this.rebuildRuntimeClients()
     }
   }
 
@@ -177,14 +411,6 @@ export class OpenClawService {
         hasApiKey: !!input.apiKey,
       })
 
-      logProgress('Checking container runtime...')
-      const available = await this.runtime.isPodmanAvailable()
-      if (!available) {
-        throw new Error(
-          'Podman is not available. Install Podman to use OpenClaw agents.',
-        )
-      }
-
       await this.runtime.ensureReady(logProgress)
       logProgress('Container runtime ready')
 
@@ -198,10 +424,7 @@ export class OpenClawService {
         providerKeyCount: Object.keys(provider.envValues).length,
       })
 
-      logProgress('Pulling OpenClaw image...')
-      await this.runtime.pullImage(this.getGatewayImage(), logProgress)
-      logProgress('Image ready')
-
+      await this.refreshGatewayAuthToken()
       await this.ensureGatewayPortAllocated(logProgress)
 
       logProgress('Bootstrapping OpenClaw config...')
@@ -225,8 +448,7 @@ export class OpenClawService {
       logProgress('Validating OpenClaw config...')
       await this.assertConfigValid(this.bootstrapCliClient)
 
-      this.tokenLoaded = false
-      await this.loadTokenFromConfig()
+      await this.refreshGatewayAuthToken()
 
       logProgress('Starting OpenClaw gateway...')
       await this.runtime.startGateway(
@@ -285,8 +507,7 @@ export class OpenClawService {
       await this.runtime.ensureReady(logProgress)
 
       logProgress('Refreshing gateway auth token...')
-      this.tokenLoaded = false
-      await this.loadTokenFromConfig()
+      await this.refreshGatewayAuthToken()
       await this.ensureStateEnvFile()
 
       await this.ensureGatewayPortAllocated(logProgress)
@@ -353,10 +574,10 @@ export class OpenClawService {
       })
 
       this.controlPlaneStatus = 'reconnecting'
+      await this.runtime.ensureReady(logProgress)
       this.stopGatewayLogTail()
       logProgress('Refreshing gateway auth token...')
-      this.tokenLoaded = false
-      await this.loadTokenFromConfig()
+      await this.refreshGatewayAuthToken()
       await this.ensureStateEnvFile()
       await this.ensureGatewayPortAllocated(logProgress)
       logProgress('Restarting OpenClaw gateway...')
@@ -401,8 +622,7 @@ export class OpenClawService {
       }
 
       logProgress('Reloading gateway auth token...')
-      this.tokenLoaded = false
-      await this.loadTokenFromConfig()
+      await this.refreshGatewayAuthToken()
       this.controlPlaneStatus = 'reconnecting'
       logProgress('Reconnecting control plane...')
       await this.runControlPlaneCall(() => this.cliClient.probe())
@@ -418,28 +638,13 @@ export class OpenClawService {
     } catch {
       // Best effort during shutdown
     }
-    await this.runtime.stopMachineIfSafe()
+    await this.runtime.stopVm()
     logger.info('OpenClaw shutdown complete')
   }
 
   // ── Status ───────────────────────────────────────────────────────────
 
   async getStatus(): Promise<OpenClawStatusResponse> {
-    const podmanAvailable = await this.runtime.isPodmanAvailable()
-    if (!podmanAvailable) {
-      return {
-        status: 'uninitialized',
-        podmanAvailable: false,
-        machineReady: false,
-        port: null,
-        agentCount: 0,
-        error: null,
-        controlPlaneStatus: 'disconnected',
-        lastGatewayError: null,
-        lastRecoveryReason: null,
-      }
-    }
-
     const isSetUp = existsSync(this.getStateConfigPath())
     if (!isSetUp) {
       const machineStatus = await this.runtime.getMachineStatus()
@@ -573,6 +778,97 @@ export class OpenClawService {
     return this.runControlPlaneCall(() => this.cliClient.listAgents())
   }
 
+  listSessions(agentId?: string): BrowserOSOpenClawSession[] {
+    logger.debug('Listing OpenClaw sessions', { agentId })
+
+    const agentIds = agentId ? [agentId] : this.jsonlReader.listAgents()
+
+    const sessions: BrowserOSOpenClawSession[] = []
+    for (const id of agentIds) {
+      for (const entry of this.jsonlReader.listSessions(id)) {
+        sessions.push({
+          key: entry.key,
+          updatedAt: entry.updatedAt,
+          sessionId: entry.sessionId,
+          agentId: id,
+          kind: 'chat',
+          source: classifySessionSource(entry.key),
+        })
+      }
+    }
+    return sessions.sort((a, b) => b.updatedAt - a.updatedAt)
+  }
+
+  resolveAgentSession(agentId: string): BrowserOSOpenClawAgentSessionResponse {
+    const sessions = this.listSessions(agentId)
+    const session =
+      sessions.find((entry) => entry.source === 'user-chat') ??
+      sessions.find((entry) => entry.kind.toLowerCase().includes('chat')) ??
+      sessions[0] ??
+      null
+
+    if (session) {
+      return this.resolveSpecificAgentSession(agentId, session.key)
+    }
+
+    return {
+      agentId,
+      exists: false,
+      sessionKey: null,
+      session: null,
+    }
+  }
+
+  getAgentHistoryPage(
+    agentId: string,
+    input: HistoryPageInput = {},
+  ): BrowserOSOpenClawHistoryPageResponse {
+    const limit = normalizeHistoryLimit(input.limit)
+    const cursor = decodeHistoryCursor(input.cursor)
+    const resolved = cursor?.sessionKey
+      ? this.resolveSpecificAgentSession(agentId, cursor.sessionKey)
+      : input.sessionKey
+        ? this.resolveSpecificAgentSession(agentId, input.sessionKey)
+        : this.resolveAgentSession(agentId)
+
+    const session = resolved.session
+    if (!session) {
+      return {
+        agentId,
+        sessionKey: null,
+        session: null,
+        items: [],
+        page: { hasMore: false, limit },
+      }
+    }
+
+    const sessionKey =
+      resolved.sessionKey ??
+      normalizeBrowserOSChatSessionKey(agentId, session.key)
+
+    // Read JSONL directly from the host filesystem via Lima virtiofs mount
+    const events = this.jsonlReader.listBySession(agentId, session.key)
+    const items = jsonlEventsToHistoryItems(events, sessionKey, session.source)
+
+    const end = Math.min(cursor?.end ?? items.length, items.length)
+    const start = Math.max(0, end - limit)
+    const pageItems = items.slice(start, end)
+    const nextCursor =
+      start > 0 ? encodeHistoryCursor({ sessionKey, end: start }) : undefined
+
+    return {
+      agentId,
+      sessionKey,
+      session,
+      items: pageItems,
+      page: {
+        cursor: nextCursor,
+        hasMore: start > 0,
+        limit,
+      },
+    }
+  }
+
   // ── Chat Stream (HTTP) ───────────────────────────────────────────────
 
   async chatStream(
@@ -582,62 +878,88 @@ export class OpenClawService {
     history: MonitoringChatTurn[] = [],
   ): Promise<ReadableStream<OpenClawStreamEvent>> {
     await this.assertGatewayReady()
-    logger.info('Starting OpenClaw chat stream', {
+    const normalizedSessionKey = normalizeBrowserOSChatSessionKey(
       agentId,
       sessionKey,
+    )
+    logger.info('Starting OpenClaw chat stream', {
+      agentId,
+      sessionKey: normalizedSessionKey,
       messageLength: message.length,
       historyLength: history.length,
     })
     return this.runControlPlaneCall(() =>
-      this.chatClient.streamChat({
+      this.httpClient.streamChat({
         agentId,
-        sessionKey,
+        sessionKey: normalizedSessionKey,
         message,
         history,
       }),
     )
   }
 
-  // ── Podman Overrides ─────────────────────────────────────────────────
+  private resolveSpecificAgentSession(
+    agentId: string,
+    sessionKey: string,
+  ): BrowserOSOpenClawAgentSessionResponse {
+    const normalizedSessionKey = normalizeBrowserOSChatSessionKey(
+      agentId,
+      sessionKey,
+    )
+    const canonicalSessionKey = toOpenClawBrowserOSSessionKey(
+      agentId,
+      normalizedSessionKey,
+    )
+    const sessions = this.listSessions(agentId)
+    const session =
+      sessions.find((entry) => entry.key === canonicalSessionKey) ??
+      sessions.find((entry) => entry.key === sessionKey) ??
+      sessions.find(
+        (entry) =>
+          normalizeBrowserOSChatSessionKey(agentId, entry.key) ===
+          normalizedSessionKey,
+      )
 
-  async applyPodmanOverrides(input: {
-    podmanPath: string | null
-  }): Promise<OpenClawPodmanOverridesResponse> {
-    await savePodmanOverrides(this.openclawDir, {
-      podmanPath: input.podmanPath,
-    })
-
-    // Intentionally mutates the module-level PodmanRuntime singleton so every
-    // consumer (including future service instances) sees the new path.
-    configurePodmanRuntime({
-      resourcesDir: this.resourcesDir ?? undefined,
-      podmanPath: input.podmanPath ?? undefined,
-    })
-
-    this.rebuildRuntimeClients()
-    const effectivePodmanPath = getPodmanRuntime().getPodmanPath()
-
-    logger.info('Applied Podman overrides', {
-      podmanPath: input.podmanPath,
-      effectivePodmanPath,
-    })
+    if (!session) {
+      return {
+        agentId,
+        exists: false,
+        sessionKey: normalizedSessionKey,
+        session: null,
+      }
+    }
 
     return {
-      podmanPath: input.podmanPath,
-      effectivePodmanPath,
+      agentId,
+      exists: true,
+      sessionKey: normalizedSessionKey,
+      session,
     }
   }
 
-  async getPodmanOverrides(): Promise<OpenClawPodmanOverridesResponse> {
-    const { podmanPath } = await loadPodmanOverrides(this.openclawDir)
-    return {
-      podmanPath,
-      effectivePodmanPath: getPodmanRuntime().getPodmanPath(),
-    }
+  // ── Session History (HTTP) ───────────────────────────────────────────
+
+  async getSessionHistory(
+    sessionKey: string,
+    input: { limit?: number; cursor?: string; signal?: AbortSignal } = {},
+  ): Promise<OpenClawSessionHistory> {
+    await this.assertGatewayReady()
+    return this.runControlPlaneCall(() =>
+      this.httpClient.getSessionHistory(sessionKey, input),
+    )
+  }
+
+  async streamSessionHistory(
+    sessionKey: string,
+    input: { limit?: number; cursor?: string; signal?: AbortSignal } = {},
+  ): Promise<ReadableStream<OpenClawSessionHistoryEvent>> {
+    await this.assertGatewayReady()
+    return this.runControlPlaneCall(() =>
+      this.httpClient.streamSessionHistory(sessionKey, input),
+    )
   }
 
   // ── Provider Keys ────────────────────────────────────────────────────
-
   async updateProviderKeys(input: {
     providerType: string
     providerName?: string
@@ -681,8 +1003,6 @@ export class OpenClawService {
       const isSetUp = existsSync(this.getStateConfigPath())
       if (!isSetUp) return
 
-      const available = await this.runtime.isPodmanAvailable()
-      if (!available) return
       logger.info('Attempting OpenClaw auto-start', {
         hostPort: this.hostPort,
       })
@@ -690,8 +1010,7 @@ export class OpenClawService {
       try {
         await this.runtime.ensureReady()
 
-        this.tokenLoaded = false
-        await this.loadTokenFromConfig()
+        await this.refreshGatewayAuthToken()
         await this.ensureStateEnvFile()
 
         const persistedPort = await readPersistedGatewayPort(this.openclawDir)
@@ -699,7 +1018,7 @@ export class OpenClawService {
           this.setPort(persistedPort)
         }
 
-        if (!(await this.runtime.isReady(this.hostPort))) {
+        if (!(await this.isGatewayAvailable(this.hostPort))) {
           await this.ensureGatewayPortAllocated()
           await this.runtime.startGateway(this.buildGatewayRuntimeSpec())
           const ready = await this.runtime.waitForReady(
@@ -737,15 +1056,20 @@ export class OpenClawService {
 
   private rebuildRuntimeClients(): void {
     this.stopGatewayLogTail()
-    this.runtime = new ContainerRuntime(getPodmanRuntime(), this.openclawDir)
+    this.runtime = buildContainerRuntime({
+      resourcesDir: this.resourcesDir ?? undefined,
+      projectDir: this.openclawDir,
+      browserosRoot: this.browserosDir,
+    })
     this.cliClient = new OpenClawCliClient(this.runtime)
     this.bootstrapCliClient = this.buildBootstrapCliClient()
+    this._jsonlReader = null
   }
 
   private setPort(hostPort: number): void {
     if (hostPort === this.hostPort) return
     this.hostPort = hostPort
-    this.chatClient = new OpenClawHttpChatClient(
+    this.httpClient = new OpenClawHttpClient(
       this.hostPort,
       async () => this.token,
     )
@@ -770,9 +1094,34 @@ export class OpenClawService {
   }
 
   private async isGatewayAvailable(hostPort: number): Promise<boolean> {
-    if (await this.runtime.isReady(hostPort)) {
-      return true
+    if (!(await this.isGatewayPortReady(hostPort))) return false
+
+    if (!this.tokenLoaded) {
+      logger.debug(
+        'OpenClaw gateway port is ready before auth token is loaded',
+        {
+          hostPort,
+        },
+      )
+      return false
     }
+
+    const client =
+      hostPort === this.hostPort
+        ? this.httpClient
+        : new OpenClawHttpClient(hostPort, async () => this.token)
+    const authenticated = await client.isAuthenticated()
+    if (!authenticated) {
+      logger.warn('OpenClaw gateway port rejected current auth token', {
+        hostPort,
+      })
+    }
+    return authenticated
+  }
+
+  private async isGatewayPortReady(hostPort: number): Promise<boolean> {
+    if (await this.runtime.isReady(hostPort)) return true
+
     const runtime = this.runtime as {
       isHealthy?: (port: number) => Promise<boolean>
     }
@@ -1158,6 +1507,15 @@ export class OpenClawService {
     await this.loadTokenFromConfig()
   }
 
+  private async refreshGatewayAuthToken(): Promise<void> {
+    this.tokenLoaded = false
+    if (!existsSync(this.getStateConfigPath())) {
+      return
+    }
+
+    await this.loadTokenFromConfig()
+  }
+
   private async loadTokenFromConfig(): Promise<void> {
     try {
       const config = JSON.parse(
@@ -1222,6 +1580,13 @@ export function configureOpenClawService(
 
   service.configure(config)
   return service
+}
+
+export function configureVmRuntime(config: {
+  resourcesDir?: string
+  browserosDir?: string
+}): OpenClawService {
+  return configureOpenClawService(config)
 }
 
 export function getOpenClawService(): OpenClawService {
