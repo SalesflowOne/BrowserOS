@@ -15,6 +15,7 @@ import { INLINED_ENV, REQUIRED_FOR_PRODUCTION } from './env'
 import { VERSION } from './version'
 
 const portSchema = z.number().int()
+const DEFAULT_VM_CACHE_CDN_BASE_URL = 'https://cdn.browseros.com'
 
 export const ServerConfigSchema = z.object({
   cdpPort: portSchema.nullable(),
@@ -30,6 +31,9 @@ export const ServerConfigSchema = z.object({
   instanceBrowserosVersion: z.string().optional(),
   instanceChromiumVersion: z.string().optional(),
   aiSdkDevtoolsEnabled: z.boolean(),
+  vmCachePrefetch: z.boolean(),
+  vmCacheCdnBaseUrl: z.string(),
+  vmCacheManifestUrl: z.string().optional(),
 })
 
 export type ServerConfig = z.infer<typeof ServerConfigSchema>
@@ -226,6 +230,12 @@ function parseConfigFile(filePath?: string): ConfigResult<PartialConfig> {
           cfg.flags?.allow_remote_in_mcp === true ? true : undefined,
         aiSdkDevtoolsEnabled:
           cfg.flags?.ai_sdk_devtools === true ? true : undefined,
+        vmCachePrefetch:
+          typeof cfg.vm_cache?.prefetch === 'boolean'
+            ? cfg.vm_cache.prefetch
+            : undefined,
+        vmCacheCdnBaseUrl: parseTrimmedString(cfg.vm_cache?.cdn_base_url),
+        vmCacheManifestUrl: parseTrimmedString(cfg.vm_cache?.manifest_url),
         instanceClientId:
           typeof cfg.instance?.client_id === 'string'
             ? cfg.instance.client_id
@@ -272,6 +282,13 @@ function parseRuntimeEnv(): PartialConfig {
     instanceClientId: process.env.BROWSEROS_CLIENT_ID,
     aiSdkDevtoolsEnabled:
       process.env.BROWSEROS_AI_SDK_DEVTOOLS === 'true' ? true : undefined,
+    vmCachePrefetch: parseBooleanEnv(process.env.BROWSEROS_VM_CACHE_PREFETCH),
+    vmCacheCdnBaseUrl: parseTrimmedString(
+      process.env.BROWSEROS_VM_CACHE_CDN_BASE_URL,
+    ),
+    vmCacheManifestUrl: parseTrimmedString(
+      process.env.BROWSEROS_VM_CACHE_MANIFEST_URL,
+    ),
   })
 }
 
@@ -305,6 +322,8 @@ function getDefaults(cwd: string): PartialConfig {
     executionDir: cwd,
     mcpAllowRemote: false,
     aiSdkDevtoolsEnabled: false,
+    vmCachePrefetch: true,
+    vmCacheCdnBaseUrl: DEFAULT_VM_CACHE_CDN_BASE_URL,
   }
 }
 
@@ -323,6 +342,18 @@ function mergeConfigs(...configs: PartialConfig[]): PartialConfig {
 function safeParseInt(value: string): number | undefined {
   const num = parseInt(value, 10)
   return Number.isNaN(num) ? undefined : num
+}
+
+function parseBooleanEnv(value: string | undefined): boolean | undefined {
+  if (value === 'true') return true
+  if (value === 'false') return false
+  return undefined
+}
+
+function parseTrimmedString(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : undefined
 }
 
 function omitUndefined<T extends Record<string, unknown>>(obj: T): Partial<T> {

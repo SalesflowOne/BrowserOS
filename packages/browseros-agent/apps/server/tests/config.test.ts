@@ -28,6 +28,9 @@ describe('loadServerConfig', () => {
     delete process.env.BROWSEROS_INSTALL_ID
     delete process.env.BROWSEROS_CLIENT_ID
     delete process.env.BROWSEROS_AI_SDK_DEVTOOLS
+    delete process.env.BROWSEROS_VM_CACHE_PREFETCH
+    delete process.env.BROWSEROS_VM_CACHE_CDN_BASE_URL
+    delete process.env.BROWSEROS_VM_CACHE_MANIFEST_URL
   })
 
   afterEach(() => {
@@ -443,6 +446,84 @@ describe('loadServerConfig', () => {
       assert.strictEqual(result.ok, true)
       if (!result.ok) return
       assert.strictEqual(result.value.aiSdkDevtoolsEnabled, false)
+    })
+
+    it('defaults VM cache runtime sync settings', () => {
+      const result = loadServerConfig([
+        'bun',
+        'src/index.ts',
+        '--server-port=3000',
+      ])
+
+      assert.strictEqual(result.ok, true)
+      if (!result.ok) return
+      assert.strictEqual(result.value.vmCachePrefetch, true)
+      assert.strictEqual(
+        result.value.vmCacheCdnBaseUrl,
+        'https://cdn.browseros.com',
+      )
+      assert.strictEqual(result.value.vmCacheManifestUrl, undefined)
+    })
+  })
+
+  describe('VM cache runtime sync', () => {
+    it('reads VM cache settings from env', () => {
+      process.env.BROWSEROS_VM_CACHE_PREFETCH = 'false'
+      process.env.BROWSEROS_VM_CACHE_CDN_BASE_URL = ' https://artifacts.test/ '
+      process.env.BROWSEROS_VM_CACHE_MANIFEST_URL =
+        ' https://manifest.test/vm.json '
+
+      const result = loadServerConfig([
+        'bun',
+        'src/index.ts',
+        '--server-port=3000',
+      ])
+
+      assert.strictEqual(result.ok, true)
+      if (!result.ok) return
+      assert.strictEqual(result.value.vmCachePrefetch, false)
+      assert.strictEqual(
+        result.value.vmCacheCdnBaseUrl,
+        'https://artifacts.test/',
+      )
+      assert.strictEqual(
+        result.value.vmCacheManifestUrl,
+        'https://manifest.test/vm.json',
+      )
+    })
+
+    it('reads VM cache settings from config with file precedence over env', () => {
+      process.env.BROWSEROS_VM_CACHE_PREFETCH = 'false'
+      process.env.BROWSEROS_VM_CACHE_CDN_BASE_URL = 'https://env.test'
+      process.env.BROWSEROS_VM_CACHE_MANIFEST_URL =
+        'https://env.test/manifest.json'
+      const configPath = path.join(tempDir, 'config.json')
+      fs.writeFileSync(
+        configPath,
+        JSON.stringify({
+          ports: { server: 3000 },
+          vm_cache: {
+            prefetch: true,
+            cdn_base_url: ' https://config.test ',
+            manifest_url: ' https://config.test/vm/manifest.json ',
+          },
+        }),
+      )
+
+      const result = loadServerConfig([
+        'bun',
+        'src/index.ts',
+        `--config=${configPath}`,
+      ])
+
+      assert.strictEqual(result.ok, true)
+      if (!result.ok) return
+      assert.strictEqual(result.value.vmCachePrefetch, true)
+      assert.strictEqual(result.value.vmCacheCdnBaseUrl, 'https://config.test')
+      assert.strictEqual(
+        result.value.vmCacheManifestUrl,
+        'https://config.test/vm/manifest.json',
+      )
     })
   })
 
