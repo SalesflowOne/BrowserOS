@@ -101,6 +101,11 @@ For HF-local models, install optional local dependencies with:
 uv sync --extra local
 ```
 
+This installs `torch`, `torchvision`, `transformers`, `accelerate`, `einops`,
+and `requests`. Some Qwen/Qwen-derived processors require `torchvision` even for
+image-only prompts, and several remote-code VLM repos expect `einops` or
+`requests`.
+
 The local provider is intentionally conservative: it only runs when it detects a
 CUDA/NVIDIA GPU, skips models whose estimated VRAM exceeds the detected GPU
 memory, and otherwise uses a generic Transformers VLM path. Some GUI-specialized
