@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Tests for the shared server-binary sign table."""
 
+import plistlib
 import unittest
 from pathlib import Path
 
@@ -32,6 +33,16 @@ class MacosServerBinariesTest(unittest.TestCase):
         assert spec is not None
         self.assertEqual(spec.identifier_suffix, "limactl")
         self.assertIsNone(macos_sign_spec_for(Path("/x/not_a_known_binary")))
+
+    def test_limactl_uses_vz_entitlement(self):
+        spec = macos_sign_spec_for(Path("/x/limactl"))
+        assert spec is not None
+        self.assertEqual(spec.entitlements, "lima-vz-entitlements.plist")
+
+        entitlements_name = spec.entitlements
+        assert entitlements_name is not None
+        entitlements = plistlib.loads((ENTITLEMENTS_DIR / entitlements_name).read_bytes())
+        self.assertIs(entitlements.get("com.apple.security.virtualization"), True)
 
     def test_matches_lima_bundle_layout(self):
         keys = set(MACOS_SERVER_BINARIES.keys())

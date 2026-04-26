@@ -30,7 +30,7 @@ MACOS_SERVER_BINARIES: Dict[str, SignSpec] = {
     ),
     "bun": SignSpec("bun", "runtime", "browseros-executable-entitlements.plist"),
     "rg": SignSpec("rg", "runtime"),
-    "limactl": SignSpec("limactl", "runtime"),
+    "limactl": SignSpec("limactl", "runtime", "lima-vz-entitlements.plist"),
 }
 
 
