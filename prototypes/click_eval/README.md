@@ -79,8 +79,8 @@ audits. The active OpenRouter click-model shortlist was checked against
 Shortlist models not found in the current OpenRouter catalog are documented
 below as `local_hf` candidates. They are included in `examples/models.json`, but
 the provider checks for a CUDA/NVIDIA GPU before importing local inference
-dependencies or downloading weights. If no GPU is present, they are recorded as
-`skipped - no GPU present`.
+dependencies or downloading weights. If no usable CUDA GPU is present, they are
+recorded as skipped with the CUDA detection reason.
 
 | Model | Hosting | Setup needed |
 | --- | --- | --- |
@@ -102,9 +102,11 @@ uv sync --extra local
 ```
 
 This installs `torch`, `torchvision`, `transformers`, `accelerate`, `einops`,
-and `requests`. Some Qwen/Qwen-derived processors require `torchvision` even for
-image-only prompts, and several remote-code VLM repos expect `einops` or
-`requests`.
+`qwen-vl-utils`, `safetensors`, `timm`, `sentencepiece`, `protobuf`, and
+`requests`. `torch>=2.6` is required for models that still ship PyTorch `.bin`
+weights because older PyTorch releases are blocked by the CVE-2025-32434
+`torch.load` guard. MolmoPoint also expects `einops`, and the Qwen-derived GUI
+models use `qwen-vl-utils` for image preprocessing.
 
 The local provider is intentionally conservative: it only runs when PyTorch can
 use CUDA, skips models whose estimated VRAM exceeds the detected GPU memory, and
@@ -112,10 +114,13 @@ loads weights directly onto `cuda:0` instead of allowing CPU/disk offload. This
 means a misconfigured container where `nvidia-smi` works but `torch.cuda` does
 not will be skipped instead of silently running an 8B model on CPU. Local
 generation uses the CLI `--timeout` value as the Transformers `max_time` budget.
-Some GUI-specialized models may need model-specific parsing or serving tweaks
-after the first local smoke run. For gated/private downloads, set `HF_TOKEN`.
-For Azure/Foundry-hosted variants, expect an endpoint URL plus API key and a
-dedicated provider adapter.
+Several model-specific adapters are included for MolmoPoint, GroundNext,
+UGround, OS-Atlas, ShowUI, and Qwen3-VL. Local model configs set `dtype` to
+`fp16` and use CPU offload for the larger checkpoints instead of quantization.
+This keeps quality closer to full precision, but timing for offloaded models
+will include CPU-GPU transfer overhead. For gated/private
+downloads, set `HF_TOKEN`. For Azure/Foundry-hosted variants, expect an endpoint
+URL plus API key and a dedicated provider adapter.
 
 Moondream candidates use a provider-qualified
 entry:
@@ -141,6 +146,14 @@ export OPENROUTER_API_KEY=...
 # Optional, for Moondream candidates:
 export MOONDREAM_API_KEY=...
 uv run click-eval run
+```
+
+Without `uv`, use:
+
+```bash
+cd prototypes/click_eval
+python -m pip install -r requirements.txt
+python -m click_eval run
 ```
 
 On an interactive terminal, `run` shows tqdm progress bars for tasks and model

@@ -43,7 +43,7 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument(
         "--timeout",
         type=int,
-        default=90,
+        default=60 * 4,
         help="API timeout seconds; also used as local HF generation max_time",
     )
 

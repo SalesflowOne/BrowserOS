@@ -87,6 +87,16 @@ def _model_spec(entry: Any, default_name: str | None = None) -> ModelSpec:
             estimated_vram_gb=_optional_float(
                 entry.get("estimated_vram_gb") or entry.get("vram_gb")
             ),
+            adapter=_optional_string(entry.get("adapter")),
+            quantization=_optional_string(entry.get("quantization")),
+            allow_cpu_offload=_optional_bool(entry.get("allow_cpu_offload")) or False,
+            dtype=_optional_string(entry.get("dtype")),
+            attn_implementation=_optional_string(entry.get("attn_implementation")),
+            min_pixels=_optional_int(entry.get("min_pixels") or entry.get("image_min_pixels")),
+            max_pixels=_optional_int(entry.get("max_pixels") or entry.get("image_max_pixels")),
+            max_new_tokens=_optional_int(entry.get("max_new_tokens")),
+            revision=_optional_string(entry.get("revision")),
+            use_safetensors=_optional_bool(entry.get("use_safetensors")),
         )
     raise ValueError(f"invalid model entry: {entry!r}")
 
@@ -95,3 +105,23 @@ def _optional_float(value: Any) -> float | None:
     if value is None or value == "":
         return None
     return float(value)
+
+
+def _optional_int(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    return int(value)
+
+
+def _optional_string(value: Any) -> str | None:
+    if value is None or value == "":
+        return None
+    return str(value)
+
+
+def _optional_bool(value: Any) -> bool | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)

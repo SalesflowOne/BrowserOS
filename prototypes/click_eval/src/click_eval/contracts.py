@@ -30,6 +30,16 @@ class ModelSpec:
     model_id: str
     provider: str = "openrouter"
     estimated_vram_gb: float | None = None
+    adapter: str | None = None
+    quantization: str | None = None
+    allow_cpu_offload: bool = False
+    dtype: str | None = None
+    attn_implementation: str | None = None
+    min_pixels: int | None = None
+    max_pixels: int | None = None
+    max_new_tokens: int | None = None
+    revision: str | None = None
+    use_safetensors: bool | None = None
 
 
 @dataclass(frozen=True)

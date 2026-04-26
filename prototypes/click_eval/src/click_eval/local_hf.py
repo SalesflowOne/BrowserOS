@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import json
 import subprocess
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from .contracts import ModelReply, ModelSkipped, ModelSpec
+from .contracts import ModelReply, ModelSkipped, ModelSpec, Point
 from .image_utils import require_pillow
 from .openrouter import _point_prompt
+from .parsing import parse_point_response
+
+IMAGENET_MEAN = (0.485, 0.456, 0.406)
+IMAGENET_STD = (0.229, 0.224, 0.225)
 
 
 @dataclass(frozen=True)
@@ -30,7 +35,7 @@ class LocalHFClient:
         self.max_new_tokens = max_new_tokens
         self._log_callback = log_callback
         self._gpu_info: GpuInfo | None = None
-        self._loaded: dict[str, tuple[Any, Any, Any]] = {}
+        self._loaded: dict[str, tuple[Any, ...]] = {}
 
     def predict_point(
         self,
@@ -55,80 +60,438 @@ class LocalHFClient:
                 f"{model.estimated_vram_gb:.1f}GB"
             )
 
-        torch, processor, hf_model = self._load_model(model)
-        Image, _, _ = require_pillow()
-        self._log(f"{model.name}: loading image and building prompt")
-        with Image.open(image_path) as opened:
-            image = opened.convert("RGB")
-        width, height = image.size
-        prompt = _point_prompt(instruction, width, height, purpose)
-        inputs = _build_inputs(processor, image, prompt)
-        input_device = _first_model_device(hf_model)
-        inputs = {
-            key: value.to(input_device) if hasattr(value, "to") else value
-            for key, value in inputs.items()
-        }
-        self._log(
-            f"{model.name}: generating with max_new_tokens={self.max_new_tokens}, "
-            f"max_time={self.timeout_seconds}s"
-        )
-        with torch.inference_mode():
-            generated = hf_model.generate(
-                **inputs,
-                max_new_tokens=self.max_new_tokens,
-                max_time=self.timeout_seconds,
-                do_sample=False,
+        adapter = _adapter_for(model)
+        if adapter == "molmopoint":
+            return self._predict_molmopoint(model, image_path, instruction)
+        if adapter == "showui":
+            return self._predict_showui(model, image_path, instruction)
+        if adapter == "groundnext":
+            return self._predict_groundnext(model, image_path, instruction)
+        if adapter == "uground":
+            return self._predict_qwen2_relative_1000(
+                model,
+                image_path,
+                _uground_prompt(instruction),
+                class_names=("Qwen2VLForConditionalGeneration",),
             )
-        text = _decode_output(processor, inputs, generated)
-        return ModelReply(
-            text=text,
-            raw={
-                "model": model.model_id,
-                "gpu": gpu_info.__dict__,
-                "device_map": getattr(hf_model, "hf_device_map", None),
-            },
-        )
+        if adapter == "os_atlas_7b":
+            return self._predict_qwen2_relative_1000(
+                model,
+                image_path,
+                _os_atlas_prompt(instruction, "with point"),
+                class_names=("Qwen2VLForConditionalGeneration",),
+            )
+        if adapter == "os_atlas_4b":
+            return self._predict_os_atlas_4b(model, image_path, instruction)
+        if adapter == "qwen3_vl":
+            return self._predict_qwen3_vl(model, image_path, instruction)
+
+        return self._predict_generic(model, image_path, instruction, purpose)
 
     def gpu_info(self) -> GpuInfo:
         if self._gpu_info is None:
             self._gpu_info = detect_gpu()
         return self._gpu_info
 
-    def _load_model(self, model: ModelSpec):
-        model_id = model.model_id
-        if model_id in self._loaded:
-            return self._loaded[model_id]
+    def _predict_generic(
+        self,
+        model: ModelSpec,
+        image_path: Path,
+        instruction: str,
+        purpose: str,
+    ) -> ModelReply:
+        torch, processor, hf_model = self._load_processor_model(model)
+        image = _open_rgb_image(image_path)
+        width, height = image.size
+        prompt = _point_prompt(instruction, width, height, purpose)
+        inputs = _build_inputs(processor, image, prompt)
+        text = self._generate_text(torch, processor, hf_model, inputs, model)
+        return self._reply(model, text, raw={"adapter": "generic"})
 
-        try:
-            import torch
-            from transformers import AutoProcessor
-            import transformers
-        except ImportError as exc:
-            raise ModelSkipped(
-                "skipped - local HF dependencies missing; install with "
-                "`uv sync --extra local`"
-            ) from exc
+    def _predict_qwen3_vl(
+        self, model: ModelSpec, image_path: Path, instruction: str
+    ) -> ModelReply:
+        torch, processor, hf_model = self._load_processor_model(
+            model,
+            class_names=("Qwen3VLForConditionalGeneration",),
+            processor_kwargs=_pixel_kwargs(model),
+        )
+        image = _open_rgb_image(image_path)
+        width, height = image.size
+        prompt = _relative_1000_prompt(instruction)
+        inputs = _build_inputs(processor, image, prompt)
+        text = self._generate_text(torch, processor, hf_model, inputs, model)
+        return self._scaled_reply(
+            model, text, width, height, coordinate_max=1000, adapter="qwen3_vl"
+        )
 
+    def _predict_molmopoint(
+        self, model: ModelSpec, image_path: Path, instruction: str
+    ) -> ModelReply:
+        torch, processor, hf_model = self._load_processor_model(
+            model,
+            class_names=("AutoModelForImageTextToText",),
+            processor_kwargs={"padding_side": "left"},
+        )
+        image = _open_rgb_image(image_path)
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": instruction},
+                    {"type": "image", "image": image},
+                ],
+            }
+        ]
+        inputs = processor.apply_chat_template(
+            messages,
+            tokenize=True,
+            add_generation_prompt=True,
+            return_tensors="pt",
+            return_dict=True,
+            padding=True,
+            return_pointing_metadata=True,
+        )
+        metadata = inputs.pop("metadata")
+        inputs = _move_inputs(inputs, _first_model_device(hf_model))
+        self._log(f"{model.name}: generating MolmoPoint grounding tokens")
+        with torch.inference_mode(), torch.autocast(
+            "cuda", dtype=_dtype_from_model(torch, model)
+        ):
+            output = hf_model.generate(
+                **inputs,
+                logits_processor=hf_model.build_logit_processor_from_inputs(inputs),
+                max_new_tokens=model.max_new_tokens or 200,
+                max_time=self.timeout_seconds,
+                do_sample=False,
+            )
+        generated_tokens = output[:, inputs["input_ids"].size(1) :]
+        generated_text = processor.post_process_image_text_to_text(
+            generated_tokens,
+            skip_special_tokens=False,
+            clean_up_tokenization_spaces=False,
+        )[0]
+        points = hf_model.extract_image_points(
+            generated_text,
+            metadata["token_pooling"],
+            metadata["subpatch_mapping"],
+            metadata["image_sizes"],
+        )
+        if not points:
+            return self._reply(
+                model,
+                generated_text,
+                raw={"adapter": "molmopoint", "points": points},
+            )
+        point = points[0]
+        return self._point_reply(
+            model,
+            Point(float(point[2]), float(point[3])),
+            raw={"adapter": "molmopoint", "text": generated_text, "points": points},
+        )
+
+    def _predict_showui(
+        self, model: ModelSpec, image_path: Path, instruction: str
+    ) -> ModelReply:
+        torch, processor, hf_model = self._load_processor_model(
+            model,
+            class_names=("Qwen2VLForConditionalGeneration",),
+            processor_kwargs=_pixel_kwargs(model),
+        )
+        width, height = _image_size(image_path)
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": _showui_system_prompt()},
+                    {
+                        "type": "image",
+                        "image": str(image_path),
+                        **_pixel_kwargs(model),
+                    },
+                    {"type": "text", "text": instruction},
+                ],
+            }
+        ]
+        inputs = _qwen_messages_to_inputs(processor, messages)
+        text = self._generate_text(torch, processor, hf_model, inputs, model)
+        return self._scaled_reply(
+            model, text, width, height, coordinate_max=1, adapter="showui"
+        )
+
+    def _predict_groundnext(
+        self, model: ModelSpec, image_path: Path, instruction: str
+    ) -> ModelReply:
+        torch, processor, tokenizer, hf_model = self._load_processor_tokenizer_model(
+            model, class_names=("Qwen2_5_VLForConditionalGeneration",)
+        )
+        image = _open_rgb_image(image_path)
+        original_width, original_height = image.size
+        image, (width, height) = _smart_resize_image(image, model)
+        messages = [
+            {
+                "role": "system",
+                "content": _groundnext_system_prompt(width, height),
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": image},
+                    {"type": "text", "text": instruction},
+                ],
+            },
+        ]
+        input_text = tokenizer.apply_chat_template(
+            messages, add_generation_prompt=True, tokenize=False
+        )
+        inputs = processor(
+            text=[input_text],
+            images=[image],
+            videos=None,
+            padding=True,
+            return_tensors="pt",
+        )
+        text = self._generate_text(torch, processor, hf_model, inputs, model)
+        point = _point_from_text(text)
+        if point is None:
+            return self._reply(model, text, raw={"adapter": "groundnext"})
+        return self._point_reply(
+            model,
+            Point(
+                x=point.x * original_width / width,
+                y=point.y * original_height / height,
+            ),
+            raw={"adapter": "groundnext", "text": text},
+        )
+
+    def _predict_qwen2_relative_1000(
+        self,
+        model: ModelSpec,
+        image_path: Path,
+        prompt: str,
+        class_names: tuple[str, ...],
+    ) -> ModelReply:
+        torch, processor, hf_model = self._load_processor_model(
+            model, class_names=class_names, processor_kwargs=_pixel_kwargs(model)
+        )
+        width, height = _image_size(image_path)
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": str(image_path), **_pixel_kwargs(model)},
+                    {"type": "text", "text": prompt},
+                ],
+            }
+        ]
+        inputs = _qwen_messages_to_inputs(processor, messages)
+        text = self._generate_text(torch, processor, hf_model, inputs, model)
+        return self._scaled_reply(
+            model, text, width, height, coordinate_max=1000, adapter=_adapter_for(model)
+        )
+
+    def _predict_os_atlas_4b(
+        self, model: ModelSpec, image_path: Path, instruction: str
+    ) -> ModelReply:
+        torch, tokenizer, hf_model = self._load_os_atlas_4b_model(model)
+        width, height = _image_size(image_path)
+        pixel_values = _os_atlas_pixel_values(image_path, max_num=6)
+        pixel_values = pixel_values.to(_dtype_from_model(torch, model)).to(
+            _first_model_device(hf_model)
+        )
+        prompt = _os_atlas_prompt(instruction, "with point")
+        generation_config = {
+            "max_new_tokens": model.max_new_tokens or self.max_new_tokens,
+            "do_sample": False,
+        }
+        self._log(f"{model.name}: generating with OS-Atlas chat")
+        response, _history = hf_model.chat(
+            tokenizer,
+            pixel_values,
+            prompt,
+            generation_config,
+            history=None,
+            return_history=True,
+        )
+        return self._scaled_reply(
+            model, response, width, height, coordinate_max=1000, adapter="os_atlas_4b"
+        )
+
+    def _generate_text(
+        self,
+        torch,
+        processor,
+        hf_model,
+        inputs,
+        model: ModelSpec,
+    ) -> str:
+        inputs = _move_inputs(inputs, _first_model_device(hf_model))
+        max_new_tokens = model.max_new_tokens or self.max_new_tokens
+        self._log(
+            f"{model.name}: generating with max_new_tokens={max_new_tokens}, "
+            f"max_time={self.timeout_seconds}s"
+        )
+        with torch.inference_mode():
+            generated = hf_model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                max_time=self.timeout_seconds,
+                do_sample=False,
+            )
+        return _decode_output(processor, inputs, generated)
+
+    def _load_processor_model(
+        self,
+        model: ModelSpec,
+        class_names: tuple[str, ...] = (
+            "AutoModelForImageTextToText",
+            "AutoModelForVision2Seq",
+            "AutoModelForCausalLM",
+        ),
+        processor_kwargs: dict[str, Any] | None = None,
+    ) -> tuple[Any, Any, Any]:
+        key = _load_key(model, "processor_model", class_names)
+        if key in self._loaded:
+            return self._loaded[key]  # type: ignore[return-value]
+
+        torch, transformers = _import_local_hf_dependencies()
+        AutoProcessor = transformers.AutoProcessor
         self._log(f"{model.name}: loading processor")
-        processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
-        model_cls = _model_class(transformers)
-        self._log(f"{model.name}: loading weights onto cuda:0")
+        processor = _call_hf_loader(
+            AutoProcessor.from_pretrained,
+            model,
+            trust_remote_code=True,
+            **(processor_kwargs or {}),
+        )
+        model_cls = _model_class(transformers, class_names)
+        hf_model = self._load_pretrained_model(torch, model_cls, model)
+        self._loaded[key] = (torch, processor, hf_model)
+        return self._loaded[key]  # type: ignore[return-value]
+
+    def _load_processor_tokenizer_model(
+        self,
+        model: ModelSpec,
+        class_names: tuple[str, ...],
+    ) -> tuple[Any, Any, Any, Any]:
+        key = _load_key(model, "processor_tokenizer_model", class_names)
+        if key in self._loaded:
+            return self._loaded[key]  # type: ignore[return-value]
+
+        torch, transformers = _import_local_hf_dependencies()
+        self._log(f"{model.name}: loading processor and tokenizer")
+        processor = _call_hf_loader(
+            transformers.AutoProcessor.from_pretrained,
+            model,
+            trust_remote_code=True,
+        )
+        tokenizer = _call_hf_loader(
+            transformers.AutoTokenizer.from_pretrained,
+            model,
+            trust_remote_code=True,
+        )
+        model_cls = _model_class(transformers, class_names)
+        hf_model = self._load_pretrained_model(torch, model_cls, model)
+        self._loaded[key] = (torch, processor, tokenizer, hf_model)
+        return self._loaded[key]  # type: ignore[return-value]
+
+    def _load_os_atlas_4b_model(self, model: ModelSpec) -> tuple[Any, Any, Any]:
+        key = _load_key(model, "os_atlas_4b", ("AutoModel",))
+        if key in self._loaded:
+            return self._loaded[key]  # type: ignore[return-value]
+
+        torch, transformers = _import_local_hf_dependencies()
+        config = _load_os_atlas_4b_config(transformers, model)
+        self._log(f"{model.name}: loading OS-Atlas tokenizer")
+        tokenizer = _call_hf_loader(
+            transformers.AutoTokenizer.from_pretrained,
+            model,
+            trust_remote_code=True,
+            use_fast=False,
+        )
+        with _ignore_optional_flash_attn_import_for_os_atlas():
+            hf_model = self._load_pretrained_model(
+                torch,
+                transformers.AutoModel,
+                model,
+                config=config,
+                low_cpu_mem_usage=True,
+            )
+        self._loaded[key] = (torch, tokenizer, hf_model)
+        return self._loaded[key]  # type: ignore[return-value]
+
+    def _load_pretrained_model(
+        self,
+        torch,
+        model_cls,
+        model: ModelSpec,
+        **extra_kwargs,
+    ):
+        self._log(f"{model.name}: loading weights")
+        kwargs = _model_load_kwargs(torch, model)
+        kwargs.update(extra_kwargs)
         try:
-            hf_model = model_cls.from_pretrained(
-                model_id,
-                device_map={"": "cuda:0"},
-                torch_dtype=_preferred_cuda_dtype(torch),
+            hf_model = _call_hf_loader(
+                model_cls.from_pretrained,
+                model,
                 trust_remote_code=True,
+                **kwargs,
             )
         except Exception as exc:
+            if _looks_like_cve_torch_load_guard(exc):
+                raise ModelSkipped(
+                    "skipped - torch>=2.6.0 is required to load this model's "
+                    "PyTorch .bin weights safely; run `uv sync --extra local`"
+                ) from exc
             if _looks_like_cuda_fit_failure(exc):
                 raise ModelSkipped(
                     "skipped - model did not fit on the CUDA GPU without CPU offload"
                 ) from exc
             raise
+        _reject_cpu_offload(model, hf_model)
         hf_model.eval()
-        self._loaded[model_id] = (torch, processor, hf_model)
-        return self._loaded[model_id]
+        return hf_model
+
+    def _reply(
+        self,
+        model: ModelSpec,
+        text: str,
+        raw: dict[str, Any] | None = None,
+    ) -> ModelReply:
+        payload = {"model": model.model_id, **(raw or {})}
+        return ModelReply(text=text, raw=payload)
+
+    def _point_reply(
+        self,
+        model: ModelSpec,
+        point: Point,
+        raw: dict[str, Any] | None = None,
+    ) -> ModelReply:
+        return self._reply(
+            model,
+            json.dumps({"x": point.x, "y": point.y}, ensure_ascii=False),
+            raw=raw,
+        )
+
+    def _scaled_reply(
+        self,
+        model: ModelSpec,
+        text: str,
+        width: int,
+        height: int,
+        coordinate_max: int,
+        adapter: str,
+    ) -> ModelReply:
+        point = _point_from_text(_strip_thinking(text))
+        if point is None:
+            return self._reply(model, text, raw={"adapter": adapter})
+        return self._point_reply(
+            model,
+            Point(
+                x=point.x / coordinate_max * width,
+                y=point.y / coordinate_max * height,
+            ),
+            raw={"adapter": adapter, "text": text, "coordinate_max": coordinate_max},
+        )
 
     def _log(self, message: str) -> None:
         if self._log_callback is not None:
@@ -163,7 +526,7 @@ def detect_gpu() -> GpuInfo:
             nvidia.total_vram_gb
             if nvidia.total_vram_gb is not None
             else props.total_memory / 1024**3
-        )
+        ),
     )
 
 
@@ -199,7 +562,40 @@ def _detect_nvidia_smi() -> GpuInfo:
     )
 
 
-def _model_class(transformers):
+def _import_local_hf_dependencies():
+    try:
+        import torch
+        import transformers
+    except ImportError as exc:
+        raise ModelSkipped(
+            "skipped - local HF dependencies missing; install with "
+            "`uv sync --extra local` or `pip install -r requirements.txt`"
+        ) from exc
+    return torch, transformers
+
+
+def _call_hf_loader(loader, model: ModelSpec, **kwargs):
+    if model.revision:
+        kwargs.setdefault("revision", model.revision)
+    try:
+        return loader(model.model_id, **kwargs)
+    except Exception as exc:
+        message = str(exc)
+        if "requires the following packages" in message or isinstance(
+            exc, ImportError
+        ):
+            raise ModelSkipped(
+                "skipped - local HF dependency missing for "
+                f"{model.name}: {message}. Run `uv sync --extra local`."
+            ) from exc
+        raise
+
+
+def _model_class(transformers, class_names: tuple[str, ...]):
+    for name in class_names:
+        model_cls = getattr(transformers, name, None)
+        if model_cls is not None:
+            return model_cls
     for name in (
         "AutoModelForImageTextToText",
         "AutoModelForVision2Seq",
@@ -209,6 +605,76 @@ def _model_class(transformers):
         if model_cls is not None:
             return model_cls
     raise RuntimeError("Installed transformers does not provide a VLM model class")
+
+
+def _model_load_kwargs(torch, model: ModelSpec) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {}
+    if model.use_safetensors is not None:
+        kwargs["use_safetensors"] = model.use_safetensors
+    if model.attn_implementation:
+        kwargs["attn_implementation"] = model.attn_implementation
+
+    quantization = (model.quantization or "").lower()
+    if quantization in {"bnb_4bit", "4bit"}:
+        try:
+            from transformers import BitsAndBytesConfig
+        except ImportError as exc:
+            raise ModelSkipped(
+                "skipped - bitsandbytes quantization requested but transformers "
+                "BitsAndBytesConfig is unavailable"
+            ) from exc
+        kwargs["quantization_config"] = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=_dtype_from_model(torch, model),
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_use_double_quant=True,
+        )
+        kwargs["device_map"] = "auto" if model.allow_cpu_offload else {"": "cuda:0"}
+        return kwargs
+    if quantization in {"bnb_8bit", "8bit"}:
+        try:
+            from transformers import BitsAndBytesConfig
+        except ImportError as exc:
+            raise ModelSkipped(
+                "skipped - bitsandbytes quantization requested but transformers "
+                "BitsAndBytesConfig is unavailable"
+            ) from exc
+        kwargs["quantization_config"] = BitsAndBytesConfig(load_in_8bit=True)
+        kwargs["device_map"] = "auto" if model.allow_cpu_offload else {"": "cuda:0"}
+        return kwargs
+
+    kwargs["device_map"] = "auto" if model.allow_cpu_offload else {"": "cuda:0"}
+    kwargs["torch_dtype"] = _dtype_from_model(torch, model)
+    return kwargs
+
+
+def _dtype_from_model(torch, model: ModelSpec):
+    dtype = (model.dtype or "").lower()
+    if dtype in {"bfloat16", "bf16"}:
+        return torch.bfloat16
+    if dtype in {"float16", "fp16"}:
+        return torch.float16
+    if dtype in {"float32", "fp32"}:
+        return torch.float32
+    if dtype == "auto":
+        return "auto"
+    return torch.float16
+
+
+def _reject_cpu_offload(model: ModelSpec, hf_model) -> None:
+    if model.allow_cpu_offload:
+        return
+    device_map = getattr(hf_model, "hf_device_map", None) or {}
+    offloaded = {
+        name: device
+        for name, device in device_map.items()
+        if str(device).lower() in {"cpu", "disk"}
+    }
+    if offloaded:
+        raise ModelSkipped(
+            "skipped - model was mapped to CPU/disk despite local GPU mode: "
+            f"{offloaded}"
+        )
 
 
 def _build_inputs(processor, image, prompt: str):
@@ -237,6 +703,36 @@ def _build_inputs(processor, image, prompt: str):
     return processor(images=image, text=prompt, return_tensors="pt")
 
 
+def _qwen_messages_to_inputs(processor, messages):
+    try:
+        from qwen_vl_utils import process_vision_info
+    except ImportError as exc:
+        raise ModelSkipped(
+            "skipped - qwen-vl-utils missing; run `uv sync --extra local`"
+        ) from exc
+
+    text = processor.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=True
+    )
+    image_inputs, video_inputs = process_vision_info(messages)
+    return processor(
+        text=[text],
+        images=image_inputs,
+        videos=video_inputs,
+        padding=True,
+        return_tensors="pt",
+    )
+
+
+def _move_inputs(inputs, device):
+    if hasattr(inputs, "to"):
+        return inputs.to(device)
+    return {
+        key: value.to(device) if hasattr(value, "to") else value
+        for key, value in inputs.items()
+    }
+
+
 def _first_model_device(hf_model):
     device = getattr(hf_model, "device", None)
     if device is not None:
@@ -248,6 +744,284 @@ def _preferred_cuda_dtype(torch):
     if torch.cuda.is_bf16_supported():
         return torch.bfloat16
     return torch.float16
+
+
+def _decode_output(processor, inputs, generated) -> str:
+    input_ids = inputs.get("input_ids")
+    if input_ids is not None and hasattr(generated, "shape"):
+        generated = generated[:, input_ids.shape[-1] :]
+    if hasattr(processor, "batch_decode"):
+        decoded = processor.batch_decode(
+            generated,
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        )
+        return decoded[0] if decoded else ""
+    if hasattr(processor, "decode"):
+        return processor.decode(generated[0], skip_special_tokens=True)
+    return json.dumps({"error": "processor cannot decode generated output"})
+
+
+def _open_rgb_image(path: Path):
+    Image, _, _ = require_pillow()
+    with Image.open(path) as opened:
+        return opened.convert("RGB")
+
+
+def _image_size(path: Path) -> tuple[int, int]:
+    image = _open_rgb_image(path)
+    return image.size
+
+
+def _smart_resize_image(image, model: ModelSpec):
+    try:
+        from qwen_vl_utils.vision_process import smart_resize
+    except ImportError as exc:
+        raise ModelSkipped(
+            "skipped - qwen-vl-utils missing; run `uv sync --extra local`"
+        ) from exc
+
+    width, height = image.size
+    min_pixels = model.min_pixels or 78_400
+    max_pixels = model.max_pixels or 6_000_000
+    resized_height, resized_width = smart_resize(
+        height, width, min_pixels=min_pixels, max_pixels=max_pixels
+    )
+    return image.resize((resized_width, resized_height)), (resized_width, resized_height)
+
+
+def _pixel_kwargs(model: ModelSpec) -> dict[str, int]:
+    kwargs: dict[str, int] = {}
+    if model.min_pixels is not None:
+        kwargs["min_pixels"] = model.min_pixels
+    if model.max_pixels is not None:
+        kwargs["max_pixels"] = model.max_pixels
+    return kwargs
+
+
+def _point_from_text(text: str) -> Point | None:
+    parsed = parse_point_response(text)
+    return parsed.point
+
+
+def _strip_thinking(text: str) -> str:
+    marker = "</think>"
+    if marker in text:
+        return text.split(marker, 1)[1].strip()
+    return text
+
+
+def _relative_1000_prompt(instruction: str) -> str:
+    return (
+        "Locate the single point to click for this instruction.\n\n"
+        f"Instruction: {instruction}\n\n"
+        "Return only one JSON object, no markdown:\n"
+        '{"point_2d":[x,y],"label":"click"}\n\n'
+        "Use relative image coordinates: x and y are integers from 0 to 1000, "
+        "where [0,0] is top-left and [1000,1000] is bottom-right."
+    )
+
+
+def _showui_system_prompt() -> str:
+    return (
+        "Based on the screenshot of the page, I give a text description and you "
+        "give its corresponding location. The coordinate represents a clickable "
+        "location [x, y] for an element, as a relative coordinate on the "
+        "screenshot scaled from 0 to 1."
+    )
+
+
+def _groundnext_system_prompt(width: int, height: int) -> str:
+    return (
+        "You are a GUI grounding assistant. The screen resolution is "
+        f"{width}x{height}. Return exactly one tool call in this form:\n"
+        '<tool_call>{"name":"computer_use","arguments":{"action":"left_click",'
+        '"coordinate":[x,y]}}</tool_call>\n'
+        "Use pixel coordinates in the current screen resolution."
+    )
+
+
+def _uground_prompt(instruction: str) -> str:
+    return (
+        "Your task is to identify the precise coordinates (x, y) of a specific "
+        "area/element/object on the screen based on a description. Return a "
+        "single string (x, y). The output must be in the range [0,1000), where "
+        "(0,0) is top-left and (1000,1000) is bottom-right.\n\n"
+        f"Description: {instruction}\n\nAnswer:"
+    )
+
+
+def _os_atlas_prompt(instruction: str, suffix: str) -> str:
+    return (
+        "In the screenshot of this web page, please give me the coordinates of "
+        f'the element I want to click on according to my instructions({suffix}).\n'
+        f'"{instruction}"'
+    )
+
+
+def _os_atlas_pixel_values(image_path: Path, max_num: int):
+    import torch
+    import torchvision.transforms as T
+    from torchvision.transforms.functional import InterpolationMode
+
+    image = _open_rgb_image(image_path)
+    transform = T.Compose(
+        [
+            T.Lambda(lambda img: img.convert("RGB") if img.mode != "RGB" else img),
+            T.Resize((448, 448), interpolation=InterpolationMode.BICUBIC),
+            T.ToTensor(),
+            T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+        ]
+    )
+    images = _dynamic_preprocess(
+        image, image_size=448, use_thumbnail=True, max_num=max_num
+    )
+    return torch.stack([transform(item) for item in images])
+
+
+def _dynamic_preprocess(
+    image,
+    min_num: int = 1,
+    max_num: int = 12,
+    image_size: int = 448,
+    use_thumbnail: bool = False,
+):
+    orig_width, orig_height = image.size
+    aspect_ratio = orig_width / orig_height
+    target_ratios = {
+        (i, j)
+        for n in range(min_num, max_num + 1)
+        for i in range(1, n + 1)
+        for j in range(1, n + 1)
+        if min_num <= i * j <= max_num
+    }
+    target_ratios = sorted(target_ratios, key=lambda item: item[0] * item[1])
+    target_aspect_ratio = _find_closest_aspect_ratio(
+        aspect_ratio, target_ratios, orig_width, orig_height, image_size
+    )
+    target_width = image_size * target_aspect_ratio[0]
+    target_height = image_size * target_aspect_ratio[1]
+    blocks = target_aspect_ratio[0] * target_aspect_ratio[1]
+    resized_img = image.resize((target_width, target_height))
+    processed_images = []
+    for index in range(blocks):
+        box = (
+            (index % (target_width // image_size)) * image_size,
+            (index // (target_width // image_size)) * image_size,
+            ((index % (target_width // image_size)) + 1) * image_size,
+            ((index // (target_width // image_size)) + 1) * image_size,
+        )
+        processed_images.append(resized_img.crop(box))
+    if use_thumbnail and len(processed_images) != 1:
+        processed_images.append(image.resize((image_size, image_size)))
+    return processed_images
+
+
+def _find_closest_aspect_ratio(
+    aspect_ratio: float,
+    target_ratios,
+    width: int,
+    height: int,
+    image_size: int,
+):
+    best_ratio_diff = float("inf")
+    best_ratio = (1, 1)
+    area = width * height
+    for ratio in target_ratios:
+        target_aspect_ratio = ratio[0] / ratio[1]
+        ratio_diff = abs(aspect_ratio - target_aspect_ratio)
+        if ratio_diff < best_ratio_diff:
+            best_ratio_diff = ratio_diff
+            best_ratio = ratio
+        elif (
+            ratio_diff == best_ratio_diff
+            and area > 0.5 * image_size * image_size * ratio[0] * ratio[1]
+        ):
+            best_ratio = ratio
+    return best_ratio
+
+
+def _load_os_atlas_4b_config(transformers, model: ModelSpec):
+    try:
+        from transformers.dynamic_module_utils import get_class_from_dynamic_module
+    except ImportError:
+        return None
+
+    config_class = get_class_from_dynamic_module(
+        "configuration_internvl_chat.InternVLChatConfig",
+        model.model_id,
+        revision=model.revision,
+    )
+    config_class.has_no_defaults_at_init = True
+    return config_class.from_pretrained(
+        model.model_id,
+        trust_remote_code=True,
+        revision=model.revision,
+    )
+
+
+@contextmanager
+def _ignore_optional_flash_attn_import_for_os_atlas():
+    try:
+        import transformers.dynamic_module_utils as dynamic_module_utils
+    except ImportError:
+        yield
+        return
+
+    original_get_imports = dynamic_module_utils.get_imports
+
+    def get_imports_without_flash_attn(filename):
+        imports = original_get_imports(filename)
+        if str(filename).endswith("modeling_intern_vit.py"):
+            return [item for item in imports if item != "flash_attn"]
+        return imports
+
+    dynamic_module_utils.get_imports = get_imports_without_flash_attn
+    try:
+        yield
+    finally:
+        dynamic_module_utils.get_imports = original_get_imports
+
+
+def _load_key(
+    model: ModelSpec, kind: str, class_names: tuple[str, ...] = ()
+) -> str:
+    return "|".join(
+        [
+            kind,
+            model.model_id,
+            model.revision or "",
+            model.quantization or "",
+            model.dtype or "",
+            ",".join(class_names),
+        ]
+    )
+
+
+def _adapter_for(model: ModelSpec) -> str:
+    model_id = model.model_id.lower()
+    if model.adapter == "os_atlas":
+        if "os-atlas-base-4b" in model_id:
+            return "os_atlas_4b"
+        if "os-atlas-base-7b" in model_id:
+            return "os_atlas_7b"
+    if model.adapter:
+        return model.adapter
+    if "molmopoint" in model_id:
+        return "molmopoint"
+    if "showui" in model_id:
+        return "showui"
+    if "groundnext" in model_id:
+        return "groundnext"
+    if "uground" in model_id:
+        return "uground"
+    if "os-atlas-base-4b" in model_id:
+        return "os_atlas_4b"
+    if "os-atlas-base-7b" in model_id:
+        return "os_atlas_7b"
+    if "qwen3-vl" in model_id:
+        return "qwen3_vl"
+    return "generic"
 
 
 def _looks_like_cuda_fit_failure(exc: Exception) -> bool:
@@ -264,13 +1038,6 @@ def _looks_like_cuda_fit_failure(exc: Exception) -> bool:
     )
 
 
-def _decode_output(processor, inputs, generated) -> str:
-    input_ids = inputs.get("input_ids")
-    if input_ids is not None and hasattr(generated, "shape"):
-        generated = generated[:, input_ids.shape[-1] :]
-    if hasattr(processor, "batch_decode"):
-        decoded = processor.batch_decode(generated, skip_special_tokens=True)
-        return decoded[0] if decoded else ""
-    if hasattr(processor, "decode"):
-        return processor.decode(generated[0], skip_special_tokens=True)
-    return json.dumps({"error": "processor cannot decode generated output"})
+def _looks_like_cve_torch_load_guard(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return "torch.load" in message and "vulnerability" in message
