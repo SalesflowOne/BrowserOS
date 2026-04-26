@@ -54,6 +54,7 @@ class LocalHFClient:
             model.estimated_vram_gb is not None
             and gpu_info.total_vram_gb is not None
             and model.estimated_vram_gb > gpu_info.total_vram_gb
+            and not model.allow_cpu_offload
         ):
             raise ModelSkipped(
                 "skipped - GPU VRAM "
@@ -69,6 +70,14 @@ class LocalHFClient:
                 return self._predict_showui(model, image_path, instruction)
             if adapter == "groundnext":
                 return self._predict_groundnext(model, image_path, instruction)
+            if adapter == "opencua":
+                return self._predict_opencua(model, image_path, instruction)
+            if adapter in {"gta1", "infigui"}:
+                return self._predict_qwen25_absolute(
+                    model, image_path, instruction, mode=adapter
+                )
+            if adapter == "points_gui_g":
+                return self._predict_points_gui_g(model, image_path, instruction)
             if adapter == "uground":
                 return self._predict_qwen2_relative_1000(
                     model,
@@ -268,6 +277,134 @@ class LocalHFClient:
             raw={"adapter": "groundnext", "text": text},
         )
 
+    def _predict_qwen25_absolute(
+        self, model: ModelSpec, image_path: Path, instruction: str, mode: str
+    ) -> ModelReply:
+        torch, processor, hf_model = self._load_processor_model(
+            model,
+            class_names=("Qwen2_5_VLForConditionalGeneration",),
+            processor_kwargs=_pixel_kwargs(model),
+        )
+        image = _open_rgb_image(image_path)
+        original_width, original_height = image.size
+        image, (width, height) = _smart_resize_image(image, model)
+        messages = _qwen25_absolute_messages(instruction, image, width, height, mode)
+        input_text = processor.apply_chat_template(
+            messages, add_generation_prompt=True, tokenize=False
+        )
+        inputs = processor(
+            text=[input_text],
+            images=[image],
+            videos=None,
+            padding=True,
+            return_tensors="pt",
+        )
+        text = self._generate_text(torch, processor, hf_model, inputs, model)
+        return self._resized_absolute_reply(
+            model,
+            text,
+            original_width,
+            original_height,
+            width,
+            height,
+            adapter=mode,
+        )
+
+    def _predict_opencua(
+        self, model: ModelSpec, image_path: Path, instruction: str
+    ) -> ModelReply:
+        torch, tokenizer, image_processor, hf_model = (
+            self._load_tokenizer_image_processor_model(
+                model, class_names=("AutoModel", "AutoModelForCausalLM")
+            )
+        )
+        image = _open_rgb_image(image_path)
+        original_width, original_height = image.size
+        image, (width, height) = _smart_resize_image(image, model)
+        messages = [
+            {"role": "system", "content": _pyautogui_system_prompt()},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": image},
+                    {"type": "text", "text": instruction},
+                ],
+            },
+        ]
+        input_ids = tokenizer.apply_chat_template(
+            messages, tokenize=True, add_generation_prompt=True
+        )
+        info = image_processor.preprocess(images=[image])
+        device = _first_model_device(hf_model)
+        pixel_values = torch.tensor(info["pixel_values"]).to(
+            dtype=_dtype_from_model(torch, model), device=device
+        )
+        grid_thws = torch.tensor(info["image_grid_thw"], device=device)
+        input_ids = torch.tensor([input_ids], device=device)
+        max_new_tokens = model.max_new_tokens or self.max_new_tokens
+        self._log(
+            f"{model.name}: generating OpenCUA action with "
+            f"max_new_tokens={max_new_tokens}, max_time={self.timeout_seconds}s"
+        )
+        with torch.inference_mode():
+            generated = hf_model.generate(
+                input_ids,
+                pixel_values=pixel_values,
+                grid_thws=grid_thws,
+                max_new_tokens=max_new_tokens,
+                max_time=self.timeout_seconds,
+                do_sample=False,
+                temperature=0,
+            )
+        text = tokenizer.batch_decode(
+            generated[:, input_ids.shape[1] :],
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        )[0]
+        return self._resized_absolute_reply(
+            model,
+            text,
+            original_width,
+            original_height,
+            width,
+            height,
+            adapter="opencua",
+        )
+
+    def _predict_points_gui_g(
+        self, model: ModelSpec, image_path: Path, instruction: str
+    ) -> ModelReply:
+        torch, tokenizer, image_processor, hf_model = self._load_points_gui_g_model(
+            model
+        )
+        messages = [
+            {
+                "role": "system",
+                "content": [{"type": "text", "text": _points_gui_g_system_prompt()}],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": str(image_path)},
+                    {"type": "text", "text": instruction},
+                ],
+            },
+        ]
+        generation_config = {
+            "max_new_tokens": model.max_new_tokens or self.max_new_tokens,
+            "do_sample": False,
+        }
+        chat = getattr(hf_model, "chat", None)
+        if chat is None:
+            raise RuntimeError("POINTS-GUI-G model does not expose chat()")
+        self._log(f"{model.name}: generating POINTS-GUI-G normalized point")
+        with torch.inference_mode():
+            response = chat(messages, tokenizer, image_processor, generation_config)
+        width, height = _image_size(image_path)
+        return self._scaled_reply(
+            model, str(response), width, height, coordinate_max=1, adapter="points_gui_g"
+        )
+
     def _predict_qwen2_relative_1000(
         self,
         model: ModelSpec,
@@ -398,6 +535,61 @@ class LocalHFClient:
         self._loaded[key] = (torch, processor, tokenizer, hf_model)
         return self._loaded[key]  # type: ignore[return-value]
 
+    def _load_tokenizer_image_processor_model(
+        self,
+        model: ModelSpec,
+        class_names: tuple[str, ...],
+    ) -> tuple[Any, Any, Any, Any]:
+        key = _load_key(model, "tokenizer_image_processor_model", class_names)
+        if key in self._loaded:
+            return self._loaded[key]  # type: ignore[return-value]
+
+        torch, transformers = _import_local_hf_dependencies()
+        self._log(f"{model.name}: loading tokenizer and image processor")
+        tokenizer = _call_hf_loader(
+            transformers.AutoTokenizer.from_pretrained,
+            model,
+            trust_remote_code=True,
+        )
+        image_processor = _call_hf_loader(
+            transformers.AutoImageProcessor.from_pretrained,
+            model,
+            trust_remote_code=True,
+        )
+        model_cls = _model_class(transformers, class_names)
+        hf_model = self._load_pretrained_model(torch, model_cls, model)
+        self._loaded[key] = (torch, tokenizer, image_processor, hf_model)
+        return self._loaded[key]  # type: ignore[return-value]
+
+    def _load_points_gui_g_model(self, model: ModelSpec) -> tuple[Any, Any, Any, Any]:
+        key = _load_key(model, "points_gui_g", ("AutoModelForCausalLM",))
+        if key in self._loaded:
+            return self._loaded[key]  # type: ignore[return-value]
+
+        torch, transformers = _import_local_hf_dependencies()
+        image_processor_cls = getattr(transformers, "Qwen2VLImageProcessor", None)
+        if image_processor_cls is None:
+            raise ModelSkipped(
+                "skipped - installed transformers lacks Qwen2VLImageProcessor"
+            )
+
+        self._log(f"{model.name}: loading POINTS-GUI-G tokenizer/image processor")
+        tokenizer = _call_hf_loader(
+            transformers.AutoTokenizer.from_pretrained,
+            model,
+            trust_remote_code=True,
+        )
+        image_processor = _call_hf_loader(
+            image_processor_cls.from_pretrained,
+            model,
+            trust_remote_code=True,
+        )
+        hf_model = self._load_pretrained_model(
+            torch, transformers.AutoModelForCausalLM, model
+        )
+        self._loaded[key] = (torch, tokenizer, image_processor, hf_model)
+        return self._loaded[key]  # type: ignore[return-value]
+
     def _load_os_atlas_4b_model(self, model: ModelSpec) -> tuple[Any, Any, Any]:
         key = _load_key(model, "os_atlas_4b", ("AutoModel",))
         if key in self._loaded:
@@ -496,6 +688,33 @@ class LocalHFClient:
                 y=point.y / coordinate_max * height,
             ),
             raw={"adapter": adapter, "text": text, "coordinate_max": coordinate_max},
+        )
+
+    def _resized_absolute_reply(
+        self,
+        model: ModelSpec,
+        text: str,
+        original_width: int,
+        original_height: int,
+        resized_width: int,
+        resized_height: int,
+        adapter: str,
+    ) -> ModelReply:
+        point = _point_from_text(_strip_thinking(text))
+        if point is None:
+            return self._reply(model, text, raw={"adapter": adapter})
+        return self._point_reply(
+            model,
+            Point(
+                x=point.x * original_width / resized_width,
+                y=point.y * original_height / resized_height,
+            ),
+            raw={
+                "adapter": adapter,
+                "text": text,
+                "resized_width": resized_width,
+                "resized_height": resized_height,
+            },
         )
 
     def _log(self, message: str) -> None:
@@ -818,7 +1037,10 @@ def _smart_resize_image(image, model: ModelSpec):
     resized_height, resized_width = smart_resize(
         height, width, factor=28, min_pixels=min_pixels, max_pixels=max_pixels
     )
-    return image.resize((resized_width, resized_height)), (resized_width, resized_height)
+    return image.resize((resized_width, resized_height)), (
+        resized_width,
+        resized_height,
+    )
 
 
 def _pixel_kwargs(model: ModelSpec) -> dict[str, int]:
@@ -869,6 +1091,75 @@ def _groundnext_system_prompt(width: int, height: int) -> str:
         '<tool_call>{"name":"computer_use","arguments":{"action":"left_click",'
         '"coordinate":[x,y]}}</tool_call>\n'
         "Use pixel coordinates in the current screen resolution."
+    )
+
+
+def _qwen25_absolute_messages(
+    instruction: str,
+    image,
+    width: int,
+    height: int,
+    mode: str,
+) -> list[dict[str, Any]]:
+    if mode == "infigui":
+        return [
+            {
+                "role": "system",
+                "content": (
+                    "You FIRST think about the reasoning process as an internal "
+                    "monologue and then provide the final answer.\n"
+                    "The reasoning process MUST BE enclosed within <think> "
+                    "</think> tags."
+                ),
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": image},
+                    {
+                        "type": "text",
+                        "text": (
+                            f"The screen's resolution is {width}x{height}.\n"
+                            f'Locate the UI element(s) for "{instruction}", '
+                            "output the coordinates using JSON format: "
+                            '[{"point_2d": [x, y]}]'
+                        ),
+                    },
+                ],
+            },
+        ]
+
+    return [
+        {"role": "system", "content": _pyautogui_system_prompt()},
+        {
+            "role": "user",
+            "content": [
+                {"type": "image", "image": image},
+                {"type": "text", "text": instruction},
+            ],
+        },
+    ]
+
+
+def _pyautogui_system_prompt() -> str:
+    return (
+        "You are a GUI agent. You are given a task and a screenshot of the "
+        "screen. You need to perform a series of pyautogui actions to complete "
+        "the task."
+    )
+
+
+def _points_gui_g_system_prompt() -> str:
+    return (
+        "You are a GUI agent. Based on the UI screenshot provided, please locate "
+        "the exact position of the element that matches the instruction given by "
+        "the user.\n"
+        "Requirements for the output:\n"
+        "- Return only the point (x, y) representing the center of the target "
+        "element\n"
+        "- Coordinates must be normalized to the range [0, 1]\n"
+        "- Round each coordinate to three decimal places\n"
+        "- Format the output as strictly (x, y) without any additional text"
     )
 
 
@@ -999,23 +1290,34 @@ def _patch_generation_mixin(hf_model) -> None:
             from transformers.generation.utils import GenerationMixin
         except ImportError:
             return
+    try:
+        from transformers import GenerationConfig
+    except ImportError:
+        try:
+            from transformers.generation.configuration_utils import GenerationConfig
+        except ImportError:
+            GenerationConfig = None
 
     candidates = [
         getattr(hf_model, "language_model", None),
         getattr(hf_model, "llm", None),
     ]
     for candidate in candidates:
-        if candidate is None or hasattr(candidate, "generate"):
+        if candidate is None:
             continue
-        cls = candidate.__class__
-        if issubclass(cls, GenerationMixin):
-            continue
-        patched_cls = type(
-            f"{cls.__name__}WithGenerationMixin",
-            (cls, GenerationMixin),
-            {},
-        )
-        candidate.__class__ = patched_cls
+        if not hasattr(candidate, "generate"):
+            cls = candidate.__class__
+            if not issubclass(cls, GenerationMixin):
+                patched_cls = type(
+                    f"{cls.__name__}WithGenerationMixin",
+                    (cls, GenerationMixin),
+                    {},
+                )
+                candidate.__class__ = patched_cls
+        if getattr(candidate, "generation_config", None) is None:
+            config = getattr(candidate, "config", None)
+            if GenerationConfig is not None and config is not None:
+                candidate.generation_config = GenerationConfig.from_model_config(config)
 
 
 @contextmanager
@@ -1071,13 +1373,24 @@ def _adapter_for(model: ModelSpec) -> str:
         return "showui"
     if "groundnext" in model_id:
         return "groundnext"
+    if "opencua" in model_id:
+        return "opencua"
+    if "gta1" in model_id:
+        return "gta1"
+    if "infigui" in model_id:
+        return "infigui"
+    if "points-gui-g" in model_id:
+        return "points_gui_g"
     if "uground" in model_id:
         return "uground"
     if "os-atlas-base-4b" in model_id:
         return "os_atlas_4b"
     if "os-atlas-base-7b" in model_id:
         return "os_atlas_7b"
-    if "qwen3-vl" in model_id:
+    if any(
+        marker in model_id
+        for marker in ("qwen3-vl", "gui-owl-1.5", "kv-ground", "ui-venus", "holo2")
+    ):
         return "qwen3_vl"
     return "generic"
 

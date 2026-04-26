@@ -8,6 +8,12 @@ from typing import Any
 
 from .contracts import ParsedPoint, Point
 
+_NUMBER_PATTERN = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)"
+_POINT_KEY_PATTERN = (
+    r"['\"]?(?:click_point|point_2d|POINT_2D|POINT|bbox_2d|coordinates|"
+    r"coordinate|start_box|position|bbox|box|point|center)['\"]?"
+)
+
 
 def parse_point_value(value: Any) -> Point | None:
     if isinstance(value, Point):
@@ -42,14 +48,18 @@ def parse_point_value(value: Any) -> Point | None:
             return _point_from_numbers(value["x"], value["y"])
         for key in (
             "point",
+            "POINT",
             "click_point",
             "coordinate",
+            "Coordinate",
             "coordinates",
             "point_2d",
+            "POINT_2D",
             "bbox_2d",
             "position",
             "bbox",
             "box",
+            "start_box",
             "arguments",
         ):
             if key in value:
@@ -64,14 +74,27 @@ def parse_point_response(text: str) -> ParsedPoint:
     obj_text = _first_json_object(text)
     value_text = obj_text or _first_tagged_point(text) or _first_sequence(text)
     if value_text is None:
+        point = _point_from_keyed_text(text)
+        if point is not None:
+            return ParsedPoint(point=point)
         return ParsedPoint(point=None, error="response did not contain a point value")
 
     obj, error = _parse_structured_value(value_text)
     if error is not None:
+        point = _point_from_keyed_text(value_text)
+        if point is None and value_text != text:
+            point = _point_from_keyed_text(text)
+        if point is not None:
+            return ParsedPoint(point=point)
         return ParsedPoint(point=None, error=error)
 
     point = parse_point_value(obj)
     if point is None:
+        point = _point_from_keyed_text(value_text)
+        if point is None and value_text != text:
+            point = _point_from_keyed_text(text)
+        if point is not None:
+            return ParsedPoint(point=point)
         return ParsedPoint(point=None, error="response did not contain numeric x/y")
 
     reason = obj.get("reason") if isinstance(obj, dict) else None
@@ -95,6 +118,57 @@ def _to_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _point_from_keyed_text(text: str) -> Point | None:
+    click_call = re.search(
+        rf"(?:pyautogui\.)?click\s*\(\s*(?:x\s*=\s*)?({_NUMBER_PATTERN})"
+        rf"\s*,\s*(?:y\s*=\s*)?({_NUMBER_PATTERN})",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if click_call:
+        return _point_from_numbers(click_call.group(1), click_call.group(2))
+
+    keyed_sequence = re.search(
+        rf"(?<![A-Za-z0-9_]){_POINT_KEY_PATTERN}"
+        rf"(?![A-Za-z0-9_])\s*(?::|=)?\s*['\"]?[\[(]\s*"
+        rf"({_NUMBER_PATTERN}(?:\s*,\s*{_NUMBER_PATTERN}){{1,3}})",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if keyed_sequence:
+        numbers = re.findall(_NUMBER_PATTERN, keyed_sequence.group(1))
+        point = parse_point_value(numbers[:4])
+        if point is not None:
+            return point
+
+    keyed_pair = re.search(
+        rf"(?<![A-Za-z0-9_]){_POINT_KEY_PATTERN}"
+        rf"(?![A-Za-z0-9_])\s*(?::|=)?\s*"
+        rf"({_NUMBER_PATTERN})\s*,\s*({_NUMBER_PATTERN})",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if keyed_pair:
+        return _point_from_numbers(keyed_pair.group(1), keyed_pair.group(2))
+
+    x_match = re.search(
+        rf"(?<![A-Za-z0-9_])['\"]?x['\"]?(?![A-Za-z0-9_])"
+        rf"\s*(?::|=)\s*({_NUMBER_PATTERN})",
+        text,
+        flags=re.IGNORECASE,
+    )
+    y_match = re.search(
+        rf"(?<![A-Za-z0-9_])['\"]?y['\"]?(?![A-Za-z0-9_])"
+        rf"\s*(?::|=)\s*({_NUMBER_PATTERN})",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if x_match and y_match:
+        return _point_from_numbers(x_match.group(1), y_match.group(1))
+
+    return None
 
 
 def _parse_structured_value(text: str) -> tuple[Any | None, str | None]:

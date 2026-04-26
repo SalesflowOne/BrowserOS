@@ -44,16 +44,6 @@ portion is:
       "provider": "openrouter",
       "model": "bytedance/ui-tars-1.5-7b"
     },
-    {
-      "name": "qwen3-vl-30b-a3b-instruct",
-      "provider": "openrouter",
-      "model": "qwen/qwen3-vl-30b-a3b-instruct"
-    },
-    {
-      "name": "qwen3-vl-30b-a3b-thinking",
-      "provider": "openrouter",
-      "model": "qwen/qwen3-vl-30b-a3b-thinking"
-    },
     {"name": "moondream", "provider": "moondream", "model": "moondream-cloud"}
   ]
 }
@@ -62,13 +52,11 @@ portion is:
 The `name` is only the short label shown in plots and summary files. OpenRouter
 is the default provider, but the examples keep it explicit for routability
 audits. The active OpenRouter click-model shortlist was checked against
-`https://openrouter.ai/api/v1/models` on 2026-04-25 and includes:
+`https://openrouter.ai/api/v1/models` on 2026-04-26 and includes:
 
 - `qwen/qwen3-vl-8b-instruct`
 - `qwen/qwen3-vl-8b-thinking`
 - `bytedance/ui-tars-1.5-7b`
-- `qwen/qwen3-vl-30b-a3b-instruct`
-- `qwen/qwen3-vl-30b-a3b-thinking`
 
 Shortlist models not found in the current OpenRouter catalog are documented
 below as `local_hf` candidates. They are included in `examples/models.json`, but
@@ -78,6 +66,19 @@ recorded as skipped with the CUDA detection reason.
 
 | Model | Hosting | Setup needed |
 | --- | --- | --- |
+| `mPLUG/GUI-Owl-1.5-2B-Instruct` | Hugging Face | Included as `local_hf`; Qwen3-VL GUI-agent adapter. |
+| `mPLUG/GUI-Owl-1.5-4B-Instruct` | Hugging Face | Included as `local_hf`; Qwen3-VL GUI-agent adapter. |
+| `mPLUG/GUI-Owl-1.5-8B-Instruct` | Hugging Face | Included as `local_hf`; Qwen3-VL GUI-agent adapter. |
+| `vocaela/KV-Ground-8B-BaseGuiOwl1.5-0315` | Hugging Face | Included as `local_hf`; high-performing ScreenSpot-Pro GUI grounder, non-commercial license. |
+| `inclusionAI/UI-Venus-1.5-2B` | Hugging Face | Included as `local_hf`; small Qwen3-VL GUI agent. |
+| `inclusionAI/UI-Venus-1.5-8B` | Hugging Face | Included as `local_hf`; strong Apache-2.0 GUI agent/grounder. |
+| `Hcompany/Holo2-4B` | Hugging Face | Included as `local_hf`; Qwen3-VL computer-use model. |
+| `Hcompany/Holo2-8B` | Hugging Face | Included as `local_hf`; Qwen3-VL computer-use model. |
+| `Salesforce/GTA1-7B` | Hugging Face | Included as `local_hf`; outputs `pyautogui.click(...)` coordinates after Qwen smart resize. |
+| `xlangai/OpenCUA-7B` | Hugging Face | Included as `local_hf`; outputs `pyautogui.click(...)` coordinates after Qwen smart resize. |
+| `InfiX-ai/InfiGUI-G1-3B` | Hugging Face | Included as `local_hf`; outputs JSON `point_2d` coordinates after Qwen smart resize. |
+| `InfiX-ai/InfiGUI-G1-7B` | Hugging Face | Included as `local_hf`; outputs JSON `point_2d` coordinates after Qwen smart resize. |
+| `tencent/POINTS-GUI-G` | Hugging Face | Included as `local_hf`; outputs normalized `(x, y)` coordinates and needs `WePOINTS`. |
 | `Tongyi-MAI/MAI-UI-8B` | Hugging Face | Included as `local_hf`; may need `HF_TOKEN` depending on access. |
 | `allenai/MolmoPoint-GUI-8B` | Hugging Face | Included as `local_hf`; outputs pointing tokens, so model-specific parser tuning may improve results. |
 | `microsoft/Fara-7B` | Hugging Face and Microsoft Foundry | Included as `local_hf`; Foundry use would need endpoint credentials and a separate adapter. |
@@ -96,21 +97,23 @@ uv sync --extra local
 ```
 
 This installs `torch`, `torchvision`, `transformers`, `accelerate`, `einops`,
-`qwen-vl-utils`, `safetensors`, `timm`, `sentencepiece`, `protobuf`, and
-`requests`. `torch>=2.6` is required for models that still ship PyTorch `.bin`
-weights because older PyTorch releases are blocked by the CVE-2025-32434
-`torch.load` guard. MolmoPoint also expects `einops`, and the Qwen-derived GUI
-models use `qwen-vl-utils` for image preprocessing.
+`qwen-vl-utils`, `safetensors`, `timm`, `sentencepiece`, `protobuf`,
+`requests`, and `WePOINTS`. `torch>=2.6` is required for models that still ship
+PyTorch `.bin` weights because older PyTorch releases are blocked by the
+CVE-2025-32434 `torch.load` guard. MolmoPoint also expects `einops`, and the
+Qwen-derived GUI models use `qwen-vl-utils` for image preprocessing.
 
 The local provider is intentionally conservative: it only runs when PyTorch can
-use CUDA, skips models whose estimated VRAM exceeds the detected GPU memory, and
-loads weights directly onto `cuda:0` instead of allowing CPU/disk offload. This
+use CUDA, and it skips non-offloaded models whose estimated VRAM exceeds the
+detected GPU memory. Models marked `allow_cpu_offload` use Transformers
+`device_map="auto"`; other local models load directly onto `cuda:0`. This
 means a misconfigured container where `nvidia-smi` works but `torch.cuda` does
 not will be skipped instead of silently running an 8B model on CPU. Local
 generation uses the CLI `--timeout` value as the Transformers `max_time` budget.
 Several model-specific adapters are included for MolmoPoint, GroundNext,
-UGround, OS-Atlas, ShowUI, and Qwen3-VL. Local model configs use `fp16` and CPU
-offload for the larger checkpoints instead of quantization. MolmoPoint is the
+UGround, OS-Atlas, ShowUI, Qwen3-VL, OpenCUA, GTA1, InfiGUI, and POINTS-GUI-G.
+Local model configs use `fp16` and CPU offload for the larger checkpoints
+instead of quantization. MolmoPoint is the
 exception: its official inference path uses BF16 autocast, and FP16 overflows in
 its pointing-token generation path. Timing for offloaded models will include
 CPU-GPU transfer overhead. The local runner unloads each HF model after its

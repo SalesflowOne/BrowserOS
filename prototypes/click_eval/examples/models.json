@@ -17,25 +17,181 @@
       "model": "bytedance/ui-tars-1.5-7b"
     },
     {
-      "name": "qwen3-vl-30b-a3b-instruct",
-      "provider": "openrouter",
-      "model": "qwen/qwen3-vl-30b-a3b-instruct"
-    },
-    {
-      "name": "qwen3-vl-30b-a3b-thinking",
-      "provider": "openrouter",
-      "model": "qwen/qwen3-vl-30b-a3b-thinking"
-    },
-    {
       "name": "moondream",
       "provider": "moondream",
       "model": "moondream-cloud"
+    },
+    {
+      "name": "qwen3-vl-4b-instruct-local",
+      "provider": "local_hf",
+      "model": "Qwen/Qwen3-VL-4B-Instruct",
+      "adapter": "qwen3_vl",
+      "dtype": "fp16",
+      "estimated_vram_gb": 12,
+      "max_pixels": 1310720,
+      "max_new_tokens": 128
+    },
+    {
+      "name": "qwen3-vl-4b-thinking-local",
+      "provider": "local_hf",
+      "model": "Qwen/Qwen3-VL-4B-Thinking",
+      "adapter": "qwen3_vl",
+      "dtype": "fp16",
+      "allow_cpu_offload": true,
+      "estimated_vram_gb": 12,
+      "max_pixels": 1310720,
+      "max_new_tokens": 1024
+    },
+    {
+      "name": "gui-owl-1.5-2b-local",
+      "provider": "local_hf",
+      "model": "mPLUG/GUI-Owl-1.5-2B-Instruct",
+      "adapter": "qwen3_vl",
+      "dtype": "fp16",
+      "estimated_vram_gb": 8,
+      "max_pixels": 1310720,
+      "max_new_tokens": 128
+    },
+    {
+      "name": "gui-owl-1.5-4b-local",
+      "provider": "local_hf",
+      "model": "mPLUG/GUI-Owl-1.5-4B-Instruct",
+      "adapter": "qwen3_vl",
+      "dtype": "fp16",
+      "allow_cpu_offload": true,
+      "estimated_vram_gb": 12,
+      "max_pixels": 1310720,
+      "max_new_tokens": 128
+    },
+    {
+      "name": "gui-owl-1.5-8b-local",
+      "provider": "local_hf",
+      "model": "mPLUG/GUI-Owl-1.5-8B-Instruct",
+      "adapter": "qwen3_vl",
+      "dtype": "fp16",
+      "allow_cpu_offload": true,
+      "estimated_vram_gb": 24,
+      "max_pixels": 1310720,
+      "max_new_tokens": 128
+    },
+    {
+      "name": "kv-ground-8b-local",
+      "provider": "local_hf",
+      "model": "vocaela/KV-Ground-8B-BaseGuiOwl1.5-0315",
+      "adapter": "qwen3_vl",
+      "dtype": "fp16",
+      "allow_cpu_offload": true,
+      "estimated_vram_gb": 24,
+      "max_pixels": 1310720,
+      "max_new_tokens": 128
+    },
+    {
+      "name": "ui-venus-1.5-2b-local",
+      "provider": "local_hf",
+      "model": "inclusionAI/UI-Venus-1.5-2B",
+      "adapter": "qwen3_vl",
+      "dtype": "fp16",
+      "estimated_vram_gb": 8,
+      "max_pixels": 1310720,
+      "max_new_tokens": 128
+    },
+    {
+      "name": "ui-venus-1.5-8b-local",
+      "provider": "local_hf",
+      "model": "inclusionAI/UI-Venus-1.5-8B",
+      "adapter": "qwen3_vl",
+      "dtype": "fp16",
+      "allow_cpu_offload": true,
+      "estimated_vram_gb": 24,
+      "max_pixels": 1310720,
+      "max_new_tokens": 128
+    },
+    {
+      "name": "holo2-4b-local",
+      "provider": "local_hf",
+      "model": "Hcompany/Holo2-4B",
+      "adapter": "qwen3_vl",
+      "dtype": "fp16",
+      "allow_cpu_offload": true,
+      "estimated_vram_gb": 12,
+      "max_pixels": 1310720,
+      "max_new_tokens": 512
+    },
+    {
+      "name": "holo2-8b-local",
+      "provider": "local_hf",
+      "model": "Hcompany/Holo2-8B",
+      "adapter": "qwen3_vl",
+      "dtype": "fp16",
+      "allow_cpu_offload": true,
+      "estimated_vram_gb": 24,
+      "max_pixels": 1310720,
+      "max_new_tokens": 512
+    },
+    {
+      "name": "gta1-7b-local",
+      "provider": "local_hf",
+      "model": "Salesforce/GTA1-7B",
+      "adapter": "gta1",
+      "dtype": "fp16",
+      "allow_cpu_offload": true,
+      "estimated_vram_gb": 24,
+      "min_pixels": 3136,
+      "max_pixels": 1003520,
+      "max_new_tokens": 512
+    },
+    {
+      "name": "opencua-7b-local",
+      "provider": "local_hf",
+      "model": "xlangai/OpenCUA-7B",
+      "adapter": "opencua",
+      "dtype": "fp16",
+      "allow_cpu_offload": true,
+      "estimated_vram_gb": 24,
+      "min_pixels": 3136,
+      "max_pixels": 1003520,
+      "max_new_tokens": 512
+    },
+    {
+      "name": "infigui-g1-3b-local",
+      "provider": "local_hf",
+      "model": "InfiX-ai/InfiGUI-G1-3B",
+      "adapter": "infigui",
+      "dtype": "fp16",
+      "allow_cpu_offload": true,
+      "estimated_vram_gb": 12,
+      "min_pixels": 3136,
+      "max_pixels": 1003520,
+      "max_new_tokens": 512
+    },
+    {
+      "name": "infigui-g1-7b-local",
+      "provider": "local_hf",
+      "model": "InfiX-ai/InfiGUI-G1-7B",
+      "adapter": "infigui",
+      "dtype": "fp16",
+      "allow_cpu_offload": true,
+      "estimated_vram_gb": 24,
+      "min_pixels": 3136,
+      "max_pixels": 1003520,
+      "max_new_tokens": 512
+    },
+    {
+      "name": "points-gui-g-local",
+      "provider": "local_hf",
+      "model": "tencent/POINTS-GUI-G",
+      "adapter": "points_gui_g",
+      "dtype": "fp16",
+      "allow_cpu_offload": true,
+      "estimated_vram_gb": 24,
+      "max_new_tokens": 128
     },
     {
       "name": "mai-ui-8b-local",
       "provider": "local_hf",
       "model": "Tongyi-MAI/MAI-UI-8B",
       "dtype": "fp16",
+      "allow_cpu_offload": true,
       "estimated_vram_gb": 24
     },
     {
@@ -53,6 +209,7 @@
       "provider": "local_hf",
       "model": "microsoft/Fara-7B",
       "dtype": "fp16",
+      "allow_cpu_offload": true,
       "estimated_vram_gb": 20
     },
     {
@@ -103,27 +260,6 @@
       "dtype": "fp16",
       "estimated_vram_gb": 8,
       "max_pixels": 1053696
-    },
-    {
-      "name": "qwen3-vl-4b-instruct-local",
-      "provider": "local_hf",
-      "model": "Qwen/Qwen3-VL-4B-Instruct",
-      "adapter": "qwen3_vl",
-      "dtype": "fp16",
-      "estimated_vram_gb": 12,
-      "max_pixels": 1310720,
-      "max_new_tokens": 128
-    },
-    {
-      "name": "qwen3-vl-4b-thinking-local",
-      "provider": "local_hf",
-      "model": "Qwen/Qwen3-VL-4B-Thinking",
-      "adapter": "qwen3_vl",
-      "dtype": "fp16",
-      "allow_cpu_offload": true,
-      "estimated_vram_gb": 12,
-      "max_pixels": 1310720,
-      "max_new_tokens": 1024
     }
   ]
 }
