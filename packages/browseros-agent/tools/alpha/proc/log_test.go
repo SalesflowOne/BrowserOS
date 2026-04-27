@@ -88,7 +88,7 @@ func TestOpenLogFileAppendsFreshFile(t *testing.T) {
 
 func TestListLogFilesReturnsRegularFilesSortedByName(t *testing.T) {
 	dir := t.TempDir()
-	for _, name := range []string{"server.log", "chromium.log.old", "chromium.log"} {
+	for _, name := range []string{"server.log", "chromium.log.old", "chromium.log", "server.log.backup"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(name), 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -125,5 +125,23 @@ func TestStreamLinesWritesTerminalAndFile(t *testing.T) {
 	fileOutput := file.String()
 	if fileOutput != "[server] first\n[server] second\n" {
 		t.Fatalf("unexpected file output: %q", fileOutput)
+	}
+}
+
+func TestStreamLinesLogsScannerErrors(t *testing.T) {
+	var terminal bytes.Buffer
+	var file bytes.Buffer
+	var mu sync.Mutex
+	longLine := strings.Repeat("x", 1024*1024+1)
+
+	streamLines(strings.NewReader(longLine), TagBrowser, &terminal, &file, &mu)
+
+	for name, got := range map[string]string{
+		"terminal": terminal.String(),
+		"file":     file.String(),
+	} {
+		if !strings.Contains(got, "log stream error: bufio.Scanner: token too long") {
+			t.Fatalf("%s output missing scanner error: %q", name, got)
+		}
 	}
 }

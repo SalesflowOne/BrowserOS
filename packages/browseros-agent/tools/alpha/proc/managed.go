@@ -57,11 +57,11 @@ func (mp *ManagedProc) run(ctx context.Context) {
 		} else {
 			logFile = file
 			defer logFile.Close()
-			LogMsgToFile(mp.Cfg.Tag, "Writing log file: "+path, logFile, &logMu)
+			LogMsgTee(mp.Cfg.Tag, "Writing log file: "+path, logFile, &logMu)
 		}
 	}
 	log := func(msg string) {
-		LogMsgToFile(mp.Cfg.Tag, msg, logFile, &logMu)
+		LogMsgTee(mp.Cfg.Tag, msg, logFile, &logMu)
 	}
 
 	for {

@@ -53,11 +53,11 @@ func LogMsgf(t Tag, format string, args ...any) {
 	LogMsg(t, fmt.Sprintf(format, args...))
 }
 
-func LogMsgToFile(t Tag, msg string, file io.Writer, fileMu *sync.Mutex) {
+func LogMsgTee(t Tag, msg string, file io.Writer, fileMu *sync.Mutex) {
 	logMsg(t, msg, os.Stdout, file, fileMu)
 }
 
-func StreamLines(r interface{ Read([]byte) (int, error) }, t Tag) {
+func StreamLines(r io.Reader, t Tag) {
 	streamLines(r, t, os.Stdout, nil, nil)
 }
 
@@ -87,7 +87,7 @@ func ListLogFiles(logDir string) ([]LogFile, error) {
 
 	files := []LogFile{}
 	for _, entry := range entries {
-		if !strings.Contains(entry.Name(), ".log") {
+		if !strings.HasSuffix(entry.Name(), ".log") && !strings.HasSuffix(entry.Name(), ".log.old") {
 			continue
 		}
 		info, err := entry.Info()
@@ -128,7 +128,7 @@ func rotateLogIfNeeded(logPath string, now time.Time) error {
 	return os.Rename(logPath, backupPath)
 }
 
-func streamLines(r interface{ Read([]byte) (int, error) }, t Tag, terminal io.Writer, file io.Writer, fileMu *sync.Mutex) {
+func streamLines(r io.Reader, t Tag, terminal io.Writer, file io.Writer, fileMu *sync.Mutex) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
@@ -137,16 +137,19 @@ func streamLines(r interface{ Read([]byte) (int, error) }, t Tag, terminal io.Wr
 			logMsg(t, line, terminal, file, fileMu)
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		logMsg(t, fmt.Sprintf("log stream error: %v", err), terminal, file, fileMu)
+	}
 }
 
 func logMsg(t Tag, msg string, terminal io.Writer, file io.Writer, fileMu *sync.Mutex) {
-	fmt.Fprintf(terminal, "%s %s\n", t.Color.Sprintf("[%s]", t.Name), msg)
-	if file == nil {
-		return
-	}
 	if fileMu != nil {
 		fileMu.Lock()
 		defer fileMu.Unlock()
+	}
+	fmt.Fprintf(terminal, "%s %s\n", t.Color.Sprintf("[%s]", t.Name), msg)
+	if file == nil {
+		return
 	}
 	fmt.Fprintf(file, "[%s] %s\n", t.Name, ansiPattern.ReplaceAllString(msg, ""))
 }
