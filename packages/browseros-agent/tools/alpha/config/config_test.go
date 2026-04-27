@@ -29,8 +29,14 @@ func TestDefaults(t *testing.T) {
 	if cfg.ProductionEnv.Server["BROWSEROS_CONFIG_URL"] == "" {
 		t.Fatalf("missing server production env defaults: %#v", cfg.ProductionEnv.Server)
 	}
+	if cfg.ProductionEnv.Server["LOG_LEVEL"] != "debug" {
+		t.Fatalf("server log level got %q want debug", cfg.ProductionEnv.Server["LOG_LEVEL"])
+	}
 	if cfg.ProductionEnv.CLI["R2_BUCKET"] != "browseros" {
 		t.Fatalf("missing cli production env defaults: %#v", cfg.ProductionEnv.CLI)
+	}
+	if cfg.ProductionEnv.CLI["R2_UPLOAD_PREFIX"] != "" {
+		t.Fatalf("cli upload prefix got %q want empty", cfg.ProductionEnv.CLI["R2_UPLOAD_PREFIX"])
 	}
 }
 

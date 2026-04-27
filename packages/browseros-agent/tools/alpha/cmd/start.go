@@ -119,7 +119,7 @@ func runEnvironment(cfg config.Config, agentRoot string) error {
 		Dir:     serverDir,
 		Env:     env,
 		Restart: true,
-		Cmd:     []string{"bun", "--watch", "--env-file=.env.development", "src/index.ts"},
+		Cmd:     serverCommand(),
 	}))
 	printSummary(cfg, agentRoot)
 
@@ -155,6 +155,10 @@ func runEnvironment(cfg config.Config, agentRoot string) error {
 		}
 	}
 	return nil
+}
+
+func serverCommand() []string {
+	return []string{"bun", "--env-file=.env.development", "src/index.ts"}
 }
 
 func exists(path string) bool {
