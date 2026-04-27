@@ -47,6 +47,7 @@ export interface TaskExecutorDeps {
 export class TaskExecutor {
   constructor(
     private readonly config: EvalConfig,
+    private readonly workerIndex: number,
     private readonly outputDir: string,
     private readonly deps: TaskExecutorDeps,
   ) {}
@@ -112,10 +113,9 @@ export class TaskExecutor {
       const appBasePort =
         ((task.metadata?.additional as Record<string, unknown>)
           ?.app_base_port as number) || 8000
-      const workerIndex = this.config.browseros.base_server_port - 9110 // derive from port offset
 
       if (appName && process.env.WEBARENA_INFINITY_DIR) {
-        infinityManager = new InfinityAppManager(workerIndex, appBasePort)
+        infinityManager = new InfinityAppManager(this.workerIndex, appBasePort)
         try {
           actualStartUrl = await infinityManager.startApp(appName)
           console.log(
@@ -312,11 +312,12 @@ export class TaskExecutor {
 
 export function createTaskExecutor(
   config: EvalConfig,
+  workerIndex: number,
   outputDir: string,
   graderOptions: GraderOptions | null,
   onEvent?: (taskId: string, event: Record<string, unknown>) => void,
 ): TaskExecutor {
-  return new TaskExecutor(config, outputDir, {
+  return new TaskExecutor(config, workerIndex, outputDir, {
     graderOptions,
     onEvent,
   })

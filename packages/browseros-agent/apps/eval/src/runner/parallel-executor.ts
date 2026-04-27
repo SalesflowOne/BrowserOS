@@ -160,6 +160,7 @@ export class ParallelExecutor {
     }
     const executor = createTaskExecutor(
       workerConfig,
+      workerIndex,
       this.config.outputDir,
       this.config.graderOptions,
       this.config.onEvent,
