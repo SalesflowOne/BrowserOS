@@ -187,6 +187,16 @@ def _point_from_keyed_text(text: str) -> Point | None:
     if x_match and y_match:
         return _point_from_numbers(x_match.group(1), y_match.group(1))
 
+    malformed_x_pair = re.search(
+        rf"(?<![A-Za-z0-9_])['\"]?x['\"]?(?![A-Za-z0-9_])"
+        rf"\s*(?::|=)\s*({_NUMBER_PATTERN})\s*,\s*({_NUMBER_PATTERN})"
+        rf"(?=\s*(?:,|\}}|\]|\)|$))",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if malformed_x_pair:
+        return _point_from_numbers(malformed_x_pair.group(1), malformed_x_pair.group(2))
+
     return None
 
 

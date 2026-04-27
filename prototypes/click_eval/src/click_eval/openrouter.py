@@ -65,6 +65,8 @@ class OpenRouterClient:
         }
         if _disable_reasoning_for_point_call(model_id):
             payload["reasoning"] = {"effort": "none"}
+        if _force_json_response_format(model_id):
+            payload["response_format"] = {"type": "json_object"}
         raw = self._post(payload)
         return ModelReply(text=_message_text(raw), raw=raw)
 
@@ -149,4 +151,8 @@ def _message_text(raw: dict[str, Any]) -> str:
 
 
 def _disable_reasoning_for_point_call(model_id: str) -> bool:
+    return model_id.lower().startswith("z-ai/glm-")
+
+
+def _force_json_response_format(model_id: str) -> bool:
     return model_id.lower().startswith("z-ai/glm-")
