@@ -15,11 +15,11 @@ func TestWriteProductionEnvFiles(t *testing.T) {
 		ProductionEnv: config.ProductionEnv{
 			Server: map[string]string{
 				"NODE_ENV":  "production",
-				"LOG_LEVEL": "info",
+				"LOG_LEVEL": "debug",
 			},
 			CLI: map[string]string{
 				"R2_BUCKET":        "browseros",
-				"R2_UPLOAD_PREFIX": "cli",
+				"R2_UPLOAD_PREFIX": "",
 			},
 		},
 	}
@@ -29,11 +29,11 @@ func TestWriteProductionEnvFiles(t *testing.T) {
 	assertMode(t, filepath.Join(root, "apps/server/.env.production"), 0600)
 	assertMode(t, filepath.Join(root, "apps/cli/.env.production"), 0600)
 	assertContains(t, filepath.Join(root, "apps/server/.env.production"), "BROWSEROS_CONFIG_URL=https://llm.browseros.com/api/browseros-server/config\n")
-	assertContains(t, filepath.Join(root, "apps/server/.env.production"), "LOG_LEVEL=info\n")
+	assertContains(t, filepath.Join(root, "apps/server/.env.production"), "LOG_LEVEL=debug\n")
 	assertContains(t, filepath.Join(root, "apps/server/.env.production"), "NODE_ENV=production\n")
 	assertContains(t, filepath.Join(root, "apps/cli/.env.production"), "POSTHOG_API_KEY=\n")
 	assertContains(t, filepath.Join(root, "apps/cli/.env.production"), "R2_BUCKET=browseros\n")
-	assertContains(t, filepath.Join(root, "apps/cli/.env.production"), "R2_UPLOAD_PREFIX=cli\n")
+	assertContains(t, filepath.Join(root, "apps/cli/.env.production"), "R2_UPLOAD_PREFIX=\n")
 }
 
 func TestWriteEnvFileQuotesUnsafeValues(t *testing.T) {

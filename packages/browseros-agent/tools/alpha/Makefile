@@ -2,11 +2,15 @@ BINARY := balpha
 SOURCES := $(shell find . -name '*.go') go.mod go.sum
 PREFIX ?= $(HOME)/bin
 
+all: build
+
+build: $(BINARY)
+
 $(BINARY): $(SOURCES)
 	@echo "[build] Compiling $(BINARY)..."
 	@go build -o $(BINARY) .
 
-.PHONY: install test clean
+.PHONY: all build install test clean
 
 install: $(BINARY)
 	@mkdir -p $(PREFIX)
