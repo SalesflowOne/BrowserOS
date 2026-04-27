@@ -42,7 +42,7 @@ func init() {
 		&cobra.Group{ID: groupSetup, Title: "Setup:"},
 		&cobra.Group{ID: groupRun, Title: "Run:"},
 		&cobra.Group{ID: groupInspect, Title: "Inspect:"},
-		&cobra.Group{ID: groupOther, Title: "Other:"},
+		&cobra.Group{ID: groupOther, Title: groupOtherTitle},
 	)
 	rootCmd.SetHelpCommandGroupID(groupOther)
 	rootCmd.SetUsageTemplate(usageTemplate)

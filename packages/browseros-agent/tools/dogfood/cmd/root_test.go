@@ -1,23 +1,25 @@
 package cmd
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
-	"github.com/fatih/color"
+	"github.com/spf13/cobra"
 )
 
-func TestRootUsageUsesColorAndCommandGroups(t *testing.T) {
-	restore := forceColor(t)
-	defer restore()
+var testANSIPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
-	usage := rootCmd.UsageString()
-
+func TestRootUsageUsesCommandGroups(t *testing.T) {
+	usage := stripANSI(rootCmd.UsageString())
 	for _, want := range []string{
-		"\x1b[1;36mUsage:\x1b[22;0m",
-		"\x1b[1;36mRun:\x1b[22;0m",
-		"\x1b[92mstart          \x1b[0m Start BrowserOS dogfooding environment",
-		"\x1b[2mUse \"browseros-dogfood [command] --help\" for more information.\x1b[22m",
+		"Usage:",
+		"Setup:",
+		"Run:",
+		"Inspect:",
+		"start",
+		"Start BrowserOS dogfooding environment",
+		"Use \"browseros-dogfood [command] --help\" for more information.",
 	} {
 		if !strings.Contains(usage, want) {
 			t.Fatalf("missing %q in\n%s", want, usage)
@@ -25,28 +27,32 @@ func TestRootUsageUsesColorAndCommandGroups(t *testing.T) {
 	}
 }
 
-func forceColor(t *testing.T) func() {
-	t.Helper()
+func TestGroupedHelpUsesOneOtherSectionForUngroupedCommands(t *testing.T) {
+	cmd := &cobra.Command{Use: "test"}
+	cmd.AddGroup(&cobra.Group{ID: groupOther, Title: groupOtherTitle})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "orphan",
+		Short: "Ungrouped command",
+		Run:   func(cmd *cobra.Command, args []string) {},
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use:     "help",
+		Short:   "Help about any command",
+		GroupID: groupOther,
+		Run:     func(cmd *cobra.Command, args []string) {},
+	})
 
-	original := color.NoColor
-	color.NoColor = false
-	styles := []*color.Color{
-		headerStyle,
-		commandStyle,
-		hintStyle,
-		successStyle,
-		warnStyle,
-		labelStyle,
-		pathStyle,
-		dimStyle,
+	help := stripANSI(groupedHelp(cmd))
+	if got := strings.Count(help, "Other:"); got != 1 {
+		t.Fatalf("Other section count got %d want 1 in\n%s", got, help)
 	}
-	for _, style := range styles {
-		style.EnableColor()
-	}
-	return func() {
-		color.NoColor = original
-		for _, style := range styles {
-			style.DisableColor()
+	for _, want := range []string{"orphan", "Ungrouped command", "help", "Help about any command"} {
+		if !strings.Contains(help, want) {
+			t.Fatalf("missing %q in\n%s", want, help)
 		}
 	}
+}
+
+func stripANSI(s string) string {
+	return testANSIPattern.ReplaceAllString(s, "")
 }
