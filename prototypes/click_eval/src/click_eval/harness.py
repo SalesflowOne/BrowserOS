@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import concurrent.futures
 import json
+import math
 import statistics
 import sys
 import time
@@ -15,7 +16,7 @@ from tqdm import tqdm
 from .contracts import ModelReply, ModelSkipped, ModelSpec, Point
 from .image_utils import image_size
 from .io import load_model_config, load_tasks, write_jsonl
-from .parsing import parse_point_response
+from .parsing import parse_point_response, parse_point_value
 from .scoring import score_point, summarize_scores
 from .viz import annotate_image
 
@@ -53,7 +54,9 @@ def run_eval(options: RunOptions, predict_point: PredictPoint) -> dict[str, obje
 
     task_iter = _progress(options, tasks, desc="Tasks", unit="task")
     for task in task_iter:
-        if task.gt_point is not None:
+        if task.gt_point is not None and judges:
+            _log(options, _judge_overlay_log_message(task.task_id, judges))
+        elif task.gt_point is not None:
             _log(options, f"[{task.task_id}] Using provided GT")
         elif judges:
             _log(options, _judge_log_message(task.task_id, judges))
@@ -73,6 +76,7 @@ def run_eval(options: RunOptions, predict_point: PredictPoint) -> dict[str, obje
         _log(options, f"[{task.task_id}] GT: ({gt_point.x:.1f}, {gt_point.y:.1f})")
         resolved_rows.append(resolved)
         task_image_size = image_size(task.image_path)
+        judge_annotations = _judge_annotations(resolved, gt_point)
 
         for model, prediction in _predict_candidates_for_task(
             options, task, candidates, predict_point
@@ -106,6 +110,7 @@ def run_eval(options: RunOptions, predict_point: PredictPoint) -> dict[str, obje
                 options.out_dir / "annotated" / f"{task.task_id}.png",
                 gt_point,
                 annotations.get(task.task_id, []),
+                judge_points=judge_annotations,
             )
 
     for row in prediction_rows:
@@ -208,6 +213,14 @@ def _resolve_ground_truth(
     resolved = dict(task.raw)
     if task.gt_point is not None:
         resolved["gt_point"] = task.gt_point.as_list()
+        if judges:
+            judge_rows, successful = _resolve_judges(task, judges, predict_point)
+            resolved["gt_judges"] = judge_rows
+            resolved["gt_models"] = [
+                judge.model_id for judge, _point, _reason, _raw in successful
+            ]
+            resolved["gt_model"] = "provided"
+            resolved["gt_reason"] = "provided gt_point; judges recorded for overlay"
         return task.gt_point, resolved
 
     if not judges:
@@ -215,15 +228,7 @@ def _resolve_ground_truth(
             f"{task.task_id}: missing gt_point and no judge model configured"
         )
 
-    successful: list[tuple[ModelSpec, Point, str | None, str]] = []
-    judge_results = _predict_judges_for_task(task, judges, predict_point)
-    judge_rows = [row for row, _point, _reason, _raw_text in judge_results]
-    for judge, (row, point, reason, raw_text) in zip(
-        judges, judge_results, strict=True
-    ):
-        if point is not None:
-            successful.append((judge, point, reason, raw_text))
-
+    judge_rows, successful = _resolve_judges(task, judges, predict_point)
     if not successful:
         errors = "; ".join(
             f"{row.get('name')}: {row.get('error')}" for row in judge_rows
@@ -245,6 +250,22 @@ def _resolve_ground_truth(
         resolved["gt_model"] = "judge_median"
         resolved["gt_reason"] = f"median of {len(successful)} successful judge points"
     return gt_point, resolved
+
+
+def _resolve_judges(
+    task,
+    judges: list[ModelSpec],
+    predict_point: PredictPoint,
+) -> tuple[list[dict[str, object]], list[tuple[ModelSpec, Point, str | None, str]]]:
+    successful: list[tuple[ModelSpec, Point, str | None, str]] = []
+    judge_results = _predict_judges_for_task(task, judges, predict_point)
+    judge_rows = [row for row, _point, _reason, _raw_text in judge_results]
+    for judge, (_row, point, reason, raw_text) in zip(
+        judges, judge_results, strict=True
+    ):
+        if point is not None:
+            successful.append((judge, point, reason, raw_text))
+    return judge_rows, successful
 
 
 def _predict_judge(
@@ -304,6 +325,41 @@ def _judge_log_message(task_id: str, judges: list[ModelSpec]) -> str:
         )
     names = ", ".join(judge.name for judge in judges)
     return f"[{task_id}] Resolving GT with {len(judges)} judges: {names}"
+
+
+def _judge_overlay_log_message(task_id: str, judges: list[ModelSpec]) -> str:
+    names = ", ".join(judge.name for judge in judges)
+    return (
+        f"[{task_id}] Using provided GT and resolving "
+        f"{len(judges)} judge overlay(s): {names}"
+    )
+
+
+def _judge_annotations(
+    resolved: dict[str, object], gt_point: Point
+) -> list[dict[str, object]]:
+    rows = resolved.get("gt_judges")
+    if not isinstance(rows, list):
+        return []
+
+    annotations: list[dict[str, object]] = []
+    for index, row in enumerate(rows, start=1):
+        if not isinstance(row, dict):
+            continue
+        point = parse_point_value(row.get("point"))
+        if point is None:
+            continue
+        annotations.append(
+            {
+                "label": f"GT{index}",
+                "model": str(
+                    row.get("name") or row.get("model_id") or f"judge-{index}"
+                ),
+                "point": point,
+                "l2": math.hypot(point.x - gt_point.x, point.y - gt_point.y),
+            }
+        )
+    return annotations
 
 
 def _predict_judges_for_task(

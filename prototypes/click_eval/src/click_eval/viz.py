@@ -15,6 +15,11 @@ COLORS = [
     (255, 204, 0),
 ]
 GT_COLOR = (20, 180, 70)
+JUDGE_COLORS = [
+    (0, 128, 128),
+    (180, 90, 0),
+    (120, 80, 220),
+]
 
 
 def annotate_image(
@@ -22,6 +27,7 @@ def annotate_image(
     output_path: Path,
     gt_point: Point,
     predictions: list[dict[str, Any]],
+    judge_points: list[dict[str, Any]] | None = None,
 ) -> None:
     Image, ImageDraw, ImageFont = require_pillow()
     with Image.open(image_path) as source:
@@ -32,6 +38,19 @@ def annotate_image(
     legend_lines: list[tuple[str, tuple[int, int, int]]] = [("GT", GT_COLOR)]
 
     _draw_marker(draw, gt_point, GT_COLOR, "GT")
+
+    for index, judge in enumerate(judge_points or []):
+        color = JUDGE_COLORS[index % len(JUDGE_COLORS)]
+        label = str(judge.get("label") or f"GT{index + 1}")
+        model_name = str(judge.get("model") or f"judge-{index + 1}")
+        point = judge.get("point")
+        l2 = judge.get("l2")
+        if isinstance(point, Point):
+            _draw_marker(draw, point, color, label)
+            distance = f"{float(l2):.1f}px" if l2 is not None else "n/a"
+            legend_lines.append((f"{label} {model_name}: {distance}", color))
+        else:
+            legend_lines.append((f"{label} {model_name}: error", color))
 
     for index, prediction in enumerate(predictions):
         color = COLORS[index % len(COLORS)]

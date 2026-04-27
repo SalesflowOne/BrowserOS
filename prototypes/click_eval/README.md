@@ -18,11 +18,11 @@ Create a JSONL task file:
 {"task_id":"send_1","image_path":"screenshots/page.png","instruction":"click send","gt_point":[510,742]}
 ```
 
-`image_path` is resolved relative to the task file. If `gt_point` is absent,
-the configured judge model(s) are called and the resolved coordinate is cached
-in the run output. With multiple successful judges, the harness uses the
-coordinate-wise median point and stores every judge response in
-`resolved_tasks.jsonl`.
+`image_path` is resolved relative to the task file. Configured judge model(s)
+are called and cached in the run output. If `gt_point` is absent, the harness
+uses the coordinate-wise median point from successful judges as the scoring GT.
+If `gt_point` is present, that provided point remains the scoring GT and judge
+outputs are still recorded for inspection.
 
 The default model config is `examples/models.json`. The abbreviated cloud/API
 portion is:
@@ -251,7 +251,8 @@ Outputs:
 - `predictions.jsonl`: raw candidate responses and parsed points
 - `scores.csv`: per-task L2 distances and threshold hits
 - `summary.json`: aggregate metrics per model
-- `annotated/*.png`: screenshot overlays with GT and predictions
+- `annotated/*.png`: screenshot overlays with GT, judge points (`GT1`, `GT2`,
+  ...), and candidate predictions
 
 `predictions.jsonl`, `scores.csv`, and `summary.json` include per-model
 `duration_seconds` timing fields. Skipped local models are marked with
