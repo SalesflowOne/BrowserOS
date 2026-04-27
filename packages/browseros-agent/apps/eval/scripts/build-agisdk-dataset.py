@@ -13,6 +13,10 @@ Usage:
 import json
 import sys
 
+# evals-omnizon.vercel.app was DMCA-takedown'd by Vercel (HTTP 451). Every task
+# on that site fails grading with "Failed to fetch /finish endpoint".
+EXCLUDED_WEBSITES = {"omnizon"}
+
 
 def has_llm_eval(task: dict) -> bool:
     return any(e.get("type") == "llm_boolean" for e in task.get("evals", []))
@@ -31,6 +35,7 @@ def main():
     count = 0
     skipped_infeasible = 0
     skipped_llm = 0
+    skipped_excluded = 0
 
     for task in all_tasks:
         if not task.get("possible", True):
@@ -41,8 +46,12 @@ def main():
             skipped_llm += 1
             continue
 
-        task_id = task["id"]
         website = task.get("website", {})
+        if website.get("id") in EXCLUDED_WEBSITES:
+            skipped_excluded += 1
+            continue
+
+        task_id = task["id"]
         goal = task.get("goal", "")
         start_url = website.get("url", "")
 
@@ -74,7 +83,7 @@ def main():
 
     print(
         f"Generated {count} tasks (skipped {skipped_infeasible} infeasible, "
-        f"{skipped_llm} llm_boolean)",
+        f"{skipped_llm} llm_boolean, {skipped_excluded} excluded sites)",
         file=sys.stderr,
     )
 
