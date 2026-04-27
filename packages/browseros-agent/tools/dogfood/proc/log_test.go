@@ -145,3 +145,20 @@ func TestStreamLinesLogsScannerErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestStreamLinesWithHandlerSkipsEmptyLinesAndReportsStream(t *testing.T) {
+	var got []string
+	StreamLinesWithHandler(strings.NewReader("one\n\nthree\n"), TagServer, "stderr", func(tag Tag, stream string, line string) {
+		got = append(got, tag.Name+":"+stream+":"+line)
+	})
+
+	want := []string{"server:stderr:one", "server:stderr:three"}
+	if len(got) != len(want) {
+		t.Fatalf("got %#v want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("entry %d got %q want %q", i, got[i], want[i])
+		}
+	}
+}

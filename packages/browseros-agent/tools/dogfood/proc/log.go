@@ -29,6 +29,8 @@ type LogFile struct {
 	ModTime time.Time
 }
 
+type LineHandler func(tag Tag, stream string, line string)
+
 var (
 	TagBuild   = Tag{"build", color.New(color.FgYellow)}
 	TagAgent   = Tag{"agent", color.New(color.FgMagenta)}
@@ -58,7 +60,11 @@ func LogMsgTee(t Tag, msg string, file io.Writer, fileMu *sync.Mutex) {
 }
 
 func StreamLines(r io.Reader, t Tag) {
-	streamLines(r, t, os.Stdout, nil, nil)
+	StreamLinesWithHandler(r, t, "", nil)
+}
+
+func StreamLinesWithHandler(r io.Reader, t Tag, stream string, handler LineHandler) {
+	streamLinesWithHandler(r, t, stream, os.Stdout, nil, nil, handler)
 }
 
 func OpenLogFile(logDir string, name string, now time.Time) (*os.File, string, error) {
@@ -129,12 +135,19 @@ func rotateLogIfNeeded(logPath string, now time.Time) error {
 }
 
 func streamLines(r io.Reader, t Tag, terminal io.Writer, file io.Writer, fileMu *sync.Mutex) {
+	streamLinesWithHandler(r, t, "", terminal, file, fileMu, nil)
+}
+
+func streamLinesWithHandler(r io.Reader, t Tag, stream string, terminal io.Writer, file io.Writer, fileMu *sync.Mutex, handler LineHandler) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line != "" {
 			logMsg(t, line, terminal, file, fileMu)
+			if handler != nil {
+				handler(t, stream, line)
+			}
 		}
 	}
 	if err := scanner.Err(); err != nil {

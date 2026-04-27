@@ -83,6 +83,9 @@ The dev profile defaults to:
 browseros-dogfood start
 ```
 
+`start` runs inline. It holds the browseros-dogfood runtime lock until you press `Ctrl+C`, so
+another inline or background environment cannot start at the same time.
+
 Each start:
 
 - Warns if the configured checkout has uncommitted changes.
@@ -128,6 +131,53 @@ To print the log directory and file paths:
 
 ```bash
 browseros-dogfood logs
+```
+
+## Background Mode
+
+```bash
+browseros-dogfood start-background
+```
+
+`start-background` starts the same BrowserOS dogfooding environment under a
+user-level background daemon, streams startup progress, waits for the local
+server `/health` endpoint to report a CDP-connected BrowserOS, and then returns.
+It does not install a root daemon or configure login startup.
+
+The inline and background modes share one OS file lock. If either mode is already
+running, a second `browseros-dogfood start` or `browseros-dogfood start-background`
+exits with an error. Crash recovery is automatic: when the owning process exits,
+macOS releases the lock; the next start cleans up stale socket and state files.
+
+Background control commands:
+
+```bash
+browseros-dogfood status
+browseros-dogfood stop
+browseros-dogfood restart
+browseros-dogfood restart --pull
+browseros-dogfood restart --pull --force
+browseros-dogfood logs tail
+browseros-dogfood logs tail --filter daemon
+browseros-dogfood logs tail --filter chromium
+browseros-dogfood logs tail --filter server
+```
+
+- `status` shows daemon state, PID, uptime, ports, and the structured log path.
+- `stop` stops the background daemon and its BrowserOS/server child processes.
+- `restart` rebuilds from the current checkout, then restarts BrowserOS and the server.
+- `restart --pull` refuses dirty checkouts, runs `git pull --ff-only`, rebuilds, and restarts.
+- `restart --pull --force` is destructive: it runs `git fetch --prune`, resets hard
+  to the configured upstream branch, rebuilds, and restarts.
+- `logs tail` follows grouped daemon/chromium/server logs from the background daemon.
+
+Pressing Ctrl-C while `start-background` or `restart` is streaming startup logs
+detaches from the monitor. It does not stop the daemon.
+
+If no background daemon is running, control commands tell you to start one with:
+
+```bash
+browseros-dogfood start-background
 ```
 
 ## Update The Checkout

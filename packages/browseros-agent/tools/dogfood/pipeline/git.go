@@ -1,9 +1,12 @@
 package pipeline
 
-import "strings"
+import (
+	"context"
+	"strings"
+)
 
 type Runner interface {
-	Run(dir string, args ...string) error
+	Run(ctx context.Context, dir string, args ...string) error
 	OutputRun(dir string, args ...string) (string, error)
 }
 
@@ -15,8 +18,16 @@ func Dirty(repoPath string, r Runner) (bool, error) {
 	return strings.TrimSpace(out) != "", nil
 }
 
-func Pull(repoPath string, r Runner) error {
-	return r.Run(repoPath, "git", "pull", "--ff-only")
+func Pull(ctx context.Context, repoPath string, r Runner) error {
+	return r.Run(ctx, repoPath, "git", "pull", "--ff-only")
+}
+
+func Fetch(ctx context.Context, repoPath string, r Runner) error {
+	return r.Run(ctx, repoPath, "git", "fetch", "--prune")
+}
+
+func ResetHardToUpstream(ctx context.Context, repoPath string, r Runner) error {
+	return r.Run(ctx, repoPath, "git", "reset", "--hard", "@{upstream}")
 }
 
 func Head(repoPath string, r Runner) (string, error) {

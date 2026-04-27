@@ -1,11 +1,14 @@
 package pipeline
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestBuildRunsExpectedCommands(t *testing.T) {
 	root := t.TempDir()
 	r := &FakeRunner{}
-	if err := Build(root, r); err != nil {
+	if err := Build(context.Background(), root, r); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{

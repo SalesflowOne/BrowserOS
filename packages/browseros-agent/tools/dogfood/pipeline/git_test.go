@@ -1,6 +1,9 @@
 package pipeline
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestDirtyStatus(t *testing.T) {
 	r := &FakeRunner{Output: map[string]string{
@@ -17,10 +20,30 @@ func TestDirtyStatus(t *testing.T) {
 
 func TestPullRunsFastForwardOnly(t *testing.T) {
 	r := &FakeRunner{}
-	if err := Pull("/repo", r); err != nil {
+	if err := Pull(context.Background(), "/repo", r); err != nil {
 		t.Fatal(err)
 	}
 	if got := r.Commands[0]; got != "git pull --ff-only" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestFetchRunsPrune(t *testing.T) {
+	r := &FakeRunner{}
+	if err := Fetch(context.Background(), "/repo", r); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.Commands[0]; got != "git fetch --prune" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestResetHardToUpstream(t *testing.T) {
+	r := &FakeRunner{}
+	if err := ResetHardToUpstream(context.Background(), "/repo", r); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.Commands[0]; got != "git reset --hard @{upstream}" {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -30,7 +53,7 @@ type FakeRunner struct {
 	Output   map[string]string
 }
 
-func (f *FakeRunner) Run(dir string, args ...string) error {
+func (f *FakeRunner) Run(ctx context.Context, dir string, args ...string) error {
 	f.Commands = append(f.Commands, join(args))
 	return nil
 }

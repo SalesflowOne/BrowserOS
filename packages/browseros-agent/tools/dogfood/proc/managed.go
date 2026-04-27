@@ -18,8 +18,8 @@ type ProcConfig struct {
 	Env         []string
 	Restart     bool
 	Cmd         []string
-	BeforeStart func() error
 	LogPath     string
+	LineHandler LineHandler
 }
 
 type ManagedProc struct {
@@ -69,17 +69,6 @@ func (mp *ManagedProc) run(ctx context.Context) {
 			return
 		}
 
-		if mp.Cfg.BeforeStart != nil {
-			if err := mp.Cfg.BeforeStart(); err != nil {
-				log(ErrorColor.Sprintf("Pre-start failed: %v", err))
-				if !mp.Cfg.Restart || ctx.Err() != nil {
-					return
-				}
-				time.Sleep(time.Second)
-				continue
-			}
-		}
-
 		log(fmt.Sprintf("Starting: %s", DimColor.Sprint(strings.Join(mp.Cfg.Cmd, " "))))
 
 		cmd := exec.Command(mp.Cfg.Cmd[0], mp.Cfg.Cmd[1:]...)
@@ -113,8 +102,14 @@ func (mp *ManagedProc) run(ctx context.Context) {
 
 		var streamWg sync.WaitGroup
 		streamWg.Add(2)
-		go func() { defer streamWg.Done(); streamLines(stdout, mp.Cfg.Tag, os.Stdout, logFile, &logMu) }()
-		go func() { defer streamWg.Done(); streamLines(stderr, mp.Cfg.Tag, os.Stdout, logFile, &logMu) }()
+		go func() {
+			defer streamWg.Done()
+			streamLinesWithHandler(stdout, mp.Cfg.Tag, "stdout", os.Stdout, logFile, &logMu, mp.Cfg.LineHandler)
+		}()
+		go func() {
+			defer streamWg.Done()
+			streamLinesWithHandler(stderr, mp.Cfg.Tag, "stderr", os.Stdout, logFile, &logMu, mp.Cfg.LineHandler)
+		}()
 
 		streamWg.Wait()
 		_ = cmd.Wait()

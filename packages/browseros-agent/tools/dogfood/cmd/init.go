@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -51,9 +52,16 @@ var initCmd = &cobra.Command{
 		if err := pipeline.WriteProductionEnvFiles(cfg.AgentRoot(), cfg); err != nil {
 			return err
 		}
-		fmt.Printf("%s %s\n%s %s\n", successStyle.Sprint("Config written:"), pathStyle.Sprint(path), labelStyle.Sprint("Run:"), commandStyle.Sprint("browseros-dogfood start"))
+		printInitNextSteps(cmd.OutOrStdout(), path)
 		return nil
 	},
+}
+
+func printInitNextSteps(out io.Writer, path string) {
+	fmt.Fprintf(out, "%s %s\n", successStyle.Sprint("Config written:"), pathStyle.Sprint(path))
+	fmt.Fprintln(out, labelStyle.Sprint("Start BrowserOS dogfood:"))
+	fmt.Fprintf(out, "  %s     %s\n", labelStyle.Sprint("Inline:"), commandStyle.Sprint("browseros-dogfood start"))
+	fmt.Fprintf(out, "  %s %s\n", labelStyle.Sprint("Background:"), commandStyle.Sprint("browseros-dogfood start-background"))
 }
 
 func prompt(r *bufio.Reader, label string, current string) string {

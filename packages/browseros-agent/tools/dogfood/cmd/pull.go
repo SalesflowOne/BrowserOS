@@ -38,7 +38,7 @@ var pullCmd = &cobra.Command{
 		if dirty && !pullForce {
 			return fmt.Errorf("checkout has uncommitted changes; commit/stash them or use --force")
 		}
-		if err := pipeline.Pull(cfg.RepoPath, runner); err != nil {
+		if err := pipeline.Pull(cmd.Context(), cfg.RepoPath, runner); err != nil {
 			return err
 		}
 		newHead, _ := pipeline.Head(cfg.RepoPath, runner)
