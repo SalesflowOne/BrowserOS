@@ -1,1 +1,3 @@
 {"task_id":"hn_second_comments","image_path":"screenshots/hacker_news_browser.png","instruction":"Click the 84 comments link under the second item.","gt_point":[382,226]}
+{"task_id":"hn_7th_title_link","image_path":"screenshots/hacker_news_browser.png","instruction":"Click the title link of the 7th post."}
+{"task_id":"hn_19th_hide","image_path":"screenshots/hacker_news_browser.png","instruction":"Click the hide link on the 19th post."}
