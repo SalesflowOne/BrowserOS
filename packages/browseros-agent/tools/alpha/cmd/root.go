@@ -10,7 +10,7 @@ import (
 var rootCmd = &cobra.Command{
 	Use:               "balpha",
 	Short:             "BrowserOS alpha dogfooding CLI",
-	Long:              "balpha - internal BrowserOS dogfooding CLI",
+	Long:              "balpha - BrowserOS alpha dogfooding CLI",
 	CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
 	SilenceUsage:      true,
 	SilenceErrors:     true,
