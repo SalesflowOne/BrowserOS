@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import io
 import json
 import os
 import urllib.error
@@ -8,7 +10,8 @@ from pathlib import Path
 from typing import Any
 
 from .contracts import ModelReply
-from .image_utils import image_data_url, image_size
+from .image_utils import image_data_url, image_size, require_pillow
+from .parsing import parse_point_response
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -38,7 +41,16 @@ class OpenRouterClient:
         purpose: str,
     ) -> ModelReply:
         width, height = image_size(image_path)
-        prompt = _point_prompt(instruction, width, height, purpose)
+        image_payload = _image_payload_for_model(model_id, image_path, width, height)
+        prompt = _point_prompt(
+            instruction,
+            image_payload.width,
+            image_payload.height,
+            purpose,
+            original_width=width,
+            original_height=height,
+            resized=image_payload.resized,
+        )
         payload = {
             "model": model_id,
             "temperature": self.temperature,
@@ -57,7 +69,7 @@ class OpenRouterClient:
                         {"type": "text", "text": prompt},
                         {
                             "type": "image_url",
-                            "image_url": {"url": image_data_url(image_path)},
+                            "image_url": {"url": image_payload.data_url},
                         },
                     ],
                 },
@@ -68,7 +80,10 @@ class OpenRouterClient:
         if _force_json_response_format(model_id):
             payload["response_format"] = {"type": "json_object"}
         raw = self._post(payload)
-        return ModelReply(text=_message_text(raw), raw=raw)
+        text = _message_text(raw)
+        if image_payload.resized:
+            return _rescaled_reply(text, raw, image_payload, width, height)
+        return ModelReply(text=text, raw=raw)
 
     def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
         headers = {
@@ -102,15 +117,33 @@ class OpenRouterClient:
         return json.loads(body)
 
 
-def _point_prompt(instruction: str, width: int, height: int, purpose: str) -> str:
+def _point_prompt(
+    instruction: str,
+    width: int,
+    height: int,
+    purpose: str,
+    *,
+    original_width: int,
+    original_height: int,
+    resized: bool,
+) -> str:
     role_line = (
         "Choose the ground-truth click point for this instruction."
         if purpose == "ground_truth"
         else "Predict where this model should click for this instruction."
     )
+    resize_line = ""
+    if resized:
+        resize_line = (
+            "The attached image was resized client-side from the original "
+            f"{original_width}x{original_height} screenshot. Return coordinates "
+            "in the attached image's pixel coordinate space; the harness will "
+            "map them back to the original screenshot.\n"
+        )
     return (
         f"{role_line}\n\n"
         f"Screenshot size: {width}x{height} pixels.\n"
+        f"{resize_line}"
         "Coordinate system: x increases left to right, y increases top to bottom, "
         "origin is the top-left pixel of the screenshot.\n\n"
         f"Instruction: {instruction}\n\n"
@@ -156,3 +189,90 @@ def _disable_reasoning_for_point_call(model_id: str) -> bool:
 
 def _force_json_response_format(model_id: str) -> bool:
     return model_id.lower().startswith("z-ai/glm-")
+
+
+class _ImagePayload:
+    def __init__(
+        self,
+        width: int,
+        height: int,
+        data_url: str,
+        resized: bool,
+    ) -> None:
+        self.width = width
+        self.height = height
+        self.data_url = data_url
+        self.resized = resized
+
+
+def _image_payload_for_model(
+    model_id: str, image_path: Path, width: int, height: int
+) -> _ImagePayload:
+    max_long_edge = _claude_max_long_edge(model_id)
+    if max_long_edge is None or max(width, height) <= max_long_edge:
+        return _ImagePayload(
+            width=width,
+            height=height,
+            data_url=image_data_url(image_path),
+            resized=False,
+        )
+
+    Image, _, _ = require_pillow()
+    with Image.open(image_path) as source:
+        image = source.convert("RGB")
+    scale = max_long_edge / max(width, height)
+    image = image.resize(
+        (max(1, round(width * scale)), max(1, round(height * scale))),
+        Image.Resampling.LANCZOS,
+    )
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    return _ImagePayload(
+        width=image.width,
+        height=image.height,
+        data_url=f"data:image/png;base64,{encoded}",
+        resized=True,
+    )
+
+
+def _claude_max_long_edge(model_id: str) -> int | None:
+    lowered = model_id.lower()
+    if not lowered.startswith("anthropic/claude"):
+        return None
+    if "opus-4.7" in lowered or "opus-4-7" in lowered:
+        return 2576
+    return 1568
+
+
+def _rescaled_reply(
+    text: str,
+    raw: dict[str, Any],
+    image_payload: _ImagePayload,
+    original_width: int,
+    original_height: int,
+) -> ModelReply:
+    parsed = parse_point_response(text)
+    if parsed.point is None:
+        return ModelReply(text=text, raw=raw)
+
+    point = parsed.point
+    scaled_x = point.x * original_width / image_payload.width
+    scaled_y = point.y * original_height / image_payload.height
+    return ModelReply(
+        text=json.dumps(
+            {
+                "x": scaled_x,
+                "y": scaled_y,
+                "reason": parsed.reason or "OpenRouter image resized client-side",
+                "display_x": point.x,
+                "display_y": point.y,
+                "display_width": image_payload.width,
+                "display_height": image_payload.height,
+                "original_width": original_width,
+                "original_height": original_height,
+                "raw_text": text,
+            }
+        ),
+        raw=raw,
+    )

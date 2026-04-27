@@ -1,6 +1,11 @@
 {
   "judge_models": [
     {
+      "name": "openai-computer-use-judge",
+      "provider": "openai_computer_use",
+      "model": "computer-use-preview"
+    },
+    {
       "name": "claude-opus-4.7-judge",
       "provider": "openrouter",
       "model": "anthropic/claude-opus-4.7"
@@ -53,9 +58,9 @@
       "model": "moondream-cloud"
     },
     {
-      "name": "gemini-computer-use",
-      "provider": "gemini",
-      "model": "gemini-2.5-computer-use-preview-10-2025"
+      "name": "gemini-3.1-pro",
+      "provider": "openrouter",
+      "model": "google/gemini-3.1-pro-preview"
     },
     {
       "name": "qwen3-vl-2b-instruct-local",

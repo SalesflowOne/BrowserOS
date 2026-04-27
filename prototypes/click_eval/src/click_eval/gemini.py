@@ -65,6 +65,7 @@ class GeminiComputerUseClient:
             ],
             temperature=0,
         )
+        _set_high_media_resolution(config, types)
         response = client.models.generate_content(
             model=model_id,
             contents=contents,
@@ -79,13 +80,15 @@ class GeminiComputerUseClient:
         if point is None:
             return ModelReply(text=_response_text(response), raw=raw)
 
-        scaled = Point(x=point.x / 1000 * width, y=point.y / 1000 * height)
+        scaled = _scale_computer_use_point(model_id, point, width, height)
         return ModelReply(
             text=json.dumps(
                 {
                     "x": scaled.x,
                     "y": scaled.y,
                     "reason": f"Gemini Computer Use function_call {call['name']}",
+                    "display_x": point.x,
+                    "display_y": point.y,
                 }
             ),
             raw=raw,
@@ -123,14 +126,33 @@ def _excluded_functions() -> list[str]:
     ]
 
 
+def _set_high_media_resolution(config, types) -> None:
+    media_resolution = getattr(types, "MediaResolution", None)
+    if media_resolution is None:
+        return
+    value = (
+        getattr(media_resolution, "MEDIA_RESOLUTION_HIGH", None)
+        or getattr(media_resolution, "HIGH", None)
+    )
+    if value is not None:
+        try:
+            config.media_resolution = value
+        except (AttributeError, TypeError, ValueError):
+            return
+
+
 def _first_function_call(response) -> dict[str, Any] | None:
+    raw_call = _first_function_call_from_dict(_raw_response(response))
+    if raw_call is not None:
+        return raw_call
+
     for candidate in getattr(response, "candidates", []) or []:
         content = getattr(candidate, "content", None)
         for part in getattr(content, "parts", []) or []:
             function_call = getattr(part, "function_call", None)
             if function_call is not None:
                 return _function_call_dict(function_call)
-    return _first_function_call_from_dict(_raw_response(response))
+    return None
 
 
 def _function_call_dict(function_call) -> dict[str, Any]:
@@ -167,6 +189,14 @@ def _point_from_call(call: dict[str, Any]) -> Point | None:
         return Point(x=float(args["x"]), y=float(args["y"]))
     except (KeyError, TypeError, ValueError):
         return None
+
+
+def _scale_computer_use_point(
+    model_id: str, point: Point, width: int, height: int
+) -> Point:
+    if model_id.startswith("gemini-3-"):
+        return point
+    return Point(x=point.x / 1000 * width, y=point.y / 1000 * height)
 
 
 def _response_text(response) -> str:

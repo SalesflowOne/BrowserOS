@@ -7,6 +7,7 @@ from .contracts import ModelReply, ModelSpec
 from .gemini import GeminiComputerUseClient
 from .local_hf import LocalHFClient
 from .moondream import MoondreamClient
+from .openai_cu import OpenAIComputerUseClient
 from .openrouter import OpenRouterClient
 
 
@@ -21,6 +22,7 @@ class ProviderClient:
         self._openrouter: OpenRouterClient | None = None
         self._moondream: MoondreamClient | None = None
         self._gemini: GeminiComputerUseClient | None = None
+        self._openai_cu: OpenAIComputerUseClient | None = None
         self._local_hf: LocalHFClient | None = None
 
     def predict_point(
@@ -41,6 +43,10 @@ class ProviderClient:
             )
         if provider == "gemini":
             return self._gemini_client().predict_point(
+                model.model_id, image_path, instruction, purpose
+            )
+        if provider == "openai_computer_use":
+            return self._openai_cu_client().predict_point(
                 model.model_id, image_path, instruction, purpose
             )
         if provider == "local_hf":
@@ -64,6 +70,13 @@ class ProviderClient:
         if self._gemini is None:
             self._gemini = GeminiComputerUseClient(timeout_seconds=self.timeout_seconds)
         return self._gemini
+
+    def _openai_cu_client(self) -> OpenAIComputerUseClient:
+        if self._openai_cu is None:
+            self._openai_cu = OpenAIComputerUseClient(
+                timeout_seconds=self.timeout_seconds
+            )
+        return self._openai_cu
 
     def _local_hf_client(self) -> LocalHFClient:
         if self._local_hf is None:

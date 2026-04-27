@@ -31,6 +31,11 @@ portion is:
 {
   "judge_models": [
     {
+      "name": "openai-computer-use-judge",
+      "provider": "openai_computer_use",
+      "model": "computer-use-preview"
+    },
+    {
       "name": "claude-opus-4.7-judge",
       "provider": "openrouter",
       "model": "anthropic/claude-opus-4.7"
@@ -71,9 +76,9 @@ portion is:
     },
     {"name": "moondream", "provider": "moondream", "model": "moondream-cloud"},
     {
-      "name": "gemini-computer-use",
-      "provider": "gemini",
-      "model": "gemini-2.5-computer-use-preview-10-2025"
+      "name": "gemini-3.1-pro",
+      "provider": "openrouter",
+      "model": "google/gemini-3.1-pro-preview"
     }
   ]
 }
@@ -181,22 +186,28 @@ inference and clears the CUDA cache before the next local model. For
 gated/private downloads, set `HF_TOKEN`. For Azure/Foundry-hosted variants,
 expect an endpoint URL plus API key and a dedicated provider adapter.
 
-Moondream candidates use a provider-qualified
-entry. Gemini Computer Use candidates use `provider: "gemini"` and require
-`GEMINI_API_KEY` or `GOOGLE_API_KEY`.
+Moondream candidates use a provider-qualified entry. OpenAI Computer Use judges
+or candidates use `provider: "openai_computer_use"` and require
+`OPENAI_API_KEY`. The default Gemini candidate uses OpenRouter, so it only needs
+`OPENROUTER_API_KEY`.
 
 ```json
 {
   "candidate_models": [
+    {
+      "name": "openai-computer-use-judge",
+      "provider": "openai_computer_use",
+      "model": "computer-use-preview"
+    },
     {
       "name": "moondream",
       "provider": "moondream",
       "model": "moondream-cloud"
     },
     {
-      "name": "gemini-computer-use",
-      "provider": "gemini",
-      "model": "gemini-2.5-computer-use-preview-10-2025"
+      "name": "gemini-3.1-pro",
+      "provider": "openrouter",
+      "model": "google/gemini-3.1-pro-preview"
     }
   ]
 }
@@ -210,8 +221,8 @@ uv sync
 export OPENROUTER_API_KEY=...
 # Optional, for Moondream candidates:
 export MOONDREAM_API_KEY=...
-# Optional, for Gemini Computer Use candidates:
-export GEMINI_API_KEY=...
+# Optional, for OpenAI Computer Use judges/candidates:
+export OPENAI_API_KEY=...
 uv run click-eval run
 ```
 
@@ -229,14 +240,23 @@ calls. In non-interactive output, it prints plain status lines instead. Use
 Use `--limit N` to run only the first N tasks, and `--model-limit N` to run
 only the first N candidate models.
 
-The CLI also loads `MOONDREAM_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`, and
-`OPENROUTER_API_KEY` from a local `.env` file in `prototypes/click_eval/` or
-the current working directory.
+The CLI also loads `OPENAI_API_KEY`, `MOONDREAM_API_KEY`, `GEMINI_API_KEY`,
+`GOOGLE_API_KEY`, and `OPENROUTER_API_KEY` from a local `.env` file in
+`prototypes/click_eval/` or the current working directory. `GEMINI_API_KEY` is
+only needed if you manually add a native `provider: "gemini"` entry.
 Moondream calls use `POST https://api.moondream.ai/v1/point` with the screenshot
 as a base64 data URL and the click instruction converted to an object query.
-Gemini Computer Use calls use the Google GenAI SDK with the Computer Use tool,
-request a single `click_at` action, and scale Gemini's normalized `0..1000`
-coordinates back to screenshot pixels.
+OpenRouter Claude calls resize screenshots client-side before upload when the
+image exceeds Claude's no-resize long-edge limit, then remap parsed coordinates
+from the resized image back to original screenshot pixels. Claude Opus 4.7 uses a
+2576 px long-edge target; older Claude models use 1568 px.
+OpenAI Computer Use calls use the Responses API with `computer_use_preview`,
+request `detail: "original"`, return a `click` action, and remap from a
+downscaled display back to original screenshot pixels.
+The default Gemini candidate uses OpenRouter's regular multimodal chat API and
+the same JSON point prompt as the other OpenRouter VLMs. Native Gemini Computer
+Use support remains available for manually configured `provider: "gemini"`
+entries.
 
 During a run, the CLI shows progress bars for tasks and per-task candidate model
 calls. It also prints compact status lines for GT resolution, provider/model
