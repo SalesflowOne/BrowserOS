@@ -11,6 +11,7 @@ type ArgsConfig struct {
 	Binary      string
 	AgentRoot   string
 	UserDataDir string
+	ProfileDir  string
 	Ports       config.Ports
 	Headless    bool
 }
@@ -30,8 +31,11 @@ func BuildArgs(cfg ArgsConfig) []string {
 		fmt.Sprintf("--browseros-proxy-port=%d", cfg.Ports.Server),
 		fmt.Sprintf("--browseros-extension-port=%d", cfg.Ports.Extension),
 		fmt.Sprintf("--user-data-dir=%s", cfg.UserDataDir),
-		fmt.Sprintf("--load-extension=%s", filepath.Join(cfg.AgentRoot, "apps/agent/dist/chrome-mv3-dev")),
 	}
+	if cfg.ProfileDir != "" {
+		args = append(args, fmt.Sprintf("--profile-directory=%s", cfg.ProfileDir))
+	}
+	args = append(args, fmt.Sprintf("--load-extension=%s", filepath.Join(cfg.AgentRoot, "apps/agent/dist/chrome-mv3-dev")))
 	if cfg.Headless {
 		args = append(args, "--headless=new")
 	}

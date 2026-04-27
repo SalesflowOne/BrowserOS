@@ -12,6 +12,7 @@ func TestBuildArgs(t *testing.T) {
 		Binary:      "/Applications/BrowserOS.app/Contents/MacOS/BrowserOS",
 		AgentRoot:   "/repo/packages/browseros-agent",
 		UserDataDir: "/tmp/balpha",
+		ProfileDir:  "Default",
 		Ports:       config.Ports{CDP: 9015, Server: 9115, Extension: 9315},
 	})
 	joined := strings.Join(args, "\n")
@@ -22,6 +23,7 @@ func TestBuildArgs(t *testing.T) {
 		"--browseros-proxy-port=9115",
 		"--browseros-extension-port=9315",
 		"--user-data-dir=/tmp/balpha",
+		"--profile-directory=Default",
 		"--disable-browseros-server",
 		"--disable-browseros-extensions",
 		"--load-extension=/repo/packages/browseros-agent/apps/agent/dist/chrome-mv3-dev",

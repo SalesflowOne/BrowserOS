@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,7 +12,20 @@ func TestImportCopiesAllowlistAndLocalState(t *testing.T) {
 	sourceUser := filepath.Join(root, "source")
 	sourceProfile := filepath.Join(sourceUser, "Profile 25")
 	devUser := filepath.Join(root, "dev")
-	mustWrite(t, filepath.Join(sourceUser, "Local State"), `{"os_crypt":{"encrypted_key":"abc"}}`)
+	mustWrite(t, filepath.Join(sourceUser, "Local State"), `{
+	  "os_crypt": {"encrypted_key": "abc"},
+	  "profile": {
+	    "info_cache": {
+	      "Default": {"name": "Personal", "user_name": "me@example.com"},
+	      "Profile 25": {"name": "Nithin", "user_name": "work@example.com"}
+	    },
+	    "last_used": "Default",
+	    "last_active_profiles": ["Default", "Profile 25"],
+	    "profiles_order": ["Default", "Profile 25"],
+	    "show_picker_on_startup": true,
+	    "picker_shown": true
+	  }
+	}`)
 	mustWrite(t, filepath.Join(sourceProfile, "Bookmarks"), "bookmarks")
 	mustWrite(t, filepath.Join(sourceProfile, "Preferences"), `{"profile":{"exit_type":"Crashed","exited_cleanly":false}}`)
 	mustWrite(t, filepath.Join(sourceProfile, "Cache/junk"), "cache")
@@ -27,7 +41,7 @@ func TestImportCopiesAllowlistAndLocalState(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assertFile(t, filepath.Join(devUser, "Local State"), `{"os_crypt":{"encrypted_key":"abc"}}`)
+	assertImportedLocalState(t, filepath.Join(devUser, "Local State"))
 	assertFile(t, filepath.Join(devUser, "Default", "Bookmarks"), "bookmarks")
 	assertMissing(t, filepath.Join(devUser, "Default", "Cache"))
 	assertFileExists(t, filepath.Join(devUser, "Default", "Extensions/ext/manifest.json"))
@@ -53,6 +67,39 @@ func TestImportRejectsDangerousDevDir(t *testing.T) {
 	}
 }
 
+func assertImportedLocalState(t *testing.T, path string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state map[string]any
+	if err := json.Unmarshal(data, &state); err != nil {
+		t.Fatal(err)
+	}
+	osCrypt := state["os_crypt"].(map[string]any)
+	if osCrypt["encrypted_key"] != "abc" {
+		t.Fatalf("os_crypt not preserved: %#v", osCrypt)
+	}
+	profile := state["profile"].(map[string]any)
+	infoCache := profile["info_cache"].(map[string]any)
+	if len(infoCache) != 1 {
+		t.Fatalf("expected one dev profile in info_cache, got %#v", infoCache)
+	}
+	selected := infoCache["Default"].(map[string]any)
+	if selected["name"] != "Nithin" || selected["user_name"] != "work@example.com" {
+		t.Fatalf("selected profile metadata not remapped: %#v", selected)
+	}
+	if profile["last_used"] != "Default" {
+		t.Fatalf("last_used mismatch: %#v", profile["last_used"])
+	}
+	assertStringList(t, profile["last_active_profiles"], []string{"Default"})
+	assertStringList(t, profile["profiles_order"], []string{"Default"})
+	if profile["show_picker_on_startup"] != false {
+		t.Fatalf("profile picker not disabled: %#v", profile["show_picker_on_startup"])
+	}
+}
+
 func TestCleanupSingletons(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, "SingletonLock"), "lock")
@@ -62,6 +109,22 @@ func TestCleanupSingletons(t *testing.T) {
 	}
 	assertMissing(t, filepath.Join(dir, "SingletonLock"))
 	assertMissing(t, filepath.Join(dir, "SingletonCookie"))
+}
+
+func assertStringList(t *testing.T, got any, want []string) {
+	t.Helper()
+	values, ok := got.([]any)
+	if !ok {
+		t.Fatalf("got %#v, want string list", got)
+	}
+	if len(values) != len(want) {
+		t.Fatalf("got %#v, want %#v", got, want)
+	}
+	for i, value := range values {
+		if value != want[i] {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
 }
 
 func mustWrite(t *testing.T, path string, content string) {

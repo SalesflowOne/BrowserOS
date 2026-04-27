@@ -48,7 +48,11 @@ func Import(cfg ImportConfig) error {
 	if err := os.MkdirAll(devProfile, 0755); err != nil {
 		return err
 	}
-	if err := copyIfExists(filepath.Join(cfg.SourceUserDataDir, "Local State"), filepath.Join(cfg.DevUserDataDir, "Local State")); err != nil {
+	localStatePath := filepath.Join(cfg.DevUserDataDir, "Local State")
+	if err := copyIfExists(filepath.Join(cfg.SourceUserDataDir, "Local State"), localStatePath); err != nil {
+		return err
+	}
+	if err := patchLocalState(localStatePath, cfg.SourceProfileDir, cfg.DevProfileDir); err != nil {
 		return err
 	}
 	for _, name := range profileAllowlist {
@@ -156,4 +160,53 @@ func patchPreferences(path string) error {
 		return err
 	}
 	return os.WriteFile(path, out, 0644)
+}
+
+func patchLocalState(path string, sourceProfileDir string, devProfileDir string) error {
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var state map[string]any
+	if err := json.Unmarshal(data, &state); err != nil {
+		return nil
+	}
+	profile := ensureObject(state, "profile")
+	selected := selectedProfileInfo(profile, sourceProfileDir)
+	profile["info_cache"] = map[string]any{devProfileDir: selected}
+	profile["last_used"] = devProfileDir
+	profile["last_active_profiles"] = []string{devProfileDir}
+	profile["profiles_order"] = []string{devProfileDir}
+	profile["show_picker_on_startup"] = false
+	profile["picker_shown"] = true
+	out, err := json.Marshal(state)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, out, 0644)
+}
+
+func ensureObject(parent map[string]any, key string) map[string]any {
+	value, ok := parent[key].(map[string]any)
+	if ok {
+		return value
+	}
+	value = map[string]any{}
+	parent[key] = value
+	return value
+}
+
+func selectedProfileInfo(profile map[string]any, sourceProfileDir string) map[string]any {
+	infoCache, ok := profile["info_cache"].(map[string]any)
+	if !ok {
+		return map[string]any{"name": sourceProfileDir}
+	}
+	selected, ok := infoCache[sourceProfileDir].(map[string]any)
+	if !ok {
+		return map[string]any{"name": sourceProfileDir}
+	}
+	return selected
 }

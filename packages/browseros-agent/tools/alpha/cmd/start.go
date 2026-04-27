@@ -94,6 +94,7 @@ func runEnvironment(cfg config.Config, agentRoot string) error {
 			Binary:      cfg.BrowserOSAppPath,
 			AgentRoot:   agentRoot,
 			UserDataDir: cfg.DevUserDataDir,
+			ProfileDir:  cfg.DevProfileDir,
 			Ports:       cfg.Ports,
 			Headless:    startHeadless,
 		}),
