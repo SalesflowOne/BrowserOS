@@ -52,13 +52,6 @@ type ChatAttachment = ImageAttachment | FileAttachment
 
 const MAX_ATTACHMENTS = 10
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024 // 5 MB after compression
-// How long the chat SSE loop waits between events from OpenClaw before
-// it gives up and releases the per-agent MonitoringSessionRegistry
-// slot. Generous enough to absorb auto-compaction retries (often 30–60s
-// on overflow), tight enough that a hung upstream stream can't pin the
-// agent forever and block every subsequent chat behind
-// `waitForSessionFree`.
-const CHAT_STREAM_IDLE_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
 // data: URLs encode bytes as base64 (~4/3 inflation) plus a small media-type
 // prefix; cap the encoded string against that, not 2× the byte budget.
 const MAX_IMAGE_DATA_URL_LENGTH = Math.ceil(MAX_IMAGE_BYTES * (4 / 3)) + 100
@@ -606,43 +599,25 @@ export function createOpenClawRoutes() {
               'incomplete'
             let finalError: string | undefined
 
-            // Race the upstream read against the client's abort signal
-            // and a hard idle timeout so a stuck OpenClaw stream can't
-            // pin the BrowserOS-side MonitoringSessionRegistry slot
-            // forever. Either signal kicks the loop into the finally
-            // block, which is the only path that calls finalizeSession
-            // and releases `agentId` for the next chat.
-            const abortController = new AbortController()
+            // Race the upstream read against the client's abort signal so a
+            // tab close on a synchronous chat actually tears the stream
+            // down — without this, reader.read() blocks forever and the
+            // finally block (the only path that calls finalizeSession)
+            // never runs. No idle timer here: OpenClaw runs are designed
+            // to span minutes-to-hours, and a quiet SSE between tool
+            // batches is normal, not a stall.
             const requestSignal = c.req.raw.signal
-            const onClientAbort = () => abortController.abort('client-abort')
-            requestSignal.addEventListener('abort', onClientAbort, {
-              once: true,
-            })
-            const idleTimer = setTimeout(
-              () => abortController.abort('idle-timeout'),
-              CHAT_STREAM_IDLE_TIMEOUT_MS,
-            )
-            const refreshIdleTimer = () => {
-              idleTimer.refresh()
-            }
-            const sentinel = new Promise<{
+            const clientAbortSentinel = new Promise<{
               done: true
               value: undefined
-              reason: 'client-abort' | 'idle-timeout'
             }>((resolve) => {
-              abortController.signal.addEventListener(
+              if (requestSignal.aborted) {
+                resolve({ done: true, value: undefined })
+                return
+              }
+              requestSignal.addEventListener(
                 'abort',
-                () =>
-                  resolve({
-                    done: true,
-                    value: undefined,
-                    reason:
-                      typeof abortController.signal.reason === 'string'
-                        ? (abortController.signal.reason as
-                            | 'client-abort'
-                            | 'idle-timeout')
-                        : 'client-abort',
-                  }),
+                () => resolve({ done: true, value: undefined }),
                 { once: true },
               )
             })
@@ -650,23 +625,13 @@ export function createOpenClawRoutes() {
             try {
               while (true) {
                 const result = await Promise.race([
-                  reader
-                    .read()
-                    .then((r) => ({ ...r, reason: undefined as undefined })),
-                  sentinel,
+                  reader.read(),
+                  clientAbortSentinel,
                 ])
                 if (result.done) {
-                  if (result.reason === 'idle-timeout') {
-                    status = 'failed'
-                    finalError = `Chat stream idle for ${
-                      CHAT_STREAM_IDLE_TIMEOUT_MS / 1000
-                    }s; aborting`
-                  } else if (result.reason === 'client-abort') {
-                    status = 'aborted'
-                  }
+                  if (requestSignal.aborted) status = 'aborted'
                   break
                 }
-                refreshIdleTimer()
                 const value = result.value
                 if (
                   value.type === 'done' &&
@@ -700,8 +665,6 @@ export function createOpenClawRoutes() {
               }
               throw error
             } finally {
-              clearTimeout(idleTimer)
-              requestSignal.removeEventListener('abort', onClientAbort)
               await reader.cancel().catch(() => {})
               await getMonitoringService().finalizeSession({
                 monitoringSessionId: monitoringContext.monitoringSessionId,

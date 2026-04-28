@@ -90,12 +90,6 @@ interface OutboundQueueServiceDeps {
   chatStream: ChatStreamFn
 }
 
-// How long the queue worker waits between events from the upstream
-// chat stream before it gives up and frees the agent's worker slot.
-// Generous enough to absorb auto-compaction retries and slow turns,
-// tight enough that a hung gateway can't pin the queue forever.
-const QUEUE_DRAIN_IDLE_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
-
 export class OutboundQueueService {
   private readonly queues = new Map<string, QueuedItem[]>()
   private readonly listeners = new Set<QueueListener>()
@@ -233,50 +227,67 @@ export class OutboundQueueService {
       })
       // Drain the stream to completion so the gateway run finalizes
       // properly (writes the JSONL turn, releases the run controller).
-      // The drain races the upstream read against the abort signal and
-      // a 5-minute idle timeout — without that, a hung upstream pins
-      // the worker forever and every subsequent queued message blocks
-      // behind it (workerInflight stays held, tryDispatch early-exits).
+      //
+      // The drain races three signals:
+      //
+      //   1. reader.read()  — happy path; upstream emits 'done'
+      //   2. shutdown abort — server stop fires `abort.abort()`
+      //   3. agent-free     — ClawSession transitions back to 'idle'
+      //                       AFTER we've observed at least one 'working'
+      //                       transition. This is the only thing that
+      //                       unsticks the worker when the upstream HTTP
+      //                       stream parks but OpenClaw has actually
+      //                       finished the run.
+      //
+      // No wall-clock idle timer — OpenClaw runs are designed to span
+      // minutes-to-hours and a quiet SSE between tool batches is
+      // normal, not a stall. We let the state machine — fed by the WS
+      // observer + JSONL — be the source of truth for liveness.
       const reader = stream.getReader()
-      let idleTimer: ReturnType<typeof setTimeout> | null = null
-      try {
-        const restartIdleTimer = () => {
-          if (idleTimer) clearTimeout(idleTimer)
-          idleTimer = setTimeout(
-            () => abort.abort('idle-timeout'),
-            QUEUE_DRAIN_IDLE_TIMEOUT_MS,
-          )
-        }
-        const sentinel = new Promise<{ done: true }>((resolve) => {
-          const onAbort = () => resolve({ done: true })
-          if (abort.signal.aborted) {
-            resolve({ done: true })
-          } else {
-            abort.signal.addEventListener('abort', onAbort, { once: true })
+      let sawWorking = false
+      let resolveAgentFree: (() => void) | undefined
+      const agentFreeSentinel = new Promise<{ done: true }>((resolve) => {
+        resolveAgentFree = () => resolve({ done: true })
+      })
+      const agentFreeUnsubscribe = this.deps.onAgentStatusChange(
+        (id, state) => {
+          if (id !== agentId) return
+          if (state.status === 'working') {
+            sawWorking = true
+            return
           }
+          if (state.status === 'idle' && sawWorking) {
+            resolveAgentFree?.()
+          }
+        },
+      )
+      const shutdownSentinel = new Promise<{ done: true }>((resolve) => {
+        if (abort.signal.aborted) {
+          resolve({ done: true })
+          return
+        }
+        abort.signal.addEventListener('abort', () => resolve({ done: true }), {
+          once: true,
         })
-        restartIdleTimer()
+      })
+      try {
         while (true) {
           const result = await Promise.race([
             reader.read().then((r) => ({ done: r.done })),
-            sentinel,
+            shutdownSentinel,
+            agentFreeSentinel,
           ])
           if (result.done) break
-          restartIdleTimer()
         }
       } finally {
-        if (idleTimer) clearTimeout(idleTimer)
+        agentFreeUnsubscribe()
         await reader.cancel().catch(() => {})
       }
       if (abort.signal.aborted) {
-        // The drain bailed out (client shutdown or idle timeout) — don't
-        // remove the entry; surface the failure so the user sees it.
+        // Server shutdown raced the drain — surface the failure rather
+        // than dropping the entry silently.
         head.status = 'failed'
-        head.error =
-          typeof abort.signal.reason === 'string' &&
-          abort.signal.reason === 'idle-timeout'
-            ? `Stream idle for ${QUEUE_DRAIN_IDLE_TIMEOUT_MS / 1000}s; aborted`
-            : 'Dispatch aborted'
+        head.error = 'Dispatch aborted'
         this.broadcast(agentId)
       } else {
         this.removeAndBroadcast(agentId, head.id)
