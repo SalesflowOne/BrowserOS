@@ -90,6 +90,12 @@ interface OutboundQueueServiceDeps {
   chatStream: ChatStreamFn
 }
 
+// How long the queue worker waits between events from the upstream
+// chat stream before it gives up and frees the agent's worker slot.
+// Generous enough to absorb auto-compaction retries and slow turns,
+// tight enough that a hung gateway can't pin the queue forever.
+const QUEUE_DRAIN_IDLE_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
+
 export class OutboundQueueService {
   private readonly queues = new Map<string, QueuedItem[]>()
   private readonly listeners = new Set<QueueListener>()
@@ -227,17 +233,54 @@ export class OutboundQueueService {
       })
       // Drain the stream to completion so the gateway run finalizes
       // properly (writes the JSONL turn, releases the run controller).
+      // The drain races the upstream read against the abort signal and
+      // a 5-minute idle timeout — without that, a hung upstream pins
+      // the worker forever and every subsequent queued message blocks
+      // behind it (workerInflight stays held, tryDispatch early-exits).
       const reader = stream.getReader()
+      let idleTimer: ReturnType<typeof setTimeout> | null = null
       try {
+        const restartIdleTimer = () => {
+          if (idleTimer) clearTimeout(idleTimer)
+          idleTimer = setTimeout(
+            () => abort.abort('idle-timeout'),
+            QUEUE_DRAIN_IDLE_TIMEOUT_MS,
+          )
+        }
+        const sentinel = new Promise<{ done: true }>((resolve) => {
+          const onAbort = () => resolve({ done: true })
+          if (abort.signal.aborted) {
+            resolve({ done: true })
+          } else {
+            abort.signal.addEventListener('abort', onAbort, { once: true })
+          }
+        })
+        restartIdleTimer()
         while (true) {
-          if (abort.signal.aborted) break
-          const { done } = await reader.read()
-          if (done) break
+          const result = await Promise.race([
+            reader.read().then((r) => ({ done: r.done })),
+            sentinel,
+          ])
+          if (result.done) break
+          restartIdleTimer()
         }
       } finally {
+        if (idleTimer) clearTimeout(idleTimer)
         await reader.cancel().catch(() => {})
       }
-      this.removeAndBroadcast(agentId, head.id)
+      if (abort.signal.aborted) {
+        // The drain bailed out (client shutdown or idle timeout) — don't
+        // remove the entry; surface the failure so the user sees it.
+        head.status = 'failed'
+        head.error =
+          typeof abort.signal.reason === 'string' &&
+          abort.signal.reason === 'idle-timeout'
+            ? `Stream idle for ${QUEUE_DRAIN_IDLE_TIMEOUT_MS / 1000}s; aborted`
+            : 'Dispatch aborted'
+        this.broadcast(agentId)
+      } else {
+        this.removeAndBroadcast(agentId, head.id)
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       logger.warn('OutboundQueue dispatch failed', {
