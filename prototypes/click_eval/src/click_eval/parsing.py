@@ -73,9 +73,15 @@ def parse_point_value(value: Any) -> Point | None:
             "coordinate",
             "Coordinate",
             "coordinates",
+            "coords",
+            "xy",
             "point_2d",
             "POINT_2D",
             "bbox_2d",
+            "click_position",
+            "click_coordinates",
+            "cursor_position",
+            "target_position",
             "position",
             "bbox",
             "box",
@@ -105,7 +111,7 @@ def parse_point_response(text: str) -> ParsedPoint:
         obj, error = _parse_structured_value(value_text)
         if error is not None:
             fallback_error = fallback_error or error
-            point = _point_from_keyed_text(value_text)
+            point = _point_from_text_fragment(value_text)
             if point is not None:
                 return ParsedPoint(point=point)
             continue
@@ -117,16 +123,12 @@ def parse_point_response(text: str) -> ParsedPoint:
                 point=point, reason=str(reason) if reason is not None else None
             )
 
-        point = _point_from_keyed_text(value_text)
+        point = _point_from_text_fragment(value_text)
         if point is not None:
             return ParsedPoint(point=point)
         fallback_error = fallback_error or "response did not contain numeric x/y"
 
-    point = _point_from_keyed_text(text)
-    if point is not None:
-        return ParsedPoint(point=point)
-
-    point = _point_from_action_context(text)
+    point = _point_from_text_fragment(text)
     if point is not None:
         return ParsedPoint(point=point)
 
@@ -153,6 +155,18 @@ def _to_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _point_from_text_fragment(text: str) -> Point | None:
+    for parser in (
+        _point_from_keyed_text,
+        _point_from_action_context,
+        _point_from_standalone_numeric_text,
+    ):
+        point = parser(text)
+        if point is not None:
+            return point
+    return None
 
 
 def _point_from_keyed_text(text: str) -> Point | None:
@@ -192,20 +206,9 @@ def _point_from_keyed_text(text: str) -> Point | None:
     if keyed_pair:
         return _point_from_numbers(keyed_pair.group(1), keyed_pair.group(2))
 
-    x_match = re.search(
-        rf"(?<![A-Za-z0-9_])['\"]?x['\"]?(?![A-Za-z0-9_])"
-        rf"\s*(?::|=)\s*({_NUMBER_PATTERN})",
-        text,
-        flags=re.IGNORECASE,
-    )
-    y_match = re.search(
-        rf"(?<![A-Za-z0-9_])['\"]?y['\"]?(?![A-Za-z0-9_])"
-        rf"\s*(?::|=)\s*({_NUMBER_PATTERN})",
-        text,
-        flags=re.IGNORECASE,
-    )
-    if x_match and y_match:
-        return _point_from_numbers(x_match.group(1), y_match.group(1))
+    xy_point = _point_from_xy_text(text)
+    if xy_point is not None:
+        return xy_point
 
     malformed_x_pair = re.search(
         rf"(?<![A-Za-z0-9_])['\"]?x['\"]?(?![A-Za-z0-9_])"
@@ -300,7 +303,7 @@ def _point_from_keyed_numeric_tail(text: str) -> Point | None:
         flags=re.IGNORECASE,
     ):
         tail = text[match.end() : match.end() + 220]
-        assigned = re.match(r"\s*(?::|=|\()\s*", tail)
+        assigned = re.match(r"\s*(?::|=|\(|is\b|are\b|at\b)\s*", tail)
         if assigned is None:
             continue
         point = _point_from_numeric_text(tail[assigned.end() :])
@@ -321,6 +324,11 @@ def _point_from_numeric_text(text: str) -> Point | None:
     xy_point = _point_from_xy_text(segment)
     if xy_point is not None:
         return xy_point
+
+    wrapped_numbers = _constructor_wrapped_numbers(segment)
+    if len(wrapped_numbers) >= 2:
+        return parse_point_value(wrapped_numbers[:4])
+
     sequence = re.search(
         rf"[\[(]\s*({_NUMBER_PATTERN}(?:\s*[, ]\s*{_NUMBER_PATTERN}){{1,3}})",
         segment,
@@ -337,16 +345,26 @@ def _point_from_numeric_text(text: str) -> Point | None:
     return None
 
 
+def _constructor_wrapped_numbers(text: str) -> list[str]:
+    return [
+        match.group(1)
+        for match in re.finditer(
+            rf"(?:[A-Za-z_][\w]*\.)?[A-Za-z_][\w]*\(\s*({_NUMBER_PATTERN})\s*\)",
+            text,
+        )
+    ]
+
+
 def _point_from_xy_text(text: str) -> Point | None:
     x_match = re.search(
         rf"(?<![A-Za-z0-9_])['\"]?x['\"]?(?![A-Za-z0-9_])"
-        rf"\s*(?::|=)\s*({_NUMBER_PATTERN})",
+        rf"\s*(?::|=|is\b)\s*(?:[A-Za-z_][\w.]*\(\s*)?({_NUMBER_PATTERN})",
         text,
         flags=re.IGNORECASE,
     )
     y_match = re.search(
         rf"(?<![A-Za-z0-9_])['\"]?y['\"]?(?![A-Za-z0-9_])"
-        rf"\s*(?::|=)\s*({_NUMBER_PATTERN})",
+        rf"\s*(?::|=|is\b)\s*(?:[A-Za-z_][\w.]*\(\s*)?({_NUMBER_PATTERN})",
         text,
         flags=re.IGNORECASE,
     )
