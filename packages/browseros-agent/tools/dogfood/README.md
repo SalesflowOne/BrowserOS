@@ -11,7 +11,7 @@ High level:
 - You point it at a BrowserOS repo clone used for alpha dogfooding.
 - It imports your normal BrowserOS profile into a separate dev profile.
 - It keeps BrowserOS state under `~/.browseros-dogfood`, separate from your normal app state.
-- It builds the local extension, starts the local server, and launches the installed BrowserOS app against them.
+- It builds the local extension, starts the local server, and launches the installed BrowserOS app with the alpha Dock icon against them.
 - It does not auto-pull on `start`; you choose when to update the checkout.
 
 ## Requirements
@@ -109,3 +109,5 @@ browseros-dogfood config edit
 ```
 
 Config lives at `~/.config/browseros-dogfood/config.yaml`. Most people should only need to edit it when changing the alpha repo clone, ports, or env values.
+
+Browser launch passes `--browseros-dock-icon=alpha` so dogfood sessions are visually distinct in the Dock.

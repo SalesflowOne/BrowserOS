@@ -26,6 +26,7 @@ func TestBuildArgs(t *testing.T) {
 		"--profile-directory=Default",
 		"--disable-browseros-server",
 		"--disable-browseros-extensions",
+		"--browseros-dock-icon=alpha",
 		"--enable-logging=stderr",
 		"--load-extension=/repo/packages/browseros-agent/apps/agent/dist/chrome-mv3-dev",
 		"chrome://newtab",
