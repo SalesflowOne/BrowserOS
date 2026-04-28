@@ -1199,38 +1199,338 @@ export class OpenClawService {
 
   // ── Chat Stream (HTTP) ───────────────────────────────────────────────
 
+  /**
+   * Stream a chat with the agent.
+   *
+   * Sends the prompt via OpenClaw's WS `chat.send` RPC (called through the
+   * OpenClaw CLI from inside the gateway container so it appears as
+   * direct_local and gets full operator scope). Tokens and tool events
+   * stream back as `chat`/`agent` broadcasts on the WS observer.
+   *
+   * Runs initiated this way are registered in OpenClaw's chatAbortControllers
+   * registry and can be aborted via `abortChat()` — that's what makes the
+   * Stop button actually work.
+   *
+   * The returned stream emits richer events than the legacy HTTP path:
+   * text deltas, reasoning, tool start/end with arguments and durations,
+   * lifecycle phases, usage, and typed errors.
+   */
   async chatStream(
     agentId: string,
     sessionKey: string,
     message: string,
-    history: MonitoringChatTurn[] = [],
+    _history: MonitoringChatTurn[] = [],
     options: {
       messageParts?: OpenClawChatContentPart[]
       signal?: AbortSignal
+      idempotencyKey?: string
     } = {},
   ): Promise<ReadableStream<OpenClawStreamEvent>> {
     await this.assertGatewayReady()
-    const normalizedSessionKey = normalizeBrowserOSChatSessionKey(
-      agentId,
-      sessionKey,
-    )
+    const innerKey = normalizeBrowserOSChatSessionKey(agentId, sessionKey)
+    const fullKey = toOpenClawBrowserOSSessionKey(agentId, innerKey)
+
+    // Translate our internal multimodal `messageParts` (OpenAI shape) to
+    // OpenClaw chat.send `attachments` (the shape its normalizer expects).
+    const attachments = messagePartsToOpenClawAttachments(options.messageParts)
+
     logger.info('Starting OpenClaw chat stream', {
       agentId,
-      sessionKey: normalizedSessionKey,
+      sessionKey: innerKey,
       messageLength: message.length,
-      historyLength: history.length,
-      contentPartCount: options.messageParts?.length ?? 0,
+      attachmentCount: attachments.length,
     })
-    return this.runControlPlaneCall(() =>
-      this.httpClient.streamChat({
-        agentId,
-        sessionKey: normalizedSessionKey,
-        message,
-        messageParts: options.messageParts,
-        history,
-        signal: options.signal,
-      }),
+
+    // Ensure the observer is connected before we send — we need its
+    // broadcast subscription to receive tokens for the run we're about
+    // to start. runControlPlaneCall's side effect (ensureObserverConnected)
+    // handles this.
+    await this.runControlPlaneCall(async () => undefined)
+    if (!this.observer.isConnected()) {
+      throw new Error('OpenClaw observer is not connected; cannot stream chat')
+    }
+
+    const { runId } = await this.sendChatViaCli({
+      sessionKey: fullKey,
+      message,
+      attachments,
+      idempotencyKey: options.idempotencyKey,
+    })
+
+    const observer = this.observer
+    const abortChat = (rid: string) =>
+      this.abortChat(agentId, sessionKey, rid).catch(() => undefined)
+    return new ReadableStream<OpenClawStreamEvent>({
+      start: (controller) => {
+        let closed = false
+        let assistantTextLen = 0
+        let reasoningTextLen = 0
+        const toolStartedAt = new Map<string, number>()
+        let lastEmittedText = ''
+
+        const close = (final?: OpenClawStreamEvent) => {
+          if (closed) return
+          closed = true
+          if (final) controller.enqueue(final)
+          offChat()
+          offAgent()
+          if (signalListener) {
+            options.signal?.removeEventListener('abort', signalListener)
+          }
+          controller.close()
+        }
+
+        const onChat = (rawPayload: unknown) => {
+          if (closed) return
+          if (!isPlainObject(rawPayload)) return
+          if (rawPayload.runId !== runId) return
+
+          const state = rawPayload.state
+          if (state === 'aborted') {
+            close({ type: 'lifecycle', data: { phase: 'aborted', runId } })
+            return
+          }
+          if (state === 'error') {
+            close({
+              type: 'error',
+              data: {
+                message:
+                  typeof rawPayload.errorMessage === 'string'
+                    ? rawPayload.errorMessage
+                    : 'OpenClaw chat run failed',
+                errorKind:
+                  typeof rawPayload.errorKind === 'string'
+                    ? rawPayload.errorKind
+                    : undefined,
+              },
+            })
+            return
+          }
+
+          // Walk message.content blocks. Text comes as cumulative; we
+          // compute true deltas. Reasoning is similar.
+          const message = isPlainObject(rawPayload.message)
+            ? rawPayload.message
+            : null
+          const content = message
+            ? isArray(message.content)
+              ? message.content
+              : []
+            : []
+
+          let cumulativeText = ''
+          let cumulativeReasoning = ''
+          for (const block of content) {
+            if (!isPlainObject(block)) continue
+            if (block.type === 'text' && typeof block.text === 'string') {
+              cumulativeText += block.text
+            } else if (block.type === 'thinking') {
+              const thinking =
+                (typeof block.thinking === 'string' && block.thinking) ||
+                (typeof block.text === 'string' && block.text) ||
+                ''
+              cumulativeReasoning += thinking
+            }
+            // toolCall blocks are surfaced via the `agent` event with stream:'tool'
+          }
+
+          // Filter BrowserOS-specific sentinels (HEARTBEAT etc).
+          if (cumulativeText.startsWith('HEARTBEAT')) return
+
+          if (cumulativeText.length > assistantTextLen) {
+            const delta = cumulativeText.slice(assistantTextLen)
+            assistantTextLen = cumulativeText.length
+            lastEmittedText = cumulativeText
+            controller.enqueue({ type: 'text-delta', data: { text: delta } })
+          }
+          if (cumulativeReasoning.length > reasoningTextLen) {
+            const delta = cumulativeReasoning.slice(reasoningTextLen)
+            reasoningTextLen = cumulativeReasoning.length
+            controller.enqueue({
+              type: 'reasoning-delta',
+              data: { text: delta },
+            })
+          }
+
+          if (state === 'final') {
+            // Surface usage if present
+            const usage = isPlainObject(message?.usage)
+              ? (message.usage as Record<string, unknown>)
+              : null
+            if (usage) {
+              const data: Record<string, unknown> = {}
+              if (typeof usage.input === 'number') data.tokensIn = usage.input
+              if (typeof usage.output === 'number')
+                data.tokensOut = usage.output
+              const cost = isPlainObject(usage.cost) ? usage.cost : null
+              if (cost && typeof cost.total === 'number')
+                data.costUsd = cost.total
+              if (Object.keys(data).length > 0) {
+                controller.enqueue({ type: 'usage', data })
+              }
+            }
+            close({ type: 'done', data: { text: lastEmittedText } })
+          }
+        }
+
+        const onAgent = (rawPayload: unknown) => {
+          if (closed) return
+          if (!isPlainObject(rawPayload)) return
+          if (rawPayload.runId !== runId) return
+
+          const stream = rawPayload.stream
+          const data = isPlainObject(rawPayload.data) ? rawPayload.data : {}
+
+          if (stream === 'tool') {
+            const phase = data.phase
+            const toolCallId =
+              typeof data.toolCallId === 'string' ? data.toolCallId : null
+            if (!toolCallId) return
+            if (phase === 'start') {
+              toolStartedAt.set(toolCallId, Date.now())
+              const { label, subject } = buildToolLabel(
+                typeof data.name === 'string' ? data.name : 'tool',
+                isPlainObject(data.arguments) ? data.arguments : undefined,
+              )
+              controller.enqueue({
+                type: 'tool-start',
+                data: {
+                  toolCallId,
+                  toolName: typeof data.name === 'string' ? data.name : '',
+                  label,
+                  subject,
+                  arguments: data.arguments,
+                },
+              })
+            } else if (phase === 'end') {
+              const startedAt = toolStartedAt.get(toolCallId)
+              if (startedAt) toolStartedAt.delete(toolCallId)
+              controller.enqueue({
+                type: 'tool-end',
+                data: {
+                  toolCallId,
+                  output:
+                    typeof data.output === 'string' ? data.output : undefined,
+                  isError: data.isError === true,
+                  durationMs: startedAt ? Date.now() - startedAt : undefined,
+                },
+              })
+            }
+            return
+          }
+
+          if (stream === 'lifecycle') {
+            const phase = data.phase
+            if (phase === 'start' || phase === 'end' || phase === 'error') {
+              controller.enqueue({
+                type: 'lifecycle',
+                data: { phase, runId },
+              })
+            }
+          }
+        }
+
+        const offChat = observer.on('chat', onChat)
+        const offAgent = observer.on('agent', onAgent)
+
+        let signalListener: (() => void) | null = null
+        if (options.signal) {
+          if (options.signal.aborted) {
+            // Already aborted before we attached. Best-effort fire abort
+            // and close, but don't throw — the run might already be done.
+            void abortChat(runId)
+            close({ type: 'lifecycle', data: { phase: 'aborted', runId } })
+            return
+          }
+          signalListener = () => {
+            void abortChat(runId)
+          }
+          options.signal.addEventListener('abort', signalListener, {
+            once: true,
+          })
+        }
+      },
+    })
+  }
+
+  /**
+   * Send a chat via OpenClaw's WS `chat.send` RPC, invoked through the
+   * OpenClaw CLI from inside the gateway container. Returns the assigned
+   * runId immediately; tokens stream as broadcast events on the observer.
+   */
+  private async sendChatViaCli(input: {
+    sessionKey: string
+    message: string
+    attachments?: unknown[]
+    idempotencyKey?: string
+    timeoutMs?: number
+  }): Promise<{ runId: string }> {
+    await this.ensureTokenLoaded()
+    if (!this.tokenLoaded) {
+      throw new Error(
+        'OpenClaw gateway token not loaded; setup may not have completed',
+      )
+    }
+    const idempotencyKey = input.idempotencyKey ?? crypto.randomUUID()
+    const params: Record<string, unknown> = {
+      sessionKey: input.sessionKey,
+      message: input.message,
+      idempotencyKey,
+    }
+    if (input.attachments && input.attachments.length > 0) {
+      params.attachments = input.attachments
+    }
+    const result = await this.runtime.callGatewayRpc<{
+      runId: string
+      status?: string
+    }>({
+      method: 'chat.send',
+      params,
+      token: this.token,
+      timeoutMs: input.timeoutMs ?? 5000,
+    })
+    if (typeof result.runId !== 'string' || !result.runId) {
+      throw new Error('OpenClaw chat.send did not return a runId')
+    }
+    return { runId: result.runId }
+  }
+
+  /**
+   * Abort any in-flight runs for an agent's session. Looks up runs by
+   * sessionKey in OpenClaw's chatAbortControllers registry.
+   */
+  async abortChat(
+    agentId: string,
+    sessionKey: string,
+    runId?: string,
+  ): Promise<{ aborted: boolean; runIds: string[] }> {
+    await this.assertGatewayReady()
+    await this.ensureTokenLoaded()
+    if (!this.tokenLoaded) {
+      throw new Error(
+        'OpenClaw gateway token not loaded; setup may not have completed',
+      )
+    }
+    const fullSessionKey = toOpenClawBrowserOSSessionKey(
+      agentId,
+      normalizeBrowserOSChatSessionKey(agentId, sessionKey),
     )
+    const params: Record<string, unknown> = { sessionKey: fullSessionKey }
+    if (runId) params.runId = runId
+    const result = await this.runtime.callGatewayRpc<{
+      ok?: boolean
+      aborted?: boolean
+      runIds?: string[]
+    }>({
+      method: 'chat.abort',
+      params,
+      token: this.token,
+      timeoutMs: 5000,
+    })
+    return {
+      aborted: Boolean(result.aborted),
+      runIds: Array.isArray(result.runIds) ? result.runIds : [],
+    }
   }
 
   private resolveSpecificAgentSession(
@@ -2041,4 +2341,39 @@ function sameVmCacheRuntimeConfig(
     left?.ensureAvailable === right?.ensureAvailable &&
     left?.ensureSynced === right?.ensureSynced
   )
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isArray(value: unknown): value is unknown[] {
+  return Array.isArray(value)
+}
+
+/**
+ * Translate our internal `messageParts` (OpenAI multimodal shape, used by
+ * the route's attachment validator) to OpenClaw chat.send `attachments`
+ * (the shape its `normalizeRpcAttachmentsToChatAttachments` expects).
+ *
+ * Today we only have image data: URLs. The data URL carries mime + base64
+ * inline, which OpenClaw's normalizer accepts as `{type, mimeType, content}`.
+ */
+function messagePartsToOpenClawAttachments(
+  parts: OpenClawChatContentPart[] | undefined,
+): unknown[] {
+  if (!parts || parts.length === 0) return []
+  const out: unknown[] = []
+  for (const p of parts) {
+    if (p.type !== 'image_url') continue
+    const url = p.image_url?.url
+    if (typeof url !== 'string' || !url.startsWith('data:')) continue
+    const semi = url.indexOf(';')
+    const comma = url.indexOf(',')
+    if (semi < 0 || comma < 0) continue
+    const mimeType = url.slice(5, semi)
+    const content = url.slice(comma + 1)
+    out.push({ type: 'image', mimeType, content })
+  }
+  return out
 }

@@ -2,22 +2,26 @@
  * @license
  * Copyright 2025 BrowserOS
  * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * HTTP-side client for OpenClaw operations that still go over /v1 HTTP:
+ *   - `isAuthenticated()` — health probe used by isGatewayAvailable.
+ *   - `getSessionHistory(...)` / `streamSessionHistory(...)` — read history
+ *     by session key. (Chat sending moved to WS chat.send via the CLI; see
+ *     OpenClawService.chatStream.)
+ *
+ * The legacy `streamChat()` over /v1/chat/completions was removed when chat
+ * migrated to WS — that path doesn't register runs in OpenClaw's abort
+ * registry, so chat.abort can't stop them. WS chat.send does, which is what
+ * makes the Stop button work end-to-end.
  */
 
 import { createParser, type EventSourceMessage } from 'eventsource-parser'
 import { OpenClawSessionNotFoundError } from './errors'
-import type { OpenClawStreamEvent } from './openclaw-types'
-
-export interface OpenClawChatHistoryMessage {
-  role: 'user' | 'assistant'
-  content: string
-}
 
 /**
- * OpenAI-compatible content parts for multimodal user messages. OpenClaw's
- * gateway accepts the standard `content: [{ type: 'text', ... }, { type:
- * 'image_url', image_url: { url } }]` shape on /v1/chat/completions and
- * routes it to whichever upstream provider the agent's model points at.
+ * OpenAI-compatible content parts for multimodal user messages. Used by the
+ * route's attachment validator and translated to OpenClaw chat.send
+ * `attachments` shape inside OpenClawService.chatStream.
  */
 export type OpenClawChatContentPart =
   | { type: 'text'; text: string }
@@ -25,18 +29,6 @@ export type OpenClawChatContentPart =
       type: 'image_url'
       image_url: { url: string; detail?: 'auto' | 'low' | 'high' }
     }
-
-export interface OpenClawChatRequest {
-  agentId: string
-  sessionKey: string
-  message: string
-  // When present, sent as the user message's `content` array verbatim. The
-  // legacy string `message` is folded into a leading text part if no text
-  // part is present in `messageParts`.
-  messageParts?: OpenClawChatContentPart[]
-  history?: OpenClawChatHistoryMessage[]
-  signal?: AbortSignal
-}
 
 export interface OpenClawSessionHistoryMessage {
   role: 'user' | 'assistant' | 'system' | 'tool'
@@ -79,19 +71,6 @@ export class OpenClawHttpClient {
     private readonly getToken: () => Promise<string>,
   ) {}
 
-  async streamChat(
-    input: OpenClawChatRequest,
-  ): Promise<ReadableStream<OpenClawStreamEvent>> {
-    const response = await this.fetchChat(input)
-    const body = response.body
-
-    if (!body) {
-      throw new Error('OpenClaw chat response had no body')
-    }
-
-    return createEventStream(body, input.signal)
-  }
-
   async getSessionHistory(
     sessionKey: string,
     input: OpenClawSessionHistoryInput = {},
@@ -130,40 +109,6 @@ export class OpenClawHttpClient {
     } catch {
       return false
     }
-  }
-
-  private async fetchChat(input: OpenClawChatRequest): Promise<Response> {
-    const token = await this.getToken()
-    const userContent = buildUserContent(input)
-    const response = await fetch(
-      `http://127.0.0.1:${this.hostPort}/v1/chat/completions`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: resolveAgentModel(input.agentId),
-          stream: true,
-          messages: [
-            ...(input.history ?? []),
-            { role: 'user', content: userContent },
-          ],
-          user: `browseros:${input.agentId}:${input.sessionKey}`,
-        }),
-        signal: input.signal,
-      },
-    )
-
-    if (response.ok) {
-      return response
-    }
-
-    const detail = await response.text()
-    throw new Error(
-      detail || `OpenClaw chat failed with status ${response.status}`,
-    )
   }
 
   private async fetchSessionHistory(
@@ -209,214 +154,6 @@ function buildHistoryPath(
   return `/sessions/${encodeURIComponent(sessionKey)}/history${
     suffix ? `?${suffix}` : ''
   }`
-}
-
-function resolveAgentModel(agentId: string): string {
-  return agentId === 'main' ? 'openclaw' : `openclaw/${agentId}`
-}
-
-/**
- * Build the OpenAI-compatible `content` payload for the trailing user
- * message. When the caller supplies multimodal parts via `messageParts`,
- * use them as-is, ensuring at least one text part is present (we fold the
- * legacy `message` string in as a leading text part if not). Otherwise,
- * fall back to a plain string `content` so simple text-only sends keep
- * the same wire shape we've always sent.
- */
-function buildUserContent(
-  input: OpenClawChatRequest,
-): string | OpenClawChatContentPart[] {
-  if (!input.messageParts || input.messageParts.length === 0) {
-    return input.message
-  }
-
-  const hasText = input.messageParts.some((p) => p.type === 'text')
-  if (hasText) return input.messageParts
-
-  const trimmed = input.message.trim()
-  if (!trimmed) return input.messageParts
-
-  return [{ type: 'text', text: input.message }, ...input.messageParts]
-}
-
-function createEventStream(
-  body: ReadableStream<Uint8Array>,
-  signal?: AbortSignal,
-): ReadableStream<OpenClawStreamEvent> {
-  return new ReadableStream<OpenClawStreamEvent>({
-    start(controller) {
-      void pumpChatEvents(body, controller, signal)
-    },
-  })
-}
-
-async function pumpChatEvents(
-  body: ReadableStream<Uint8Array>,
-  controller: ReadableStreamDefaultController<OpenClawStreamEvent>,
-  signal?: AbortSignal,
-): Promise<void> {
-  const reader = body.getReader()
-  const decoder = new TextDecoder()
-  let text = ''
-  let done = false
-  const parser = createParser({
-    onEvent(message) {
-      if (done) return
-      const nextText = updateAccumulatedText(message, text)
-      done = handleMessage(message, controller, nextText, done)
-      if (!done) {
-        text = nextText
-      }
-    },
-  })
-
-  try {
-    while (true) {
-      if (signal?.aborted) {
-        await reader.cancel()
-        done = true
-        controller.close()
-        return
-      }
-
-      const { done: streamDone, value } = await reader.read()
-      if (streamDone) break
-      parser.feed(decoder.decode(value, { stream: true }))
-    }
-  } catch (error) {
-    if (!done) {
-      controller.enqueue({
-        type: 'error',
-        data: {
-          message: error instanceof Error ? error.message : String(error),
-        },
-      })
-      done = true
-      controller.close()
-    }
-  } finally {
-    if (!done) {
-      controller.close()
-    }
-    reader.releaseLock()
-  }
-}
-
-function handleMessage(
-  message: EventSourceMessage,
-  controller: ReadableStreamDefaultController<OpenClawStreamEvent>,
-  text: string,
-  done: boolean,
-): boolean {
-  if (message.data === '[DONE]') {
-    return finishStream(controller, text, done)
-  }
-
-  const chunk = parseChunk(message.data)
-  if (!chunk) {
-    controller.enqueue({
-      type: 'error',
-      data: { message: 'Failed to parse OpenClaw chat stream chunk' },
-    })
-    controller.close()
-    return true
-  }
-
-  for (const event of mapChunkToEvents(chunk)) {
-    controller.enqueue(event)
-  }
-
-  return hasFinishReason(chunk) ? finishStream(controller, text, done) : false
-}
-
-function updateAccumulatedText(
-  message: EventSourceMessage,
-  text: string,
-): string {
-  const chunk = parseChunk(message.data)
-  if (!chunk) return text
-
-  let next = text
-  for (const choice of readChoices(chunk)) {
-    const delta = readDeltaText(choice)
-    if (delta) {
-      next += delta
-    }
-  }
-  return next
-}
-
-function finishStream(
-  controller: ReadableStreamDefaultController<OpenClawStreamEvent>,
-  text: string,
-  done: boolean,
-): boolean {
-  if (!done) {
-    if (!text.trim()) {
-      controller.enqueue({
-        type: 'error',
-        data: {
-          message: "Agent couldn't generate a response. Please try again.",
-        },
-      })
-      controller.close()
-      return true
-    }
-    controller.enqueue({
-      type: 'done',
-      data: { text },
-    })
-    controller.close()
-  }
-
-  return true
-}
-
-function mapChunkToEvents(
-  chunk: Record<string, unknown>,
-): OpenClawStreamEvent[] {
-  const events: OpenClawStreamEvent[] = []
-
-  for (const choice of readChoices(chunk)) {
-    const delta = readDeltaText(choice)
-    if (delta) {
-      events.push({
-        type: 'text-delta',
-        data: { text: delta },
-      })
-    }
-  }
-
-  return events
-}
-
-function hasFinishReason(chunk: Record<string, unknown>): boolean {
-  return readChoices(chunk).some((choice) => !!readFinishReason(choice))
-}
-
-function readChoices(
-  chunk: Record<string, unknown>,
-): Array<Record<string, unknown>> {
-  const choices = chunk.choices
-  return Array.isArray(choices)
-    ? choices.filter(
-        (choice): choice is Record<string, unknown> =>
-          !!choice && typeof choice === 'object',
-      )
-    : []
-}
-
-function readDeltaText(choice: Record<string, unknown>): string {
-  const delta = choice.delta
-  if (!delta || typeof delta !== 'object') return ''
-
-  const content = (delta as Record<string, unknown>).content
-  return typeof content === 'string' ? content : ''
-}
-
-function readFinishReason(choice: Record<string, unknown>): string | null {
-  const reason = choice.finish_reason
-  return typeof reason === 'string' && reason ? reason : null
 }
 
 function parseChunk(data: string): Record<string, unknown> | null {

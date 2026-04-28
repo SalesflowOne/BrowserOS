@@ -408,31 +408,47 @@ describe('OpenClawService', () => {
     expect(typeof page.page.cursor).toBe('string')
   })
 
-  it('normalizes recursive session keys before streaming chat', async () => {
+  it('normalizes recursive session keys and wraps them as the OpenClaw chat.send sessionKey', async () => {
     const service = new OpenClawService() as MutableOpenClawService
-    const stream = new ReadableStream()
-    const streamChat = mock(async () => stream)
+    const callGatewayRpc = mock(async () => ({
+      runId: 'run-1',
+      status: 'started',
+    }))
 
     service.runtime = {
       isReady: async () => true,
+      callGatewayRpc,
     }
-    service.httpClient = {
-      streamChat,
+    service.token = 'cli-token'
+    service.tokenLoaded = true
+    // Pretend the observer is connected so chatStream proceeds.
+    service.observer = {
+      isConnected: () => true,
+      // chatStream registers chat/agent listeners; we don't need to fire any
+      // events for this test since we only care about the call into
+      // runtime.callGatewayRpc.
+      on: () => () => undefined,
     }
+    service.runControlPlaneCall = async (fn: () => Promise<unknown>) => fn()
 
-    await expect(
-      service.chatStream(
-        'main',
-        'agent:main:openai-user:browseros:main:agent:main:openai-user:browseros:main:e1ee8e17-4fdb-4072-99ce-8f680853ec00',
-        'hello',
-      ),
-    ).resolves.toBe(stream)
-    expect(streamChat).toHaveBeenCalledWith({
-      agentId: 'main',
-      sessionKey: 'e1ee8e17-4fdb-4072-99ce-8f680853ec00',
-      message: 'hello',
-      history: [],
-    })
+    await service.chatStream(
+      'main',
+      'agent:main:openai-user:browseros:main:agent:main:openai-user:browseros:main:e1ee8e17-4fdb-4072-99ce-8f680853ec00',
+      'hello',
+    )
+
+    expect(callGatewayRpc).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: 'chat.send',
+        params: expect.objectContaining({
+          sessionKey:
+            'agent:main:openai-user:browseros:main:e1ee8e17-4fdb-4072-99ce-8f680853ec00',
+          message: 'hello',
+          idempotencyKey: expect.any(String),
+        }),
+        token: 'cli-token',
+      }),
+    )
   })
 
   it('maps successful cli client probes into connected status', async () => {

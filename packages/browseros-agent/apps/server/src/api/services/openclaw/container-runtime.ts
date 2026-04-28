@@ -176,6 +176,52 @@ export class ContainerRuntime {
     ])
   }
 
+  /**
+   * Call a gateway WS RPC method via OpenClaw's CLI from inside the gateway
+   * container. We do this (instead of opening our own WS from outside) so
+   * the connection appears as `direct_local` to the gateway, which preserves
+   * full operator scopes for token-mode auth — including `operator.write`,
+   * which is required by chat.send / chat.abort / sessions.abort.
+   *
+   * Throws on non-zero exit, on transport failure, or when stdout cannot be
+   * parsed as JSON.
+   */
+  async callGatewayRpc<T = unknown>(input: {
+    method: string
+    params?: Record<string, unknown>
+    token: string
+    timeoutMs?: number
+  }): Promise<T> {
+    const args = [
+      'node',
+      'dist/index.js',
+      'gateway',
+      'call',
+      input.method,
+      '--params',
+      JSON.stringify(input.params ?? {}),
+      '--token',
+      input.token,
+      '--json',
+    ]
+    if (input.timeoutMs !== undefined) {
+      args.push('--timeout', String(input.timeoutMs))
+    }
+    const result = await this.runInContainer(args)
+    if (result.exitCode !== 0) {
+      throw new Error(
+        `gateway call ${input.method} exit=${result.exitCode}: ${result.stderr.trim() || result.stdout.trim()}`,
+      )
+    }
+    const parsed = parseGatewayCallStdout<T>(result.stdout)
+    if (parsed === null) {
+      throw new Error(
+        `gateway call ${input.method}: failed to parse stdout: ${result.stdout.slice(0, 200)}`,
+      )
+    }
+    return parsed
+  }
+
   async runGatewaySetupCommand(
     command: string[],
     spec: GatewayContainerSpec,
@@ -314,4 +360,65 @@ export class ContainerRuntime {
     }
     return hostPathToGuest(path)
   }
+}
+
+/**
+ * Parse the stdout of `openclaw gateway call --json`. Tries the trimmed
+ * stdout as a single JSON object first; on failure, scans for the largest
+ * balanced JSON object (handles cases where logs land on stdout above the
+ * payload).
+ */
+function parseGatewayCallStdout<T>(stdout: string): T | null {
+  const trimmed = stdout.trim()
+  if (!trimmed) return null
+  try {
+    return JSON.parse(trimmed) as T
+  } catch {}
+  // Fallback: scan for largest balanced JSON substring.
+  let bestStart = -1
+  let bestEnd = -1
+  for (let i = 0; i < trimmed.length; i++) {
+    const ch = trimmed[i]
+    if (ch !== '{' && ch !== '[') continue
+    const end = endOfJsonAt(trimmed, i)
+    if (end > i && end - i > bestEnd - bestStart) {
+      bestStart = i
+      bestEnd = end
+    }
+  }
+  if (bestStart < 0) return null
+  try {
+    return JSON.parse(trimmed.slice(bestStart, bestEnd + 1)) as T
+  } catch {
+    return null
+  }
+}
+
+function endOfJsonAt(s: string, start: number): number {
+  const stack: string[] = [s[start] === '{' ? '}' : ']']
+  let inString = false
+  let escaped = false
+  for (let i = start + 1; i < s.length; i++) {
+    const ch = s[i]
+    if (inString) {
+      if (escaped) {
+        escaped = false
+        continue
+      }
+      if (ch === '\\') escaped = true
+      else if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') {
+      inString = true
+      continue
+    }
+    if (ch === '{') stack.push('}')
+    else if (ch === '[') stack.push(']')
+    else if (ch === stack[stack.length - 1]) {
+      stack.pop()
+      if (stack.length === 0) return i
+    }
+  }
+  return -1
 }

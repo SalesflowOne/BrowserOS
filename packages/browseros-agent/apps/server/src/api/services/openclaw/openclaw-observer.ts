@@ -40,6 +40,27 @@ type IncomingFrame =
     }
   | { type: 'event'; event: string; payload?: unknown }
 
+type EventListener = (payload: unknown) => void
+
+interface PendingRequest {
+  resolve: (payload: unknown) => void
+  reject: (err: Error) => void
+  timer: ReturnType<typeof setTimeout>
+  method: string
+}
+
+const DEFAULT_RPC_TIMEOUT_MS = 10_000
+
+export class OpenClawRpcError extends Error {
+  constructor(
+    public readonly code: string,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'OpenClawRpcError'
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Observer
 // ---------------------------------------------------------------------------
@@ -51,6 +72,9 @@ export class OpenClawObserver {
   private closed = false
   private gatewayUrl: string | null = null
   private gatewayToken: string | null = null
+  private nextRequestId = 1
+  private readonly pendingRequests = new Map<string, PendingRequest>()
+  private readonly eventListeners = new Map<string, Set<EventListener>>()
 
   constructor(private readonly session: ClawSession) {}
 
@@ -66,6 +90,7 @@ export class OpenClawObserver {
   disconnect(): void {
     this.closed = true
     this.clearReconnect()
+    this.failAllPendingRequests('OpenClaw observer disconnected')
     if (this.ws) {
       try {
         this.ws.close()
@@ -78,6 +103,65 @@ export class OpenClawObserver {
   /** Whether the observer has an active WS connection. */
   isConnected(): boolean {
     return this.connected
+  }
+
+  /**
+   * Send an RPC request over the WS. The observer must already be connected
+   * (and past handshake). Returns the response payload, or rejects with an
+   * OpenClawRpcError on a non-ok response, or with a plain Error on transport
+   * failure / timeout.
+   */
+  async request<T = unknown>(
+    method: string,
+    params: Record<string, unknown> = {},
+    timeoutMs = DEFAULT_RPC_TIMEOUT_MS,
+  ): Promise<T> {
+    if (!this.connected || !this.ws) {
+      throw new Error(`OpenClaw observer not connected; cannot call ${method}`)
+    }
+    const id = `bos-${this.nextRequestId++}`
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        if (this.pendingRequests.delete(id)) {
+          reject(new Error(`OpenClaw RPC timed out: ${method}`))
+        }
+      }, timeoutMs)
+      this.pendingRequests.set(id, {
+        resolve: (payload) => resolve(payload as T),
+        reject,
+        timer,
+        method,
+      })
+      try {
+        this.ws!.send(JSON.stringify({ type: 'req', id, method, params }))
+      } catch (err) {
+        this.pendingRequests.delete(id)
+        clearTimeout(timer)
+        reject(
+          err instanceof Error ? err : new Error(`failed to send ${method}`),
+        )
+      }
+    })
+  }
+
+  /**
+   * Subscribe to broadcast events with a given name (e.g. 'chat', 'agent').
+   * Returns an unsubscribe function. Listeners are invoked AFTER the
+   * observer's own state-machine routing for the same event.
+   */
+  on(eventName: string, listener: EventListener): () => void {
+    let set = this.eventListeners.get(eventName)
+    if (!set) {
+      set = new Set()
+      this.eventListeners.set(eventName, set)
+    }
+    set.add(listener)
+    return () => {
+      const current = this.eventListeners.get(eventName)
+      if (!current) return
+      current.delete(listener)
+      if (current.size === 0) this.eventListeners.delete(eventName)
+    }
   }
 
   // ── Private ─────────────────────────────────────────────────────────
@@ -124,15 +208,21 @@ export class OpenClawObserver {
           params: {
             minProtocol: PROTOCOL_VERSION,
             maxProtocol: PROTOCOL_VERSION,
+            // gateway-client + backend mode is OpenClaw's documented "trusted
+            // backend self-connect" identity. Avoids the CONTROL_UI_DEVICE_IDENTITY_REQUIRED
+            // gate that 'openclaw-tui' triggers (TUI/control-ui clients are
+            // required to present a paired device identity, which we don't
+            // want for our local single-client backend integration).
+            // We omit `scopes` so the gateway grants the default operator
+            // scope set for shared-secret auth.
             client: {
-              id: 'openclaw-tui',
+              id: 'gateway-client',
               displayName: 'browseros-observer',
               version: '1.0.0',
               platform: 'node',
-              mode: 'ui',
+              mode: 'backend',
             },
             role: 'operator',
-            scopes: ['operator.read'],
             auth: { token: this.gatewayToken },
           },
         }
@@ -155,9 +245,28 @@ export class OpenClawObserver {
         return
       }
 
+      // RPC response routing for caller-issued requests.
+      if (frame.type === 'res' && this.pendingRequests.has(frame.id)) {
+        const pending = this.pendingRequests.get(frame.id)!
+        this.pendingRequests.delete(frame.id)
+        clearTimeout(pending.timer)
+        if (frame.ok) {
+          pending.resolve(frame.payload)
+        } else {
+          pending.reject(
+            new OpenClawRpcError(
+              frame.error?.code ?? 'unknown',
+              frame.error?.message ?? `${pending.method} failed`,
+            ),
+          )
+        }
+        return
+      }
+
       // Broadcast events (only process after handshake completes)
       if (frame.type === 'event' && this.connected) {
         this.handleEvent(frame.event, frame.payload)
+        this.dispatchToListeners(frame.event, frame.payload)
       }
     })
 
@@ -165,6 +274,10 @@ export class OpenClawObserver {
       clearTimeout(connectTimeout)
       this.connected = false
       this.ws = null
+      // Anything we sent and never got a response for must reject — the
+      // socket is gone, the response will never come. Listeners (event
+      // subscriptions) are kept across reconnects.
+      this.failAllPendingRequests('OpenClaw observer connection closed')
 
       // Reset any agents stuck in "working" to "unknown" — we missed
       // the final/end event because the WS closed mid-task. The
@@ -242,6 +355,33 @@ export class OpenClawObserver {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
+    }
+  }
+
+  private dispatchToListeners(eventName: string, payload: unknown): void {
+    const set = this.eventListeners.get(eventName)
+    if (!set || set.size === 0) return
+    // Snapshot so a listener can call its own unsubscribe inside the loop
+    // without mutating the iteration.
+    for (const listener of [...set]) {
+      try {
+        listener(payload)
+      } catch (err) {
+        logger.warn('OpenClaw observer listener threw', {
+          event: eventName,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
+    }
+  }
+
+  private failAllPendingRequests(reason: string): void {
+    if (this.pendingRequests.size === 0) return
+    const pendings = [...this.pendingRequests.values()]
+    this.pendingRequests.clear()
+    for (const pending of pendings) {
+      clearTimeout(pending.timer)
+      pending.reject(new Error(reason))
     }
   }
 }

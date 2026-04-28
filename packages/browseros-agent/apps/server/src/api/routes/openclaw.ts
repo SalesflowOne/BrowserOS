@@ -581,7 +581,7 @@ export function createOpenClawRoutes() {
           sessionKey,
           composedMessage,
           history,
-          { messageParts },
+          { messageParts, signal: c.req.raw.signal },
         )
 
         c.header('Content-Type', 'text/event-stream')
@@ -654,6 +654,31 @@ export function createOpenClawRoutes() {
           return c.json({ error: err.message }, 400)
         }
         const message = err instanceof Error ? err.message : String(err)
+        return c.json({ error: message }, 500)
+      }
+    })
+
+    .post('/agents/:id/chat/stop', async (c) => {
+      const { id } = c.req.param()
+      let body: { sessionKey?: string; runId?: string }
+      try {
+        body = await c.req.json<{ sessionKey?: string; runId?: string }>()
+      } catch {
+        return c.json({ error: 'Invalid JSON body' }, 400)
+      }
+      if (!body.sessionKey?.trim()) {
+        return c.json({ error: 'sessionKey is required' }, 400)
+      }
+      try {
+        const result = await getOpenClawService().abortChat(
+          id,
+          body.sessionKey,
+          body.runId,
+        )
+        return c.json({ ok: true, ...result })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        logger.warn('Chat abort failed', { agentId: id, error: message })
         return c.json({ error: message }, 500)
       }
     })

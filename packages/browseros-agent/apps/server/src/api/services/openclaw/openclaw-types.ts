@@ -7,11 +7,13 @@
 export interface OpenClawStreamEvent {
   type:
     | 'text-delta'
+    | 'reasoning-delta'
     | 'thinking'
     | 'tool-start'
     | 'tool-end'
     | 'tool-output'
     | 'lifecycle'
+    | 'usage'
     | 'done'
     | 'error'
   data: Record<string, unknown>
