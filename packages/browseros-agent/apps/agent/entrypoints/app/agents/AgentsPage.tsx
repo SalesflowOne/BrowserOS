@@ -1,10 +1,13 @@
 import {
   AlertCircle,
+  ChevronDown,
+  ChevronUp,
   Cpu,
   Loader2,
   MessageSquare,
   Plus,
   RefreshCw,
+  Settings2,
   ShieldAlert,
   Square,
   TerminalSquare,
@@ -32,9 +35,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { LlmProviderConfig } from '@/lib/llm-providers/types'
+import type { LlmProviderConfig, ProviderType } from '@/lib/llm-providers/types'
 import { useLlmProviders } from '@/lib/llm-providers/useLlmProviders'
 import { AgentTerminal } from './AgentTerminal'
+import { AgentModelsPanel } from './agents-page.agent-models-panel'
+import { SetupImageModelField } from './agents-page.image-model-field'
 import {
   buildOpenClawCliProviderOptions,
   findOpenClawCliProviderById,
@@ -50,6 +55,7 @@ import {
   useOpenClawMutations,
   useOpenClawStatus,
 } from './useOpenClaw'
+import { getDefaultVisionModelId } from './vision-models'
 
 const LIFECYCLE_BANNER_COPY: Record<GatewayLifecycleAction, string> = {
   setup: 'Setting up OpenClaw...',
@@ -562,48 +568,160 @@ const RunningAgentsSection: FC<RunningAgentsSectionProps> = ({
     )
   }
 
+  const defaultProviderType = inferProviderTypeFromModelRef(
+    status?.defaultModel ?? null,
+  )
+  const defaultTextModel = stripModelRefPrefix(status?.defaultModel ?? null)
+  const defaultImageModel = stripModelRefPrefix(
+    status?.defaultImageModel ?? null,
+  )
+
   return (
     <div className="space-y-3">
-      {agents.map((agent) => (
-        <Card key={agent.agentId}>
-          <CardHeader className="flex flex-row items-center justify-between py-3">
-            <div className="flex items-center gap-3">
-              <Cpu className="size-5 text-muted-foreground" />
-              <div>
-                <div className="flex items-center gap-2">
-                  <CardTitle className="text-base">{agent.name}</CardTitle>
-                </div>
-                <p className="font-mono text-muted-foreground text-xs">
-                  {agent.workspace}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => onChatAgent(agent.agentId)}
-                disabled={!canManageAgents}
-              >
-                <MessageSquare className="mr-1 size-4" />
-                Chat
-              </Button>
-              {agent.agentId !== 'main' && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => onDeleteAgent(agent.agentId)}
-                  disabled={!canManageAgents || deleting}
-                >
-                  <Trash2 className="size-4 text-destructive" />
-                </Button>
+      <Alert className="border-border/60 bg-muted/30">
+        <AlertDescription className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+          <span>
+            <span className="text-muted-foreground">Default text model:</span>{' '}
+            <span className="font-medium">{defaultTextModel ?? 'not set'}</span>
+          </span>
+          <span>
+            <span className="text-muted-foreground">Default image model:</span>{' '}
+            <span className="font-medium">
+              {defaultImageModel ?? (
+                <span className="text-amber-600">
+                  not set — uploads ignored
+                </span>
               )}
-            </div>
-          </CardHeader>
-        </Card>
+            </span>
+          </span>
+        </AlertDescription>
+      </Alert>
+
+      {agents.map((agent) => (
+        <AgentRow
+          key={agent.agentId}
+          agent={agent}
+          canManageAgents={canManageAgents}
+          deleting={deleting}
+          providerType={defaultProviderType}
+          defaultTextModel={defaultTextModel}
+          defaultImageModel={defaultImageModel}
+          onChatAgent={onChatAgent}
+          onDeleteAgent={onDeleteAgent}
+        />
       ))}
     </div>
   )
+}
+
+interface AgentRowProps {
+  agent: AgentEntry
+  canManageAgents: boolean
+  deleting: boolean
+  providerType: ProviderType | undefined
+  defaultTextModel: string | null
+  defaultImageModel: string | null
+  onChatAgent: (agentId: string) => void
+  onDeleteAgent: (agentId: string) => void
+}
+
+const AgentRow: FC<AgentRowProps> = ({
+  agent,
+  canManageAgents,
+  deleting,
+  providerType,
+  defaultTextModel,
+  defaultImageModel,
+  onChatAgent,
+  onDeleteAgent,
+}) => {
+  const [expanded, setExpanded] = useState(false)
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between py-3">
+        <div className="flex items-center gap-3">
+          <Cpu className="size-5 text-muted-foreground" />
+          <div>
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-base">{agent.name}</CardTitle>
+            </div>
+            <p className="font-mono text-muted-foreground text-xs">
+              {agent.workspace}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setExpanded((value) => !value)}
+            aria-expanded={expanded}
+            aria-controls={`${agent.agentId}-models-panel`}
+          >
+            <Settings2 className="mr-1 size-4" />
+            Models
+            {expanded ? (
+              <ChevronUp className="ml-1 size-3.5" />
+            ) : (
+              <ChevronDown className="ml-1 size-3.5" />
+            )}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onChatAgent(agent.agentId)}
+            disabled={!canManageAgents}
+          >
+            <MessageSquare className="mr-1 size-4" />
+            Chat
+          </Button>
+          {agent.agentId !== 'main' && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => onDeleteAgent(agent.agentId)}
+              disabled={!canManageAgents || deleting}
+            >
+              <Trash2 className="size-4 text-destructive" />
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      {expanded && (
+        <div id={`${agent.agentId}-models-panel`}>
+          <AgentModelsPanel
+            agentId={agent.agentId}
+            providerType={providerType}
+            defaultTextModel={defaultTextModel}
+            defaultImageModel={defaultImageModel}
+          />
+        </div>
+      )}
+    </Card>
+  )
+}
+
+const SUPPORTED_PROVIDER_PREFIXES = new Set<ProviderType>([
+  'anthropic',
+  'moonshot',
+  'openai',
+  'openrouter',
+])
+
+function inferProviderTypeFromModelRef(
+  ref: string | null,
+): ProviderType | undefined {
+  if (!ref) return undefined
+  const slash = ref.indexOf('/')
+  if (slash === -1) return undefined
+  const prefix = ref.slice(0, slash) as ProviderType
+  return SUPPORTED_PROVIDER_PREFIXES.has(prefix) ? prefix : undefined
+}
+
+function stripModelRefPrefix(ref: string | null): string | null {
+  if (!ref) return null
+  const slash = ref.indexOf('/')
+  return slash === -1 ? ref : ref.slice(slash + 1)
 }
 
 export const AgentsPage: FC = () => {
@@ -639,6 +757,11 @@ export const AgentsPage: FC = () => {
 
   const [setupOpen, setSetupOpen] = useState(false)
   const [setupProviderId, setSetupProviderId] = useState('')
+  // Setup-time vision model. Empty string = "no image model" (uploads
+  // will be ignored). Defaults to the first recommended vision model
+  // for whichever chat provider the user just picked.
+  const [setupImageModelId, setSetupImageModelId] = useState('')
+  const [setupImageModelDirty, setSetupImageModelDirty] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [newName, setNewName] = useState('')
   const [createProviderId, setCreateProviderId] = useState('')
@@ -710,6 +833,24 @@ export const AgentsPage: FC = () => {
 
     if (setupOpen && !setupProviderId) setSetupProviderId(fallbackId)
   }, [setupOpen, setupProviderId, selectableCreateProviders, defaultProviderId])
+
+  // Default the image model to the first recommended vision model for
+  // whichever chat provider the user just picked. Stop overriding once
+  // the user has touched the field manually.
+  useEffect(() => {
+    if (!setupOpen || setupImageModelDirty) return
+    const providerType = selectedSetupOption?.type as ProviderType | undefined
+    const recommended = getDefaultVisionModelId(providerType) ?? ''
+    setSetupImageModelId(recommended)
+  }, [setupOpen, setupImageModelDirty, selectedSetupOption?.type])
+
+  // Reset the dirty flag whenever the dialog closes so the next open
+  // re-syncs the picker with the chosen provider.
+  useEffect(() => {
+    if (!setupOpen) {
+      setSetupImageModelDirty(false)
+    }
+  }, [setupOpen])
 
   // Auto-close the auth modal once login succeeds.
   useEffect(() => {
@@ -794,6 +935,7 @@ export const AgentsPage: FC = () => {
         baseUrl: llmOption?.baseUrl,
         apiKey: llmOption?.apiKey,
         modelId: option?.modelId,
+        imageModelId: setupImageModelId.trim() || undefined,
       })
       setSetupOpen(false)
       if (isCli) setCliAuthModalOpen(true)
@@ -961,6 +1103,19 @@ export const AgentsPage: FC = () => {
                 <span className="font-medium">Set Up &amp; Start</span> starts
                 the gateway and opens a terminal to sign in.
               </p>
+            )}
+
+            {!selectedSetupCliProvider && (
+              <SetupImageModelField
+                providerType={
+                  selectedSetupOption?.type as ProviderType | undefined
+                }
+                value={setupImageModelId}
+                onChange={(value) => {
+                  setSetupImageModelDirty(true)
+                  setSetupImageModelId(value)
+                }}
+              />
             )}
 
             <Button

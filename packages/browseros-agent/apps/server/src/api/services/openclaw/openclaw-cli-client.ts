@@ -166,6 +166,10 @@ export class OpenClawCliClient {
     ])
   }
 
+  async unsetConfig(path: string): Promise<void> {
+    await this.runCommand(['config', 'unset', path])
+  }
+
   async getConfig(path: string): Promise<unknown> {
     const output = await this.runCommand(['config', 'get', path])
     return parseConfigValue(output)
@@ -178,6 +182,45 @@ export class OpenClawCliClient {
 
   async setDefaultModel(model: string): Promise<void> {
     await this.runCommand(['models', 'set', model])
+  }
+
+  async setImageModel(model: string): Promise<void> {
+    await this.runCommand(['models', 'set-image', model])
+  }
+
+  /**
+   * Set or clear the per-agent text model override at
+   * `agents.<agentId>.model`. Pass `null` to clear the override and
+   * fall back to `agents.defaults.model`.
+   */
+  async setAgentModel(agentId: string, model: string | null): Promise<void> {
+    const path = `agents.${agentId}.model`
+    if (model === null) {
+      await this.unsetConfig(path).catch(() => {
+        // unset is a no-op if the path doesn't exist; swallow CLI errors.
+      })
+      return
+    }
+    await this.setConfig(path, model)
+  }
+
+  /**
+   * Set or clear the per-agent vision model override at
+   * `agents.<agentId>.imageModel`. Pass `null` to clear the override
+   * and fall back to `agents.defaults.imageModel`.
+   */
+  async setAgentImageModel(
+    agentId: string,
+    model: string | null,
+  ): Promise<void> {
+    const path = `agents.${agentId}.imageModel`
+    if (model === null) {
+      await this.unsetConfig(path).catch(() => {
+        // unset is a no-op if the path doesn't exist.
+      })
+      return
+    }
+    await this.setConfig(path, model)
   }
 
   async listAgents(): Promise<OpenClawAgentRecord[]> {

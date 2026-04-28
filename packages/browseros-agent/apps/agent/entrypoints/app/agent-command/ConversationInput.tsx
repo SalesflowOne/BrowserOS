@@ -25,9 +25,13 @@ import {
 import { AppSelector } from '@/components/elements/AppSelector'
 import { TabPickerPopover } from '@/components/elements/tab-picker-popover'
 import { WorkspaceSelector } from '@/components/elements/workspace-selector'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import type { AgentEntry } from '@/entrypoints/app/agents/useOpenClaw'
+import {
+  type AgentEntry,
+  useOpenClawStatus,
+} from '@/entrypoints/app/agents/useOpenClaw'
 import { McpServerIcon } from '@/entrypoints/app/connect-mcp/McpServerIcon'
 import { useGetUserMCPIntegrations } from '@/entrypoints/app/connect-mcp/useGetUserMCPIntegrations'
 import { type StagedAttachment, stageAttachments } from '@/lib/attachments'
@@ -325,6 +329,17 @@ export const ConversationInput: FC<ConversationInputProps> = ({
     (agent) => agent.agentId === selectedAgentId,
   )
   const isConversation = variant === 'conversation'
+  const { status: openClawStatus } = useOpenClawStatus()
+  // Surface a warning when the user has staged an image but the global
+  // image model is unset — without it OpenClaw silently strips the
+  // attachment, which is the failure the rest of this PR fixes.
+  const hasStagedImage = attachments.some(
+    (attachment) => attachment.kind === 'image',
+  )
+  const showVisionWarning =
+    hasStagedImage &&
+    openClawStatus?.status === 'running' &&
+    !openClawStatus.defaultImageModel
 
   const stageFiles = async (files: File[]) => {
     if (files.length === 0) return
@@ -469,6 +484,20 @@ export const ConversationInput: FC<ConversationInputProps> = ({
           className="hidden"
           onChange={handleFileInputChange}
         />
+        {showVisionWarning ? (
+          <Alert
+            variant="destructive"
+            className="mx-3 mt-2 border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100"
+          >
+            <AlertTriangle className="size-4" />
+            <AlertDescription>
+              No image model configured — uploads will be ignored.{' '}
+              <a href="#/agents" className="font-medium underline">
+                Configure one in /agents →
+              </a>
+            </AlertDescription>
+          </Alert>
+        ) : null}
         {attachments.length > 0 || attachmentError ? (
           <AttachmentStrip
             attachments={attachments}

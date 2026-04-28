@@ -32,6 +32,10 @@ export interface OpenClawStatus {
     | 'container_not_ready'
     | 'unknown'
     | null
+  /** Resolved global default chat model (`agents.defaults.model`). */
+  defaultModel: string | null
+  /** Resolved global default vision model (`agents.defaults.imageModel`). */
+  defaultImageModel: string | null
 }
 
 export interface OpenClawAgentMutationInput {
@@ -49,6 +53,25 @@ export interface OpenClawSetupInput {
   baseUrl?: string
   apiKey?: string
   modelId?: string
+  imageModelId?: string
+}
+
+export interface ResolvedAgentConfigValue {
+  value: string | null
+  source: 'agent' | 'default'
+}
+
+export interface AgentModelDetails {
+  model: ResolvedAgentConfigValue
+  imageModel: ResolvedAgentConfigValue
+}
+
+export interface UpdateAgentModelsInput {
+  agentId: string
+  /** Bare model id (no provider prefix). `null` clears the override. `undefined` leaves it untouched. */
+  model?: string | null
+  imageModel?: string | null
+  providerType?: string
 }
 
 export function getModelDisplayName(model: unknown): string | undefined {
@@ -59,6 +82,7 @@ export function getModelDisplayName(model: unknown): string | undefined {
 export const OPENCLAW_QUERY_KEYS = {
   status: 'openclaw-status',
   agents: 'openclaw-agents',
+  agentModels: 'openclaw-agent-models',
 } as const
 
 export type GatewayLifecycleAction =
@@ -102,7 +126,115 @@ async function invalidateOpenClawQueries(
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: [OPENCLAW_QUERY_KEYS.status] }),
     queryClient.invalidateQueries({ queryKey: [OPENCLAW_QUERY_KEYS.agents] }),
+    queryClient.invalidateQueries({
+      queryKey: [OPENCLAW_QUERY_KEYS.agentModels],
+    }),
   ])
+}
+
+async function fetchAgentModels(
+  baseUrl: string,
+  agentId: string,
+): Promise<AgentModelDetails> {
+  return clawFetch<AgentModelDetails>(
+    baseUrl,
+    `/agents/${encodeURIComponent(agentId)}/models`,
+  )
+}
+
+export function useAgentModels(agentId: string, enabled = true) {
+  const {
+    baseUrl,
+    isLoading: urlLoading,
+    error: urlError,
+  } = useAgentServerUrl()
+
+  const query = useQuery<AgentModelDetails, Error>({
+    queryKey: [OPENCLAW_QUERY_KEYS.agentModels, baseUrl, agentId],
+    queryFn: () => fetchAgentModels(baseUrl as string, agentId),
+    enabled: !!baseUrl && !urlLoading && !!agentId && enabled,
+  })
+
+  return {
+    details: query.data ?? null,
+    loading: query.isLoading || urlLoading,
+    error: query.error ?? urlError,
+    refetch: query.refetch,
+  }
+}
+
+/**
+ * Mutation hook for setting/clearing per-agent text + image model
+ * overrides. Wires the optimistic update + rollback path the plan
+ * spec requires.
+ */
+export function useUpdateAgentModels() {
+  const { baseUrl, isLoading: urlLoading } = useAgentServerUrl()
+  const queryClient = useQueryClient()
+
+  return useMutation<
+    AgentModelDetails,
+    Error,
+    UpdateAgentModelsInput,
+    { previous: AgentModelDetails | undefined; agentId: string }
+  >({
+    mutationFn: async (input) => {
+      if (!baseUrl || urlLoading) {
+        throw new Error('BrowserOS agent server URL is not ready')
+      }
+      const body: Record<string, unknown> = {}
+      if (input.model !== undefined) body.model = input.model
+      if (input.imageModel !== undefined) body.imageModel = input.imageModel
+      if (input.providerType) body.providerType = input.providerType
+      const response = await clawFetch<{
+        modelUpdated: boolean
+        imageModelUpdated: boolean
+        resolved: AgentModelDetails
+      }>(baseUrl, `/agents/${encodeURIComponent(input.agentId)}/models`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      return response.resolved
+    },
+    onMutate: async (input) => {
+      const queryKey = [OPENCLAW_QUERY_KEYS.agentModels, baseUrl, input.agentId]
+      await queryClient.cancelQueries({ queryKey })
+      const previous = queryClient.getQueryData<AgentModelDetails>(queryKey)
+      if (previous) {
+        const optimistic: AgentModelDetails = {
+          model:
+            input.model === undefined
+              ? previous.model
+              : input.model === null
+                ? { value: null, source: 'default' }
+                : { value: input.model, source: 'agent' },
+          imageModel:
+            input.imageModel === undefined
+              ? previous.imageModel
+              : input.imageModel === null
+                ? { value: null, source: 'default' }
+                : { value: input.imageModel, source: 'agent' },
+        }
+        queryClient.setQueryData(queryKey, optimistic)
+      }
+      return { previous, agentId: input.agentId }
+    },
+    onError: (_error, _variables, context) => {
+      if (!context) return
+      const queryKey = [
+        OPENCLAW_QUERY_KEYS.agentModels,
+        baseUrl,
+        context.agentId,
+      ]
+      if (context.previous) {
+        queryClient.setQueryData(queryKey, context.previous)
+      } else {
+        queryClient.removeQueries({ queryKey })
+      }
+    },
+    onSettled: () => invalidateOpenClawQueries(queryClient),
+  })
 }
 
 export function useOpenClawStatus(pollMs = 5000) {

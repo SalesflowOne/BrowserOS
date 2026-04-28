@@ -240,6 +240,7 @@ export function createOpenClawRoutes() {
         baseUrl?: string
         apiKey?: string
         modelId?: string
+        imageModelId?: string
       }>()
 
       try {
@@ -249,6 +250,7 @@ export function createOpenClawRoutes() {
           hasBaseUrl: !!body.baseUrl,
           hasModel: !!body.modelId,
           hasApiKey: !!body.apiKey,
+          hasImageModel: !!body.imageModelId,
         })
         const logs: string[] = []
         await getOpenClawService().setup(body, (msg) => logs.push(msg))
@@ -834,6 +836,7 @@ export function createOpenClawRoutes() {
         providerName?: string
         baseUrl?: string
         modelId?: string
+        imageModelId?: string
       }>()
 
       if (!body.providerType || !body.apiKey) {
@@ -847,11 +850,60 @@ export function createOpenClawRoutes() {
           message: result.restarted
             ? 'Provider updated, restarting gateway'
             : 'Provider updated without a restart',
+          imageModelUpdated: result.imageModelUpdated,
         })
       } catch (err) {
         if (isUnsupportedOpenClawProviderError(err)) {
           return c.json({ error: err.message }, 400)
         }
+        const message = err instanceof Error ? err.message : String(err)
+        return c.json({ error: message }, 500)
+      }
+    })
+
+    .patch('/agents/:id/models', async (c) => {
+      const { id } = c.req.param()
+      const body = await c.req.json<{
+        model?: string | null
+        imageModel?: string | null
+        providerType?: string
+      }>()
+
+      try {
+        const updateInput: {
+          model?: string | null
+          imageModel?: string | null
+          providerType?: string
+        } = {}
+        if ('model' in body) updateInput.model = body.model ?? null
+        if ('imageModel' in body)
+          updateInput.imageModel = body.imageModel ?? null
+        if (body.providerType) updateInput.providerType = body.providerType
+
+        const result = await getOpenClawService().updateAgentModels(
+          id,
+          updateInput,
+        )
+        const resolved = await getOpenClawService().resolveAgentModelDetails(id)
+        return c.json({
+          ...result,
+          resolved,
+        })
+      } catch (err) {
+        if (isUnsupportedOpenClawProviderError(err)) {
+          return c.json({ error: err.message }, 400)
+        }
+        const message = err instanceof Error ? err.message : String(err)
+        return c.json({ error: message }, 500)
+      }
+    })
+
+    .get('/agents/:id/models', async (c) => {
+      const { id } = c.req.param()
+      try {
+        const resolved = await getOpenClawService().resolveAgentModelDetails(id)
+        return c.json(resolved)
+      } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         return c.json({ error: message }, 500)
       }

@@ -34,6 +34,35 @@ const PROVIDER_ENV_VARS: Record<SupportedOpenClawProvider, string> = {
   openrouter: 'OPENROUTER_API_KEY',
 }
 
+/**
+ * Recommended vision-capable models per supported provider. Used by the
+ * UI to default the "Image model" picker once the user picks a chat
+ * provider, and by the server to seed `agents.defaults.imageModel`
+ * during onboard. The first entry is treated as the recommended
+ * default; the rest are listed as additional choices.
+ *
+ * Keep these aligned with the OpenClaw upstream's
+ * `media-understanding-provider.ts` plugin per provider — if upstream
+ * stops shipping a model id here, the gateway will reject it with a
+ * "model not found" error at chat time.
+ */
+const PROVIDER_VISION_MODELS: Record<SupportedOpenClawProvider, string[]> = {
+  anthropic: [
+    'claude-sonnet-4-5',
+    'claude-sonnet-4',
+    'claude-opus-4-1',
+    'claude-3-5-sonnet-latest',
+    'claude-3-5-haiku-latest',
+  ],
+  moonshot: ['moonshot-v1-32k-vision-preview', 'moonshot-v1-8k-vision-preview'],
+  openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'],
+  openrouter: [
+    'anthropic/claude-sonnet-4-5',
+    'openai/gpt-4o',
+    'google/gemini-1.5-pro',
+  ],
+}
+
 export class UnsupportedOpenClawProviderError extends Error {
   constructor(providerType: string) {
     super(`Unsupported OpenClaw provider: ${providerType}`)
@@ -106,6 +135,41 @@ export function getOpenClawProviderEnvVar(
   providerType: SupportedOpenClawProvider,
 ): string {
   return PROVIDER_ENV_VARS[providerType]
+}
+
+/**
+ * Returns the recommended vision-capable model ids for a provider.
+ * The first entry is the default suggestion. Empty array means the
+ * provider has no known vision-capable model in our catalog — the UI
+ * should surface a free-text input in that case.
+ */
+export function getRecommendedVisionModels(
+  providerType: SupportedOpenClawProvider,
+): string[] {
+  return [...(PROVIDER_VISION_MODELS[providerType] ?? [])]
+}
+
+/**
+ * Returns the default vision model for a provider, or undefined if
+ * we don't ship a recommendation for it (e.g. custom providers).
+ */
+export function getDefaultVisionModelId(
+  providerType: SupportedOpenClawProvider,
+): string | undefined {
+  return PROVIDER_VISION_MODELS[providerType]?.[0]
+}
+
+/**
+ * Build a fully-qualified vision model ref (provider/model) from the
+ * provider and the bare model id the user picked. Mirrors
+ * `buildOpenClawModelRef` so OpenClaw can resolve the model the same
+ * way it does for the chat model.
+ */
+export function buildVisionModelRef(
+  providerType: SupportedOpenClawProvider,
+  modelId?: string,
+): string | undefined {
+  return modelId ? `${providerType}/${modelId}` : undefined
 }
 
 export function resolveSupportedOpenClawProvider(input: {

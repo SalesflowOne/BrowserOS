@@ -72,6 +72,8 @@ import {
 } from './openclaw-jsonl-reader'
 import { OpenClawObserver } from './openclaw-observer'
 import {
+  buildVisionModelRef,
+  isSupportedOpenClawProvider,
   type ResolvedOpenClawProviderConfig,
   resolveSupportedOpenClawProvider,
 } from './openclaw-provider-map'
@@ -118,9 +120,26 @@ export interface OpenClawStatusResponse {
   controlPlaneStatus: OpenClawControlPlaneStatus
   lastGatewayError: string | null
   lastRecoveryReason: OpenClawGatewayRecoveryReason | null
+  /** Resolved global default chat model (`agents.defaults.model`). */
+  defaultModel: string | null
+  /** Resolved global default vision model (`agents.defaults.imageModel`). */
+  defaultImageModel: string | null
 }
 
-export type OpenClawAgentEntry = OpenClawAgentRecord
+/**
+ * Per-agent resolution of a config key — `value` is what OpenClaw will
+ * actually use, `source` indicates whether it comes from the agent
+ * override or the global default.
+ */
+export interface ResolvedAgentConfigValue {
+  value: string | null
+  source: 'agent' | 'default'
+}
+
+export interface OpenClawAgentEntry extends OpenClawAgentRecord {
+  resolvedModel?: ResolvedAgentConfigValue
+  resolvedImageModel?: ResolvedAgentConfigValue
+}
 
 export interface SetupInput {
   providerType?: string
@@ -128,11 +147,14 @@ export interface SetupInput {
   baseUrl?: string
   apiKey?: string
   modelId?: string
+  /** Bare vision-model id (e.g. `gpt-4o`). Mapped to `agents.defaults.imageModel`. */
+  imageModelId?: string
 }
 
 export interface OpenClawProviderUpdateResult {
   restarted: boolean
   modelUpdated: boolean
+  imageModelUpdated: boolean
 }
 
 export interface OpenClawServiceConfig {
@@ -697,6 +719,16 @@ export class OpenClawService {
       if (provider.model) {
         await this.bootstrapCliClient.setDefaultModel(provider.model)
       }
+      const imageModelRef = this.resolveImageModelRef(input)
+      if (typeof imageModelRef === 'string') {
+        await this.bootstrapCliClient.setImageModel(imageModelRef)
+        logger.info('Configured global image model', { imageModelRef })
+      } else if (imageModelRef === null) {
+        await this.bootstrapCliClient
+          .unsetConfig('agents.defaults.imageModel')
+          .catch(() => {})
+        logger.info('Cleared global image model')
+      }
 
       logProgress('Validating OpenClaw config...')
       await this.assertConfigValid(this.bootstrapCliClient)
@@ -917,6 +949,8 @@ export class OpenClawService {
         controlPlaneStatus: 'disconnected',
         lastGatewayError: this.lastGatewayError,
         lastRecoveryReason: this.lastRecoveryReason,
+        defaultModel: null,
+        defaultImageModel: null,
       }
     }
 
@@ -926,6 +960,8 @@ export class OpenClawService {
       : false
 
     let agentCount = 0
+    let defaultModel: string | null = null
+    let defaultImageModel: string | null = null
     if (ready) {
       try {
         const agents = await this.runControlPlaneCall(() =>
@@ -935,6 +971,10 @@ export class OpenClawService {
       } catch {
         // latest control plane error is captured by runControlPlaneCall
       }
+      ;[defaultModel, defaultImageModel] = await Promise.all([
+        this.readConfigString('agents.defaults.model'),
+        this.readConfigString('agents.defaults.imageModel'),
+      ])
     }
 
     return {
@@ -947,6 +987,8 @@ export class OpenClawService {
       controlPlaneStatus: ready ? this.controlPlaneStatus : 'disconnected',
       lastGatewayError: this.lastGatewayError,
       lastRecoveryReason: this.lastRecoveryReason,
+      defaultModel,
+      defaultImageModel,
     }
   }
 
@@ -1301,6 +1343,7 @@ export class OpenClawService {
     baseUrl?: string
     apiKey: string
     modelId?: string
+    imageModelId?: string
   }): Promise<OpenClawProviderUpdateResult> {
     const provider = this.resolveProviderForAgent(input)
     const configChanged = await this.mergeProviderConfigIfChanged(provider)
@@ -1313,14 +1356,154 @@ export class OpenClawService {
       const model = provider.model
       await this.applyCliMutation(() => this.cliClient.setDefaultModel(model))
     }
+    let imageModelUpdated = false
+    const imageModelRef = this.resolveImageModelRef(input)
+    if (typeof imageModelRef === 'string') {
+      await this.applyCliMutation(() =>
+        this.cliClient.setImageModel(imageModelRef),
+      )
+      imageModelUpdated = true
+    } else if (imageModelRef === null) {
+      await this.applyCliMutation(() =>
+        this.cliClient.unsetConfig('agents.defaults.imageModel'),
+      )
+      imageModelUpdated = true
+    }
     logger.info('Provider keys updated', {
       providerType: input.providerType,
       modelUpdated: !!provider.model,
+      imageModelUpdated,
       restarted,
     })
     return {
       restarted,
       modelUpdated: !!provider.model,
+      imageModelUpdated,
+    }
+  }
+
+  // ── Per-agent model overrides ───────────────────────────────────────
+
+  /**
+   * Set or clear per-agent text/image model overrides. `null` clears the
+   * override and falls back to `agents.defaults.<key>`. `undefined`
+   * leaves the existing config untouched. The provider prefix is built
+   * the same way it is for the global default.
+   */
+  async updateAgentModels(
+    agentId: string,
+    input: {
+      model?: string | null
+      imageModel?: string | null
+      providerType?: string
+    } = {},
+  ): Promise<{
+    modelUpdated: boolean
+    imageModelUpdated: boolean
+  }> {
+    let modelUpdated = false
+    let imageModelUpdated = false
+
+    if (input.model !== undefined) {
+      const ref =
+        input.model === null
+          ? null
+          : (this.buildAgentScopedModelRef(input.providerType, input.model) ??
+            input.model)
+      await this.applyCliMutation(() =>
+        this.cliClient.setAgentModel(agentId, ref),
+      )
+      modelUpdated = true
+    }
+
+    if (input.imageModel !== undefined) {
+      const ref =
+        input.imageModel === null
+          ? null
+          : (this.resolveImageModelRef({
+              providerType: input.providerType,
+              imageModelId: input.imageModel,
+            }) ?? input.imageModel)
+      await this.applyCliMutation(() =>
+        this.cliClient.setAgentImageModel(agentId, ref),
+      )
+      imageModelUpdated = true
+    }
+
+    logger.info('Per-agent models updated', {
+      agentId,
+      modelUpdated,
+      imageModelUpdated,
+    })
+    return { modelUpdated, imageModelUpdated }
+  }
+
+  /**
+   * Build the provider-prefixed text model ref for a per-agent override.
+   * Mirrors the chat-model branch of `resolveProviderForAgent` but
+   * accepts a bare model id from the API caller.
+   */
+  private buildAgentScopedModelRef(
+    providerType: string | undefined,
+    modelId: string,
+  ): string | undefined {
+    const trimmed = modelId.trim()
+    if (!trimmed) return undefined
+    const cliProvider = providerType
+      ? getOpenClawCliProvider(providerType)
+      : undefined
+    if (cliProvider) {
+      return (
+        buildOpenClawCliProviderModelRef(cliProvider.id, trimmed) ?? trimmed
+      )
+    }
+    if (providerType && isSupportedOpenClawProvider(providerType)) {
+      return `${providerType}/${trimmed}`
+    }
+    return trimmed
+  }
+
+  /**
+   * Resolve a single agent's effective text + image model and where each
+   * value comes from (agent-level override vs global default). Used by
+   * the UI to render the (default)/(override) tags.
+   */
+  async resolveAgentModelDetails(agentId: string): Promise<{
+    model: ResolvedAgentConfigValue
+    imageModel: ResolvedAgentConfigValue
+  }> {
+    const [agentModel, defaultModel, agentImage, defaultImage] =
+      await Promise.all([
+        this.readConfigString(`agents.${agentId}.model`),
+        this.readConfigString('agents.defaults.model'),
+        this.readConfigString(`agents.${agentId}.imageModel`),
+        this.readConfigString('agents.defaults.imageModel'),
+      ])
+    return {
+      model: agentModel
+        ? { value: agentModel, source: 'agent' }
+        : { value: defaultModel, source: 'default' },
+      imageModel: agentImage
+        ? { value: agentImage, source: 'agent' }
+        : { value: defaultImage, source: 'default' },
+    }
+  }
+
+  private async readConfigString(path: string): Promise<string | null> {
+    try {
+      const raw = await this.runControlPlaneCall(() =>
+        this.cliClient.getConfig(path),
+      )
+      if (typeof raw === 'string' && raw.trim()) return raw.trim()
+      // OpenClaw `agents.defaults.imageModel` may be an
+      // `{ primary, fallbacks }` object (matches AgentModelSchema).
+      if (raw && typeof raw === 'object' && 'primary' in raw) {
+        const primary = (raw as { primary?: unknown }).primary
+        if (typeof primary === 'string' && primary.trim()) return primary.trim()
+      }
+      return null
+    } catch {
+      return null
     }
   }
 
@@ -1407,6 +1590,36 @@ export class OpenClawService {
       }
     }
     return resolveSupportedOpenClawProvider(input)
+  }
+
+  /**
+   * Build the fully-qualified vision model ref OpenClaw expects (e.g.
+   * `moonshot/moonshot-v1-32k-vision-preview`). Mirrors how the chat
+   * model ref is constructed in `resolveProviderForAgent` — same provider
+   * prefix path, but for the vision model id.
+   *
+   * Returns `null` (a clear-override signal) when `imageModelId` is
+   * explicitly an empty string. Returns `undefined` when nothing was
+   * supplied so callers can leave the existing config untouched.
+   */
+  private resolveImageModelRef(input: SetupInput): string | null | undefined {
+    if (input.imageModelId === undefined) return undefined
+    const trimmed = input.imageModelId.trim()
+    if (!trimmed) return null
+    const cliProvider = input.providerType
+      ? getOpenClawCliProvider(input.providerType)
+      : undefined
+    if (cliProvider) {
+      return (
+        buildOpenClawCliProviderModelRef(cliProvider.id, trimmed) ?? trimmed
+      )
+    }
+    if (input.providerType && isSupportedOpenClawProvider(input.providerType)) {
+      return buildVisionModelRef(input.providerType, trimmed) ?? trimmed
+    }
+    // Custom provider — caller already prefixes the model with their own
+    // provider id, or supplies a bare id we forward verbatim.
+    return trimmed
   }
 
   private async ensureAllCliProvidersInstalled(
