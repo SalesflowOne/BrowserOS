@@ -1419,9 +1419,62 @@ export class OpenClawService {
   /**
    * Read the registry. Each entry comes from a `(providerType, modelId)`
    * pair the user added through `/claw/setup` or `/claw/models`.
+   *
+   * Lazy backfill: users who finished setup before the registry
+   * existed have an empty file but a fully-configured
+   * `agents.defaults.model`. Synthesise an entry from that ref so the
+   * Models dialog renders something on first open instead of forcing
+   * them to re-register a model they already have.
    */
   async listRegisteredModels(): Promise<RegisteredModelEntry[]> {
-    return this.registeredModelsStore.list()
+    const existing = await this.registeredModelsStore.list()
+    if (existing.length > 0) return existing
+    const backfilled = await this.backfillRegisteredModelsFromConfig()
+    return backfilled
+  }
+
+  /**
+   * Inspect `agents.defaults.model` (and `imageModel`) and create
+   * registry entries for whichever refs are present. Best-effort —
+   * silently returns an empty list if the gateway isn't reachable or
+   * the config hasn't been written yet.
+   */
+  private async backfillRegisteredModelsFromConfig(): Promise<
+    RegisteredModelEntry[]
+  > {
+    const [textRef, imageRef] = await Promise.all([
+      this.readConfigString('agents.defaults.model'),
+      this.readConfigString('agents.defaults.imageModel'),
+    ])
+    if (!textRef && !imageRef) return []
+
+    const refs: Array<{ ref: string; isImage: boolean }> = []
+    if (textRef) refs.push({ ref: textRef, isImage: false })
+    if (imageRef && imageRef !== textRef) {
+      refs.push({ ref: imageRef, isImage: true })
+    }
+
+    const entries: RegisteredModelEntry[] = []
+    for (const { ref, isImage } of refs) {
+      const parsed = parseModelRef(ref)
+      if (!parsed) continue
+      // If the same model serves as both text + image default, mark it
+      // as vision-capable. Otherwise default to the role we found it in
+      // — text-default ⟶ false, image-default ⟶ true.
+      const supportsImages = imageRef === ref ? true : isImage
+      const entry = await this.registeredModelsStore.upsert({
+        providerType: parsed.providerType,
+        modelId: parsed.modelId,
+        supportsImages,
+      })
+      entries.push(entry)
+      logger.info('Backfilled registered model from existing config', {
+        id: entry.id,
+        ref,
+        supportsImages,
+      })
+    }
+    return entries
   }
 
   /**
@@ -2517,4 +2570,21 @@ function sameVmCacheRuntimeConfig(
     left?.ensureAvailable === right?.ensureAvailable &&
     left?.ensureSynced === right?.ensureSynced
   )
+}
+
+/**
+ * Parse a fully-qualified model ref (`provider/model-id`) into its
+ * components. Returns null when the ref has no slash — those are
+ * legacy bare ids we can't safely round-trip through the registry.
+ */
+function parseModelRef(
+  ref: string,
+): { providerType: string; modelId: string } | null {
+  const trimmed = ref.trim()
+  const slash = trimmed.indexOf('/')
+  if (slash === -1) return null
+  const providerType = trimmed.slice(0, slash)
+  const modelId = trimmed.slice(slash + 1)
+  if (!providerType || !modelId) return null
+  return { providerType, modelId }
 }
