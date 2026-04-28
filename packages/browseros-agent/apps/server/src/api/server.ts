@@ -116,7 +116,7 @@ export async function createHttpServer(config: HttpServerConfig) {
       createTerminalRoutes({
         containerName: OPENCLAW_GATEWAY_CONTAINER_NAME,
         limaHome: getLimaHomeDir(),
-        limactlPath: resolveBundledLimactl(resourcesDir),
+        limactlPath: () => resolveBundledLimactl(resourcesDir),
         vmName: VM_NAME,
       }),
     )

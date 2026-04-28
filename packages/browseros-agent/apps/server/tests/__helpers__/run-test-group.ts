@@ -48,15 +48,15 @@ function listRootTestTargets(): string[] {
     .sort((left, right) => left.localeCompare(right))
 }
 
-function listAllGroups(): string[] {
-  const groups = [...listDirectoryGroups()]
+export function listAllGroups(): string[] {
+  const groups = new Set(listDirectoryGroups())
   if (existsSync(resolve(testsRoot, 'server.integration.test.ts'))) {
-    groups.push('integration')
+    groups.add('integration')
   }
   if (listRootTestTargets().length > 0) {
-    groups.push('root')
+    groups.add('root')
   }
-  return groups
+  return [...groups]
 }
 
 function listAvailableGroupNames(): string[] {
@@ -75,14 +75,19 @@ function getCompositeGroupMembers(group: string): string[] | null {
   return null
 }
 
-function getAtomicGroupTargets(group: string): string[] {
+export function getAtomicGroupTargets(group: string): string[] {
   if (group === 'cdp') {
     return getAtomicGroupTargets('browser')
   }
   if (group === 'integration') {
-    return existsSync(resolve(testsRoot, 'server.integration.test.ts'))
-      ? ['./tests/server.integration.test.ts']
-      : []
+    const targets: string[] = []
+    if (existsSync(resolve(testsRoot, 'integration'))) {
+      targets.push('./tests/integration')
+    }
+    if (existsSync(resolve(testsRoot, 'server.integration.test.ts'))) {
+      targets.push('./tests/server.integration.test.ts')
+    }
+    return targets
   }
   if (group === 'root') {
     return listRootTestTargets()

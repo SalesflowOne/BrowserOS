@@ -18,6 +18,7 @@
     "test:cdp": "bun run test:browser",
     "test:core": "bun run ./tests/__helpers__/run-test-group.ts core",
     "test:integration": "bun run ./tests/__helpers__/run-test-group.ts integration",
+    "test:lib": "bun run ./tests/__helpers__/run-test-group.ts lib",
     "test:root": "bun run ./tests/__helpers__/run-test-group.ts root",
     "test:sdk": "bun run ./tests/__helpers__/run-test-group.ts sdk",
     "test:skills": "bun run ./tests/__helpers__/run-test-group.ts skills",
