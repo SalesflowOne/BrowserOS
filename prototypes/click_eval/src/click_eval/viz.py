@@ -55,7 +55,7 @@ def annotate_image(
             error = str(judge.get("error") or "no point")
             legend_lines.append((f"{label} {model_name}: {_short_text(error)}", color))
 
-    for index, prediction in enumerate(predictions):
+    for index, prediction in enumerate(_sort_predictions_by_l2(predictions)):
         color = COLORS[index % len(COLORS)]
         model_name = str(prediction["model"])
         point = prediction.get("point")
@@ -70,6 +70,20 @@ def annotate_image(
     _draw_legend(draw, legend_lines, font)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     image.save(output_path)
+
+
+def _sort_predictions_by_l2(predictions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def sort_key(item: tuple[int, dict[str, Any]]) -> tuple[int, float, int]:
+        index, prediction = item
+        l2 = prediction.get("l2")
+        if l2 is None:
+            return (1, 0.0, index)
+        try:
+            return (0, float(l2), index)
+        except (TypeError, ValueError):
+            return (1, 0.0, index)
+
+    return [prediction for _, prediction in sorted(enumerate(predictions), key=sort_key)]
 
 
 def _draw_marker(draw, point: Point, color: tuple[int, int, int], label: str) -> None:
