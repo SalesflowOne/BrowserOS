@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -50,6 +51,9 @@ var startCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		if err := promptIfSourceProfileInUse(cmd.OutOrStdout(), bufio.NewReader(os.Stdin), cfg, startRefreshProfile); err != nil {
+			return err
+		}
 		paths, err := defaultRunPaths()
 		if err != nil {
 			return err
@@ -74,7 +78,11 @@ var startBackgroundCmd = &cobra.Command{
 	Short:   "Start BrowserOS dogfooding environment in the background",
 	GroupID: groupRun,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if _, err := loadConfig(); err != nil {
+		cfg, err := loadConfig()
+		if err != nil {
+			return err
+		}
+		if err := promptIfSourceProfileInUse(cmd.OutOrStdout(), bufio.NewReader(os.Stdin), cfg, startBackgroundRefreshProfile); err != nil {
 			return err
 		}
 		paths, err := defaultRunPaths()

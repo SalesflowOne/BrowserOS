@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
+	"os"
 
 	"browseros-dogfood/config"
 	"browseros-dogfood/profile"
@@ -20,6 +22,9 @@ var refreshProfileCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := loadConfig()
 		if err != nil {
+			return err
+		}
+		if err := promptIfSourceProfileInUse(cmd.OutOrStdout(), bufio.NewReader(os.Stdin), cfg, true); err != nil {
 			return err
 		}
 		if err := profile.Import(profile.ImportConfig{
