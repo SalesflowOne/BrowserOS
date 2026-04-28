@@ -89,10 +89,6 @@ export function useHarnessAgents(enabled = true) {
   }
 }
 
-export function useAgentProfiles(enabled = true) {
-  return useHarnessAgents(enabled)
-}
-
 export function useCreateHarnessAgent() {
   const { baseUrl, isLoading: urlLoading } = useAgentServerUrl()
   const queryClient = useQueryClient()
@@ -152,15 +148,6 @@ export async function chatWithHarnessAgent(
     body: JSON.stringify({ message }),
     signal,
   })
-}
-
-export async function chatWithAgentProfile(
-  agentId: string,
-  message: string,
-  _sessionKey?: string,
-  signal?: AbortSignal,
-): Promise<Response> {
-  return chatWithHarnessAgent(agentId, message, signal)
 }
 
 export async function fetchHarnessAgentHistory(
