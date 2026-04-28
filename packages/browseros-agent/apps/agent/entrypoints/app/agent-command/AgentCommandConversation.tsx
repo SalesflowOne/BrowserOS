@@ -12,6 +12,7 @@ import { ClawChat } from './ClawChat'
 import { ConversationInput } from './ConversationInput'
 import {
   buildChatHistoryFromClawMessages,
+  filterTurnsPersistedInHistory,
   flattenHistoryPages,
 } from './claw-chat-types'
 import { useAgentConversation } from './useAgentConversation'
@@ -255,6 +256,13 @@ function AgentConversationController({
       setStreamSessionKey(sessionKey)
     },
   })
+  const visibleTurns = useMemo(
+    () =>
+      isAgentHarnessAgent
+        ? filterTurnsPersistedInHistory(turns, historyMessages)
+        : turns,
+    [historyMessages, isAgentHarnessAgent, turns],
+  )
   const outboundQueue = useOutboundQueue({
     agentId,
     sessionKey: resolvedSessionKey,
@@ -354,7 +362,7 @@ function AgentConversationController({
       <ClawChat
         agentName={agentName}
         historyMessages={historyMessages}
-        turns={turns}
+        turns={visibleTurns}
         streaming={streaming}
         isInitialLoading={
           isAgentHarnessAgent ? harnessHistoryQuery.isLoading : isInitialLoading
