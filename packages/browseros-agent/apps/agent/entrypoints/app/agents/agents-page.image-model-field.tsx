@@ -1,5 +1,4 @@
 import { type FC, useMemo } from 'react'
-import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -11,7 +10,6 @@ import type { ProviderType } from '@/lib/llm-providers/types'
 import { getRecommendedVisionModels } from './vision-models'
 
 const NONE_VALUE = '__none__'
-const CUSTOM_VALUE = '__custom__'
 
 interface PickedModelHint {
   modelId: string
@@ -34,9 +32,12 @@ interface SetupImageModelFieldProps {
 
 /**
  * Image model picker for the OpenClaw setup dialog. Surfaces a curated
- * dropdown of vision-capable models for the chosen chat provider, plus
- * a "None" option (uploads ignored) and a "Custom..." escape hatch
- * when the user wants a model id that isn't on the recommended list.
+ * dropdown of vision-capable models for the chosen chat provider plus
+ * a "None" escape. No free-text option here — anything that isn't in
+ * `/settings/ai` won't have credentials plumbed through to the
+ * gateway, so accepting a custom string would just create a
+ * silent-failure path. To use a model that isn't in the dropdown,
+ * register it in `/settings/ai` first and re-open this dialog.
  */
 export const SetupImageModelField: FC<SetupImageModelFieldProps> = ({
   providerType,
@@ -63,8 +64,8 @@ export const SetupImageModelField: FC<SetupImageModelFieldProps> = ({
     return merged
   }, [providerType, pickedModel?.modelId, pickedModel?.supportsImages])
 
-  const isCustom = value !== '' && !options.includes(value)
-  const selectValue = !value ? NONE_VALUE : isCustom ? CUSTOM_VALUE : value
+  const selectValue = !value ? NONE_VALUE : value
+  const noVisionAvailable = options.length === 0
 
   return (
     <div className="space-y-2">
@@ -74,21 +75,17 @@ export const SetupImageModelField: FC<SetupImageModelFieldProps> = ({
       <Select
         value={selectValue}
         onValueChange={(next) => {
-          if (next === NONE_VALUE) {
-            onChange('')
-            return
-          }
-          if (next === CUSTOM_VALUE) {
-            // Keep whatever the user already typed; otherwise blank so
-            // the input below is empty and ready for typing.
-            onChange(isCustom ? value : '')
-            return
-          }
-          onChange(next)
+          onChange(next === NONE_VALUE ? '' : next)
         }}
       >
-        <SelectTrigger id="image-model-select">
-          <SelectValue placeholder="Select an image model" />
+        <SelectTrigger id="image-model-select" disabled={noVisionAvailable}>
+          <SelectValue
+            placeholder={
+              noVisionAvailable
+                ? 'No vision-capable models in /settings/ai'
+                : 'Select an image model'
+            }
+          />
         </SelectTrigger>
         <SelectContent>
           {options.map((model, index) => (
@@ -97,24 +94,25 @@ export const SetupImageModelField: FC<SetupImageModelFieldProps> = ({
               {index === 0 ? ' (recommended)' : ''}
             </SelectItem>
           ))}
-          <SelectItem value={CUSTOM_VALUE}>Custom...</SelectItem>
           <SelectItem value={NONE_VALUE}>
             None — disable image uploads
           </SelectItem>
         </SelectContent>
       </Select>
 
-      {selectValue === CUSTOM_VALUE && (
-        <Input
-          placeholder="provider/model-id (e.g. openai/gpt-4o)"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-        />
-      )}
-
       <p className="text-muted-foreground text-xs">
-        Required for chat image uploads. The selected model must support vision
-        input on the chosen provider.
+        {noVisionAvailable ? (
+          <>
+            This provider's model isn't marked vision-capable. To enable image
+            uploads, register a vision-capable model in{' '}
+            <a href="#/settings/ai" className="underline">
+              /settings/ai
+            </a>{' '}
+            first.
+          </>
+        ) : (
+          'Required for chat image uploads. The selected model must support vision input on the chosen provider.'
+        )}
       </p>
     </div>
   )
