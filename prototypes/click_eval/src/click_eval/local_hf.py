@@ -39,6 +39,7 @@ class LocalHFClient:
         self._log_callback = log_callback
         self._gpu_info: GpuInfo | None = None
         self._loaded: dict[str, tuple[Any, ...]] = {}
+        self._retain_loaded_depth = 0
 
     def predict_point(
         self,
@@ -109,7 +110,18 @@ class LocalHFClient:
 
             return self._predict_generic(model, image_path, instruction, purpose)
         finally:
-            self._clear_loaded_models()
+            if self._retain_loaded_depth == 0:
+                self._clear_loaded_models()
+
+    @contextmanager
+    def retain_loaded_models(self):
+        self._retain_loaded_depth += 1
+        try:
+            yield
+        finally:
+            self._retain_loaded_depth -= 1
+            if self._retain_loaded_depth == 0:
+                self._clear_loaded_models()
 
     def gpu_info(self) -> GpuInfo:
         if self._gpu_info is None:

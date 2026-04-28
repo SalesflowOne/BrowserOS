@@ -18,6 +18,7 @@ local = [
   "accelerate>=1.0.0",
   "decord2>=0.2.0",
   "einops>=0.8.0",
+  "hf_transfer>=0.1.9",
   "protobuf>=4.25.0",
   "qwen-vl-utils>=0.0.14",
   "requests>=2.32.0",

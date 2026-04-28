@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Callable
 
@@ -55,6 +56,11 @@ class ProviderClient:
             )
 
         raise RuntimeError(f"Unsupported model provider: {model.provider}")
+
+    def model_run_context(self, model: ModelSpec):
+        if model.provider.lower() == "local_hf":
+            return self._local_hf_client().retain_loaded_models()
+        return nullcontext()
 
     def _openrouter_client(self) -> OpenRouterClient:
         if self._openrouter is None:

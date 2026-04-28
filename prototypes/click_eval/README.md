@@ -185,10 +185,11 @@ Local model configs use `fp16` and CPU offload for the larger checkpoints
 instead of quantization. MolmoPoint is the
 exception: its official inference path uses BF16 autocast, and FP16 overflows in
 its pointing-token generation path. Timing for offloaded models will include
-CPU-GPU transfer overhead. The local runner unloads each HF model after its
-inference and clears the CUDA cache before the next local model. For
-gated/private downloads, set `HF_TOKEN`. For Azure/Foundry-hosted variants,
-expect an endpoint URL plus API key and a dedicated provider adapter.
+CPU-GPU transfer overhead. The local runner keeps one HF model loaded while it
+runs every task for that model, then unloads it and clears the CUDA cache before
+the next local model. For gated/private downloads, set `HF_TOKEN`. For
+Azure/Foundry-hosted variants, expect an endpoint URL plus API key and a
+dedicated provider adapter.
 
 Moondream candidates use a provider-qualified entry. OpenAI Computer Use judges
 or candidates use `provider: "openai_computer_use"` and require
@@ -262,13 +263,15 @@ the same JSON point prompt as the other OpenRouter VLMs. Native Gemini Computer
 Use support remains available for manually configured `provider: "gemini"`
 entries.
 
-During a run, the CLI shows progress bars for tasks and per-task candidate model
-calls. It also prints compact status lines for GT resolution, provider/model
-calls, prediction failures, and the output directory.
+During a run, the CLI first resolves task GT/judge overlays, then runs
+candidate predictions model-major: one model is evaluated across all tasks
+before moving to the next model. It also prints compact status lines for GT
+resolution, provider/model calls, prediction failures, and the output directory.
 
-OpenRouter candidate calls and OpenRouter GT judges are sent concurrently in
-bounded batches of 4. Local HF/GPU candidates stay synchronous and serial to
-avoid GPU memory contention; Moondream and Gemini provider calls remain
+OpenRouter GT judges are sent concurrently in bounded batches of 4. OpenRouter
+candidate calls are also concurrent across tasks for the current model in
+batches of 4. Local HF/GPU candidates stay synchronous and serial per model to
+avoid GPU memory contention; Moondream and native Gemini provider calls remain
 synchronous.
 
 Outputs:

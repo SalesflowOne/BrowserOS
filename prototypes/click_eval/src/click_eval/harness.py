@@ -7,13 +7,14 @@ import math
 import statistics
 import sys
 import time
+from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
 from tqdm import tqdm
 
-from .contracts import ModelReply, ModelSkipped, ModelSpec, Point
+from .contracts import ClickTask, ModelReply, ModelSkipped, ModelSpec, Point
 from .image_utils import image_size
 from .io import load_model_config, load_tasks, write_jsonl
 from .parsing import parse_point_response, parse_point_value
@@ -36,6 +37,15 @@ class RunOptions:
     progress: bool = True
 
 
+@dataclass
+class TaskRunState:
+    task: ClickTask
+    gt_point: Point | None
+    image_size: tuple[int, int]
+    judge_annotations: list[dict[str, object]]
+    annotations: list[dict[str, object]]
+
+
 def run_eval(options: RunOptions, predict_point: PredictPoint) -> dict[str, object]:
     judges, candidates, config = load_model_config(options.models_path)
     tasks = load_tasks(options.tasks_path)
@@ -55,9 +65,9 @@ def run_eval(options: RunOptions, predict_point: PredictPoint) -> dict[str, obje
     resolved_rows: list[dict[str, object]] = []
     prediction_rows: list[dict[str, object]] = []
     score_rows: list[dict[str, object]] = []
-    annotations: dict[str, list[dict[str, object]]] = {}
+    task_states: list[TaskRunState] = []
 
-    task_iter = _progress(options, tasks, desc="Tasks", unit="task")
+    task_iter = _progress(options, tasks, desc="GT", unit="task")
     for task in task_iter:
         if task.gt_point is not None and judges:
             _log(options, _judge_overlay_log_message(task.task_id, judges))
@@ -86,40 +96,50 @@ def run_eval(options: RunOptions, predict_point: PredictPoint) -> dict[str, obje
         resolved_rows.append(resolved)
         task_image_size = image_size(task.image_path)
         judge_annotations = _judge_annotations(resolved, gt_point)
-
-        for model, prediction in _predict_candidates_for_task(
-            options, task, candidates, predict_point
-        ):
-            prediction_rows.append(prediction)
-            parsed_point = prediction.get("_point")
-            point = parsed_point if isinstance(parsed_point, Point) else None
-            score = score_point(
-                task.task_id,
-                model.name,
-                gt_point,
-                point,
-                task_image_size,
-                error=str(prediction.get("error") or ""),
+        task_states.append(
+            TaskRunState(
+                task=task,
+                gt_point=gt_point,
+                image_size=task_image_size,
+                judge_annotations=judge_annotations,
+                annotations=[],
             )
-            score["duration_seconds"] = prediction.get("duration_seconds", "")
-            score["skipped"] = bool(prediction.get("skipped"))
-            score_rows.append(score)
-            if point is not None:
-                annotations.setdefault(task.task_id, []).append(
-                    {
-                        "model": model.name,
-                        "point": point,
-                        "l2": score["l2"] if score["l2"] != "" else None,
-                    }
-                )
+        )
 
+    for model, state, prediction in _predict_candidates_for_tasks(
+        options, task_states, candidates, predict_point
+    ):
+        prediction_rows.append(prediction)
+        parsed_point = prediction.get("_point")
+        point = parsed_point if isinstance(parsed_point, Point) else None
+        score = score_point(
+            state.task.task_id,
+            model.name,
+            state.gt_point,
+            point,
+            state.image_size,
+            error=str(prediction.get("error") or ""),
+        )
+        score["duration_seconds"] = prediction.get("duration_seconds", "")
+        score["skipped"] = bool(prediction.get("skipped"))
+        score_rows.append(score)
+        if point is not None:
+            state.annotations.append(
+                {
+                    "model": model.name,
+                    "point": point,
+                    "l2": score["l2"] if score["l2"] != "" else None,
+                }
+            )
+
+    for state in task_states:
         if options.annotate:
             annotate_image(
-                task.image_path,
-                options.out_dir / "annotated" / f"{task.task_id}.png",
-                gt_point,
-                annotations.get(task.task_id, []),
-                judge_points=judge_annotations,
+                state.task.image_path,
+                options.out_dir / "annotated" / f"{state.task.task_id}.png",
+                state.gt_point,
+                state.annotations,
+                judge_points=state.judge_annotations,
             )
 
     for row in prediction_rows:
@@ -147,6 +167,79 @@ def run_eval(options: RunOptions, predict_point: PredictPoint) -> dict[str, obje
     )
     _log(options, f"Wrote results to {options.out_dir}")
     return summary
+
+
+def _predict_candidates_for_tasks(
+    options: RunOptions,
+    task_states: list[TaskRunState],
+    candidates: list[ModelSpec],
+    predict_point: PredictPoint,
+) -> list[tuple[ModelSpec, TaskRunState, dict[str, object]]]:
+    predictions: list[tuple[ModelSpec, TaskRunState, dict[str, object]]] = []
+    progress_bar = _candidate_progress(
+        options, len(task_states) * len(candidates), "Candidates"
+    )
+    try:
+        for model in candidates:
+            with _model_run_context(predict_point, model):
+                if model.provider.lower() == "openrouter":
+                    for state, prediction in _predict_openrouter_model_for_tasks(
+                        options, model, task_states, predict_point
+                    ):
+                        predictions.append((model, state, prediction))
+                        _log_prediction_status(
+                            options, state.task.task_id, model, prediction
+                        )
+                        _update_progress(progress_bar)
+                    continue
+
+                for state in task_states:
+                    _log_running(options, state.task.task_id, model)
+                    prediction = _predict_candidate(
+                        state.task, model, predict_point
+                    )
+                    predictions.append((model, state, prediction))
+                    _log_prediction_status(
+                        options, state.task.task_id, model, prediction
+                    )
+                    _update_progress(progress_bar)
+    finally:
+        if progress_bar is not None:
+            progress_bar.close()
+
+    return predictions
+
+
+def _predict_openrouter_model_for_tasks(
+    options: RunOptions,
+    model: ModelSpec,
+    task_states: list[TaskRunState],
+    predict_point: PredictPoint,
+) -> list[tuple[TaskRunState, dict[str, object]]]:
+    if not task_states:
+        return []
+
+    for state in task_states:
+        _log_running(options, state.task.task_id, model)
+
+    max_workers = min(OPENROUTER_CANDIDATE_CONCURRENCY, len(task_states))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [
+            executor.submit(_predict_candidate, state.task, model, predict_point)
+            for state in task_states
+        ]
+        return [
+            (state, future.result())
+            for state, future in zip(task_states, futures, strict=True)
+        ]
+
+
+def _model_run_context(predict_point: PredictPoint, model: ModelSpec):
+    owner = getattr(predict_point, "__self__", None)
+    context_factory = getattr(owner, "model_run_context", None)
+    if context_factory is None:
+        return nullcontext()
+    return context_factory(model)
 
 
 def _predict_candidates_for_task(
@@ -621,9 +714,10 @@ def _progress(options: RunOptions, items, **kwargs):
 def _candidate_progress(options: RunOptions, total: int, task_id: str):
     if not _show_progress(options):
         return None
+    desc = task_id if task_id == "Candidates" else f"{task_id} candidates"
     return tqdm(
         total=total,
-        desc=f"{task_id} candidates",
+        desc=desc,
         unit="call",
         leave=False,
         dynamic_ncols=True,

@@ -33,3 +33,4 @@ packages/browseros/build/tools/
 # AI SDK DevTools traces
 .devtools/
 .omc/
+packages/browseros-agent/tools/dogfood/browseros-dogfood
