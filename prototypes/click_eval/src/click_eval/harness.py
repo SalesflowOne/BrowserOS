@@ -15,10 +15,9 @@ from typing import Callable
 from tqdm import tqdm
 
 from .contracts import ClickTask, ModelReply, ModelSkipped, ModelSpec, Point
-from .image_utils import image_size
 from .io import load_model_config, load_tasks, write_jsonl
 from .parsing import parse_point_response, parse_point_value
-from .scoring import score_point, summarize_scores
+from .scoring import SCORE_FIELDNAMES, score_point, summarize_scores
 from .viz import annotate_image
 
 PredictPoint = Callable[[ModelSpec, Path, str, str], ModelReply]
@@ -41,7 +40,6 @@ class RunOptions:
 class TaskRunState:
     task: ClickTask
     gt_point: Point | None
-    image_size: tuple[int, int]
     judge_annotations: list[dict[str, object]]
     annotations: list[dict[str, object]]
 
@@ -94,13 +92,11 @@ def run_eval(options: RunOptions, predict_point: PredictPoint) -> dict[str, obje
             _log(options, f"[{task.task_id}] GT: ({gt_point.x:.1f}, {gt_point.y:.1f})")
         _log_judge_statuses(options, task.task_id, resolved)
         resolved_rows.append(resolved)
-        task_image_size = image_size(task.image_path)
         judge_annotations = _judge_annotations(resolved, gt_point)
         task_states.append(
             TaskRunState(
                 task=task,
                 gt_point=gt_point,
-                image_size=task_image_size,
                 judge_annotations=judge_annotations,
                 annotations=[],
             )
@@ -117,7 +113,6 @@ def run_eval(options: RunOptions, predict_point: PredictPoint) -> dict[str, obje
             model.name,
             state.gt_point,
             point,
-            state.image_size,
             error=str(prediction.get("error") or ""),
         )
         score["duration_seconds"] = prediction.get("duration_seconds", "")
@@ -148,7 +143,6 @@ def run_eval(options: RunOptions, predict_point: PredictPoint) -> dict[str, obje
     summary = {
         "tasks": len(tasks),
         "models": [model.name for model in candidates],
-        "judge_model": judges[0].model_id if len(judges) == 1 else None,
         "judge_models": [judge.model_id for judge in judges],
         "config": {
             key: value
@@ -242,73 +236,6 @@ def _model_run_context(predict_point: PredictPoint, model: ModelSpec):
     return context_factory(model)
 
 
-def _predict_candidates_for_task(
-    options: RunOptions,
-    task,
-    candidates: list[ModelSpec],
-    predict_point: PredictPoint,
-) -> list[tuple[ModelSpec, dict[str, object]]]:
-    predictions: list[dict[str, object] | None] = [None] * len(candidates)
-    progress_bar = _candidate_progress(options, len(candidates), task.task_id)
-    try:
-        start = 0
-        while start < len(candidates):
-            model = candidates[start]
-            if model.provider.lower() == "openrouter":
-                end = start + 1
-                while (
-                    end < len(candidates)
-                    and candidates[end].provider.lower() == "openrouter"
-                ):
-                    end += 1
-                group_predictions = _predict_openrouter_candidates(
-                    options, task, candidates[start:end], predict_point
-                )
-                for offset, prediction in enumerate(group_predictions):
-                    index = start + offset
-                    predictions[index] = prediction
-                    _log_prediction_status(
-                        options, task.task_id, candidates[index], prediction
-                    )
-                    _update_progress(progress_bar)
-                start = end
-                continue
-
-            _log_running(options, task.task_id, model)
-            prediction = _predict_candidate(task, model, predict_point)
-            predictions[start] = prediction
-            _log_prediction_status(options, task.task_id, model, prediction)
-            _update_progress(progress_bar)
-            start += 1
-    finally:
-        if progress_bar is not None:
-            progress_bar.close()
-
-    return [
-        (model, prediction)
-        for model, prediction in zip(candidates, predictions, strict=True)
-        if prediction is not None
-    ]
-
-
-def _predict_openrouter_candidates(
-    options: RunOptions,
-    task,
-    models: list[ModelSpec],
-    predict_point: PredictPoint,
-) -> list[dict[str, object]]:
-    for model in models:
-        _log_running(options, task.task_id, model)
-
-    max_workers = min(OPENROUTER_CANDIDATE_CONCURRENCY, len(models))
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [
-            executor.submit(_predict_candidate, task, model, predict_point)
-            for model in models
-        ]
-        return [future.result() for future in futures]
-
-
 def _resolve_ground_truth(
     task, judges: list[ModelSpec], predict_point: PredictPoint
 ) -> tuple[Point | None, dict[str, object]]:
@@ -395,24 +322,6 @@ def _predict_judge(
 
     row["point"] = parsed.point.as_list()
     return row, parsed.point, parsed.reason, reply.text
-
-
-def _median_point(points: list[Point]) -> Point:
-    return Point(
-        x=float(statistics.median(point.x for point in points)),
-        y=float(statistics.median(point.y for point in points)),
-    )
-
-
-def _judge_log_message(task_id: str, judges: list[ModelSpec]) -> str:
-    if len(judges) == 1:
-        judge = judges[0]
-        return (
-            f"[{task_id}] Resolving GT with {judge.name} "
-            f"({judge.provider}/{judge.model_id})"
-        )
-    names = ", ".join(judge.name for judge in judges)
-    return f"[{task_id}] Resolving GT with {len(judges)} judges: {names}"
 
 
 def _judge_overlay_log_message(task_id: str, judges: list[ModelSpec]) -> str:
@@ -616,26 +525,8 @@ def _log_prediction_status(
 
 def _write_scores_csv(path: Path, rows: list[dict[str, object]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = [
-        "task_id",
-        "model",
-        "gt_x",
-        "gt_y",
-        "pred_x",
-        "pred_y",
-        "dx",
-        "dy",
-        "l2",
-        "normalized_l2",
-        "within_10px",
-        "within_25px",
-        "within_50px",
-        "duration_seconds",
-        "skipped",
-        "error",
-    ]
     with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer = csv.DictWriter(handle, fieldnames=SCORE_FIELDNAMES)
         writer.writeheader()
         writer.writerows(rows)
 

@@ -419,46 +419,6 @@ def _structured_value_candidates(text: str) -> list[str]:
     return candidates
 
 
-def _first_json_object(text: str) -> str | None:
-    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.DOTALL)
-    if fenced:
-        return fenced.group(1)
-    return _first_balanced(text, "{", "}")
-
-
-def _first_sequence(text: str) -> str | None:
-    starts = [(text.find("["), "[", "]"), (text.find("("), "(", ")")]
-    starts = [item for item in starts if item[0] != -1]
-    if not starts:
-        return None
-    _, opener, closer = min(starts, key=lambda item: item[0])
-    return _first_balanced(text, opener, closer)
-
-
-def _first_tagged_point(text: str) -> str | None:
-    special = re.search(
-        r"<\|(?:point|box)_start\|>\s*(.*?)\s*<\|(?:point|box)_end\|>",
-        text,
-        flags=re.DOTALL | re.IGNORECASE,
-    )
-    if special:
-        return special.group(1)
-
-    match = re.search(
-        r"<(?:point|box)[^>]*>\s*(.*?)\s*</(?:point|box)>",
-        text,
-        flags=re.DOTALL | re.IGNORECASE,
-    )
-    return match.group(1) if match else None
-
-
-def _first_balanced(text: str, opener: str, closer: str) -> str | None:
-    start = text.find(opener)
-    if start == -1:
-        return None
-    return _balanced_from(text, start, opener, closer)
-
-
 def _balanced_values(text: str, opener: str, closer: str) -> list[str]:
     values: list[str] = []
     index = 0

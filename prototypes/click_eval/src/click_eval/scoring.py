@@ -7,7 +7,20 @@ from typing import Any
 
 from .contracts import Point
 
-THRESHOLDS = (10, 25, 50)
+SCORE_FIELDNAMES = [
+    "task_id",
+    "model",
+    "gt_x",
+    "gt_y",
+    "pred_x",
+    "pred_y",
+    "dx",
+    "dy",
+    "l2",
+    "duration_seconds",
+    "skipped",
+    "error",
+]
 
 
 def score_point(
@@ -15,7 +28,6 @@ def score_point(
     model_name: str,
     gt: Point | None,
     pred: Point | None,
-    image_size: tuple[int, int],
     error: str | None = None,
 ) -> dict[str, Any]:
     row: dict[str, Any] = {
@@ -28,11 +40,8 @@ def score_point(
         "dx": "",
         "dy": "",
         "l2": "",
-        "normalized_l2": "",
         "error": error or "",
     }
-    for threshold in THRESHOLDS:
-        row[f"within_{threshold}px"] = ""
 
     if pred is None:
         return row
@@ -44,19 +53,14 @@ def score_point(
     dx = pred.x - gt.x
     dy = pred.y - gt.y
     l2 = math.hypot(dx, dy)
-    diagonal = math.hypot(image_size[0], image_size[1])
-    normalized = l2 / diagonal if diagonal else 0.0
 
     row.update(
         {
             "dx": dx,
             "dy": dy,
             "l2": l2,
-            "normalized_l2": normalized,
         }
     )
-    for threshold in THRESHOLDS:
-        row[f"within_{threshold}px"] = l2 <= threshold
 
     return row
 
@@ -92,12 +96,6 @@ def summarize_scores(score_rows: list[dict[str, Any]]) -> dict[str, Any]:
             if durations
             else None,
         }
-        for threshold in THRESHOLDS:
-            key = f"within_{threshold}px"
-            hits = sum(1 for row in rows if row.get(key) is True)
-            model_summary[f"hit_rate_{threshold}px"] = (
-                hits / len(distances) if distances else None
-            )
         summary[model_name] = model_summary
 
     return summary
