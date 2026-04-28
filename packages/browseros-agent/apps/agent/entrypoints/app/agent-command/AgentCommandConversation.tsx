@@ -217,7 +217,7 @@ function AgentConversationController({
   const resolvedSessionKey =
     streamSessionKey ?? historyQuery.data?.pages?.[0]?.sessionKey ?? null
 
-  const { turns, streaming } = useAgentConversation(agentId, {
+  const { turns, streaming, send } = useAgentConversation(agentId, {
     sessionKey: resolvedSessionKey,
     history: chatHistory,
     onSessionKeyChange: (sessionKey) => {
@@ -229,6 +229,35 @@ function AgentConversationController({
     sessionKey: resolvedSessionKey,
   })
   onInitialMessageConsumedRef.current = onInitialMessageConsumed
+
+  // Decide whether the next send streams live via /chat or piles into
+  // the server-side queue. The queue trades streaming for tab-close
+  // safety, but burning that for every message destroys the LLM
+  // streaming experience. Use the queue only when there's actually
+  // something in flight to serialize behind.
+  const queueLength = outboundQueue.queue.length
+  const isAnythingInFlight = streaming || queueLength > 0
+  const routeSend = (input: {
+    text: string
+    attachments: import('@/lib/attachments').StagedAttachment[]
+  }) => {
+    const payload = {
+      text: input.text,
+      attachments: input.attachments.map((a) => a.payload),
+      attachmentPreviews: input.attachments.map((a) => ({
+        id: a.id,
+        kind: a.kind,
+        mediaType: a.mediaType,
+        name: a.name,
+        dataUrl: a.dataUrl,
+      })),
+    }
+    if (isAnythingInFlight) {
+      outboundQueue.enqueue({ ...payload, history: chatHistory })
+      return
+    }
+    void send(payload)
+  }
 
   // Refetch history whenever a server-dispatched queue item completes.
   // The server worker streams the queued turn into OpenClaw directly, so
@@ -267,8 +296,8 @@ function AgentConversationController({
     : null
   const error = historyQuery.error ?? null
 
-  const enqueueRef = useRef(outboundQueue.enqueue)
-  enqueueRef.current = outboundQueue.enqueue
+  const routeSendRef = useRef(routeSend)
+  routeSendRef.current = routeSend
 
   useEffect(() => {
     const query = initialMessage?.trim()
@@ -277,11 +306,9 @@ function AgentConversationController({
       return
     }
 
-    // The initial-message handoff (home composer → conversation page via
-    // ?q=) goes through the outbound queue too, so it inherits the same
-    // single-flight serialization. We no longer need to gate on
-    // `streaming` — the queue worker drains as soon as the agent is
-    // free.
+    // Initial-message handoff (home composer → conversation page via
+    // ?q=) goes through the same router as a manual send: streams
+    // live when the agent is idle, falls into the queue otherwise.
     if (
       !query ||
       initialMessageSentRef.current === initialMessageKey ||
@@ -293,7 +320,7 @@ function AgentConversationController({
 
     initialMessageSentRef.current = initialMessageKey
     onInitialMessageConsumedRef.current()
-    enqueueRef.current({ text: query })
+    routeSendRef.current({ text: query, attachments: [] })
   }, [disabled, historyReady, initialMessage, initialMessageKey])
 
   const handleSelectAgent = (entry: AgentEntry) => {
@@ -327,18 +354,7 @@ function AgentConversationController({
             selectedAgentId={agentId}
             onSelectAgent={handleSelectAgent}
             onSend={(input) => {
-              outboundQueue.enqueue({
-                text: input.text,
-                attachments: input.attachments.map((a) => a.payload),
-                attachmentPreviews: input.attachments.map((a) => ({
-                  id: a.id,
-                  kind: a.kind,
-                  mediaType: a.mediaType,
-                  name: a.name,
-                  dataUrl: a.dataUrl,
-                })),
-                history: chatHistory,
-              })
+              routeSend(input)
             }}
             onCreateAgent={() => navigate(createAgentPath)}
             streaming={streaming}
