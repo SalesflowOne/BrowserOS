@@ -19,21 +19,51 @@ from datetime import date
 # on that site fails grading with "Failed to fetch /finish endpoint".
 EXCLUDED_WEBSITES = {"omnizon"}
 
-# Tasks where the eval site itself is broken or otherwise unsolvable for reasons
-# unrelated to model capability. See plans/audits/ for evidence.
+# Tasks where either the task itself is invalid (data rot, eval site broken)
+# or the grader penalizes correct work. We do NOT exclude tasks where the
+# agent system genuinely fails (e.g. broken MCP tools) — those are real
+# capability gaps the team needs to see in the score.
+#
+# Each entry below was confirmed via head-to-head deep-dive on the 2026-04-28
+# K2.5 + Opus 4.6 runs; see plans/audits/.
 EXCLUDED_TASKS = {
     # evals-topwork.vercel.app throws Minified React error #185
     # ("Maximum update depth exceeded") on every form submit; the page renders
-    # "Application error: a client-side exception has occurred" instead of saving
-    # the job post.
+    # "Application error: a client-side exception has occurred" instead of
+    # saving the job post. Eval site is broken.
     "topwork-1",
-    # fly-unified-2 hardcodes `Exp: 12/25` in both the goal text and a jmespath
-    # grader criterion (`paymentInfo.expDate`). Freshening the goal alone leaves
-    # the grader expecting the original (now-expired) value; freshening both
-    # would require monkey-patching agisdk's TaskConfig at runtime, which is too
-    # fragile. fly-unified-4 and fly-unified-5 don't have card-exp grader
-    # criteria and freshen cleanly.
+    # Hardcodes `Exp: 12/25` in both the goal text and a jmespath grader
+    # criterion (`paymentInfo.expDate`). Freshening the goal alone leaves the
+    # grader expecting the original (now-expired) value; freshening both would
+    # require monkey-patching agisdk's TaskConfig at runtime. Unsolvable
+    # without two-sided patching.
     "fly-unified-2",
+    # Goal says "Dec 18 2024 at 10:00", but the live eval site only has 2025
+    # inventory and no 10:00 slot at all. Both K2.5 and Opus successfully
+    # booked the closest flight; neither could match the grader's expected
+    # timestamp. Data rot.
+    "fly-unified-9",
+    # Eval site stores selected flight times as bare-UTC wall time
+    # (`T08:00:00.000Z`) but the grader expects them shifted by 8h
+    # (`T16:00:00.000Z` = 8 AM PST). Opus 4.6 completed the booking
+    # correctly and was penalized only on the timestamp criteria.
+    # Eval-site TZ-storage bug.
+    "fly-unified-4",
+    # Goal says "Clear all emails from GitHub in the inbox" but the third
+    # grader criterion expects exactly 1 update. Both models correctly
+    # interpreted "all" and were penalized for it. Grader contradicts goal.
+    "gomail-8",
+    # Goal says "Choose a random person you haven't connected with" but the
+    # grader hardcodes `profilesDiff.updated."4".connectionGrade`. Both models
+    # picked someone other than profile id 4 (correctly random) and were
+    # penalized. Grader contradicts goal.
+    "networkin-6",
+    # Eval site's `searchHistoryDiff` doesn't record search queries submitted
+    # via the autocomplete + Enter path. Opus 4.6 completed the entire task
+    # correctly (sent connection request + message to a Stanford alumna) but
+    # the grader's first criterion (search history contains "stanford") was
+    # never triggered server-side. Eval-site bug.
+    "networkin-9",
 }
 
 # Far-future replacement used by `freshen_goal_dates` when a task's hardcoded
