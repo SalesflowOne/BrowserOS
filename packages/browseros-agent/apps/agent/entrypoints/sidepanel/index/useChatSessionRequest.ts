@@ -34,15 +34,10 @@ export function buildSidepanelPreparedSendMessagesRequest({
   ...common
 }: BuildSidepanelPreparedSendMessagesRequestInput) {
   if (target?.kind === 'acp') {
-    // ACP session history is owned by AcpxRuntime through sessionKey, so LLM-only
-    // resume and approval fields are intentionally not forwarded.
     return {
-      api: `${agentServerUrl}/agents/sidepanel/chat`,
+      api: `${agentServerUrl}/agents/${encodeURIComponent(target.agentId)}/sidepanel/chat`,
       body: {
         conversationId: common.conversationId,
-        adapter: target.adapter,
-        modelId: target.modelId,
-        reasoningEffort: target.reasoningEffort,
         message: message ?? '',
         browserContext: common.browserContext,
         userSystemPrompt: common.userSystemPrompt,
