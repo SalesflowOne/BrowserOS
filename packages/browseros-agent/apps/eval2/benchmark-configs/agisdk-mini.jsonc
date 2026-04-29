@@ -1,5 +1,5 @@
 {
-  // Two-task subset for quick end-to-end Laminar smoke tests.
+  // Two-task subset for quick end-to-end Langfuse smoke tests.
   "name": "agisdk-mini",
 
   // Path to the JSONL dataset, relative to this config file.
@@ -27,9 +27,15 @@
   // Maximum wall-clock time per task, in milliseconds.
   "timeoutMs": 600000,
 
-  // Laminar API key comes from process.env.LMNR_PROJECT_API_KEY.
-  "laminar": {
+  // Langfuse credentials come from env: LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY,
+  // and optional LANGFUSE_BASE_URL (defaults to https://cloud.langfuse.com).
+  // screenshotMode: "all" | "mutating-only" | "never".
+  //   all            - every tool call gets a PNG span attached
+  //   mutating-only  - only click/fill/navigate/scroll/press_key/select_option/drag/type_at
+  //   never          - disable screenshots; LLM-call traces only
+  "langfuse": {
     "enabled": true,
-    "sessionPrefix": "agisdk"
+    "sessionPrefix": "agisdk",
+    "screenshotMode": "all"
   }
 }

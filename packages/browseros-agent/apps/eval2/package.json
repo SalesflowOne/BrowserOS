@@ -10,8 +10,11 @@
   "dependencies": {
     "@browseros/server": "workspace:*",
     "@browseros/shared": "workspace:*",
-    "@lmnr-ai/lmnr": "^0.7.0",
+    "@langfuse/core": "^4.0.0",
+    "@langfuse/otel": "^4.0.0",
+    "@langfuse/tracing": "^4.0.0",
     "@modelcontextprotocol/sdk": "^1.27.1",
+    "@opentelemetry/sdk-node": "^0.205.0",
     "ai": "^6.0.94",
     "zod": "^3.22.4"
   },

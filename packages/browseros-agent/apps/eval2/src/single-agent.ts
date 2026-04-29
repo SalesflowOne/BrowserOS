@@ -10,9 +10,22 @@ import { registry } from '@browseros/server/tools/registry'
 import type { BrowserContext } from '@browseros/shared/schemas/browser-context'
 import { LLM_PROVIDERS } from '@browseros/shared/schemas/llm'
 import type { BenchmarkConfig } from './benchmark-config'
-import { getAiSdkTelemetry } from './tracing'
+import { getAiSdkTelemetry, logScreenshot } from './tracing'
 import type { AgentResult, Message, Task } from './types'
 import { callMcpTool } from './utils/mcp-client'
+
+const MUTATING_TOOLS = new Set([
+  'click',
+  'click_at',
+  'fill',
+  'navigate_page',
+  'scroll',
+  'press_key',
+  'select_option',
+  'drag',
+  'drag_at',
+  'type_at',
+])
 
 export interface SingleAgentDeps {
   config: BenchmarkConfig
@@ -130,16 +143,55 @@ export class SingleAgent {
     let toolCallCount = 0
     let terminationReason: AgentResult['terminationReason'] = 'done'
     let finalAnswer: string | null = null
+    let lastToolName: string | null = null
     const controller = new AbortController()
     const timeoutHandle = setTimeout(() => {
       controller.abort()
     }, this.config.timeoutMs)
+    const screenshotMode = this.config.langfuse.screenshotMode
 
     try {
       const prompt = formatUserMessage(task.query, browserContext)
       const result = await agent.toolLoopAgent.generate({
         prompt,
         abortSignal: controller.signal,
+        experimental_onToolCallStart: ({ toolCall }) => {
+          // remember tool name for the matching onToolCallFinish + track active page
+          lastToolName = toolCall.toolName
+          const input = toolCall.input as Record<string, unknown> | undefined
+          if (input && typeof input.page === 'number') {
+            this.activePageId = input.page
+          }
+        },
+        experimental_onToolCallFinish: async () => {
+          // capture screenshot after each tool runs - non-fatal on failure
+          if (screenshotMode === 'never' || !this.browser || !lastToolName) {
+            return
+          }
+          if (
+            screenshotMode === 'mutating-only' &&
+            !MUTATING_TOOLS.has(lastToolName)
+          ) {
+            return
+          }
+          try {
+            const shot = await this.browser.screenshot(this.activePageId, {
+              format: 'png',
+              fullPage: false,
+            })
+            const pages = await this.browser.listPages()
+            const pageUrl = pages.find(
+              (page) => page.pageId === this.activePageId,
+            )?.url
+            await logScreenshot(
+              lastToolName,
+              Buffer.from(shot.data, 'base64'),
+              pageUrl,
+            )
+          } catch {
+            // screenshot failures never fail a task
+          }
+        },
         onStepFinish: ({ toolCalls, toolResults, text }) => {
           toolCallCount += toolCalls.length
           for (const toolCall of toolCalls) {

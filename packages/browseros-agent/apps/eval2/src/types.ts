@@ -94,7 +94,7 @@ export interface RunSummaryTask {
   status: 'PASS' | 'FAIL'
   durationMs: number
   graderReward: number
-  laminarSessionId: string | null
+  langfuseSessionId: string | null
 }
 
 export interface RunSummary {

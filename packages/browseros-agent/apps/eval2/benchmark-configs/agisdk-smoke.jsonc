@@ -30,9 +30,12 @@
   // Cap the number of tasks run from the dataset. Remove for the full set.
   "maxTasks": 10,
 
-  // Laminar API key comes from process.env.LMNR_PROJECT_API_KEY.
-  "laminar": {
+  // Langfuse credentials come from env: LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY,
+  // and optional LANGFUSE_BASE_URL (defaults to https://cloud.langfuse.com).
+  // screenshotMode: "all" | "mutating-only" | "never".
+  "langfuse": {
     "enabled": true,
-    "sessionPrefix": "agisdk"
+    "sessionPrefix": "agisdk",
+    "screenshotMode": "all"
   }
 }

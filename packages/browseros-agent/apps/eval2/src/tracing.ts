@@ -1,37 +1,51 @@
-import { getTracer, Laminar, observe } from '@lmnr-ai/lmnr'
+import { LangfuseMedia } from '@langfuse/core'
+import { LangfuseSpanProcessor } from '@langfuse/otel'
+import { startActiveObservation } from '@langfuse/tracing'
+import { NodeSDK } from '@opentelemetry/sdk-node'
 import type { TelemetrySettings } from 'ai'
 import type { BenchmarkConfig } from './benchmark-config'
 import type { Task } from './types'
 
+let sdk: NodeSDK | null = null
+let processor: LangfuseSpanProcessor | null = null
 let initialized = false
 
 export function initTracing(config: BenchmarkConfig): void {
-  if (!config.laminar.enabled) {
-    console.log('Laminar tracing disabled in config')
+  if (!config.langfuse.enabled) {
+    console.log('Langfuse tracing disabled in config')
     return
   }
-
-  const apiKey = process.env.LMNR_PROJECT_API_KEY
-  if (!apiKey) {
-    console.warn('LMNR_PROJECT_API_KEY not set - running without tracing')
+  // both keys required; warn and run untraced if either is missing
+  const publicKey = process.env.LANGFUSE_PUBLIC_KEY
+  const secretKey = process.env.LANGFUSE_SECRET_KEY
+  if (!publicKey || !secretKey) {
+    console.warn(
+      'LANGFUSE_PUBLIC_KEY/LANGFUSE_SECRET_KEY not set - running without tracing',
+    )
     return
   }
 
   try {
-    Laminar.initialize({
-      projectApiKey: apiKey,
-      disableBatch: true,
-      forceHttp: true,
-      instrumentModules: {},
+    processor = new LangfuseSpanProcessor({
+      publicKey,
+      secretKey,
+      baseUrl: process.env.LANGFUSE_BASE_URL ?? 'https://cloud.langfuse.com',
+      environment: process.env.NODE_ENV ?? 'development',
     })
+    sdk = new NodeSDK({ spanProcessors: [processor] })
+    sdk.start()
     initialized = true
     console.log(
-      `Laminar tracing enabled (session prefix: ${config.laminar.sessionPrefix})`,
+      `Langfuse tracing enabled (session prefix: ${config.langfuse.sessionPrefix})`,
     )
   } catch (error) {
     initialized = false
+    sdk = null
+    processor = null
     console.warn(
-      `Laminar initialization failed - running without tracing: ${error instanceof Error ? error.message : String(error)}`,
+      `Langfuse initialization failed - running without tracing: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
     )
   }
 }
@@ -42,20 +56,11 @@ export function isTracingEnabled(): boolean {
 
 export function getTaskSessionId(
   task: Task,
-  config: BenchmarkConfig,
-  runId?: string,
-): string | null {
-  if (!initialized) {
-    return null
-  }
-
-  const prefix = `${config.laminar.sessionPrefix}-`
-  const taskId = task.queryId.startsWith(prefix)
-    ? task.queryId.slice(prefix.length)
-    : task.queryId
-  return runId
-    ? `${runId}-${taskId}`
-    : `${config.laminar.sessionPrefix}-${taskId}`
+  _config: BenchmarkConfig,
+  runId: string,
+): string {
+  // sessionId groups all spans for one task; runId-prefixed so re-runs don't collide
+  return `${runId}-${task.queryId}`
 }
 
 export function getAiSdkTelemetry(
@@ -70,9 +75,9 @@ export function getAiSdkTelemetry(
 
   return {
     isEnabled: true,
-    tracer: getTracer(),
     functionId: 'browseros.eval2.agent',
     metadata: {
+      sessionId: getTaskSessionId(task, config, runId),
       runId,
       taskId: task.queryId,
       dataset: task.dataset,
@@ -82,46 +87,49 @@ export function getAiSdkTelemetry(
   }
 }
 
-export async function withTaskTrace<T>(
-  task: Task,
-  config: BenchmarkConfig,
-  runId: string,
-  fn: () => Promise<T>,
-): Promise<T> {
+export async function logScreenshot(
+  toolName: string,
+  pngBytes: Buffer,
+  pageUrl: string | undefined,
+): Promise<void> {
   if (!initialized) {
-    return await fn()
+    return
   }
-
-  return await observe(
-    {
-      name: 'eval.task',
-      sessionId: getTaskSessionId(task, config, runId) ?? task.queryId,
-      spanType: 'EXECUTOR',
+  // wrap PNG so Langfuse uploads it via presigned URL and renders it inline in the trace UI
+  const media = new LangfuseMedia({
+    source: 'bytes',
+    contentBytes: pngBytes,
+    contentType: 'image/png',
+  })
+  await startActiveObservation(`screenshot.${toolName}`, async (span) => {
+    span.update({
+      output: media,
       metadata: {
-        runId,
-        taskId: task.queryId,
-        dataset: task.dataset,
-        model: config.model,
+        toolName,
+        pageUrl,
+        bytes: pngBytes.length,
       },
-      input: {
-        query: task.query,
-        startUrl: task.startUrl,
-      },
-    },
-    fn,
-  )
+    })
+  })
 }
 
 export async function flushTracing(): Promise<void> {
   if (!initialized) {
     return
   }
-
+  // forceFlush drains pending spans; shutdown also waits for pending media uploads
   try {
-    await Laminar.flush()
+    await processor?.forceFlush()
+    await sdk?.shutdown()
   } catch (error) {
     console.warn(
-      `Laminar flush failed: ${error instanceof Error ? error.message : String(error)}`,
+      `Langfuse flush failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
     )
+  } finally {
+    initialized = false
+    processor = null
+    sdk = null
   }
 }

@@ -1,12 +1,11 @@
-# eval2 - Laminar-traced eval
+# eval2 - Langfuse-traced eval
 
 A minimal eval runner that runs a SingleAgent (OpenAI via
-`@browseros/server`'s `AiSdkAgent`) against agisdk smoke tasks and sends the
-task span plus AI SDK LLM/tool-call spans to Laminar.
+`@browseros/server`'s `AiSdkAgent`) against agisdk smoke tasks and sends each
+task's spans (LLM calls, tool calls, and per-tool screenshots) to Langfuse.
 
-This is v1. See
-`.llm/specs/2026-04-28-eval2-laminar-design.md` section 10 for follow-ups:
-multi-worker execution, manual TOOL spans, more providers, and more graders.
+Per-tool-call screenshots are uploaded as `LangfuseMedia` and rendered inline
+in the trace UI.
 
 ## Prerequisites
 
@@ -16,20 +15,29 @@ multi-worker execution, manual TOOL spans, more providers, and more graders.
 - `python3` with `agisdk` installed for the grader (`pip install agisdk`).
 - Env vars in `.env.development` or your shell:
   - `OPENAI_API_KEY` is required.
-  - `LMNR_PROJECT_API_KEY` is optional. Without it, the runner warns and runs
-    without tracing.
+  - `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` enable tracing. Without
+    them, the runner warns and runs without tracing.
+  - `LANGFUSE_BASE_URL` is optional; defaults to `https://cloud.langfuse.com`.
 
 ## Run
 
 ```bash
 cd packages/browseros-agent/apps/eval2
-bun run eval --config benchmark-configs/agisdk-smoke.jsonc
+bun run eval --config benchmark-configs/agisdk-mini.jsonc
 ```
 
 Console output includes per-task progress, a summary table, and the
-`summary.json` path. If tracing is enabled, each task has a Laminar session
-like `agisdk-dashdish-10` containing an `eval.task` span and nested AI SDK spans
-for LLM calls and tool calls.
+`summary.json` path. If tracing is enabled, each task has a Langfuse session
+like `agisdk-mini-2026-04-28-1530-dashdish-10` containing AI SDK LLM/tool-call
+spans plus one `screenshot.<tool>` span per tool call with the PNG attached.
+
+## screenshotMode
+
+Each config's `langfuse.screenshotMode` controls per-tool screenshot capture:
+
+- `all` - every tool call gets a screenshot (default).
+- `mutating-only` - only mutating tools (click, fill, navigate, scroll, etc.).
+- `never` - disable screenshots; LLM-call traces only.
 
 ## Layout
 

@@ -16,9 +16,10 @@ export const BenchmarkConfigSchema = z.object({
   }),
   timeoutMs: z.number().int().positive().default(600_000),
   maxTasks: z.number().int().positive().optional(),
-  laminar: z.object({
+  langfuse: z.object({
     enabled: z.boolean(),
     sessionPrefix: z.string(),
+    screenshotMode: z.enum(['all', 'mutating-only', 'never']).default('all'),
   }),
 })
 

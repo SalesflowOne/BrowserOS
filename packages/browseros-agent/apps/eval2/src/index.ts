@@ -2,7 +2,7 @@ import { parseArgs } from 'node:util'
 import { runEval } from './eval-runner'
 
 const HELP = `
-eval2 - Laminar-traced eval runner
+eval2 - Langfuse-traced eval runner
 
 Usage:
   bun run eval --config <path-to-config.jsonc>

@@ -5,12 +5,7 @@ import { AgisdkStateDiffGrader } from './agisdk-grader'
 import { type BenchmarkConfig, loadBenchmarkConfig } from './benchmark-config'
 import { BrowserOSAppManager } from './browseros-app-manager'
 import { SingleAgent } from './single-agent'
-import {
-  flushTracing,
-  getTaskSessionId,
-  initTracing,
-  withTaskTrace,
-} from './tracing'
+import { flushTracing, getTaskSessionId, initTracing } from './tracing'
 import {
   type GraderResult,
   type RawTask,
@@ -105,7 +100,7 @@ function buildSummary(
       status: result.status,
       durationMs: result.durationMs,
       graderReward: result.graderResult.score,
-      laminarSessionId: getTaskSessionId(result.task, config, runId),
+      langfuseSessionId: getTaskSessionId(result.task, config, runId),
     })),
   }
 }
@@ -204,16 +199,18 @@ export async function runEval(configPath: string): Promise<void> {
       const taskStart = Date.now()
       console.log(`\n[${index + 1}/${tasks.length}] ${task.queryId} starting`)
 
-      const agentResult = await withTaskTrace(task, config, runId, () =>
-        activeAgent.runTask(task),
-      ).catch((error: unknown) => {
-        console.warn(
-          `[${index + 1}/${tasks.length}] ${task.queryId}: agent crashed - ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        )
-        return null
-      })
+      // sessionId on AI SDK telemetry already groups all spans for this task;
+      // no outer observe() wrapper needed
+      const agentResult = await activeAgent
+        .runTask(task)
+        .catch((error: unknown) => {
+          console.warn(
+            `[${index + 1}/${tasks.length}] ${task.queryId}: agent crashed - ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          )
+          return null
+        })
 
       if (!agentResult) {
         results.push(
@@ -271,7 +268,9 @@ export async function runEval(configPath: string): Promise<void> {
   await writeFile(summaryPath, JSON.stringify(summary, null, 2))
   printSummary(summary)
   console.log(`Summary: ${summaryPath}`)
-  if (summary.tasks.some((task) => task.laminarSessionId)) {
-    console.log('View traces: https://lmnr.ai/projects')
+  if (summary.tasks.some((task) => task.langfuseSessionId)) {
+    const baseUrl =
+      process.env.LANGFUSE_BASE_URL ?? 'https://cloud.langfuse.com'
+    console.log(`View traces: ${baseUrl}`)
   }
 }
