@@ -12,11 +12,7 @@ import {
   TurnRegistry,
 } from '../../../src/lib/agents/active-turn-registry'
 import type { AgentDefinition } from '../../../src/lib/agents/agent-types'
-import type {
-  AgentPromptInput,
-  AgentRuntime,
-  AgentStreamEvent,
-} from '../../../src/lib/agents/types'
+import type { AgentStreamEvent } from '../../../src/lib/agents/types'
 
 describe('createAgentRoutes', () => {
   it('creates and lists harness agents', async () => {
@@ -234,64 +230,6 @@ describe('createAgentRoutes', () => {
     expect(response.status).toBe(404)
   })
 
-  it('streams sidepanel ACP chat as an AI SDK UI message stream', async () => {
-    const conversationId = '00000000-0000-4000-8000-000000000001'
-    let sentInput: AgentPromptInput | undefined
-    const abortController = new AbortController()
-    const route = createMountedRoutes([], {
-      browser: {
-        async resolveTabIds(tabIds: number[]) {
-          return new Map(tabIds.map((tabId) => [tabId, tabId + 100]))
-        },
-      },
-      runtime: createFakeRuntime(async (input) => {
-        sentInput = input
-        return createAgentStream([
-          { type: 'text_delta', text: 'Hello', stream: 'output' },
-          { type: 'done', stopReason: 'end_turn' },
-        ])
-      }),
-    })
-
-    const response = await route.request('/agents/sidepanel/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: abortController.signal,
-      body: JSON.stringify({
-        conversationId,
-        adapter: 'codex',
-        modelId: 'gpt-5.5',
-        reasoningEffort: 'medium',
-        message: 'hi',
-        userWorkingDir: '/tmp/work',
-        browserContext: {
-          activeTab: { id: 1, url: 'https://example.com', title: 'Example' },
-        },
-      }),
-    })
-
-    expect(response.status).toBe(200)
-    expect(response.headers.get('Content-Type')).toContain('text/event-stream')
-    expect(await response.text()).toContain('"type":"text-delta"')
-    expect(sentInput?.agent).toMatchObject({
-      id: `sidepanel:${conversationId}`,
-      adapter: 'codex',
-      modelId: 'gpt-5.5',
-      reasoningEffort: 'medium',
-      permissionMode: 'approve-all',
-      sessionKey: `sidepanel:${conversationId}:codex:gpt-5.5:medium`,
-    })
-    expect(sentInput?.cwd).toBe('/tmp/work')
-    expect(sentInput?.message).toContain(
-      'Tab 1 (Page ID: 101) - "Example" (https://example.com)',
-    )
-    expect(sentInput?.message).toContain('<USER_QUERY>\nhi\n</USER_QUERY>')
-    expect(sentInput?.signal).toBe(abortController.signal)
-
-    const list = await route.request('/agents')
-    expect(await list.json()).toEqual({ agents: [], gateway: null })
-  })
-
   it('streams created-agent sidepanel chat through the persisted agent', async () => {
     const agent: AgentDefinition = {
       id: 'agent-1',
@@ -496,31 +434,22 @@ describe('createAgentRoutes', () => {
     await (await first).text()
   })
 
-  it('rejects invalid sidepanel ACP chat requests', async () => {
+  it('does not expose the legacy virtual sidepanel ACP chat route', async () => {
     const route = createMountedRoutes([])
 
-    for (const { patch, error } of [
-      {
-        patch: { conversationId: 'not-a-uuid' },
-        error: 'conversationId must be a UUID',
-      },
-      { patch: { adapter: 'openai' }, error: 'Invalid adapter' },
-      { patch: { modelId: 'unknown-model' }, error: 'Invalid modelId' },
-      { patch: { reasoningEffort: 'turbo' }, error: 'Invalid reasoningEffort' },
-      { patch: { message: '   ' }, error: 'Message is required' },
-    ]) {
-      const response = await route.request('/agents/sidepanel/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...validSidepanelAcpBody(),
-          ...patch,
-        }),
-      })
+    const response = await route.request('/agents/sidepanel/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        conversationId: '00000000-0000-4000-8000-000000000001',
+        adapter: 'codex',
+        modelId: 'gpt-5.5',
+        reasoningEffort: 'medium',
+        message: 'hi',
+      }),
+    })
 
-      expect(response.status).toBe(400)
-      expect(await response.json()).toEqual({ error })
-    }
+    expect(response.status).toBe(404)
   })
 
   it('rejects overlong agent names', async () => {
@@ -544,7 +473,6 @@ describe('createAgentRoutes', () => {
 function createMountedRoutes(
   agents: AgentDefinition[],
   deps: {
-    runtime?: AgentRuntime
     browser?: { resolveTabIds(tabIds: number[]): Promise<Map<number, number>> }
   } = {},
 ) {
@@ -634,6 +562,12 @@ function createFakeService(agents: AgentDefinition[]) {
       message?: string
       cwd?: string
     }) {
+      if (!agents.some((agent) => agent.id === input.agentId)) {
+        const { UnknownAgentError } = await import(
+          '../../../src/api/services/agents/agent-harness-service'
+        )
+        throw new UnknownAgentError(input.agentId)
+      }
       lastStartTurnInput = input
       const turn = registry.register(input.agentId, 'main')
       const frames = registry.subscribe(turn.turnId, { fromSeq: -1 })!
@@ -657,23 +591,8 @@ function createFakeService(agents: AgentDefinition[]) {
       if (!turnId) return false
       return registry.cancel(turnId, input.reason)
     },
-    async send() {
-      // Legacy shape, used by the sidepanel route only. Returns a flat
-      // AgentStreamEvent stream.
-      return createAgentStream(fakeEvents)
-    },
     /** Test-only: lets tests await turn completion deterministically. */
     _registry: registry,
-  }
-}
-
-function validSidepanelAcpBody() {
-  return {
-    conversationId: '00000000-0000-4000-8000-000000000001',
-    adapter: 'codex',
-    modelId: 'gpt-5.5',
-    reasoningEffort: 'medium',
-    message: 'hi',
   }
 }
 
@@ -682,34 +601,6 @@ function validCreatedAgentSidepanelBody() {
     conversationId: '00000000-0000-4000-8000-000000000001',
     message: 'hi',
   }
-}
-
-function createFakeRuntime(
-  send: (input: AgentPromptInput) => Promise<ReadableStream<AgentStreamEvent>>,
-): AgentRuntime {
-  return {
-    async status() {
-      return { state: 'ready' }
-    },
-    async listSessions(agent) {
-      return [{ agentId: agent.id, id: 'main', updatedAt: agent.updatedAt }]
-    },
-    async getHistory(input) {
-      return { agentId: input.agent.id, sessionId: 'main', items: [] }
-    },
-    send,
-  }
-}
-
-function createAgentStream(
-  events: AgentStreamEvent[],
-): ReadableStream<AgentStreamEvent> {
-  return new ReadableStream<AgentStreamEvent>({
-    start(controller) {
-      for (const event of events) controller.enqueue(event)
-      controller.close()
-    },
-  })
 }
 
 /**
@@ -787,9 +678,6 @@ function createBlockingFakeService(agents: AgentDefinition[]) {
         input.turnId ?? registry.getActiveFor(input.agentId, 'main')?.turnId
       if (!turnId) return false
       return registry.cancel(turnId, input.reason)
-    },
-    async send() {
-      return createAgentStream(events)
     },
     _unblock: () => unblock(),
     _cancelCalls: cancelCalls,
