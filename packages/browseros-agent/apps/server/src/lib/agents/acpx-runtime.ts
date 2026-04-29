@@ -93,12 +93,13 @@ export class AcpxRuntime implements AgentRuntime {
   async send(
     input: AgentPromptInput,
   ): Promise<ReadableStream<AgentStreamEvent>> {
+    const cwd = input.cwd ?? this.cwd
     logger.info('Agent harness acpx send requested', {
       agentId: input.agent.id,
       adapter: input.agent.adapter,
       sessionId: input.sessionId,
       sessionKey: input.sessionKey,
-      cwd: this.cwd,
+      cwd,
       stateDir: this.stateDir,
       permissionMode: input.permissionMode,
       modelId: input.agent.modelId,
@@ -106,12 +107,12 @@ export class AcpxRuntime implements AgentRuntime {
       messageLength: input.message.length,
     })
     const runtime = this.getRuntime({
-      cwd: this.cwd,
+      cwd,
       permissionMode: input.permissionMode,
       nonInteractivePermissions: 'fail',
     })
 
-    return createAcpxEventStream(runtime, input, this.cwd)
+    return createAcpxEventStream(runtime, input, cwd)
   }
 
   private getRuntime(input: {

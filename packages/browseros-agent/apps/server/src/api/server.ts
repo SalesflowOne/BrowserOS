@@ -131,7 +131,7 @@ export async function createHttpServer(config: HttpServerConfig) {
 
   const agentRoutes = new Hono<Env>()
     .use('/*', requireTrustedAppOrigin())
-    .route('/', createAgentRoutes({ browserosServerPort: port }))
+    .route('/', createAgentRoutes({ browserosServerPort: port, browser }))
 
   const app = new Hono<Env>()
     .use('/*', cors(defaultCorsConfig))

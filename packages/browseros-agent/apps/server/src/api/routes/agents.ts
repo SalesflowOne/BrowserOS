@@ -5,24 +5,40 @@
  */
 
 import { AGENT_HARNESS_LIMITS } from '@browseros/shared/constants/limits'
+import {
+  type BrowserContext,
+  BrowserContextSchema,
+} from '@browseros/shared/schemas/browser-context'
 import { type Context, Hono } from 'hono'
 import { stream } from 'hono/streaming'
+import { formatUserMessage } from '../../agent/format-message'
+import type { Browser } from '../../browser/browser'
+import { createAcpUIMessageStreamResponse } from '../../lib/agents/acp-ui-message-stream'
+import { AcpxRuntime } from '../../lib/agents/acpx-runtime'
 import {
   AGENT_ADAPTER_CATALOG,
+  getAgentAdapterDescriptor,
   isAgentAdapter,
   isSupportedAgentModel,
   isSupportedReasoningEffort,
+  resolveDefaultModelId,
+  resolveDefaultReasoningEffort,
 } from '../../lib/agents/agent-catalog'
 import type {
   AgentAdapter,
   AgentDefinition,
 } from '../../lib/agents/agent-types'
-import type { AgentHistoryPage, AgentStreamEvent } from '../../lib/agents/types'
+import type {
+  AgentHistoryPage,
+  AgentRuntime,
+  AgentStreamEvent,
+} from '../../lib/agents/types'
 import {
   AgentHarnessService,
   UnknownAgentError,
 } from '../services/agents/agent-harness-service'
 import type { Env } from '../types'
+import { resolveBrowserContextPageIds } from '../utils/resolve-browser-context-page-ids'
 
 type AgentRouteService = {
   listAgents(): Promise<AgentDefinition[]>
@@ -44,13 +60,29 @@ type AgentRouteService = {
 
 type AgentRouteDeps = {
   service?: AgentRouteService
+  runtime?: AgentRuntime
+  browser?: Pick<Browser, 'resolveTabIds'>
   browserosServerPort?: number
+}
+
+type SidepanelAcpChatRequest = {
+  conversationId: string
+  adapter: AgentAdapter
+  modelId: string
+  reasoningEffort: string
+  message: string
+  browserContext?: BrowserContext
+  selectedText?: string
+  selectedTextSource?: { url: string; title: string }
+  userSystemPrompt?: string
+  userWorkingDir?: string
 }
 
 export function createAgentRoutes(deps: AgentRouteDeps = {}) {
   const service =
     deps.service ??
     new AgentHarnessService({ browserosServerPort: deps.browserosServerPort })
+  let sidepanelRuntime = deps.runtime
 
   return new Hono<Env>()
     .get('/adapters', (c) => c.json({ adapters: AGENT_ADAPTER_CATALOG }))
@@ -60,6 +92,47 @@ export function createAgentRoutes(deps: AgentRouteDeps = {}) {
       if ('error' in parsed) return c.json({ error: parsed.error }, 400)
       try {
         return c.json({ agent: await service.createAgent(parsed) })
+      } catch (err) {
+        return handleAgentRouteError(c, err)
+      }
+    })
+    .post('/sidepanel/chat', async (c) => {
+      const parsed = await parseSidepanelAcpChatBody(c)
+      if ('error' in parsed) return c.json({ error: parsed.error }, 400)
+
+      let browserContext = parsed.browserContext
+      if (deps.browser) {
+        browserContext = await resolveBrowserContextPageIds(
+          deps.browser,
+          browserContext,
+        )
+      }
+
+      const userContent = formatUserMessage(
+        parsed.message,
+        browserContext,
+        parsed.selectedText,
+        parsed.selectedTextSource,
+      )
+      const message = parsed.userSystemPrompt?.trim()
+        ? `${parsed.userSystemPrompt.trim()}\n\n${userContent}`
+        : userContent
+      const agent = buildSidepanelAcpAgent(parsed)
+
+      try {
+        sidepanelRuntime ??= new AcpxRuntime({
+          browserosServerPort: deps.browserosServerPort,
+        })
+        const eventStream = await sidepanelRuntime.send({
+          agent,
+          sessionId: 'main',
+          sessionKey: agent.sessionKey,
+          message,
+          permissionMode: agent.permissionMode,
+          cwd: parsed.userWorkingDir,
+          signal: c.req.raw.signal,
+        })
+        return createAcpUIMessageStreamResponse(eventStream)
       } catch (err) {
         return handleAgentRouteError(c, err)
       }
@@ -187,6 +260,129 @@ async function parseChatBody(
   const message =
     typeof body.value.message === 'string' ? body.value.message.trim() : ''
   return message ? { message } : { error: 'Message is required' }
+}
+
+async function parseSidepanelAcpChatBody(
+  c: Context<Env>,
+): Promise<SidepanelAcpChatRequest | { error: string }> {
+  const body = await readJsonBody(c)
+  if ('error' in body) return body
+  const record = body.value
+
+  const conversationId = readOptionalTrimmedString(record, 'conversationId')
+  if (!conversationId || !isUuid(conversationId)) {
+    return { error: 'conversationId must be a UUID' }
+  }
+  if (!isAgentAdapter(record.adapter)) {
+    return { error: 'Invalid adapter' }
+  }
+
+  const modelId =
+    readOptionalTrimmedString(record, 'modelId') ??
+    resolveDefaultModelId(record.adapter)
+  const reasoningEffort =
+    readOptionalTrimmedString(record, 'reasoningEffort') ??
+    resolveDefaultReasoningEffort(record.adapter)
+
+  if (!isSupportedAgentModel(record.adapter, modelId)) {
+    return { error: 'Invalid modelId' }
+  }
+  if (!isSupportedReasoningEffort(record.adapter, reasoningEffort)) {
+    return { error: 'Invalid reasoningEffort' }
+  }
+
+  const message = readOptionalTrimmedString(record, 'message')
+  if (!message) return { error: 'Message is required' }
+
+  const browserContext = parseBrowserContext(record.browserContext)
+  if ('error' in browserContext) return browserContext
+
+  const selectedText = readOptionalString(record, 'selectedText')
+  const selectedTextSource = parseSelectedTextSource(record.selectedTextSource)
+  if ('error' in selectedTextSource) return selectedTextSource
+
+  return {
+    conversationId,
+    adapter: record.adapter,
+    modelId,
+    reasoningEffort,
+    message,
+    browserContext: browserContext.value,
+    selectedText,
+    selectedTextSource: selectedTextSource.value,
+    userSystemPrompt: readOptionalString(record, 'userSystemPrompt'),
+    userWorkingDir: readOptionalTrimmedString(record, 'userWorkingDir'),
+  }
+}
+
+function buildSidepanelAcpAgent(
+  request: SidepanelAcpChatRequest,
+): AgentDefinition {
+  const now = Date.now()
+  const descriptor = getAgentAdapterDescriptor(request.adapter)
+  const sessionKey = [
+    'sidepanel',
+    request.conversationId,
+    request.adapter,
+    request.modelId,
+    request.reasoningEffort,
+  ].join(':')
+
+  return {
+    id: `sidepanel:${request.conversationId}`,
+    name: descriptor?.name ?? request.adapter,
+    adapter: request.adapter,
+    modelId: request.modelId,
+    reasoningEffort: request.reasoningEffort,
+    permissionMode: 'approve-all',
+    sessionKey,
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
+function parseBrowserContext(
+  value: unknown,
+): { value?: BrowserContext } | { error: string } {
+  if (value === undefined) return { value: undefined }
+  const parsed = BrowserContextSchema.safeParse(value)
+  return parsed.success
+    ? { value: parsed.data }
+    : { error: 'Invalid browserContext' }
+}
+
+function parseSelectedTextSource(
+  value: unknown,
+): { value?: { url: string; title: string } } | { error: string } {
+  if (value === undefined) return { value: undefined }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { error: 'Invalid selectedTextSource' }
+  }
+  const record = value as Record<string, unknown>
+  return typeof record.url === 'string' && typeof record.title === 'string'
+    ? { value: { url: record.url, title: record.title } }
+    : { error: 'Invalid selectedTextSource' }
+}
+
+function readOptionalString(
+  record: Record<string, unknown>,
+  key: string,
+): string | undefined {
+  return typeof record[key] === 'string' ? record[key] : undefined
+}
+
+function readOptionalTrimmedString(
+  record: Record<string, unknown>,
+  key: string,
+): string | undefined {
+  const value = readOptionalString(record, key)?.trim()
+  return value || undefined
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  )
 }
 
 async function readJsonBody(

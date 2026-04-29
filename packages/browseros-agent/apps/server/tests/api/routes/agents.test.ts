@@ -8,7 +8,11 @@ import { AGENT_HARNESS_LIMITS } from '@browseros/shared/constants/limits'
 import { Hono } from 'hono'
 import { createAgentRoutes } from '../../../src/api/routes/agents'
 import type { AgentDefinition } from '../../../src/lib/agents/agent-types'
-import type { AgentStreamEvent } from '../../../src/lib/agents/types'
+import type {
+  AgentPromptInput,
+  AgentRuntime,
+  AgentStreamEvent,
+} from '../../../src/lib/agents/types'
 
 describe('createAgentRoutes', () => {
   it('creates and lists harness agents', async () => {
@@ -62,6 +66,58 @@ describe('createAgentRoutes', () => {
     expect(await response.text()).toContain('data: [DONE]')
   })
 
+  it('streams sidepanel ACP chat as an AI SDK UI message stream', async () => {
+    const conversationId = '00000000-0000-4000-8000-000000000001'
+    let sentInput: AgentPromptInput | undefined
+    const route = createMountedRoutes([], {
+      browser: {
+        async resolveTabIds(tabIds: number[]) {
+          return new Map(tabIds.map((tabId) => [tabId, tabId + 100]))
+        },
+      },
+      runtime: createFakeRuntime(async (input) => {
+        sentInput = input
+        return createAgentStream([
+          { type: 'text_delta', text: 'Hello', stream: 'output' },
+          { type: 'done', stopReason: 'end_turn' },
+        ])
+      }),
+    })
+
+    const response = await route.request('/agents/sidepanel/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        conversationId,
+        adapter: 'codex',
+        modelId: 'gpt-5.5',
+        reasoningEffort: 'medium',
+        message: 'hi',
+        userWorkingDir: '/tmp/work',
+        browserContext: {
+          activeTab: { id: 1, url: 'https://example.com', title: 'Example' },
+        },
+      }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('Content-Type')).toContain('text/event-stream')
+    expect(await response.text()).toContain('"type":"text-delta"')
+    expect(sentInput?.agent).toMatchObject({
+      id: `sidepanel:${conversationId}`,
+      adapter: 'codex',
+      modelId: 'gpt-5.5',
+      reasoningEffort: 'medium',
+      permissionMode: 'approve-all',
+      sessionKey: `sidepanel:${conversationId}:codex:gpt-5.5:medium`,
+    })
+    expect(sentInput?.cwd).toBe('/tmp/work')
+    expect(sentInput?.message).toContain(
+      'Tab 1 (Page ID: 101) - "Example" (https://example.com)',
+    )
+    expect(sentInput?.message).toContain('<USER_QUERY>\nhi\n</USER_QUERY>')
+  })
+
   it('rejects overlong agent names', async () => {
     const route = createMountedRoutes([])
     const response = await route.request('/agents', {
@@ -80,10 +136,16 @@ describe('createAgentRoutes', () => {
   })
 })
 
-function createMountedRoutes(agents: AgentDefinition[]) {
+function createMountedRoutes(
+  agents: AgentDefinition[],
+  deps: {
+    runtime?: AgentRuntime
+    browser?: { resolveTabIds(tabIds: number[]): Promise<Map<number, number>> }
+  } = {},
+) {
   return new Hono().route(
     '/agents',
-    createAgentRoutes({ service: createFakeService(agents) }),
+    createAgentRoutes({ service: createFakeService(agents), ...deps }),
   )
 }
 
@@ -129,17 +191,42 @@ function createFakeService(agents: AgentDefinition[]) {
       }
     },
     async send() {
-      return new ReadableStream<AgentStreamEvent>({
-        start(controller) {
-          controller.enqueue({
-            type: 'text_delta',
-            text: 'Hello',
-            stream: 'output',
-          })
-          controller.enqueue({ type: 'done', stopReason: 'end_turn' })
-          controller.close()
+      return createAgentStream([
+        {
+          type: 'text_delta',
+          text: 'Hello',
+          stream: 'output',
         },
-      })
+        { type: 'done', stopReason: 'end_turn' },
+      ])
     },
   }
+}
+
+function createFakeRuntime(
+  send: (input: AgentPromptInput) => Promise<ReadableStream<AgentStreamEvent>>,
+): AgentRuntime {
+  return {
+    async status() {
+      return { state: 'ready' }
+    },
+    async listSessions(agent) {
+      return [{ agentId: agent.id, id: 'main', updatedAt: agent.updatedAt }]
+    },
+    async getHistory(input) {
+      return { agentId: input.agent.id, sessionId: 'main', items: [] }
+    },
+    send,
+  }
+}
+
+function createAgentStream(
+  events: AgentStreamEvent[],
+): ReadableStream<AgentStreamEvent> {
+  return new ReadableStream<AgentStreamEvent>({
+    start(controller) {
+      for (const event of events) controller.enqueue(event)
+      controller.close()
+    },
+  })
 }

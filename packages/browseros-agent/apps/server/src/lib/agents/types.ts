@@ -64,6 +64,7 @@ export interface AgentPromptInput {
   sessionKey: string
   message: string
   permissionMode: AgentPermissionMode
+  cwd?: string
   timeoutMs?: number
   signal?: AbortSignal
 }

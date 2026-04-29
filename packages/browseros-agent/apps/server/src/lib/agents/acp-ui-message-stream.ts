@@ -4,18 +4,20 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import {
-  createUIMessageStreamResponse,
-  type FinishReason,
-  type UIMessageChunk,
-  type UIMessageStreamResponseInit,
-} from 'ai'
+import type { FinishReason, UIMessageChunk } from 'ai'
 
 import type { AgentStreamEvent } from './types'
 
 const TEXT_PART_ID = 'acp-text'
 const REASONING_PART_ID = 'acp-reasoning'
 const STATUS_PART_ID = 'acp-status'
+const UI_MESSAGE_STREAM_HEADERS = {
+  'content-type': 'text/event-stream',
+  'cache-control': 'no-cache',
+  connection: 'keep-alive',
+  'x-vercel-ai-ui-message-stream': 'v1',
+  'x-accel-buffering': 'no',
+}
 
 interface AcpUIMessageStreamState {
   cancelled: boolean
@@ -59,11 +61,16 @@ export function createAcpUIMessageStream(
 
 export function createAcpUIMessageStreamResponse(
   events: ReadableStream<AgentStreamEvent>,
-  init?: UIMessageStreamResponseInit,
+  init?: ResponseInit,
 ): Response {
-  return createUIMessageStreamResponse({
+  const headers = new Headers(init?.headers)
+  for (const [key, value] of Object.entries(UI_MESSAGE_STREAM_HEADERS)) {
+    if (!headers.has(key)) headers.set(key, value)
+  }
+
+  return new Response(createSseStream(createAcpUIMessageStream(events)), {
     ...init,
-    stream: createAcpUIMessageStream(events),
+    headers,
   })
 }
 
@@ -293,6 +300,23 @@ function isCompletedToolStatus(status: string | undefined): boolean {
 
 function isFailedToolStatus(status: string | undefined): boolean {
   return status === 'failed' || status === 'error' || status === 'failure'
+}
+
+function createSseStream(
+  stream: ReadableStream<UIMessageChunk>,
+): ReadableStream<Uint8Array> {
+  return stream
+    .pipeThrough(
+      new TransformStream<UIMessageChunk, string>({
+        transform(chunk, controller) {
+          controller.enqueue(`data: ${JSON.stringify(chunk)}\n\n`)
+        },
+        flush(controller) {
+          controller.enqueue('data: [DONE]\n\n')
+        },
+      }),
+    )
+    .pipeThrough(new TextEncoderStream())
 }
 
 function errorToMessage(error: unknown): string {
