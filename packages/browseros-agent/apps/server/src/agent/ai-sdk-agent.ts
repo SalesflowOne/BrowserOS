@@ -11,6 +11,7 @@ import {
   type LanguageModel,
   type ModelMessage,
   stepCountIs,
+  type TelemetrySettings,
   ToolLoopAgent,
   type ToolSet,
   type UIMessage,
@@ -50,6 +51,7 @@ export interface AiSdkAgentConfig {
   klavisRef?: KlavisProxyRef
   browserosId?: string
   aiSdkDevtoolsEnabled?: boolean
+  aiSdkTelemetry?: TelemetrySettings
   aclRules?: AclRule[]
 }
 
@@ -267,6 +269,7 @@ export class AiSdkAgent {
       tools,
       stopWhen: [stepCountIs(AGENT_LIMITS.MAX_TURNS)],
       prepareStep,
+      experimental_telemetry: config.aiSdkTelemetry,
       ...(isChatGPTPro && {
         providerOptions: {
           openai: {
