@@ -40,6 +40,12 @@ interface UploadJob {
   contentType: string
 }
 
+interface TaskDirEntry {
+  taskId: string
+  taskPath: string
+  canonicalLayout: boolean
+}
+
 export function contentTypeForPath(filePath: string): string {
   return CONTENT_TYPES[extname(filePath)] || 'application/octet-stream'
 }
@@ -108,15 +114,48 @@ async function runPool<T>(
   await Promise.all(workers)
 }
 
-async function isRunDir(dir: string): Promise<boolean> {
-  const entries = await readdir(dir, { withFileTypes: true })
-  const subdirs = entries.filter((entry) => entry.isDirectory())
-  for (const subdir of subdirs) {
-    const metaPath = join(dir, subdir.name, 'metadata.json')
-    const metaStat = await stat(metaPath).catch(() => null)
-    if (metaStat?.isFile()) return true
+async function hasMetadata(dir: string): Promise<boolean> {
+  const metaStat = await stat(join(dir, 'metadata.json')).catch(() => null)
+  return !!metaStat?.isFile()
+}
+
+async function findTaskDirs(runDir: string): Promise<TaskDirEntry[]> {
+  const entries = await readdir(runDir, { withFileTypes: true })
+  const legacyTasks: TaskDirEntry[] = []
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name === 'tasks') continue
+    const taskPath = join(runDir, entry.name)
+    if (await hasMetadata(taskPath)) {
+      legacyTasks.push({
+        taskId: entry.name,
+        taskPath,
+        canonicalLayout: false,
+      })
+    }
   }
-  return false
+
+  const tasksRoot = join(runDir, 'tasks')
+  const canonicalEntries = await readdir(tasksRoot, {
+    withFileTypes: true,
+  }).catch(() => [])
+  const canonicalTasks: TaskDirEntry[] = []
+  for (const entry of canonicalEntries) {
+    if (!entry.isDirectory()) continue
+    const taskPath = join(tasksRoot, entry.name)
+    if (await hasMetadata(taskPath)) {
+      canonicalTasks.push({
+        taskId: entry.name,
+        taskPath,
+        canonicalLayout: true,
+      })
+    }
+  }
+
+  return legacyTasks.length > 0 ? legacyTasks : canonicalTasks
+}
+
+async function isRunDir(dir: string): Promise<boolean> {
+  return (await findTaskDirs(dir)).length > 0
 }
 
 async function collectRunRootFiles(runDir: string): Promise<UploadJob[]> {
@@ -217,9 +256,7 @@ export class R2Publisher {
     runDir: string,
     runId: string = runIdForDir(runDir),
   ): Promise<R2PublishRunResult> {
-    const taskEntries = (await readdir(runDir, { withFileTypes: true })).filter(
-      (entry) => entry.isDirectory(),
-    )
+    const taskEntries = await findTaskDirs(runDir)
 
     if (taskEntries.length === 0) {
       throw new Error(`No task subdirectories in ${runId}`)
@@ -236,8 +273,7 @@ export class R2Publisher {
     let dataset: string | undefined
 
     for (const taskDirEntry of taskEntries) {
-      const taskId = taskDirEntry.name
-      const taskPath = join(runDir, taskId)
+      const { taskId, taskPath } = taskDirEntry
       const meta = await this.readMetadata(taskPath)
       if (!meta) continue
 
@@ -258,6 +294,13 @@ export class R2Publisher {
           filePath: file,
           contentType: contentTypeForPath(file),
         })
+        if (taskDirEntry.canonicalLayout) {
+          jobs.push({
+            key: `runs/${runId}/tasks/${taskId}/${relative}`,
+            filePath: file,
+            contentType: contentTypeForPath(file),
+          })
+        }
       }
 
       manifestTasks.push({

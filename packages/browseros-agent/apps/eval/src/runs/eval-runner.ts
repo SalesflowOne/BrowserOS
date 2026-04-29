@@ -37,7 +37,9 @@ export async function runEval(options: RunEvalOptions): Promise<RunEvalResult> {
     options.config ?? (await loadAndValidateConfig(options.configPath))
 
   // Step 2: Resolve paths relative to config location
-  const configDir = dirname(resolve(options.configPath))
+  const configDir = options.configPath
+    ? dirname(resolve(options.configPath))
+    : process.cwd()
   const resolvedPaths = resolvePaths(options, config, configDir)
 
   // Log configuration
@@ -130,11 +132,11 @@ function resolvePaths(
 }
 
 function formatTimestamp(date: Date): string {
-  const y = date.getFullYear()
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  const h = String(date.getHours()).padStart(2, '0')
-  const min = String(date.getMinutes()).padStart(2, '0')
+  const y = date.getUTCFullYear()
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0')
+  const d = String(date.getUTCDate()).padStart(2, '0')
+  const h = String(date.getUTCHours()).padStart(2, '0')
+  const min = String(date.getUTCMinutes()).padStart(2, '0')
   return `${y}-${m}-${d}-${h}${min}`
 }
 

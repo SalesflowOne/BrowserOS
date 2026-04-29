@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rename, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -162,5 +162,32 @@ describe('R2Publisher', () => {
     await expect(
       readFile(join(second.runDir, 'summary.json'), 'utf-8'),
     ).resolves.toContain('passRate')
+  })
+
+  it('recognizes and publishes canonical tasks directory runs', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'eval-r2-tasks-'))
+    const { runDir, runId } = await writeRunFixture(dir)
+    await mkdir(join(runDir, 'tasks'), { recursive: true })
+    await rename(join(runDir, 'task-1'), join(runDir, 'tasks', 'task-1'))
+    const viewerPath = join(dir, 'viewer.html')
+    await writeFile(viewerPath, '<html>viewer</html>')
+    const client = new FakeR2Client()
+
+    const result = await new R2Publisher({
+      client,
+      viewerPath,
+      config: {
+        accountId: 'acct',
+        accessKeyId: 'key',
+        secretAccessKey: 'secret',
+        bucket: 'bucket',
+        cdnBaseUrl: 'https://eval.example.test',
+      },
+    }).publishPath(runDir)
+
+    const keys = client.puts.map((put) => put.Key)
+    expect(result.uploadedRuns.map((run) => run.runId)).toEqual([runId])
+    expect(keys).toContain(`runs/${runId}/task-1/metadata.json`)
+    expect(keys).toContain(`runs/${runId}/tasks/task-1/metadata.json`)
   })
 })

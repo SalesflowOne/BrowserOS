@@ -1,9 +1,9 @@
 /**
- * Parallel Executor
+ * Task Worker Pool
  *
  * Each worker gets its own isolated BrowserOS stack:
  *   - BrowserOSAppManager (Chrome + Server on unique ports)
- *   - TaskExecutor (uses that worker's server URL)
+ *   - TaskRunPipeline (uses that worker's server URL)
  *
  * Port allocation: Worker N → CDP=base+N, Server=base+N, Extension=base+N
  */
@@ -59,14 +59,14 @@ class TaskQueue {
 }
 
 // ============================================================================
-// Parallel Executor
+// Task Worker Pool
 // ============================================================================
 
 export class TaskWorkerPool {
   private readonly numWorkers: number
   private readonly appManagers = new Map<number, BrowserOSAppManager>()
   private completedCount: number = 0
-  private readonly resultLock = new Map<string, TaskResult>()
+  private readonly resultsByTaskId = new Map<string, TaskResult>()
   private queue: TaskQueue | null = null
 
   constructor(private readonly config: TaskWorkerPoolConfig) {
@@ -112,7 +112,7 @@ export class TaskWorkerPool {
 
       // Return results in original task order
       return tasks.map((task) => {
-        const result = this.resultLock.get(task.query_id)
+        const result = this.resultsByTaskId.get(task.query_id)
         if (!result) {
           return {
             status: 'failed' as const,
@@ -209,7 +209,7 @@ export class TaskWorkerPool {
           }
         }
 
-        this.resultLock.set(task.query_id, result)
+        this.resultsByTaskId.set(task.query_id, result)
         this.completedCount++
 
         // Emit task completion to dashboard

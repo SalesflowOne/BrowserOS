@@ -68,6 +68,7 @@ function suiteToEvalConfig(
   }
 
   if (suite.agent.type === 'single' || suite.agent.type === 'tool-loop') {
+    // The legacy runner names the BrowserOS tool-loop agent "single".
     return EvalConfigSchema.parse({
       ...base,
       agent: {
@@ -175,10 +176,7 @@ export async function runSuiteCommand(
   const result = await runEval(runOptions)
   if (!options.publishTarget) return
 
-  const outputDir =
-    result && typeof result === 'object' && 'outputDir' in result
-      ? result.outputDir
-      : undefined
+  const outputDir = result?.outputDir
   if (!outputDir) {
     throw new Error('publish requested but runner did not return an outputDir')
   }
