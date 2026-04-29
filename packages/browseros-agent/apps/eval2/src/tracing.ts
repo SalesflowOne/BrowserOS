@@ -20,6 +20,8 @@ export function initTracing(config: BenchmarkConfig): void {
   try {
     Laminar.initialize({
       projectApiKey: apiKey,
+      disableBatch: true,
+      forceHttp: true,
       instrumentModules: {},
     })
     initialized = true
@@ -41,6 +43,7 @@ export function isTracingEnabled(): boolean {
 export function getTaskSessionId(
   task: Task,
   config: BenchmarkConfig,
+  runId?: string,
 ): string | null {
   if (!initialized) {
     return null
@@ -50,7 +53,9 @@ export function getTaskSessionId(
   const taskId = task.queryId.startsWith(prefix)
     ? task.queryId.slice(prefix.length)
     : task.queryId
-  return `${config.laminar.sessionPrefix}-${taskId}`
+  return runId
+    ? `${runId}-${taskId}`
+    : `${config.laminar.sessionPrefix}-${taskId}`
 }
 
 export function getAiSdkTelemetry(
@@ -80,6 +85,7 @@ export function getAiSdkTelemetry(
 export async function withTaskTrace<T>(
   task: Task,
   config: BenchmarkConfig,
+  runId: string,
   fn: () => Promise<T>,
 ): Promise<T> {
   if (!initialized) {
@@ -89,9 +95,10 @@ export async function withTaskTrace<T>(
   return await observe(
     {
       name: 'eval.task',
-      sessionId: getTaskSessionId(task, config) ?? task.queryId,
+      sessionId: getTaskSessionId(task, config, runId) ?? task.queryId,
       spanType: 'EXECUTOR',
       metadata: {
+        runId,
         taskId: task.queryId,
         dataset: task.dataset,
         model: config.model,

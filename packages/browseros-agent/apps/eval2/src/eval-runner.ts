@@ -105,7 +105,7 @@ function buildSummary(
       status: result.status,
       durationMs: result.durationMs,
       graderReward: result.graderResult.score,
-      laminarSessionId: getTaskSessionId(result.task, config),
+      laminarSessionId: getTaskSessionId(result.task, config, runId),
     })),
   }
 }
@@ -204,7 +204,7 @@ export async function runEval(configPath: string): Promise<void> {
       const taskStart = Date.now()
       console.log(`\n[${index + 1}/${tasks.length}] ${task.queryId} starting`)
 
-      const agentResult = await withTaskTrace(task, config, () =>
+      const agentResult = await withTaskTrace(task, config, runId, () =>
         activeAgent.runTask(task),
       ).catch((error: unknown) => {
         console.warn(
