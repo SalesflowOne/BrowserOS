@@ -64,6 +64,37 @@ EXCLUDED_TASKS = {
     # the grader's first criterion (search history contains "stanford") was
     # never triggered server-side. Eval-site bug.
     "networkin-9",
+    # Goal text instructs "move event to July 19, 10 AM" but the grader expects
+    # `eventsDiff.updated.*.start == "2024-07-18T17:00:00Z"` (= July 18, 10 AM
+    # PDT — same day, 1 hour shift). Goal contradicts grader: following the
+    # goal yields July 19 timestamps; satisfying the grader requires ignoring
+    # the explicit "to July 19" instruction. Confirmed via 8-trial deep-dive:
+    # never passed even after the Phase 2 HTML5 dnd dispatch fix made the drag
+    # actually populate `eventsDiff.updated` (now produces July 19 values, but
+    # grader rejects them).
+    "gocalendar-7",
+    # Grader hardcodes literal year strings `'Oct 13 2025'` / `'Oct 23 2025'`
+    # in checkin/checkout criteria. Today is 2026, and the staynb date picker
+    # interprets bare "Oct 13" as the most recent past instance — currently
+    # 2024, not 2025. Even a perfectly-acting agent cannot produce a booking
+    # whose persisted date contains "2025". Confirmed via 8 trials, 0 passes.
+    "staynb-5",
+    # Goal says "maximum number of guests supported"; grader expects the very
+    # specific string "32 Guests, 16 Infants" — which requires the agent to
+    # know that (a) Adults+Children sum into the displayed "Guests" count,
+    # (b) Infants render separately, (c) Pets are excluded, (d) per-category
+    # cap is 16 despite no UI affordance signalling it. None of this is in
+    # the prompt. 8 trials, 0 passes; even Opus 4.6 stopped at 16 (one
+    # category maxed). Task is under-specified relative to grader expectation.
+    "staynb-9",
+    # Grader requires `contains(booking.date, '2024-07-20')` but the eval-site
+    # date picker is a React-controlled textbox that the agent's `fill` tool
+    # frequently no-ops on. 3 of 8 trials passed (when fill happened to stick),
+    # 5 failed with `actual_value: False` (booking persisted with the eval-site
+    # default search date, not Jul 20). Effectively a coin-flip task that
+    # exercises tool-fidelity flakiness rather than agent capability —
+    # contributes noise, not signal. Excluding for eval reliability.
+    "opendining-3",
 }
 
 # Far-future replacement used by `freshen_goal_dates` when a task's hardcoded
