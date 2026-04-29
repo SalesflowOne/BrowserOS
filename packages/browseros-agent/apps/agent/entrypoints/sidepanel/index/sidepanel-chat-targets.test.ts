@@ -158,7 +158,7 @@ describe('persistSidepanelChatTargetSelection', () => {
       },
     })
 
-    expect(savedSelection).toEqual({
+    expect(savedSelection as SidepanelChatTargetSelection | null).toEqual({
       kind: 'acp',
       id: 'acp:codex:gpt-5.5:medium',
     })
