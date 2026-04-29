@@ -296,6 +296,7 @@ export class ContainerRuntime {
   }
 
   private async ensureGatewayImageLoaded(onLog?: LogFn): Promise<string> {
+    // Local image testing can bypass the synced VM manifest with OPENCLAW_IMAGE.
     const override = process.env.OPENCLAW_IMAGE?.trim()
     if (override) {
       await this.loader.ensureImageLoaded(override, onLog)

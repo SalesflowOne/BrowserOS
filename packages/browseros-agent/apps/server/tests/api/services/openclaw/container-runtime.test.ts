@@ -4,13 +4,11 @@
  */
 
 import { describe, expect, it, mock } from 'bun:test'
-import {
-  OPENCLAW_GATEWAY_CONTAINER_NAME,
-  OPENCLAW_GATEWAY_IMAGE,
-} from '@browseros/shared/constants/openclaw'
+import { OPENCLAW_GATEWAY_CONTAINER_NAME } from '@browseros/shared/constants/openclaw'
 import { ContainerRuntime } from '../../../../src/api/services/openclaw/container-runtime'
 
 const PROJECT_DIR = '/tmp/openclaw'
+const GATEWAY_IMAGE_REF = 'ghcr.io/openclaw/openclaw:2026.4.12'
 const defaultSpec = {
   hostPort: 18789,
   hostHome: '/Users/me/.browseros/vm/openclaw',
@@ -43,7 +41,7 @@ describe('ContainerRuntime', () => {
     expect(deps.shell.createContainer).toHaveBeenCalledWith(
       expect.objectContaining({
         name: OPENCLAW_GATEWAY_CONTAINER_NAME,
-        image: OPENCLAW_GATEWAY_IMAGE,
+        image: GATEWAY_IMAGE_REF,
         restart: 'unless-stopped',
         ports: [
           {
@@ -139,7 +137,7 @@ describe('ContainerRuntime', () => {
         '/mnt/browseros/vm/openclaw:/home/node',
         '--add-host',
         'host.containers.internal:192.168.5.2',
-        OPENCLAW_GATEWAY_IMAGE,
+        GATEWAY_IMAGE_REF,
       ]),
       undefined,
     )
@@ -203,7 +201,7 @@ function createDeps() {
     },
     loader: {
       ensureImageLoaded: mock(async () => {}),
-      ensureAgentImageLoaded: mock(async () => OPENCLAW_GATEWAY_IMAGE),
+      ensureAgentImageLoaded: mock(async () => GATEWAY_IMAGE_REF),
     },
   }
 }

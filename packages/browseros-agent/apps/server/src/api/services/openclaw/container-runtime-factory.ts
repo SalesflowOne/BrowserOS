@@ -123,14 +123,7 @@ class DeferredImageLoader {
   ) {}
 
   async ensureImageLoaded(ref: string, onLog?: (msg: string) => void) {
-    await this.ensureCacheSynced()
-    const manifest = await readCachedManifest(this.browserosRoot)
-    const loader = new ImageLoader(
-      this.shell,
-      manifest,
-      detectArch(),
-      this.browserosRoot,
-    )
+    const loader = await this.buildLoader()
     await loader.ensureImageLoaded(ref, onLog)
   }
 
@@ -138,15 +131,19 @@ class DeferredImageLoader {
     name: string,
     onLog?: (msg: string) => void,
   ): Promise<string> {
+    const loader = await this.buildLoader()
+    return loader.ensureAgentImageLoaded(name, onLog)
+  }
+
+  private async buildLoader(): Promise<ImageLoader> {
     await this.ensureCacheSynced()
     const manifest = await readCachedManifest(this.browserosRoot)
-    const loader = new ImageLoader(
+    return new ImageLoader(
       this.shell,
       manifest,
       detectArch(),
       this.browserosRoot,
     )
-    return loader.ensureAgentImageLoaded(name, onLog)
   }
 
   private async ensureCacheSynced(): Promise<void> {

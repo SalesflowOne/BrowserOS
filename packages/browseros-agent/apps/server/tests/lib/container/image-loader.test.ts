@@ -79,6 +79,61 @@ describe('ImageLoader', () => {
     ])
   })
 
+  it('returns an agent image ref without loading when already cached', async () => {
+    const cli = new FakeContainerCli([true])
+    const loader = new ImageLoader(cli as never, manifest, 'arm64')
+
+    await expect(loader.ensureAgentImageLoaded('openclaw')).resolves.toBe(
+      'ghcr.io/openclaw/openclaw:2026.4.12',
+    )
+
+    expect(cli.loadCalls).toEqual([])
+    expect(cli.existsCalls).toEqual(['ghcr.io/openclaw/openclaw:2026.4.12'])
+  })
+
+  it('throws ImageLoadError when the agent name is absent from the manifest', async () => {
+    const cli = new FakeContainerCli([])
+    const loader = new ImageLoader(cli as never, manifest, 'arm64')
+
+    const error = await loader
+      .ensureAgentImageLoaded('missing')
+      .catch((err) => err)
+
+    expect(error).toBeInstanceOf(ImageLoadError)
+    expect(error.message).toContain('no agent in manifest: missing')
+    expect(cli.existsCalls).toEqual([])
+    expect(cli.loadCalls).toEqual([])
+  })
+
+  it('throws ImageLoadError when the manifest lacks a tarball for the arch', async () => {
+    const missingArchManifest = {
+      ...manifest,
+      agents: {
+        openclaw: {
+          image: 'ghcr.io/openclaw/openclaw',
+          version: '2026.4.12',
+          tarballs: {
+            arm64: {
+              key: 'vm/images/openclaw-2026.4.12-arm64.tar.gz',
+              sha256: 'agent-arm',
+              sizeBytes: 1,
+            },
+          },
+        },
+      },
+    } as unknown as VmManifest
+    const cli = new FakeContainerCli([false])
+    const loader = new ImageLoader(cli as never, missingArchManifest, 'x64')
+
+    const error = await loader
+      .ensureAgentImageLoaded('openclaw')
+      .catch((err) => err)
+
+    expect(error).toBeInstanceOf(ImageLoadError)
+    expect(error.message).toContain('no x64 tarball in manifest')
+    expect(cli.loadCalls).toEqual([])
+  })
+
   it('resolves image tarballs against the configured BrowserOS root', async () => {
     const cli = new FakeContainerCli([false, true])
     const browserosRoot = '/tmp/browseros-custom-root'
