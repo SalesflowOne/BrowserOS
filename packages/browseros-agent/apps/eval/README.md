@@ -140,7 +140,8 @@ Each worker gets its own Chrome instance. Worker N uses `base_port + N` for CDP 
 | `webvoyager.jsonl` | 643 | Full WebVoyager benchmark |
 | `mind2web.jsonl` | 300 | Online-Mind2Web |
 | `webbench-{0,1,2}of4-50.jsonl` | 50 each | WebBench shards (50-task subsets) |
-| `agisdk-real.jsonl` | 40 | AGI SDK / REAL Bench (action-only tasks) |
+| `agisdk-real-smoke.jsonl` | 1 | AGI SDK / REAL Bench smoke task |
+| `agisdk-real.jsonl` | 36 | AGI SDK / REAL Bench (action-only tasks) |
 | `webarena-infinity-hard-50.jsonl` | 50 | WebArena-Infinity hard set |
 | `browsecomp-medium-hard-50.jsonl` | 50 | BrowseComp medium-hard |
 | `browsecomp-very-hard-50.jsonl` | 50 | BrowseComp very-hard |

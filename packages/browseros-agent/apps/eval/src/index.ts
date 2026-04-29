@@ -32,7 +32,8 @@ Preset configs in configs/:
   - browseros-agent-weekly.json       Weekly eval (single agent)
   - browseros-oe-agent-weekly.json    Weekly eval (orchestrator + LLM executor)
   - browseros-oe-clado-weekly.json    Weekly eval (orchestrator + Clado executor)
-  - agisdk-real-smoke.json            AGI SDK smoke run
+  - agisdk-real-smoke.json            AGI SDK smoke run (1 task)
+  - agisdk-real.json                  AGI SDK full run (36 tasks)
   - infinity-hard-50.json             WebArena-Infinity hard-50 set
   - test-webvoyager.json              WebVoyager test
   - test-mind2web.json                Mind2Web test
