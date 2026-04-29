@@ -97,6 +97,9 @@ describe('R2Publisher', () => {
     expect(byKey.get(`runs/${runId}/manifest.json`)?.ContentType).toBe(
       'application/json',
     )
+    expect(byKey.get(`runs/${runId}/summary.json`)?.ContentType).toBe(
+      'application/json',
+    )
     expect(byKey.get('viewer.html')?.ContentType).toBe('text/html')
     expect(result.viewerUrl).toBe(
       `https://eval.example.test/viewer.html?run=${runId}`,

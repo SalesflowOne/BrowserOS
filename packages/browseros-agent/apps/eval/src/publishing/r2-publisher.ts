@@ -119,6 +119,20 @@ async function isRunDir(dir: string): Promise<boolean> {
   return false
 }
 
+async function collectRunRootFiles(runDir: string): Promise<UploadJob[]> {
+  const entries = await readdir(runDir, { withFileTypes: true })
+  return entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => {
+      const filePath = join(runDir, entry.name)
+      return {
+        key: entry.name,
+        filePath,
+        contentType: contentTypeForPath(filePath),
+      }
+    })
+}
+
 function statusFromMetadata(meta: Record<string, unknown>): string {
   return meta.termination_reason === 'completed'
     ? 'completed'
@@ -212,7 +226,12 @@ export class R2Publisher {
     }
 
     const manifestTasks: R2ManifestTask[] = []
-    const jobs: UploadJob[] = []
+    const jobs: UploadJob[] = (await collectRunRootFiles(runDir)).map(
+      (job) => ({
+        ...job,
+        key: `runs/${runId}/${job.key}`,
+      }),
+    )
     let agentConfig: Record<string, unknown> | undefined
     let dataset: string | undefined
 
