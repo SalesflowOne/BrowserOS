@@ -1,22 +1,27 @@
 import { randomUUID } from 'node:crypto'
-import { MAX_ACTIONS_PER_DELEGATION } from '../../constants'
-import { McpClient, type McpToolResult } from '../../utils/mcp-client'
-import { sleep } from '../../utils/sleep'
+import { MAX_ACTIONS_PER_DELEGATION } from '../../../../constants'
+import { McpClient, type McpToolResult } from '../../../../utils/mcp-client'
+import { sleep } from '../../../../utils/sleep'
+import type {
+  ExecutorConfig,
+  ExecutorResult,
+} from '../../../orchestrator-executor/types'
+import type { ExecutorCallbacks } from '../../executor-backend'
 import {
   extractCladoThinking,
   formatCladoHistory,
   getCladoActionSignature,
   parseCladoActions,
   summarizeCladoPrediction,
-} from '../orchestrated/backends/clado/clado-actions'
+} from './clado-actions'
 import {
   normalizeCladoDirection,
   normalizeCladoPressKey,
   normalizeCladoScrollAmount,
   prepareCladoToolArgs,
   resolveCladoPoint,
-} from '../orchestrated/backends/clado/clado-browser-driver'
-import { CladoActionClient } from '../orchestrated/backends/clado/clado-client'
+} from './clado-browser-driver'
+import { CladoActionClient } from './clado-client'
 import {
   CLADO_ACTION_PROVIDER,
   type CladoAction,
@@ -24,9 +29,7 @@ import {
   type CladoActionResponse,
   type CladoViewport,
   isCladoActionProvider,
-} from '../orchestrated/backends/clado/types'
-import type { ExecutorCallbacks } from './executor'
-import type { ExecutorConfig, ExecutorResult } from './types'
+} from './types'
 
 const MAX_CONSECUTIVE_PARSE_FAILURES = 3
 
@@ -45,7 +48,7 @@ export class CladoActionExecutor {
   private currentUrl = ''
 
   constructor(
-    private readonly config: ExecutorConfig,
+    config: ExecutorConfig,
     serverUrl: string,
     readonly _windowId?: number,
     readonly _tabId?: number,
