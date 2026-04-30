@@ -24,16 +24,16 @@ import {
   resolveProviderConfig,
 } from '../../utils/resolve-provider-config'
 import { withEvalTimeout } from '../../utils/with-eval-timeout'
+import { isCladoActionProvider } from '../orchestrated/backends/clado/types'
 import { createExecutorBackend } from '../orchestrated/backends/create-executor-backend'
+import type { ExecutorCallbacks } from '../orchestrated/executor-backend'
 import type { AgentContext, AgentEvaluator, AgentResult } from '../types'
-import type { ExecutorCallbacks } from './executor'
 import { OrchestratorAgent } from './orchestrator-agent'
 import type { ExecutorFactory, ExecutorResult } from './types'
 
 interface ResolvedConfigs {
   orchestratorConfig: ResolvedAgentConfig & { maxTurns?: number }
   executorConfig: ResolvedAgentConfig
-  isCladoAction: boolean
 }
 
 function toResolvedAgentConfig(
@@ -68,7 +68,10 @@ async function resolveAgentConfig(
   if (!executorModel) {
     throw new Error('executor.model is required in config')
   }
-  if (config.executor.provider === 'clado-action' && !config.executor.baseUrl) {
+  if (
+    isCladoActionProvider(config.executor.provider) &&
+    !config.executor.baseUrl
+  ) {
     throw new Error(
       'executor.baseUrl is required in config for clado-action provider',
     )
@@ -76,10 +79,8 @@ async function resolveAgentConfig(
 
   const resolvedOrchestrator = await resolveProviderConfig(config.orchestrator)
 
-  const isCladoAction = config.executor.provider === 'clado-action'
-
   let executorConfig: ResolvedAgentConfig
-  if (isCladoAction) {
+  if (isCladoActionProvider(config.executor.provider)) {
     executorConfig = {
       conversationId: crypto.randomUUID(),
       provider: config.executor.provider as ResolvedAgentConfig['provider'],
@@ -108,7 +109,7 @@ async function resolveAgentConfig(
     maxTurns: config.orchestrator.maxTurns,
   }
 
-  return { orchestratorConfig, executorConfig, isCladoAction }
+  return { orchestratorConfig, executorConfig }
 }
 
 export class OrchestratorExecutorEvaluator implements AgentEvaluator {
@@ -128,7 +129,7 @@ export class OrchestratorExecutorEvaluator implements AgentEvaluator {
     }
 
     const agentConfig = config.agent as OrchestratorExecutorConfig
-    const { orchestratorConfig, executorConfig, isCladoAction } =
+    const { orchestratorConfig, executorConfig } =
       await resolveAgentConfig(agentConfig)
 
     // Connect to Chrome via CDP — same per-worker offset used by app-manager.
@@ -237,7 +238,6 @@ export class OrchestratorExecutorEvaluator implements AgentEvaluator {
         capture.emitEvent(task.query_id, delegateInputEvent)
 
         const executor = createExecutorBackend({
-          backendKind: isCladoAction ? 'clado' : 'tool-loop',
           configTemplate: executorConfig,
           browser,
           serverUrl: config.browseros.server_url,
@@ -331,6 +331,5 @@ export class OrchestratorExecutorEvaluator implements AgentEvaluator {
   }
 }
 
-export { Executor } from './executor'
 export { OrchestratorAgent } from './orchestrator-agent'
 export * from './types'
