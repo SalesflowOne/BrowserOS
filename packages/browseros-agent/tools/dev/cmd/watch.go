@@ -66,6 +66,13 @@ func runWatch(cmd *cobra.Command, args []string) error {
 		if err := os.MkdirAll(userDataDir, 0o755); err != nil {
 			return fmt.Errorf("creating user-data dir: %w", err)
 		}
+		stopped, err := proc.StopExistingWatchProcesses(3 * time.Second)
+		if err != nil {
+			return err
+		}
+		if stopped > 0 {
+			proc.LogMsgf(proc.TagInfo, "Stopped %d existing dev watch process group(s)", stopped)
+		}
 		proc.LogMsg(proc.TagInfo, "Killing processes on preferred ports...")
 		if err := proc.KillPortsAndWait(defaultPorts, 3*time.Second); err != nil {
 			return err
