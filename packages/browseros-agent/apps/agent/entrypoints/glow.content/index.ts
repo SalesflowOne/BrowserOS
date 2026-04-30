@@ -124,18 +124,51 @@ function injectStyles(): void {
 
     #${CLICK_MARKER_ID} {
       position: fixed !important;
-      width: 12px !important;
-      height: 12px !important;
-      border-radius: 50% !important;
-      background: rgba(220, 38, 38, 0.96) !important;
-      border: 2px solid rgba(255, 255, 255, 0.95) !important;
-      box-shadow:
-        0 0 0 2px rgba(220, 38, 38, 0.22),
-        0 0 12px 4px rgba(220, 38, 38, 0.42),
-        0 2px 6px rgba(0, 0, 0, 0.35) !important;
+      width: 54px !important;
+      height: 54px !important;
+      color: rgba(255, 0, 0, 0.96) !important;
+      background:
+        linear-gradient(currentColor, currentColor) center / 2px 54px no-repeat,
+        linear-gradient(90deg, currentColor, currentColor) center / 54px 2px no-repeat !important;
       pointer-events: none !important;
       z-index: 2147483647 !important;
       animation: browseros-click-marker-pop 1.15s cubic-bezier(0.22, 1, 0.36, 1) forwards !important;
+    }
+
+    #${CLICK_MARKER_ID}::before {
+      content: "" !important;
+      position: absolute !important;
+      top: 50% !important;
+      left: 50% !important;
+      width: 32px !important;
+      height: 32px !important;
+      box-sizing: border-box !important;
+      border: 2px solid currentColor !important;
+      border-radius: 50% !important;
+      transform: translate(-50%, -50%) !important;
+    }
+
+    #${CLICK_MARKER_ID}::after {
+      content: "" !important;
+      position: absolute !important;
+      top: 50% !important;
+      left: 50% !important;
+      width: 16px !important;
+      height: 16px !important;
+      border-radius: 50% !important;
+      background: currentColor !important;
+      box-shadow: 0 0 8px rgba(255, 0, 0, 0.55) !important;
+      transform: translate(-50%, -50%) !important;
+    }
+
+    #${CLICK_MARKER_ID} > span {
+      position: absolute !important;
+      top: calc(50% - 10px) !important;
+      left: calc(50% + 18px) !important;
+      color: currentColor !important;
+      font: 12px/1 Arial, Helvetica, sans-serif !important;
+      white-space: nowrap !important;
+      text-shadow: 0 1px 2px rgba(255, 255, 255, 0.85) !important;
     }
   `
   const appendStyle = () => document.head.appendChild(style)
@@ -193,6 +226,10 @@ function showClickMarker(x: number, y: number): void {
   marker.id = CLICK_MARKER_ID
   marker.style.left = `${x}px`
   marker.style.top = `${y}px`
+
+  const label = document.createElement('span')
+  label.textContent = `(${Math.round(x)}, ${Math.round(y)})`
+  marker.appendChild(label)
 
   const appendMarker = () => document.body.appendChild(marker)
 
