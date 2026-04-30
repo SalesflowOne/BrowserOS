@@ -124,15 +124,15 @@ function injectStyles(): void {
 
     #${CLICK_MARKER_ID} {
       position: fixed !important;
-      width: 34px !important;
-      height: 34px !important;
+      width: 12px !important;
+      height: 12px !important;
       border-radius: 50% !important;
       background: rgba(220, 38, 38, 0.96) !important;
-      border: 3px solid rgba(255, 255, 255, 0.95) !important;
+      border: 2px solid rgba(255, 255, 255, 0.95) !important;
       box-shadow:
-        0 0 0 5px rgba(220, 38, 38, 0.24),
-        0 0 30px 12px rgba(220, 38, 38, 0.42),
-        0 4px 12px rgba(0, 0, 0, 0.35) !important;
+        0 0 0 2px rgba(220, 38, 38, 0.22),
+        0 0 12px 4px rgba(220, 38, 38, 0.42),
+        0 2px 6px rgba(0, 0, 0, 0.35) !important;
       pointer-events: none !important;
       z-index: 2147483647 !important;
       animation: browseros-click-marker-pop 1.15s cubic-bezier(0.22, 1, 0.36, 1) forwards !important;
