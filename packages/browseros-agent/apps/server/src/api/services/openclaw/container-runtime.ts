@@ -106,7 +106,15 @@ export class ContainerRuntime {
     const image = await this.shell.containerImageRef(
       OPENCLAW_GATEWAY_CONTAINER_NAME,
     )
-    return image === this.expectedGatewayImageRef()
+    const expected = this.expectedGatewayImageRef()
+    const current = imageMatchesExpectedRef(image, expected)
+    if (!current) {
+      logger.info('OpenClaw gateway image is not current', {
+        actualImageRef: image,
+        expectedImageRef: expected,
+      })
+    }
+    return current
   }
 
   async startGateway(
@@ -347,4 +355,13 @@ export class ContainerRuntime {
     }
     return hostPathToGuest(path)
   }
+}
+
+function imageMatchesExpectedRef(
+  actual: string | null,
+  expected: string,
+): boolean {
+  return (
+    actual === expected || actual?.startsWith(`${expected}@sha256:`) === true
+  )
 }

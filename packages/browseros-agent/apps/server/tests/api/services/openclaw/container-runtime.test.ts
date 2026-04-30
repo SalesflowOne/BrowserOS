@@ -212,6 +212,21 @@ describe('ContainerRuntime', () => {
     )
   })
 
+  it('treats a digest-qualified current image ref as current', async () => {
+    const deps = createDeps()
+    deps.shell.containerImageRef.mockImplementation(
+      async () => `${OPENCLAW_IMAGE}@sha256:${'a'.repeat(64)}`,
+    )
+    const runtime = new ContainerRuntime({
+      vm: deps.vm,
+      shell: deps.shell,
+      loader: deps.loader,
+      projectDir: PROJECT_DIR,
+    })
+
+    await expect(runtime.isGatewayCurrent()).resolves.toBe(true)
+  })
+
   it('detects when the gateway container uses an old image', async () => {
     const deps = createDeps()
     deps.shell.containerImageRef.mockImplementation(

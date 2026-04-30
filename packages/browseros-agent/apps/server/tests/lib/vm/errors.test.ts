@@ -46,8 +46,30 @@ describe('VM errors', () => {
   })
 
   it('exports VM telemetry event names', () => {
+    expect(Object.keys(VM_TELEMETRY_EVENTS)).toEqual([
+      'ensureReadyStart',
+      'ensureReadyOk',
+      'ensureReadyBranch',
+      'create',
+      'start',
+      'stop',
+      'resetDetected',
+      'resetOk',
+      'nerdctlWaitStart',
+      'nerdctlWaitOk',
+      'nerdctlWaitPoll',
+      'nerdctlWaitTimeout',
+      'migrationOpenClawMoved',
+      'limaSpawn',
+      'limaExit',
+      'limaStderrChunk',
+      'provisionYamlWrite',
+      'provisionCreateStart',
+      'provisionCreateOk',
+      'provisionStartBegin',
+      'provisionStartOk',
+    ])
     expect(VM_TELEMETRY_EVENTS.ensureReadyStart).toBe('vm.ensure_ready.start')
-    expect(VM_TELEMETRY_EVENTS.downgradeDetected).toBe('vm.downgrade.detected')
     expect(VM_TELEMETRY_EVENTS.nerdctlWaitTimeout).toBe(
       'vm.nerdctl_wait.timeout',
     )
