@@ -38,13 +38,16 @@ export const AgentRowCard: FC<AgentRowCardProps> = ({
   return (
     <div
       className={cn(
-        'group rounded-xl border bg-card p-4 shadow-sm transition-all',
-        'hover:-translate-y-px hover:shadow-md',
+        // Layout-stable hover. No translate, no shadow change — both
+        // visibly perturb neighbouring rows. Only the border tint
+        // shifts on hover, and the rail's vertical rhythm stays
+        // exactly the same in every state.
+        'group rounded-xl border bg-card p-4 shadow-sm transition-colors',
         data.status === 'working'
-          ? 'border-[var(--accent-orange)]/40 shadow-[0_0_0_1px_color-mix(in_srgb,var(--accent-orange)_18%,transparent)]'
+          ? 'border-[var(--accent-orange)]/40'
           : data.status === 'error'
             ? 'border-destructive/40'
-            : 'border-border hover:border-[var(--accent-orange)]/40',
+            : 'border-border hover:border-[var(--accent-orange)]/30',
       )}
     >
       <div className="flex items-start gap-4">
