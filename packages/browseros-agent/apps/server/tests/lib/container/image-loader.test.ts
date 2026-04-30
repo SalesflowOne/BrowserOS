@@ -3,197 +3,83 @@
  * Copyright 2025 BrowserOS
  */
 
-import { afterEach, describe, expect, it, mock, spyOn } from 'bun:test'
+import { describe, expect, it } from 'bun:test'
+import { OPENCLAW_IMAGE } from '@browseros/shared/constants/openclaw'
 import type { ContainerCli } from '../../../src/lib/container/container-cli'
 import { ImageLoader } from '../../../src/lib/container/image-loader'
 import { ContainerCliError, ImageLoadError } from '../../../src/lib/vm/errors'
-import type { VmManifest } from '../../../src/lib/vm/manifest'
-import * as paths from '../../../src/lib/vm/paths'
-
-const manifest: VmManifest = {
-  schemaVersion: 2,
-  updatedAt: '2026-04-22T00:00:00.000Z',
-  agents: {
-    openclaw: {
-      image: 'ghcr.io/openclaw/openclaw',
-      version: '2026.4.12',
-      tarballs: {
-        arm64: {
-          key: 'vm/images/openclaw-2026.4.12-arm64.tar.gz',
-          sha256: 'agent-arm',
-          sizeBytes: 1,
-        },
-        x64: {
-          key: 'vm/images/openclaw-2026.4.12-x64.tar.gz',
-          sha256: 'agent-x64',
-          sizeBytes: 1,
-        },
-      },
-    },
-  },
-}
 
 describe('ImageLoader', () => {
-  afterEach(() => {
-    mock.restore()
-  })
-
-  it('returns without loading when the image already exists', async () => {
+  it('returns without pulling when the image already exists', async () => {
     const cli = new FakeContainerCli([true])
-    const loader = new ImageLoader(cli as never, manifest, 'arm64')
+    const loader = new ImageLoader(cli as never)
 
-    await loader.ensureImageLoaded('ghcr.io/openclaw/openclaw:2026.4.12')
+    await loader.ensureImageLoaded(OPENCLAW_IMAGE)
 
-    expect(cli.loadCalls).toEqual([])
+    expect(cli.pullCalls).toEqual([])
+    expect(cli.existsCalls).toEqual([OPENCLAW_IMAGE])
   })
 
-  it('loads a missing image from the guest cache and verifies it exists', async () => {
+  it('pulls a missing image and verifies it exists', async () => {
     const cli = new FakeContainerCli([false, true])
-    const loader = new ImageLoader(cli as never, manifest, 'arm64')
+    const loader = new ImageLoader(cli as never)
 
-    await loader.ensureImageLoaded('ghcr.io/openclaw/openclaw:2026.4.12')
+    await loader.ensureImageLoaded(OPENCLAW_IMAGE)
 
-    expect(cli.loadCalls).toEqual([
-      '/mnt/browseros/cache/images/openclaw-2026.4.12-arm64.tar.gz',
-    ])
-    expect(cli.existsCalls).toEqual([
-      'ghcr.io/openclaw/openclaw:2026.4.12',
-      'ghcr.io/openclaw/openclaw:2026.4.12',
-    ])
+    expect(cli.pullCalls).toEqual([OPENCLAW_IMAGE])
+    expect(cli.existsCalls).toEqual([OPENCLAW_IMAGE, OPENCLAW_IMAGE])
   })
 
-  it('loads an agent image by manifest name and returns its image ref', async () => {
+  it('loads the OpenClaw agent image by manifest name', async () => {
     const cli = new FakeContainerCli([false, true])
-    const loader = new ImageLoader(cli as never, manifest, 'arm64')
+    const loader = new ImageLoader(cli as never)
 
     await expect(loader.ensureAgentImageLoaded('openclaw')).resolves.toBe(
-      'ghcr.io/openclaw/openclaw:2026.4.12',
+      OPENCLAW_IMAGE,
     )
 
-    expect(cli.loadCalls).toEqual([
-      '/mnt/browseros/cache/images/openclaw-2026.4.12-arm64.tar.gz',
-    ])
-    expect(cli.existsCalls).toEqual([
-      'ghcr.io/openclaw/openclaw:2026.4.12',
-      'ghcr.io/openclaw/openclaw:2026.4.12',
-    ])
+    expect(cli.pullCalls).toEqual([OPENCLAW_IMAGE])
   })
 
-  it('returns an agent image ref without loading when already cached', async () => {
-    const cli = new FakeContainerCli([true])
-    const loader = new ImageLoader(cli as never, manifest, 'arm64')
-
-    await expect(loader.ensureAgentImageLoaded('openclaw')).resolves.toBe(
-      'ghcr.io/openclaw/openclaw:2026.4.12',
-    )
-
-    expect(cli.loadCalls).toEqual([])
-    expect(cli.existsCalls).toEqual(['ghcr.io/openclaw/openclaw:2026.4.12'])
-  })
-
-  it('throws ImageLoadError when the agent name is absent from the manifest', async () => {
+  it('throws ImageLoadError for unknown agent names', async () => {
     const cli = new FakeContainerCli([])
-    const loader = new ImageLoader(cli as never, manifest, 'arm64')
+    const loader = new ImageLoader(cli as never)
 
-    const error = await loader
-      .ensureAgentImageLoaded('missing')
-      .catch((err) => err)
-
-    expect(error).toBeInstanceOf(ImageLoadError)
-    expect(error.message).toContain('no agent in manifest: missing')
-    expect(cli.existsCalls).toEqual([])
-    expect(cli.loadCalls).toEqual([])
-  })
-
-  it('throws ImageLoadError when the manifest lacks a tarball for the arch', async () => {
-    const missingArchManifest = {
-      ...manifest,
-      agents: {
-        openclaw: {
-          image: 'ghcr.io/openclaw/openclaw',
-          version: '2026.4.12',
-          tarballs: {
-            arm64: {
-              key: 'vm/images/openclaw-2026.4.12-arm64.tar.gz',
-              sha256: 'agent-arm',
-              sizeBytes: 1,
-            },
-          },
-        },
-      },
-    } as unknown as VmManifest
-    const cli = new FakeContainerCli([false])
-    const loader = new ImageLoader(cli as never, missingArchManifest, 'x64')
-
-    const error = await loader
-      .ensureAgentImageLoaded('openclaw')
-      .catch((err) => err)
-
-    expect(error).toBeInstanceOf(ImageLoadError)
-    expect(error.message).toContain('no x64 tarball in manifest')
-    expect(cli.loadCalls).toEqual([])
-  })
-
-  it('resolves image tarballs against the configured BrowserOS root', async () => {
-    const cli = new FakeContainerCli([false, true])
-    const browserosRoot = '/tmp/browseros-custom-root'
-    const loader = new ImageLoader(
-      cli as never,
-      manifest,
-      'arm64',
-      browserosRoot,
-    )
-    const getImageCacheDir = spyOn(paths, 'getImageCacheDir')
-    const hostPathToGuest = spyOn(paths, 'hostPathToGuest')
-
-    await loader.ensureImageLoaded('ghcr.io/openclaw/openclaw:2026.4.12')
-
-    expect(getImageCacheDir).toHaveBeenCalledWith(browserosRoot)
-    expect(hostPathToGuest).toHaveBeenCalledWith(
-      '/tmp/browseros-custom-root/cache/vm/images/openclaw-2026.4.12-arm64.tar.gz',
-      browserosRoot,
-    )
-  })
-
-  it('throws ImageLoadError when a loaded image is still absent', async () => {
-    const cli = new FakeContainerCli([false, false])
-    const loader = new ImageLoader(cli as never, manifest, 'arm64')
-
-    await expect(
-      loader.ensureImageLoaded('ghcr.io/openclaw/openclaw:2026.4.12'),
-    ).rejects.toThrow(ImageLoadError)
-  })
-
-  it('throws ImageLoadError for unknown refs without loading', async () => {
-    const cli = new FakeContainerCli([false])
-    const loader = new ImageLoader(cli as never, manifest, 'arm64')
-
-    await expect(loader.ensureImageLoaded('missing:v1')).rejects.toThrow(
+    await expect(loader.ensureAgentImageLoaded('missing')).rejects.toThrow(
       ImageLoadError,
     )
-    expect(cli.loadCalls).toEqual([])
+    expect(cli.pullCalls).toEqual([])
   })
 
-  it('wraps ContainerCliError load failures as ImageLoadError', async () => {
+  it('throws ImageLoadError when pull succeeds but image is still absent', async () => {
+    const cli = new FakeContainerCli([false, false])
+    const loader = new ImageLoader(cli as never)
+
+    await expect(loader.ensureImageLoaded(OPENCLAW_IMAGE)).rejects.toThrow(
+      ImageLoadError,
+    )
+  })
+
+  it('wraps ContainerCliError pull failures as ImageLoadError', async () => {
     const cli = new FakeContainerCli([false])
-    cli.loadError = new ContainerCliError('nerdctl load', 125, 'bad archive')
-    const loader = new ImageLoader(cli as never, manifest, 'arm64')
+    cli.pullError = new ContainerCliError('nerdctl pull', 1, 'network failed')
+    const loader = new ImageLoader(cli as never)
 
     const error = await loader
-      .ensureImageLoaded('ghcr.io/openclaw/openclaw:2026.4.12')
+      .ensureImageLoaded(OPENCLAW_IMAGE)
       .catch((err) => err)
 
     expect(error).toBeInstanceOf(ImageLoadError)
-    expect(error.cause).toBe(cli.loadError)
+    expect(error.cause).toBe(cli.pullError)
   })
 })
 
 class FakeContainerCli
-  implements Pick<ContainerCli, 'imageExists' | 'loadImage'>
+  implements Pick<ContainerCli, 'imageExists' | 'pullImage'>
 {
   existsCalls: string[] = []
-  loadCalls: string[] = []
-  loadError: Error | null = null
+  pullCalls: string[] = []
+  pullError: Error | null = null
 
   constructor(private readonly existsResponses: boolean[]) {}
 
@@ -202,9 +88,8 @@ class FakeContainerCli
     return this.existsResponses.shift() ?? false
   }
 
-  async loadImage(path: string): Promise<string[]> {
-    this.loadCalls.push(path)
-    if (this.loadError) throw this.loadError
-    return ['loaded']
+  async pullImage(ref: string): Promise<void> {
+    this.pullCalls.push(ref)
+    if (this.pullError) throw this.pullError
   }
 }

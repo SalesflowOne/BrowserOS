@@ -4,87 +4,41 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import { basename, join } from 'node:path'
+import {
+  OPENCLAW_AGENT_NAME,
+  OPENCLAW_IMAGE,
+} from '@browseros/shared/constants/openclaw'
 import { ContainerCliError, ImageLoadError } from '../vm/errors'
-import type { VmAgentTarball, VmManifest } from '../vm/manifest'
-import type { Arch } from '../vm/paths'
-import { getImageCacheDir, hostPathToGuest } from '../vm/paths'
 import type { ContainerCli } from './container-cli'
 import type { LogFn } from './types'
 
 export class ImageLoader {
-  constructor(
-    private readonly cli: ContainerCli,
-    private readonly manifest: VmManifest,
-    private readonly arch: Arch,
-    private readonly browserosRoot?: string,
-  ) {}
+  constructor(private readonly cli: ContainerCli) {}
 
+  /** Ensure an image ref exists in the VM's persistent containerd store. */
   async ensureImageLoaded(ref: string, onLog?: LogFn): Promise<void> {
     if (await this.cli.imageExists(ref)) return
 
-    const tarball = this.resolveTarball(ref)
-    await this.loadResolvedTarball(ref, tarball, onLog)
-  }
-
-  /** Load an agent tarball from the VM cache and return its local image ref. */
-  async ensureAgentImageLoaded(name: string, onLog?: LogFn): Promise<string> {
-    const agent = this.resolveAgent(name)
-    const ref = `${agent.image}:${agent.version}`
-    if (await this.cli.imageExists(ref)) return ref
-
-    const tarball = agent.tarballs[this.arch]
-    if (!tarball) {
-      throw new ImageLoadError(ref, `no ${this.arch} tarball in manifest`)
-    }
-    await this.loadResolvedTarball(ref, tarball, onLog)
-    return ref
-  }
-
-  private async loadResolvedTarball(
-    ref: string,
-    tarball: VmAgentTarball,
-    onLog?: LogFn,
-  ): Promise<void> {
-    const hostPath = join(
-      getImageCacheDir(this.browserosRoot),
-      basename(tarball.key),
-    )
-    const guestPath = hostPathToGuest(hostPath, this.browserosRoot)
-
     try {
-      await this.cli.loadImage(guestPath, onLog)
+      await this.cli.pullImage(ref, onLog)
     } catch (error) {
       if (error instanceof ContainerCliError) {
-        throw new ImageLoadError(ref, `load failed: ${error.stderr}`, error)
+        throw new ImageLoadError(ref, `pull failed: ${error.stderr}`, error)
       }
       throw error
     }
 
     if (!(await this.cli.imageExists(ref))) {
-      throw new ImageLoadError(
-        ref,
-        `image not present after successful load of ${guestPath}`,
-      )
+      throw new ImageLoadError(ref, 'image not present after successful pull')
     }
   }
 
-  private resolveTarball(ref: string): VmAgentTarball {
-    for (const agent of Object.values(this.manifest.agents)) {
-      if (`${agent.image}:${agent.version}` !== ref) continue
-      const tarball = agent.tarballs[this.arch]
-      if (!tarball) {
-        throw new ImageLoadError(ref, `no ${this.arch} tarball in manifest`)
-      }
-      return tarball
+  /** Resolve BrowserOS agent names to image refs and ensure the image exists. */
+  async ensureAgentImageLoaded(name: string, onLog?: LogFn): Promise<string> {
+    if (name !== OPENCLAW_AGENT_NAME) {
+      throw new ImageLoadError(name, `no agent image mapping: ${name}`)
     }
-
-    throw new ImageLoadError(ref, `no agent in manifest matches ${ref}`)
-  }
-
-  private resolveAgent(name: string): VmManifest['agents'][string] {
-    const agent = this.manifest.agents[name]
-    if (!agent) throw new ImageLoadError(name, `no agent in manifest: ${name}`)
-    return agent
+    await this.ensureImageLoaded(OPENCLAW_IMAGE, onLog)
+    return OPENCLAW_IMAGE
   }
 }
