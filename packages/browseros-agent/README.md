@@ -162,6 +162,7 @@ bun run test:main             # Run key server tools and integration tests
 
 # App-specific test groups (from packages/browseros-agent)
 cd apps/server && bun run test:tools
+cd apps/server && bun run test:cdp
 cd apps/server && bun run test:integration
 
 # Quality

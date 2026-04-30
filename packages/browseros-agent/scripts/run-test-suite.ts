@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 
 type TestCommand = {
   label: string
+  cwd?: string
   argv: readonly [string, ...string[]]
 }
 
@@ -13,15 +14,18 @@ const testSuites = {
   all: [
     {
       label: 'server tests',
-      argv: [bun, 'run', '--filter', '@browseros/server', 'test'],
+      cwd: resolve(projectRoot, 'apps/server'),
+      argv: [bun, 'run', 'test'],
     },
     {
       label: 'agent tests',
-      argv: [bun, 'run', './scripts/run-bun-test.ts', './apps/agent'],
+      cwd: resolve(projectRoot, 'apps/agent'),
+      argv: [bun, 'run', 'test'],
     },
     {
       label: 'eval tests',
-      argv: [bun, 'run', './scripts/run-bun-test.ts', './apps/eval/tests'],
+      cwd: resolve(projectRoot, 'apps/eval'),
+      argv: [bun, 'run', 'test'],
     },
     {
       label: 'build script tests',
@@ -31,11 +35,13 @@ const testSuites = {
   main: [
     {
       label: 'server tools tests',
-      argv: [bun, 'run', '--filter', '@browseros/server', 'test:tools'],
+      cwd: resolve(projectRoot, 'apps/server'),
+      argv: [bun, 'run', 'test:tools'],
     },
     {
       label: 'server integration tests',
-      argv: [bun, 'run', '--filter', '@browseros/server', 'test:integration'],
+      cwd: resolve(projectRoot, 'apps/server'),
+      argv: [bun, 'run', 'test:integration'],
     },
   ],
 } satisfies Record<string, readonly TestCommand[]>
@@ -46,11 +52,18 @@ function isTestSuiteName(value: string): value is TestSuiteName {
   return value in testSuites
 }
 
+/** Prevents multi-step suites from overwriting a single shared JUnit report path. */
+function buildCommandEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env }
+  delete env.BROWSEROS_JUNIT_PATH
+  return env
+}
+
 function runCommand(command: TestCommand): number {
   console.log(`\n==> ${command.label}`)
   const result = spawnSync(command.argv[0], command.argv.slice(1), {
-    cwd: projectRoot,
-    env: process.env,
+    cwd: command.cwd ?? projectRoot,
+    env: buildCommandEnv(),
     stdio: 'inherit',
   })
   if (result.error) {
