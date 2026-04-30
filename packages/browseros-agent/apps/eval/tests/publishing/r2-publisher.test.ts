@@ -111,8 +111,10 @@ describe('R2Publisher', () => {
       ).toString('utf-8'),
     )
     expect(manifest).toMatchObject({
+      schemaVersion: 2,
       runId,
       uploadedAt: '2026-04-29T12:00:00.000Z',
+      agentConfig: { type: 'single', model: 'kimi' },
       dataset: 'webbench',
       summary: { passRate: 1, avgDurationMs: 1200 },
       tasks: [
@@ -120,6 +122,15 @@ describe('R2Publisher', () => {
           queryId: 'task-1',
           status: 'completed',
           screenshotCount: 1,
+          paths: {
+            attempt: 'tasks/task-1/attempt.json',
+            metadata: 'tasks/task-1/metadata.json',
+            messages: 'tasks/task-1/messages.jsonl',
+            trace: 'tasks/task-1/trace.jsonl',
+            grades: 'tasks/task-1/grades.json',
+            screenshots: 'tasks/task-1/screenshots',
+            graderArtifacts: 'tasks/task-1/grader-artifacts',
+          },
         },
       ],
     })
@@ -186,8 +197,27 @@ describe('R2Publisher', () => {
     }).publishPath(runDir)
 
     const keys = client.puts.map((put) => put.Key)
+    const byKey = new Map(client.puts.map((put) => [put.Key, put]))
+    const manifest = JSON.parse(
+      Buffer.from(
+        byKey.get(`runs/${runId}/manifest.json`)?.Body as Buffer,
+      ).toString('utf-8'),
+    )
+
     expect(result.uploadedRuns.map((run) => run.runId)).toEqual([runId])
     expect(keys).toContain(`runs/${runId}/task-1/metadata.json`)
     expect(keys).toContain(`runs/${runId}/tasks/task-1/metadata.json`)
+    expect(manifest).toMatchObject({
+      schemaVersion: 2,
+      tasks: [
+        {
+          queryId: 'task-1',
+          paths: {
+            metadata: 'tasks/task-1/metadata.json',
+            screenshots: 'tasks/task-1/screenshots',
+          },
+        },
+      ],
+    })
   })
 })

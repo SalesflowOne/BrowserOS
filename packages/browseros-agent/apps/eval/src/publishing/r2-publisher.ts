@@ -5,8 +5,11 @@ import {
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3'
+import {
+  buildViewerManifest,
+  type ViewerManifestTaskInput,
+} from '../viewer/viewer-manifest'
 import type {
-  R2ManifestTask,
   R2PublishPathResult,
   R2PublishRunResult,
   R2RunManifest,
@@ -262,7 +265,7 @@ export class R2Publisher {
       throw new Error(`No task subdirectories in ${runId}`)
     }
 
-    const manifestTasks: R2ManifestTask[] = []
+    const manifestTasks: ViewerManifestTaskInput[] = []
     const jobs: UploadJob[] = (await collectRunRootFiles(runDir)).map(
       (job) => ({
         ...job,
@@ -312,7 +315,8 @@ export class R2Publisher {
         screenshotCount:
           (meta.screenshot_count as number | undefined) || screenshotCount,
         graderResults:
-          (meta.grader_results as Record<string, unknown> | undefined) || {},
+          (meta.grader_results as ViewerManifestTaskInput['graderResults']) ||
+          {},
       })
     }
 
@@ -369,7 +373,7 @@ export class R2Publisher {
     runId: string,
     agentConfig: Record<string, unknown> | undefined,
     dataset: string | undefined,
-    tasks: R2ManifestTask[],
+    tasks: ViewerManifestTaskInput[],
   ): Promise<R2RunManifest> {
     let summaryData: Record<string, unknown> | undefined
     try {
@@ -378,7 +382,7 @@ export class R2Publisher {
       ) as Record<string, unknown>
     } catch {}
 
-    return {
+    return buildViewerManifest({
       runId,
       uploadedAt: this.now().toISOString(),
       agentConfig,
@@ -390,7 +394,7 @@ export class R2Publisher {
           }
         : undefined,
       tasks,
-    }
+    })
   }
 
   private async uploadFile(job: UploadJob): Promise<void> {
