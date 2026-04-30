@@ -82,6 +82,16 @@ function suiteToEvalConfig(
     })
   }
 
+  if (suite.agent.type === 'claude-code') {
+    return EvalConfigSchema.parse({
+      ...base,
+      agent: {
+        type: 'claude-code',
+        ...(variant.agent.model && { model: variant.agent.model }),
+      },
+    })
+  }
+
   const executorBackend = suite.agent.executorBackend ?? 'tool-loop'
   const executor =
     executorBackend === 'clado'
@@ -135,7 +145,10 @@ export async function resolveSuiteCommand(
   const loaded = await loadSuite(options.suitePath)
   const variant = resolveVariant({
     variantId: options.variantId,
-    provider: options.provider,
+    provider:
+      loaded.suite.agent.type === 'claude-code'
+        ? 'claude-code'
+        : options.provider,
     model: options.model,
     apiKey: options.apiKey,
     baseUrl: options.baseUrl,

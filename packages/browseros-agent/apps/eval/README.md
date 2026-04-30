@@ -9,6 +9,7 @@ Evaluation framework for BrowserOS browser automation agents. Runs tasks from st
 - **BrowserOS binary** at `/Applications/BrowserOS.app` (macOS) or `BROWSEROS_BINARY` pointing at it
 - **Bun** runtime
 - **API keys** for your LLM provider (and `CLAUDE_CODE_OAUTH_TOKEN` if you use `performance_grader`)
+- **Python 3.10+ with `agisdk`** for AGI SDK / REAL Bench grading. Set `BROWSEROS_EVAL_PYTHON` if your default `python3` is older.
 
 ## Quick Start
 
@@ -67,7 +68,7 @@ This lets us run the same suite against multiple model setups without copying th
 
 ```txt
 agisdk-daily-10 + kimi-fireworks
-agisdk-daily-10 + claude-sonnet
+agisdk-daily-10 + claude-opus
 agisdk-daily-10 + clado-action-000159
 ```
 
@@ -79,6 +80,7 @@ For `orchestrator-executor` suites, there can also be an executor model/backend.
 |------|-------------|
 | `single` | Single LLM agent driven by the BrowserOS tool loop (CDP) |
 | `orchestrator-executor` | High-level orchestrator + per-step executor (LLM or Clado visual model) |
+| `claude-code` | External Claude Code CLI driven through BrowserOS MCP |
 
 ### Single agent
 
@@ -119,6 +121,24 @@ The orchestrator works with any LLM provider. The executor can be another LLM, o
 }
 ```
 
+### Claude Code
+
+Claude Code runs as an external `claude -p` subprocess. The eval runner passes a task-scoped MCP config that points Claude Code at the active worker's BrowserOS MCP endpoint, while the eval capture layer still saves messages, screenshots, trajectory metadata, and grader outputs.
+
+```json
+{
+  "agent": {
+    "type": "claude-code",
+    "model": "opus"
+  }
+}
+```
+
+```bash
+BROWSEROS_EVAL_PYTHON=/path/to/python3 bun run eval run --config configs/legacy/claude-code-agisdk-real.json
+bun run eval suite --config configs/legacy/claude-code-agisdk-real.json --publish r2
+```
+
 ## Graders
 
 | Name | Description |
@@ -151,6 +171,7 @@ The `apiKey` field supports two formats:
 | `CLADO_ACTION_MODEL`, `CLADO_ACTION_API_KEY`, `CLADO_ACTION_BASE_URL` | Clado executor defaults |
 | `BROWSEROS_BINARY` | BrowserOS binary path in CI/local smoke runs |
 | `BROWSEROS_SERVER_URL` | Optional grader MCP URL override |
+| `BROWSEROS_EVAL_PYTHON` | Optional Python interpreter for JSON graders such as `agisdk_state_diff` |
 | `WEBARENA_INFINITY_DIR` | Local WebArena-Infinity checkout for Infinity tasks |
 | `NOPECHA_API_KEY` | CAPTCHA solver extension |
 | `EVAL_R2_ACCOUNT_ID`, `EVAL_R2_ACCESS_KEY_ID`, `EVAL_R2_SECRET_ACCESS_KEY`, `EVAL_R2_BUCKET`, `EVAL_R2_CDN_BASE_URL` | R2 upload and viewer URL |
@@ -194,7 +215,7 @@ Published runs are available at `EVAL_R2_CDN_BASE_URL/viewer.html?run=<run-id>`.
   "base_server_port": 9110,
   "base_extension_port": 9310,
   "load_extensions": false,
-  "headless": true
+  "headless": false
 }
 ```
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { mkdtemp, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runPythonJsonEvaluator } from '../../src/grading/python-evaluator'
@@ -9,6 +9,17 @@ async function writeScript(source: string): Promise<string> {
   const script = join(dir, 'script.py')
   await writeFile(script, source)
   return script
+}
+
+async function writePythonWrapper(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), 'eval-python-wrapper-'))
+  const wrapper = join(dir, 'python-wrapper')
+  await writeFile(
+    wrapper,
+    '#!/bin/sh\necho custom-python >&2\nexec python3 "$@"\n',
+  )
+  await chmod(wrapper, 0o755)
+  return wrapper
 }
 
 describe('runPythonJsonEvaluator', () => {
@@ -47,6 +58,34 @@ sys.exit(3)
         timeoutMs: 5_000,
       }),
     ).rejects.toThrow('bad verifier')
+  })
+
+  it('uses BROWSEROS_EVAL_PYTHON when provided', async () => {
+    const script = await writeScript(`
+import json, sys
+data = json.loads(sys.stdin.read())
+print(json.dumps({"ok": data["ok"]}))
+`)
+    const wrapper = await writePythonWrapper()
+    const previousPythonPath = process.env.BROWSEROS_EVAL_PYTHON
+    process.env.BROWSEROS_EVAL_PYTHON = wrapper
+
+    try {
+      const result = await runPythonJsonEvaluator<{ ok: boolean }>({
+        scriptPath: script,
+        input: { ok: true },
+        timeoutMs: 5_000,
+      })
+
+      expect(result.output).toEqual({ ok: true })
+      expect(result.stderr).toContain('custom-python')
+    } finally {
+      if (previousPythonPath === undefined) {
+        delete process.env.BROWSEROS_EVAL_PYTHON
+      } else {
+        process.env.BROWSEROS_EVAL_PYTHON = previousPythonPath
+      }
+    }
   })
 
   it('enforces timeouts', async () => {

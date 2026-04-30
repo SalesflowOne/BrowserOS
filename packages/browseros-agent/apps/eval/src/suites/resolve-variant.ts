@@ -57,10 +57,30 @@ export function resolveVariant(
   options: ResolveVariantOptions = {},
 ): EvalVariant {
   const env = options.env ?? process.env
-  const id = options.variantId ?? env.EVAL_VARIANT ?? 'default'
   const provider =
     options.provider ?? env.EVAL_AGENT_PROVIDER ?? 'openai-compatible'
   const model = options.model ?? env.EVAL_AGENT_MODEL
+
+  if (provider === 'claude-code') {
+    const id = options.variantId ?? env.EVAL_VARIANT ?? 'claude-code'
+    return {
+      id,
+      agent: {
+        provider,
+        model: model ?? '',
+      },
+      publicMetadata: {
+        id,
+        agent: {
+          provider,
+          model: model || 'default',
+          apiKeyConfigured: false,
+        },
+      },
+    }
+  }
+
+  const id = options.variantId ?? env.EVAL_VARIANT ?? 'default'
   const apiKey = options.apiKey ?? env.EVAL_AGENT_API_KEY
   const apiKeyEnv =
     options.apiKeyEnv ?? (options.apiKey ? undefined : 'EVAL_AGENT_API_KEY')

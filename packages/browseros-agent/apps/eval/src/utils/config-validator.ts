@@ -59,7 +59,7 @@ export async function validateConfig(
     ) {
       envVarsToCheck.push(config.agent.apiKey)
     }
-  } else {
+  } else if (config.agent.type === 'orchestrator-executor') {
     const { orchestrator, executor } = config.agent
     if (orchestrator.apiKey && isEnvVarName(orchestrator.apiKey)) {
       envVarsToCheck.push(orchestrator.apiKey)

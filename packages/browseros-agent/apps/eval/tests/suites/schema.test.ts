@@ -35,6 +35,16 @@ describe('EvalSuiteSchema', () => {
     expect(parsed.success).toBe(false)
   })
 
+  it('validates claude-code suites', () => {
+    const suite = EvalSuiteSchema.parse({
+      id: 'claude-code-agisdk',
+      dataset: 'data/agisdk-real.jsonl',
+      agent: { type: 'claude-code' },
+    })
+
+    expect(suite.agent.type).toBe('claude-code')
+  })
+
   it('validates the daily AGISDK 10-task suite', async () => {
     const loaded = await loadSuite(
       'apps/eval/configs/suites/agisdk-daily-10.json',
@@ -88,5 +98,41 @@ describe('resolveVariant', () => {
         requireApiKey: true,
       }),
     ).toThrow('EVAL_AGENT_API_KEY')
+  })
+
+  it('resolves claude-code variants without model or API key requirements', () => {
+    const variant = resolveVariant({
+      variantId: 'claude-opus',
+      provider: 'claude-code',
+      model: 'opus',
+      env: {},
+    })
+
+    expect(variant.id).toBe('claude-opus')
+    expect(variant.agent).toEqual({
+      provider: 'claude-code',
+      model: 'opus',
+    })
+    expect(variant.publicMetadata.agent).toEqual({
+      provider: 'claude-code',
+      model: 'opus',
+      apiKeyConfigured: false,
+    })
+
+    const defaultVariant = resolveVariant({
+      provider: 'claude-code',
+      env: {},
+    })
+
+    expect(defaultVariant.id).toBe('claude-code')
+    expect(defaultVariant.agent).toEqual({
+      provider: 'claude-code',
+      model: '',
+    })
+    expect(defaultVariant.publicMetadata.agent).toEqual({
+      provider: 'claude-code',
+      model: 'default',
+      apiKeyConfigured: false,
+    })
   })
 })

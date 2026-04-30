@@ -7,8 +7,11 @@ import {
   runSuiteCommand,
 } from '../../src/cli/commands/suite'
 import type { RunEvalOptions } from '../../src/runner/types'
+import type { EvalSuite } from '../../src/suites/schema'
 
-async function writeTempSuite(): Promise<{ dir: string; suitePath: string }> {
+async function writeTempSuite(
+  overrides: Partial<EvalSuite> = {},
+): Promise<{ dir: string; suitePath: string }> {
   const dir = await mkdtemp(join(tmpdir(), 'eval-suite-cli-'))
   const suitePath = join(dir, 'agisdk-daily-10.json')
   await writeFile(
@@ -23,8 +26,9 @@ async function writeTempSuite(): Promise<{ dir: string; suitePath: string }> {
         restartBrowserPerTask: true,
         browseros: {
           server_url: 'http://127.0.0.1:9110',
-          headless: true,
+          headless: false,
         },
+        ...overrides,
       },
       null,
       2,
@@ -43,9 +47,7 @@ describe('suite command', () => {
 
     expect(resolved.kind).toBe('config')
     expect(resolved.suite.id).toBe('browseros-agent-weekly')
-    expect(resolved.evalConfig.dataset).toBe(
-      '../../data/webbench-2of4-50.jsonl',
-    )
+    expect(resolved.evalConfig.dataset).toBe('../../data/agisdk-real.jsonl')
     expect(resolved.variant.publicMetadata.agent.apiKeyConfigured).toBe(true)
   })
 
@@ -73,6 +75,25 @@ describe('suite command', () => {
       baseUrl: 'https://api.fireworks.ai/inference/v1',
     })
     expect(resolved.evalConfig.num_workers).toBe(2)
+  })
+
+  it('resolves claude-code suites without provider API credentials', async () => {
+    const { dir, suitePath } = await writeTempSuite({
+      agent: { type: 'claude-code' },
+    })
+
+    const resolved = await resolveSuiteCommand({
+      suitePath,
+      model: 'opus',
+      env: {},
+    })
+
+    expect(resolved.kind).toBe('suite')
+    expect(resolved.evalConfig.agent).toMatchObject({
+      type: 'claude-code',
+      model: 'opus',
+    })
+    expect(resolved.datasetPath).toBe(join(dir, 'tasks.jsonl'))
   })
 
   it('runs config and suite commands through the runner dependency', async () => {

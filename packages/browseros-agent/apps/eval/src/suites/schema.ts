@@ -8,6 +8,7 @@ export const SuiteAgentSchema = z
       'single',
       'orchestrated',
       'orchestrator-executor',
+      'claude-code',
     ]),
     executorBackend: z.enum(['tool-loop', 'clado']).optional(),
   })

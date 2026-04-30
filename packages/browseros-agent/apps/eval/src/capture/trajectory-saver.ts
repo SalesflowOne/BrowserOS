@@ -105,7 +105,10 @@ export class TrajectorySaver {
       errors: [],
       warnings: [],
       agent_config: {
-        type: agentConfig.type as 'single' | 'orchestrator-executor',
+        type: agentConfig.type as
+          | 'single'
+          | 'orchestrator-executor'
+          | 'claude-code',
         model: agentConfig.model,
       },
       grader_results: {},

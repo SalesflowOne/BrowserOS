@@ -1,3 +1,4 @@
+import { ClaudeCodeEvaluator } from './claude-code'
 import { OrchestratorExecutorEvaluator } from './orchestrator-executor'
 import { SingleAgentEvaluator } from './single-agent'
 import type { AgentContext, AgentEvaluator } from './types'
@@ -8,6 +9,8 @@ export function createAgent(context: AgentContext): AgentEvaluator {
       return new SingleAgentEvaluator(context)
     case 'orchestrator-executor':
       return new OrchestratorExecutorEvaluator(context)
+    case 'claude-code':
+      return new ClaudeCodeEvaluator(context)
   }
 }
 

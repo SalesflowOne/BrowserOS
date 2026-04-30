@@ -2,6 +2,7 @@ export interface PythonEvaluatorOptions {
   scriptPath: string
   input: unknown
   timeoutMs: number
+  pythonPath?: string
 }
 
 export interface PythonEvaluatorResult<T> {
@@ -15,7 +16,9 @@ export interface PythonEvaluatorResult<T> {
 export async function runPythonJsonEvaluator<T>(
   options: PythonEvaluatorOptions,
 ): Promise<PythonEvaluatorResult<T>> {
-  const proc = Bun.spawn(['python3', options.scriptPath], {
+  const pythonPath =
+    options.pythonPath || process.env.BROWSEROS_EVAL_PYTHON || 'python3'
+  const proc = Bun.spawn([pythonPath, options.scriptPath], {
     stdin: 'pipe',
     stdout: 'pipe',
     stderr: 'pipe',

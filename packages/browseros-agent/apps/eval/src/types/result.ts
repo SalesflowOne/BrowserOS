@@ -13,7 +13,7 @@ export const GraderResultSchema = z.object({
 // Agent config in metadata
 const AgentConfigMetaSchema = z
   .object({
-    type: z.enum(['single', 'orchestrator-executor']),
+    type: z.enum(['single', 'orchestrator-executor', 'claude-code']),
     model: z.string().optional(),
   })
   .passthrough()

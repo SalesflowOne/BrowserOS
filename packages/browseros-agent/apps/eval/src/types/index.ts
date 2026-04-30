@@ -2,6 +2,8 @@
 export {
   type AgentConfig,
   AgentConfigSchema,
+  type ClaudeCodeAgentConfig,
+  ClaudeCodeAgentConfigSchema,
   type EvalConfig,
   EvalConfigSchema,
   type OrchestratorExecutorConfig,

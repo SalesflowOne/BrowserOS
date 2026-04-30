@@ -33,6 +33,13 @@ function variantSource(config: EvalConfig): {
   baseUrl?: string
   supportsImages?: boolean
 } {
+  if (config.agent.type === 'claude-code') {
+    return {
+      provider: 'claude-code',
+      model: config.agent.model ?? 'default',
+    }
+  }
+
   const agent =
     config.agent.type === 'single' ? config.agent : config.agent.orchestrator
   if (!agent.model) {
@@ -76,10 +83,7 @@ export async function adaptEvalConfigFile(
     suite: {
       id,
       dataset: evalConfig.dataset,
-      agent:
-        evalConfig.agent.type === 'single'
-          ? { type: 'tool-loop' }
-          : { type: 'orchestrated', executorBackend: backend ?? 'tool-loop' },
+      agent: suiteAgent(evalConfig, backend),
       graders: evalConfig.graders ?? [],
       workers: evalConfig.num_workers,
       restartBrowserPerTask: evalConfig.restart_server_per_task,
@@ -97,5 +101,19 @@ export async function adaptEvalConfigFile(
       supportsImages: source.supportsImages,
       env,
     }),
+  }
+}
+
+function suiteAgent(
+  config: EvalConfig,
+  backend: ReturnType<typeof executorBackend>,
+): EvalSuite['agent'] {
+  switch (config.agent.type) {
+    case 'single':
+      return { type: 'tool-loop' }
+    case 'orchestrator-executor':
+      return { type: 'orchestrated', executorBackend: backend ?? 'tool-loop' }
+    case 'claude-code':
+      return { type: 'claude-code' }
   }
 }
