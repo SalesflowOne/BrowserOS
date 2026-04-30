@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { getMolmoPointClient } from '../lib/molmopoint-client'
 import { defineTool } from './framework'
 
 const pageParam = z.number().describe('Page ID (from list_pages)')
@@ -8,10 +9,15 @@ const elementParam = z
 
 export const click = defineTool({
   name: 'click',
-  description: 'Click an element by its ID from the last snapshot',
+  description:
+    'Click an element by natural-language description (e.g. "the blue ' +
+    'Submit button", "the close X on the modal"). Uses the MolmoPoint ' +
+    'vision model on a fresh screenshot — no snapshot needed.',
   input: z.object({
     page: pageParam,
-    element: elementParam,
+    target: z
+      .string()
+      .describe('Natural-language description of what to click'),
     button: z
       .enum(['left', 'right', 'middle'])
       .default('left')
@@ -24,25 +30,68 @@ export const click = defineTool({
   output: z.object({
     action: z.literal('click'),
     page: z.number(),
-    element: z.number(),
+    target: z.string(),
     button: z.enum(['left', 'right', 'middle']),
     clickCount: z.number(),
+    x: z.number(),
+    y: z.number(),
+    modelText: z.string(),
   }),
   handler: async (args, ctx, response) => {
-    const coords = await ctx.browser.click(args.page, args.element, {
+    const client = getMolmoPointClient()
+    if (!client) {
+      response.error(
+        'click requires BROWSEROS_MOLMOPOINT_URL to be set to the ' +
+          'MolmoPoint server URL.',
+      )
+      return
+    }
+
+    const shot = await ctx.browser.screenshot(args.page, {
+      format: 'png',
+      fullPage: false,
+    })
+    const dpr = shot.devicePixelRatio || 1
+
+    let prediction: Awaited<ReturnType<typeof client.predict>>
+    try {
+      prediction = await client.predict(shot.data, args.target)
+    } catch (err) {
+      response.error(
+        `MolmoPoint request failed: ${err instanceof Error ? err.message : String(err)}`,
+      )
+      return
+    }
+
+    const point = prediction.points[0]
+    if (!point) {
+      response.error(
+        `MolmoPoint returned no point for "${args.target}". Model said: ${prediction.text || '<empty>'}`,
+      )
+      return
+    }
+
+    // MolmoPoint returns image-pixel coords; CDP wants CSS-pixel coords.
+    const x = point.x / dpr
+    const y = point.y / dpr
+
+    await ctx.browser.clickAt(args.page, x, y, {
       button: args.button,
       clickCount: args.clickCount,
     })
-    const coordText = coords
-      ? ` at (${Math.round(coords.x)}, ${Math.round(coords.y)})`
-      : ''
-    response.text(`Clicked [${args.element}]${coordText}`)
+
+    response.text(
+      `Clicked "${args.target}" at (${Math.round(x)}, ${Math.round(y)}) [molmopoint: "${prediction.text}"]`,
+    )
     response.data({
       action: 'click',
       page: args.page,
-      element: args.element,
+      target: args.target,
       button: args.button,
       clickCount: args.clickCount,
+      x,
+      y,
+      modelText: prediction.text,
     })
     response.includeSnapshot(args.page)
   },

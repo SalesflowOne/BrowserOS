@@ -141,7 +141,7 @@ You control a Chromium browser. Key tool categories:
 - \`get_console_logs\` → browser console output (use for debugging)
 
 **Interaction** — act on page elements:
-- \`click\` → click by element ID from snapshot
+- \`click\` → click an element by natural-language \`target\` (e.g. "the blue Submit button"); a vision model resolves it on a fresh screenshot.
 - \`fill\` → type into inputs/textareas
 - \`select_option\` → choose from dropdowns
 - \`check\` / \`uncheck\` → toggle checkboxes
@@ -319,7 +319,7 @@ function getToolSelection(
 | Need visual proof or to save an image | \`take_screenshot\` or \`save_screenshot\` |
 
 ### Interaction: preferences
-- Prefer \`click\` with element IDs over \`click_at\` with coordinates. Use \`click_at\` only when the element isn't in the snapshot.
+- Use \`click\` with a short natural-language \`target\` ("the blue Submit button") — a vision model picks the coordinates from a fresh screenshot. Use \`click_at\` only if you already have exact coordinates.
 - Prefer \`fill\` over \`press_key\` for text input. Use \`press_key\` for keyboard shortcuts (Enter, Escape, Tab, Ctrl+A, etc.).
 - Prefer clicking links over \`navigate_page\` when the link is visible. Use \`navigate_page\` for direct URL access, back/forward, or reload.
 
