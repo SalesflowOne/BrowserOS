@@ -1,9 +1,15 @@
 import confetti from 'canvas-confetti'
-import type { GlowMessage } from './GlowMessage'
+import type {
+  ClickMarkerMessage,
+  GlowContentMessage,
+  GlowMessage,
+} from './GlowMessage'
 
 const GLOW_OVERLAY_ID = 'browseros-glow-overlay'
 const GLOW_STYLES_ID = 'browseros-glow-styles'
 const GLOW_STOP_BTN_ID = 'browseros-glow-stop-btn'
+const CLICK_MARKER_ID = 'browseros-click-marker'
+const CLICK_MARKER_EVENT = 'browseros-click-marker'
 
 const GLOW_THICKNESS = 1.0
 const GLOW_OPACITY = 0.6
@@ -54,6 +60,25 @@ function injectStyles(): void {
       to { opacity: 1; }
     }
 
+    @keyframes browseros-click-marker-pop {
+      0% {
+        transform: translate(-50%, -50%) scale(0.65);
+        opacity: 0;
+      }
+      18% {
+        transform: translate(-50%, -50%) scale(1);
+        opacity: 1;
+      }
+      78% {
+        transform: translate(-50%, -50%) scale(1);
+        opacity: 1;
+      }
+      100% {
+        transform: translate(-50%, -50%) scale(1.35);
+        opacity: 0;
+      }
+    }
+
     #${GLOW_OVERLAY_ID} {
       position: fixed !important;
       top: 0 !important;
@@ -96,6 +121,22 @@ function injectStyles(): void {
     #${GLOW_STOP_BTN_ID}:hover {
       background: rgba(185, 28, 28, 1) !important;
     }
+
+    #${CLICK_MARKER_ID} {
+      position: fixed !important;
+      width: 34px !important;
+      height: 34px !important;
+      border-radius: 50% !important;
+      background: rgba(220, 38, 38, 0.96) !important;
+      border: 3px solid rgba(255, 255, 255, 0.95) !important;
+      box-shadow:
+        0 0 0 5px rgba(220, 38, 38, 0.24),
+        0 0 30px 12px rgba(220, 38, 38, 0.42),
+        0 4px 12px rgba(0, 0, 0, 0.35) !important;
+      pointer-events: none !important;
+      z-index: 2147483647 !important;
+      animation: browseros-click-marker-pop 1.15s cubic-bezier(0.22, 1, 0.36, 1) forwards !important;
+    }
   `
   const appendStyle = () => document.head.appendChild(style)
 
@@ -135,6 +176,33 @@ function startGlow(): void {
   } else {
     document.addEventListener('DOMContentLoaded', appendOverlay, { once: true })
   }
+}
+
+function stopClickMarker(): void {
+  const marker = document.getElementById(CLICK_MARKER_ID)
+  if (marker) {
+    marker.remove()
+  }
+}
+
+function showClickMarker(x: number, y: number): void {
+  stopClickMarker()
+  injectStyles()
+
+  const marker = document.createElement('div')
+  marker.id = CLICK_MARKER_ID
+  marker.style.left = `${x}px`
+  marker.style.top = `${y}px`
+
+  const appendMarker = () => document.body.appendChild(marker)
+
+  if (document.body) {
+    appendMarker()
+  } else {
+    document.addEventListener('DOMContentLoaded', appendMarker, { once: true })
+  }
+
+  setTimeout(() => marker.remove(), 1200)
 }
 
 function fireConfetti(): void {
@@ -190,17 +258,49 @@ function stopGlow(): void {
   }
 }
 
+function isClickMarkerMessage(message: unknown): message is ClickMarkerMessage {
+  return (
+    typeof message === 'object' &&
+    message !== null &&
+    (message as { type?: unknown }).type === 'click-marker' &&
+    typeof (message as { x?: unknown }).x === 'number' &&
+    typeof (message as { y?: unknown }).y === 'number'
+  )
+}
+
+function isGlowMessage(message: unknown): message is GlowMessage {
+  return (
+    typeof message === 'object' &&
+    message !== null &&
+    'conversationId' in message &&
+    'isActive' in message
+  )
+}
+
 export default defineContentScript({
   matches: ['*://*/*'],
   runAt: 'document_start',
   main() {
+    document.addEventListener(CLICK_MARKER_EVENT, (event) => {
+      const detail = (event as CustomEvent).detail
+      if (
+        detail &&
+        typeof detail.x === 'number' &&
+        typeof detail.y === 'number'
+      ) {
+        showClickMarker(detail.x, detail.y)
+      }
+    })
+
     browser.runtime.onMessage.addListener(
-      (message: GlowMessage, _sender, sendResponse) => {
-        if (
-          typeof message !== 'object' ||
-          !('conversationId' in message) ||
-          !('isActive' in message)
-        ) {
+      (message: GlowContentMessage, _sender, sendResponse) => {
+        if (isClickMarkerMessage(message)) {
+          showClickMarker(message.x, message.y)
+          sendResponse({ success: true })
+          return true
+        }
+
+        if (!isGlowMessage(message)) {
           return
         }
 

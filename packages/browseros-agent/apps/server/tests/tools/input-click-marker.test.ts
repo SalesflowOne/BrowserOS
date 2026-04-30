@@ -30,7 +30,7 @@ describe('MolmoPoint click marker', () => {
     }
   })
 
-  it('shows an aim marker before dispatching the click', async () => {
+  it('notifies the glow content script before dispatching the click', async () => {
     const events: Array<{ name: 'marker' | 'click'; time: number }> = []
     let markerExpression = ''
 
@@ -62,7 +62,8 @@ describe('MolmoPoint click marker', () => {
     )
 
     assert.ok(!result.isError, JSON.stringify(result.content))
-    assert.match(markerExpression, /__molmo_click_aim/)
+    assert.match(markerExpression, /browseros-click-marker/)
+    assert.doesNotMatch(markerExpression, /document\.createElement/)
     const markerEvent = events.find((event) => event.name === 'marker')
     const clickEvent = events.find((event) => event.name === 'click')
     assert.ok(markerEvent, 'expected marker to be shown')

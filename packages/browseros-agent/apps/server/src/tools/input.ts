@@ -8,6 +8,7 @@ const elementParam = z
   .number()
   .describe('Element ID from snapshot (the number in [N])')
 
+const CLICK_MARKER_EVENT = 'browseros-click-marker'
 const CLICK_MARKER_PRE_CLICK_DELAY_MS = 250
 
 function delay(ms: number): Promise<void> {
@@ -15,116 +16,7 @@ function delay(ms: number): Promise<void> {
 }
 
 function buildClickMarkerExpression(x: number, y: number): string {
-  return `((cx, cy) => {
-  const AIM_ID = '__molmo_click_aim';
-  const setStyles = (el, styles) => {
-    for (const [key, value] of Object.entries(styles)) {
-      el.style.setProperty(key, value, 'important');
-    }
-  };
-  document.querySelectorAll('[data-molmo-click-aim="true"]').forEach((el) => el.remove());
-
-  const host = document.createElement('div');
-  host.id = AIM_ID;
-  host.dataset.molmoClickAim = 'true';
-  setStyles(host, {
-    position: 'fixed',
-    left: cx + 'px',
-    top: cy + 'px',
-    width: '0',
-    height: '0',
-    'pointer-events': 'none',
-    'z-index': '2147483647',
-    contain: 'layout paint style',
-    transform: 'translateZ(0)'
-  });
-
-  const halo = document.createElement('div');
-  setStyles(halo, {
-    position: 'absolute',
-    left: '-32px',
-    top: '-32px',
-    width: '64px',
-    height: '64px',
-    'border-radius': '9999px',
-    border: '2px solid rgba(239, 68, 68, 0.45)',
-    'box-shadow': '0 0 32px 10px rgba(239, 68, 68, 0.28)',
-    background: 'rgba(239, 68, 68, 0.06)'
-  });
-
-  const ring = document.createElement('div');
-  setStyles(ring, {
-    position: 'absolute',
-    left: '-22px',
-    top: '-22px',
-    width: '44px',
-    height: '44px',
-    'border-radius': '9999px',
-    border: '4px solid #ef4444',
-    'box-shadow': '0 0 0 3px rgba(255, 255, 255, 0.95), 0 8px 24px rgba(0, 0, 0, 0.35)'
-  });
-
-  const horizontal = document.createElement('div');
-  setStyles(horizontal, {
-    position: 'absolute',
-    left: '-34px',
-    top: '-2px',
-    width: '68px',
-    height: '4px',
-    'border-radius': '9999px',
-    background: '#ef4444',
-    'box-shadow': '0 0 0 2px rgba(255, 255, 255, 0.95)'
-  });
-
-  const vertical = document.createElement('div');
-  setStyles(vertical, {
-    position: 'absolute',
-    left: '-2px',
-    top: '-34px',
-    width: '4px',
-    height: '68px',
-    'border-radius': '9999px',
-    background: '#ef4444',
-    'box-shadow': '0 0 0 2px rgba(255, 255, 255, 0.95)'
-  });
-
-  const dot = document.createElement('div');
-  setStyles(dot, {
-    position: 'absolute',
-    left: '-6px',
-    top: '-6px',
-    width: '12px',
-    height: '12px',
-    'border-radius': '9999px',
-    background: '#ef4444',
-    border: '3px solid #fff',
-    'box-shadow': '0 2px 10px rgba(0, 0, 0, 0.45)'
-  });
-
-  host.append(halo, horizontal, vertical, ring, dot);
-  (document.documentElement || document.body).appendChild(host);
-
-  const animate = (el, frames, options) => {
-    try {
-      if (typeof el.animate === 'function') el.animate(frames, options);
-    } catch {
-      // Static marker remains visible if Web Animations are unavailable.
-    }
-  };
-  animate(host, [
-    { transform: 'translateZ(0) scale(0.72)', opacity: 0 },
-    { transform: 'translateZ(0) scale(1)', opacity: 1, offset: 0.18 },
-    { transform: 'translateZ(0) scale(1)', opacity: 1, offset: 0.78 },
-    { transform: 'translateZ(0) scale(1.18)', opacity: 0 }
-  ], { duration: 1400, easing: 'cubic-bezier(0.16, 1, 0.3, 1)', fill: 'forwards' });
-  animate(halo, [
-    { transform: 'scale(0.7)', opacity: 0.95 },
-    { transform: 'scale(1.25)', opacity: 0 }
-  ], { duration: 1100, easing: 'ease-out', fill: 'forwards' });
-
-  setTimeout(() => host.remove(), 1600);
-  return null;
-})(${JSON.stringify(x)}, ${JSON.stringify(y)})`
+  return `document.dispatchEvent(new CustomEvent(${JSON.stringify(CLICK_MARKER_EVENT)}, { detail: { x: ${JSON.stringify(x)}, y: ${JSON.stringify(y)} } }))`
 }
 
 export const click = defineTool({
