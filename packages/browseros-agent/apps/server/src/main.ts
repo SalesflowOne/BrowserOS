@@ -35,7 +35,6 @@ import { metrics } from './lib/metrics'
 import { isPortInUseError } from './lib/port-binding'
 import { Sentry } from './lib/sentry'
 import { seedSoulTemplate } from './lib/soul'
-import { prefetchVmCache } from './lib/vm/cache-sync'
 import { migrateBuiltinSkills } from './skills/migrate'
 import {
   startSkillSync,
@@ -61,7 +60,7 @@ export class Application {
     })
 
     const resourcesDir = path.resolve(this.config.resourcesDir)
-    configureVmRuntime({ resourcesDir, vmCache: this.vmCacheConfig() })
+    configureVmRuntime({ resourcesDir })
     await this.initCoreServices()
 
     if (!this.config.cdpPort) {
@@ -132,17 +131,20 @@ export class Application {
     // handles async throws inside auto-start. Wrap both in try/catch so the
     // process keeps running even when OpenClaw can't initialize at all.
     try {
-      configureOpenClawService({
+      const openClawService = configureOpenClawService({
         browserosServerPort: this.config.serverPort,
         resourcesDir,
-        vmCache: this.vmCacheConfig(),
       })
-        .tryAutoStart()
-        .catch((err) =>
-          logger.warn('OpenClaw auto-start failed', {
-            error: err instanceof Error ? err.message : String(err),
-          }),
-        )
+      void openClawService.prewarm().catch((err) =>
+        logger.warn('OpenClaw prewarm failed', {
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      )
+      void openClawService.tryAutoStart().catch((err) =>
+        logger.warn('OpenClaw auto-start failed', {
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      )
     } catch (err) {
       logger.warn('OpenClaw configuration failed, continuing without it', {
         error: err instanceof Error ? err.message : String(err),
@@ -174,7 +176,6 @@ export class Application {
   private async initCoreServices(): Promise<void> {
     this.configureLogDirectory()
     await ensureBrowserosDir()
-    this.startVmCachePrefetch()
     await cleanOldSessions()
     await seedSoulTemplate()
     await migrateBuiltinSkills()
@@ -221,25 +222,6 @@ export class Application {
       chromium_version: this.config.instanceChromiumVersion,
       server_version: VERSION,
     })
-  }
-
-  private startVmCachePrefetch(): void {
-    if (!this.config.vmCachePrefetch) return
-    void prefetchVmCache({
-      manifestUrl: this.config.vmCacheManifestUrl,
-    }).catch((error) => {
-      logger.warn('BrowserOS VM cache prefetch failed', {
-        error: error instanceof Error ? error.message : String(error),
-      })
-    })
-  }
-
-  private vmCacheConfig(): {
-    manifestUrl: string
-  } {
-    return {
-      manifestUrl: this.config.vmCacheManifestUrl,
-    }
   }
 
   private configureLogDirectory(): void {

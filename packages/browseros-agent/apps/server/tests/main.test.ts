@@ -14,8 +14,6 @@ const config = {
   executionDir: '/tmp/browseros-execution',
   mcpAllowRemote: false,
   aiSdkDevtoolsEnabled: false,
-  vmCachePrefetch: true,
-  vmCacheManifestUrl: 'https://cdn.browseros.com/vm/manifest.json',
 }
 
 describe('Application.start', () => {
@@ -51,70 +49,45 @@ describe('Application.start', () => {
     expect(loggerError).not.toHaveBeenCalled()
   })
 
-  it('starts VM cache prefetch without blocking HTTP startup', async () => {
-    const { Application, createHttpServer, prefetchVmCache } =
+  it('starts OpenClaw prewarm without blocking HTTP startup', async () => {
+    const { Application, createHttpServer, openClawService } =
       await setupApplicationTest()
-    let resolvePrefetch: (value: {
-      downloaded: string[]
-      manifestPath: string
-      skipped: boolean
-    }) => void = () => {}
-    const pendingPrefetch = new Promise<{
-      downloaded: string[]
-      manifestPath: string
-      skipped: boolean
-    }>((resolve) => {
-      resolvePrefetch = resolve
+    let resolvePrewarm: () => void = () => {}
+    const pendingPrewarm = new Promise<void>((resolve) => {
+      resolvePrewarm = resolve
     })
-    prefetchVmCache.mockImplementation(() => pendingPrefetch)
+    openClawService.prewarm.mockImplementation(() => pendingPrewarm)
 
     const app = new Application(config)
     const startPromise = app.start()
-    const completedBeforePrefetch = await Promise.race([
+    const completedBeforePrewarm = await Promise.race([
       startPromise.then(() => true),
       Bun.sleep(25).then(() => false),
     ])
-    resolvePrefetch({
-      downloaded: [],
-      manifestPath: '/tmp/manifest.json',
-      skipped: true,
-    })
+    resolvePrewarm()
     await startPromise
 
-    expect(completedBeforePrefetch).toBe(true)
+    expect(completedBeforePrewarm).toBe(true)
     expect(createHttpServer).toHaveBeenCalledTimes(1)
-    expect(prefetchVmCache).toHaveBeenCalledWith({
-      manifestUrl: 'https://cdn.browseros.com/vm/manifest.json',
-    })
+    expect(openClawService.prewarm).toHaveBeenCalledTimes(1)
+    expect(openClawService.tryAutoStart).toHaveBeenCalledTimes(1)
   })
 
-  it('logs VM cache prefetch failures without failing startup', async () => {
-    const { Application, createHttpServer, loggerWarn, prefetchVmCache } =
+  it('logs and continues when OpenClaw prewarm fails', async () => {
+    const { Application, createHttpServer, loggerWarn, openClawService } =
       await setupApplicationTest()
-    prefetchVmCache.mockImplementation(() =>
-      Promise.reject(new Error('cache offline')),
-    )
+    openClawService.prewarm.mockImplementation(async () => {
+      throw new Error('registry offline')
+    })
     const app = new Application(config)
 
     await app.start()
     await Bun.sleep(0)
 
     expect(createHttpServer).toHaveBeenCalledTimes(1)
-    expect(loggerWarn).toHaveBeenCalledWith(
-      'BrowserOS VM cache prefetch failed',
-      {
-        error: 'cache offline',
-      },
-    )
-  })
-
-  it('skips VM cache prefetch when disabled', async () => {
-    const { Application, prefetchVmCache } = await setupApplicationTest()
-    const app = new Application({ ...config, vmCachePrefetch: false })
-
-    await app.start()
-
-    expect(prefetchVmCache).not.toHaveBeenCalled()
+    expect(loggerWarn).toHaveBeenCalledWith('OpenClaw prewarm failed', {
+      error: 'registry offline',
+    })
   })
 })
 
@@ -126,7 +99,6 @@ async function setupApplicationTest() {
     '../src/api/services/openclaw/openclaw-service'
   )
   const browserosDir = await import('../src/lib/browseros-dir')
-  const cacheSync = await import('../src/lib/vm/cache-sync')
   const dbModule = await import('../src/lib/db')
   const identityModule = await import('../src/lib/identity')
   const loggerModule = await import('../src/lib/logger')
@@ -185,25 +157,23 @@ async function setupApplicationTest() {
   spyOn(remoteSyncModule, 'startSkillSync').mockImplementation(() => {})
   spyOn(remoteSyncModule, 'stopSkillSync').mockImplementation(() => {})
 
+  const prewarm = mock(async () => {})
+  const tryAutoStart = mock(async () => {})
+
   spyOn(openclawService, 'configureVmRuntime').mockImplementation(
     () =>
       ({
-        tryAutoStart: async () => {},
+        prewarm,
+        tryAutoStart,
       }) as never,
   )
   spyOn(openclawService, 'configureOpenClawService').mockImplementation(
     () =>
       ({
-        tryAutoStart: async () => {},
+        prewarm,
+        tryAutoStart,
       }) as never,
   )
-
-  const prefetchVmCache = spyOn(cacheSync, 'prefetchVmCache')
-  prefetchVmCache.mockImplementation(async () => ({
-    downloaded: [],
-    manifestPath: '/tmp/manifest.json',
-    skipped: true,
-  }))
 
   const { Application } = await import('../src/main')
   return {
@@ -214,6 +184,6 @@ async function setupApplicationTest() {
     loggerError,
     loggerInfo,
     loggerWarn,
-    prefetchVmCache,
+    openClawService: { prewarm, tryAutoStart },
   }
 }
