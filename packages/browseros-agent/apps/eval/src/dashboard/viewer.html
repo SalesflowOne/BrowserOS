@@ -685,6 +685,58 @@
     });
   }
 
+  // -- Artifact path resolution
+  function taskKey(task) {
+    return task.queryId || task.id || 'unknown-task';
+  }
+
+  function legacyArtifactPath(task, artifact) {
+    const id = taskKey(task);
+    switch (artifact) {
+      case 'attempt':
+        return `${id}/attempt.json`;
+      case 'metadata':
+        return `${id}/metadata.json`;
+      case 'messages':
+        return `${id}/messages.jsonl`;
+      case 'trace':
+        return `${id}/trace.jsonl`;
+      case 'grades':
+        return `${id}/grades.json`;
+      case 'screenshots':
+        return `${id}/screenshots`;
+      case 'graderArtifacts':
+        return `${id}/grader-artifacts`;
+      default:
+        return `${id}/${artifact}`;
+    }
+  }
+
+  function artifactPath(task, artifact) {
+    const manifestPath = task.paths && task.paths[artifact];
+    if (typeof manifestPath === 'string' && manifestPath.length > 0) {
+      return manifestPath.replace(/^\/+/, '');
+    }
+    return legacyArtifactPath(task, artifact);
+  }
+
+  function artifactUrl(task, artifact) {
+    return `${basePath}/${artifactPath(task, artifact)}`;
+  }
+
+  function metadataUrl(task) {
+    return artifactUrl(task, 'metadata');
+  }
+
+  function messagesUrl(task) {
+    return artifactUrl(task, 'messages');
+  }
+
+  function screenshotUrl(task, n) {
+    return `${artifactUrl(task, 'screenshots')}/${n}.png`;
+  }
+
+  // -- Task selection
   // ── Task selection ─────────────────────────────────────────────
   function selectTask(task) {
     stopAutoplay();
@@ -716,6 +768,7 @@
     }
   }
 
+  // -- Center panel
   // ── Center panel: screenshot viewer ────────────────────────────
   function renderCenterPanel(task) {
     const panel = document.getElementById('center-panel');
@@ -761,10 +814,6 @@
     });
 
     updateControls();
-  }
-
-  function screenshotUrl(task, n) {
-    return `${basePath}/${task.queryId || task.id}/screenshots/${n}.png`;
   }
 
   function goToStep(n) {
@@ -914,7 +963,7 @@
     body.innerHTML = '<div class="placeholder"><div class="ph-text" style="color: #6e7681;">Loading messages...</div></div>';
     countEl.textContent = '';
 
-    const msgUrl = `${basePath}/${task.queryId || task.id}/messages.jsonl`;
+    const msgUrl = messagesUrl(task);
 
     fetch(msgUrl)
       .then((res) => {
@@ -1075,7 +1124,7 @@
 
   // ── Load task metadata for rich grader details ──────────────────
   function loadTaskMetadata(task) {
-    const metaUrl = `${basePath}/${task.queryId || task.id}/metadata.json`;
+    const metaUrl = metadataUrl(task);
     fetch(metaUrl)
       .then((res) => res.ok ? res.json() : null)
       .then((meta) => {
