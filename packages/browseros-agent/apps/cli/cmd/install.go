@@ -28,7 +28,7 @@ Linux:   Downloads AppImage (or .deb with --deb flag)
 
 After installation:
   browseros-cli launch        # start BrowserOS
-  browseros-cli init --auto   # configure the CLI`,
+  browseros-cli init <url>    # configure the CLI with the Server URL`,
 		Annotations: map[string]string{"group": "Setup:"},
 		Args:        cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
@@ -81,7 +81,7 @@ After installation:
 			fmt.Println()
 			bold.Println("Next steps:")
 			dim.Println("  browseros-cli launch        # start BrowserOS")
-			dim.Println("  browseros-cli init --auto   # configure the CLI")
+			dim.Println("  browseros-cli init <url>    # use the Server URL from BrowserOS settings")
 		},
 	}
 

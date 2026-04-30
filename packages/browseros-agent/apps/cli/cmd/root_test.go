@@ -1,8 +1,13 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"browseros-cli/config"
 )
 
 func TestSetVersionUpdatesRootCommand(t *testing.T) {
@@ -97,6 +102,76 @@ func TestShouldSkipAutomaticUpdates(t *testing.T) {
 				t.Fatalf("shouldSkipAutomaticUpdates(%v) = %t, want %t", tt.args, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestDefaultServerURLUsesEnvBeforeConfig(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("BROWSEROS_URL", "http://127.0.0.1:9115/mcp")
+
+	if err := config.Save(&config.Config{ServerURL: "http://127.0.0.1:9000/mcp"}); err != nil {
+		t.Fatalf("config.Save() error = %v", err)
+	}
+
+	got := defaultServerURL()
+	if got != "http://127.0.0.1:9115" {
+		t.Fatalf("defaultServerURL() = %q, want %q", got, "http://127.0.0.1:9115")
+	}
+}
+
+func TestDefaultServerURLUsesSavedConfig(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("BROWSEROS_URL", "")
+
+	if err := config.Save(&config.Config{ServerURL: "http://127.0.0.1:9115/mcp"}); err != nil {
+		t.Fatalf("config.Save() error = %v", err)
+	}
+
+	got := defaultServerURL()
+	if got != "http://127.0.0.1:9115" {
+		t.Fatalf("defaultServerURL() = %q, want %q", got, "http://127.0.0.1:9115")
+	}
+}
+
+func TestDefaultServerURLIgnoresBrowserOSServerJSON(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("BROWSEROS_URL", "")
+
+	serverDir := filepath.Join(home, ".browseros")
+	if err := os.MkdirAll(serverDir, 0755); err != nil {
+		t.Fatalf("os.MkdirAll() error = %v", err)
+	}
+	data := []byte(`{"url":"http://127.0.0.1:9999"}`)
+	if err := os.WriteFile(filepath.Join(serverDir, "server.json"), data, 0644); err != nil {
+		t.Fatalf("os.WriteFile() error = %v", err)
+	}
+
+	if got := defaultServerURL(); got != "" {
+		t.Fatalf("defaultServerURL() = %q, want empty", got)
+	}
+}
+
+func TestNormalizeServerURLAcceptsMCPEndpoint(t *testing.T) {
+	got := normalizeServerURL(" http://127.0.0.1:9115/mcp ")
+	if got != "http://127.0.0.1:9115" {
+		t.Fatalf("normalizeServerURL() = %q, want %q", got, "http://127.0.0.1:9115")
+	}
+}
+
+func TestValidateServerURLExplainsManualInit(t *testing.T) {
+	_, err := validateServerURL("")
+	if err == nil {
+		t.Fatal("validateServerURL() error = nil, want setup instructions")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "browseros-cli init <Server URL>") {
+		t.Fatalf("validateServerURL() error = %q, want manual init instructions", msg)
+	}
+	if strings.Contains(msg, "init --auto") {
+		t.Fatalf("validateServerURL() error = %q, should not mention init --auto", msg)
 	}
 }
 

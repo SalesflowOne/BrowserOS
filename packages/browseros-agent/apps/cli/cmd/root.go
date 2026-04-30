@@ -2,10 +2,8 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -289,18 +287,15 @@ func drainAutomaticUpdateCheckWithTimeout(done <-chan struct{}, timeout time.Dur
 	}
 }
 
+// defaultServerURL returns the implicit target from user-controlled settings only.
+//
+// BrowserOS writes a discovery file at runtime, but normal commands intentionally
+// ignore it so a saved URL is not silently overridden by another running server.
 func defaultServerURL() string {
-	// 1. Explicit env var always wins
 	if env := normalizeServerURL(os.Getenv("BROWSEROS_URL")); env != "" {
 		return env
 	}
 
-	// 2. Live discovery file from running BrowserOS (most current)
-	if url := loadBrowserosServerURL(); url != "" {
-		return url
-	}
-
-	// 3. Saved config (may be stale if port changed)
 	cfg, err := config.Load()
 	if err == nil {
 		if url := normalizeServerURL(cfg.ServerURL); url != "" {
@@ -309,33 +304,6 @@ func defaultServerURL() string {
 	}
 
 	return ""
-}
-
-type serverDiscoveryConfig struct {
-	ServerPort       int    `json:"server_port"`
-	URL              string `json:"url"`
-	ServerVersion    string `json:"server_version"`
-	BrowserOSVersion string `json:"browseros_version,omitempty"`
-	ChromiumVersion  string `json:"chromium_version,omitempty"`
-}
-
-func loadBrowserosServerURL() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-
-	data, err := os.ReadFile(filepath.Join(home, ".browseros", "server.json"))
-	if err != nil {
-		return ""
-	}
-
-	var sc serverDiscoveryConfig
-	if err := json.Unmarshal(data, &sc); err != nil {
-		return ""
-	}
-
-	return normalizeServerURL(sc.URL)
 }
 
 func normalizeServerURL(raw string) string {
@@ -369,8 +337,10 @@ func validateServerURL(raw string) (string, error) {
 
 	return "", fmt.Errorf(
 		"BrowserOS server URL is not configured.\n\n" +
-			"  If BrowserOS is running:  browseros-cli init --auto\n" +
-			"  If BrowserOS is closed:   browseros-cli launch\n" +
-			"  If not installed:         browseros-cli install",
+			"  Open BrowserOS Settings > BrowserOS MCP and copy the Server URL.\n" +
+			"  Save it with:       browseros-cli init <Server URL>\n" +
+			"  Example:            browseros-cli init http://127.0.0.1:9000/mcp\n" +
+			"  If BrowserOS is closed:  browseros-cli launch\n" +
+			"  If not installed:        browseros-cli install",
 	)
 }

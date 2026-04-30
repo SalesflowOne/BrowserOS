@@ -44,10 +44,7 @@ func (c *Client) connect(ctx context.Context) (*sdkmcp.ClientSession, error) {
 
 	session, err := sdkClient.Connect(ctx, transport, nil)
 	if err != nil {
-		return nil, fmt.Errorf("cannot connect to BrowserOS at %s: %w\n\n"+
-			"  If BrowserOS is running on a different port:  browseros-cli init --auto\n"+
-			"  If BrowserOS is not running:                  browseros-cli launch\n"+
-			"  If not installed:                             browseros-cli install", c.BaseURL, err)
+		return nil, fmt.Errorf("cannot connect to BrowserOS at %s: %w%s", c.BaseURL, err, connectionSetupInstructions())
 	}
 	return session, nil
 }
@@ -187,10 +184,7 @@ func (c *Client) Status() (map[string]any, error) {
 func (c *Client) restGET(path string) (map[string]any, error) {
 	resp, err := c.HTTPClient.Get(c.BaseURL + path)
 	if err != nil {
-		return nil, fmt.Errorf("cannot connect to BrowserOS at %s: %w\n\n"+
-			"  If BrowserOS is running on a different port:  browseros-cli init --auto\n"+
-			"  If BrowserOS is not running:                  browseros-cli launch\n"+
-			"  If not installed:                             browseros-cli install", c.BaseURL, err)
+		return nil, fmt.Errorf("cannot connect to BrowserOS at %s: %w%s", c.BaseURL, err, connectionSetupInstructions())
 	}
 	defer resp.Body.Close()
 
@@ -204,4 +198,15 @@ func (c *Client) restGET(path string) (map[string]any, error) {
 		return nil, fmt.Errorf("parse response: %w", err)
 	}
 	return data, nil
+}
+
+// connectionSetupInstructions explains how to recover from a stale or missing server URL.
+func connectionSetupInstructions() string {
+	return "\n\n" +
+		"  Open BrowserOS Settings > BrowserOS MCP and copy the Server URL.\n" +
+		"  Save it with:       browseros-cli init <Server URL>\n" +
+		"  Example:            browseros-cli init http://127.0.0.1:9000/mcp\n" +
+		"  Run once with:      browseros-cli --server <Server URL> health\n" +
+		"  If BrowserOS is closed:  browseros-cli launch\n" +
+		"  If not installed:        browseros-cli install"
 }

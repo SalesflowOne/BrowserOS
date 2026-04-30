@@ -38,8 +38,8 @@ browseros-cli install                # downloads BrowserOS for your platform
 # If BrowserOS is installed but not running
 browseros-cli launch                 # opens BrowserOS, waits for server
 
-# Configure the CLI (auto-discovers running BrowserOS)
-browseros-cli init --auto            # detects server URL and saves config
+# Configure the CLI with the Server URL from BrowserOS settings
+browseros-cli init http://127.0.0.1:9000/mcp
 
 # Verify connection
 browseros-cli health
@@ -52,7 +52,7 @@ browseros-cli init <url>             # non-interactive — pass URL directly
 browseros-cli init                   # interactive — prompts for URL
 ```
 
-Config is saved to `~/.config/browseros-cli/config.yaml`. The CLI also auto-discovers the server from `~/.browseros/server.json` (written by BrowserOS on startup).
+Config is saved to `~/.config/browseros-cli/config.yaml`. If `browseros-cli health` cannot connect, copy the current Server URL from BrowserOS Settings > BrowserOS MCP and run `browseros-cli init <Server URL>` again.
 
 ### CLI updates
 
@@ -126,9 +126,9 @@ To connect Claude Code, Gemini CLI, or any MCP client, see the [MCP setup guide]
 | `--debug` | `BOS_DEBUG=1` | Debug output |
 | `--timeout, -t` | | Request timeout (default: 2m) |
 
-Priority for server URL: `--server` flag > `BROWSEROS_URL` env > `~/.browseros/server.json` > config file
+Priority for server URL: `--server` flag > `BROWSEROS_URL` env > config file
 
-If no server URL is configured, the CLI exits with setup instructions pointing to `install`, `launch`, and `init`.
+If no server URL is configured, the CLI exits with setup instructions pointing to `install`, `launch`, and `init <Server URL>`.
 
 ## Testing
 
@@ -179,7 +179,7 @@ apps/cli/
 │   └── config.go       # Config file (~/.config/browseros-cli/config.yaml)
 ├── cmd/
 │   ├── root.go         # Root command, global flags
-│   ├── init.go         # Server URL configuration (URL arg, --auto, interactive)
+│   ├── init.go         # Server URL configuration (URL arg or interactive)
 │   ├── install.go      # install (download BrowserOS for current platform)
 │   ├── launch.go       # launch (find and start BrowserOS, wait for server)
 │   ├── open.go         # open (new_page / new_hidden_page)
