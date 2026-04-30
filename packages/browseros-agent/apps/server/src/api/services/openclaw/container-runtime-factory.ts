@@ -10,19 +10,12 @@ import { getBrowserosDir } from '../../../lib/browseros-dir'
 import { ContainerCli, ImageLoader } from '../../../lib/container'
 import { logger } from '../../../lib/logger'
 import {
-  detectArch,
   getLimaHomeDir,
   resolveBundledLimactl,
   resolveBundledLimaTemplate,
   VM_NAME,
   VmRuntime,
 } from '../../../lib/vm'
-import {
-  ensureVmCacheAvailable,
-  ensureVmCacheSynced,
-  type VmCacheSyncOptions,
-} from '../../../lib/vm/cache-sync'
-import { readCachedManifest } from '../../../lib/vm/manifest'
 import { VM_TELEMETRY_EVENTS } from '../../../lib/vm/telemetry'
 import { ContainerRuntime } from './container-runtime'
 
@@ -34,13 +27,6 @@ export interface ContainerRuntimeFactoryInput {
   projectDir: string
   browserosRoot?: string
   platform?: NodeJS.Platform
-  vmCache?: VmCacheRuntimeConfig
-}
-
-export interface VmCacheRuntimeConfig
-  extends Pick<VmCacheSyncOptions, 'manifestUrl'> {
-  ensureAvailable?: () => Promise<void>
-  ensureSynced?: () => Promise<unknown>
 }
 
 export function buildContainerRuntime(
@@ -77,16 +63,9 @@ export function buildContainerRuntime(
       ? resolveBundledLimaTemplate(input.resourcesDir)
       : undefined,
     browserosRoot,
-    ensureCacheAvailable:
-      input.vmCache?.ensureAvailable ??
-      (() =>
-        ensureVmCacheAvailable({
-          browserosRoot,
-          manifestUrl: input.vmCache?.manifestUrl,
-        })),
   })
   const shell = new ContainerCli({ limactlPath, limaHome, vmName: VM_NAME })
-  const loader = new DeferredImageLoader(shell, browserosRoot, input.vmCache)
+  const loader = new ImageLoader(shell)
 
   return new ContainerRuntime({
     vm,
@@ -120,49 +99,6 @@ function migrateLegacyOpenClawDirSync(browserosRoot = getBrowserosDir()): void {
     from: legacyDir,
     to: nextDir,
   })
-}
-
-class DeferredImageLoader {
-  constructor(
-    private readonly shell: ContainerCli,
-    private readonly browserosRoot: string,
-    private readonly vmCache?: VmCacheRuntimeConfig,
-  ) {}
-
-  async ensureImageLoaded(ref: string, onLog?: (msg: string) => void) {
-    const loader = await this.buildLoader()
-    await loader.ensureImageLoaded(ref, onLog)
-  }
-
-  async ensureAgentImageLoaded(
-    name: string,
-    onLog?: (msg: string) => void,
-  ): Promise<string> {
-    const loader = await this.buildLoader()
-    return loader.ensureAgentImageLoaded(name, onLog)
-  }
-
-  private async buildLoader(): Promise<ImageLoader> {
-    await this.ensureCacheSynced()
-    const manifest = await readCachedManifest(this.browserosRoot)
-    return new ImageLoader(
-      this.shell,
-      manifest,
-      detectArch(),
-      this.browserosRoot,
-    )
-  }
-
-  private async ensureCacheSynced(): Promise<void> {
-    if (this.vmCache?.ensureSynced) {
-      await this.vmCache.ensureSynced()
-      return
-    }
-    await ensureVmCacheSynced({
-      browserosRoot: this.browserosRoot,
-      manifestUrl: this.vmCache?.manifestUrl,
-    })
-  }
 }
 
 class UnsupportedPlatformTestRuntime extends ContainerRuntime {
