@@ -58,8 +58,9 @@ if [ "$BRANCH" = "main" ] || [ "$BRANCH" = "dev" ]; then
   exit 0
 fi
 
-# Determine base branch (default: dev for this repo, fall back to main)
-BASE=$(git rev-parse --verify origin/dev 2>/dev/null && echo dev || echo main)
+# Determine base branch (default: dev for this repo, fall back to main).
+# Suppress rev-parse's SHA output on stdout so it doesn't get captured into BASE.
+BASE=$(git rev-parse --verify origin/dev >/dev/null 2>&1 && echo dev || echo main)
 
 # Gather context
 git log "$BASE..HEAD" --oneline
@@ -125,6 +126,7 @@ Use a tmp clone. Never the user's `.internal-docs` checkout — keeps the user's
 
 ```bash
 TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT  # cleans up even if any step below fails
 git clone -b main git@github.com:browseros-ai/internal-docs.git "$TMP"
 cd "$TMP"
 git checkout -b "docs/<slug>"
@@ -156,8 +158,8 @@ BODY
 )")
 
 cd -
-rm -rf "$TMP"
 echo "PR opened: $PR_URL"
+# trap above cleans up $TMP on EXIT
 ```
 
 If the slug contains characters that won't shell-escape cleanly, sanitize before substitution.
