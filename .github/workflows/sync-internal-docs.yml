@@ -48,8 +48,12 @@ jobs:
                 break
               fi
 
-              echo "PR merge state is UNKNOWN; waiting for GitHub to compute it (attempt ${attempt}/5)."
-              sleep 3
+              if [ "$attempt" -lt 5 ]; then
+                echo "PR merge state is UNKNOWN; waiting for GitHub to compute it (attempt ${attempt}/5)."
+                sleep 3
+              else
+                echo "PR merge state is still UNKNOWN after 5 attempts; falling back to auto-merge."
+              fi
             done
 
             echo "PR merge state: ${merge_state}"
@@ -78,6 +82,7 @@ jobs:
           EXISTING_SYNC_PR=$(gh pr list \
             --base dev \
             --state open \
+            --limit 100 \
             --json headRefName,url \
             --jq 'map(select(.headRefName | startswith("bot/sync-internal-docs"))) | first // empty | [.url, .headRefName] | @tsv')
 
@@ -97,6 +102,15 @@ jobs:
           git commit -m "chore: sync internal-docs submodule"
 
           if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            # Auto-merge is tied to the current PR head, so clear it before force-pushing a reused sync branch.
+            if [ -n "$PR_URL" ]; then
+              AUTO_MERGE=$(gh pr view "$PR_URL" --json autoMergeRequest --jq '.autoMergeRequest // empty')
+              if [ -n "$AUTO_MERGE" ]; then
+                echo "Disabling existing auto-merge before updating reused sync PR."
+                gh pr merge "$PR_URL" --disable-auto
+              fi
+            fi
+
             git fetch --depth=1 origin "+refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}"
             REMOTE_SHA=$(git rev-parse "refs/remotes/origin/${BRANCH}")
             git push -u origin "$BRANCH" --force-with-lease="refs/heads/${BRANCH}:${REMOTE_SHA}"
