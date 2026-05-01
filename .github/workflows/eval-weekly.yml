@@ -44,6 +44,19 @@ jobs:
         working-directory: packages/browseros-agent
         run: bun install --ignore-scripts
 
+      - name: Install Claude Code CLI
+        working-directory: packages/browseros-agent/apps/eval
+        env:
+          EVAL_CONFIG: ${{ github.event.inputs.config || 'configs/legacy/browseros-agent-weekly.json' }}
+        run: |
+          if bun -e "const config = await Bun.file(process.env.EVAL_CONFIG).json(); process.exit(config.agent?.type === 'claude-code' ? 0 : 1)"; then
+            npm install -g @anthropic-ai/claude-code@2.1.119
+            echo "Claude Code CLI installed at $(command -v claude)"
+            claude --version
+          else
+            echo "Eval config does not use Claude Code; skipping Claude Code CLI install"
+          fi
+
       - name: Install Python eval dependencies
         # agisdk pinned so silent upstream releases can't shift task definitions
         # or grader behavior. Bump intentionally with a documented re-baseline.
