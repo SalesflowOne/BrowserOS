@@ -4,7 +4,15 @@
  */
 
 import { afterEach, describe, expect, it } from 'bun:test'
-import { lstat, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import {
+  chmod,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -136,6 +144,20 @@ describe('acpx runtime context helpers', () => {
     ).toContain('If you change SOUL.md, tell the user')
   })
 
+  it('refreshes managed runtime skills even when an existing file is read-only', async () => {
+    const browserosDir = await mkdtemp(join(tmpdir(), 'browseros-context-'))
+    tempDirs.push(browserosDir)
+    const paths = resolveAgentRuntimePaths({ browserosDir, agentId: 'agent-1' })
+    const skillPath = join(paths.runtimeSkillsDir, 'browseros', 'SKILL.md')
+
+    await ensureRuntimeSkills(paths.runtimeSkillsDir)
+    await chmod(skillPath, 0o444)
+
+    await ensureRuntimeSkills(paths.runtimeSkillsDir)
+
+    expect(await readFile(skillPath, 'utf8')).toContain('BrowserOS MCP')
+  })
+
   it('materializes Codex home with auth symlink and all runtime skills', async () => {
     const browserosDir = await mkdtemp(join(tmpdir(), 'browseros-context-'))
     const sourceCodexHome = await mkdtemp(
@@ -160,6 +182,36 @@ describe('acpx runtime context helpers', () => {
         'utf8',
       ),
     ).toContain('BrowserOS MCP')
+  })
+
+  it('rejects non-file Codex auth sources instead of silently skipping auth', async () => {
+    const browserosDir = await mkdtemp(join(tmpdir(), 'browseros-context-'))
+    const sourceCodexHome = await mkdtemp(
+      join(tmpdir(), 'browseros-codex-src-'),
+    )
+    tempDirs.push(browserosDir, sourceCodexHome)
+    await mkdir(join(sourceCodexHome, 'auth.json'))
+    const paths = resolveAgentRuntimePaths({ browserosDir, agentId: 'agent-1' })
+    const skills = await ensureRuntimeSkills(paths.runtimeSkillsDir)
+
+    await expect(
+      materializeCodexHome({ paths, skillNames: skills, sourceCodexHome }),
+    ).rejects.toThrow(/auth\.json/)
+  })
+
+  it('rejects non-file Codex config sources instead of silently skipping config', async () => {
+    const browserosDir = await mkdtemp(join(tmpdir(), 'browseros-context-'))
+    const sourceCodexHome = await mkdtemp(
+      join(tmpdir(), 'browseros-codex-src-'),
+    )
+    tempDirs.push(browserosDir, sourceCodexHome)
+    await mkdir(join(sourceCodexHome, 'config.toml'))
+    const paths = resolveAgentRuntimePaths({ browserosDir, agentId: 'agent-1' })
+    const skills = await ensureRuntimeSkills(paths.runtimeSkillsDir)
+
+    await expect(
+      materializeCodexHome({ paths, skillNames: skills, sourceCodexHome }),
+    ).rejects.toThrow(/config\.toml/)
   })
 
   it('wraps commands with shell-quoted env vars', () => {

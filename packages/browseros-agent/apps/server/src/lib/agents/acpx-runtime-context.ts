@@ -4,9 +4,20 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { constants, type Stats } from 'node:fs'
+import {
+  access,
+  mkdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import type { AgentDefinition } from './agent-types'
 
 export const BROWSEROS_ACPX_OPERATING_PROMPT_VERSION = '2026-05-02.v1'
@@ -209,8 +220,7 @@ export async function ensureRuntimeSkills(
   const names = Object.keys(RUNTIME_SKILLS).sort()
   for (const name of names) {
     const skillPath = join(skillRoot, name, 'SKILL.md')
-    await mkdir(dirname(skillPath), { recursive: true })
-    await writeFile(skillPath, RUNTIME_SKILLS[name], 'utf8')
+    await writeFileAtomic(skillPath, RUNTIME_SKILLS[name])
   }
   return names
 }
@@ -235,14 +245,12 @@ export async function materializeCodexHome(input: {
   }
   for (const name of input.skillNames) {
     const target = join(input.paths.codexHome, 'skills', name, 'SKILL.md')
-    await mkdir(dirname(target), { recursive: true })
-    await writeFile(
+    await writeFileAtomic(
       target,
       await readFile(
         join(input.paths.runtimeSkillsDir, name, 'SKILL.md'),
         'utf8',
       ),
-      'utf8',
     )
   }
 }
@@ -289,21 +297,16 @@ async function writeFileIfMissing(
   path: string,
   content: string,
 ): Promise<void> {
+  await mkdir(dirname(path), { recursive: true })
   try {
-    await readFile(path, 'utf8')
+    await writeFile(path, content, { encoding: 'utf8', flag: 'wx' })
   } catch (err) {
-    if (!isNotFoundError(err)) throw err
-    await mkdir(dirname(path), { recursive: true })
-    await writeFile(path, content, 'utf8')
+    if (!isAlreadyExistsError(err)) throw err
   }
 }
 
 async function symlinkIfPresent(source: string, target: string): Promise<void> {
-  try {
-    await readFile(source, 'utf8')
-  } catch {
-    return
-  }
+  if (!(await sourceFileExists(source))) return
   await mkdir(dirname(target), { recursive: true })
   try {
     await symlink(source, target)
@@ -313,20 +316,45 @@ async function symlinkIfPresent(source: string, target: string): Promise<void> {
 }
 
 async function copyIfPresent(source: string, target: string): Promise<void> {
-  let content: string
-  try {
-    content = await readFile(source, 'utf8')
-  } catch {
-    return
-  }
-  try {
-    await readFile(target, 'utf8')
-    return
-  } catch (err) {
-    if (!isNotFoundError(err)) throw err
-  }
+  if (!(await sourceFileExists(source))) return
+  const content = await readFile(source, 'utf8')
   await mkdir(dirname(target), { recursive: true })
-  await writeFile(target, content, 'utf8')
+  try {
+    await writeFile(target, content, { encoding: 'utf8', flag: 'wx' })
+  } catch (err) {
+    if (!isAlreadyExistsError(err)) throw err
+  }
+}
+
+/** Writes generated content via atomic replace so readers never see partial files. */
+async function writeFileAtomic(path: string, content: string): Promise<void> {
+  await mkdir(dirname(path), { recursive: true })
+  const temporaryPath = join(
+    dirname(path),
+    `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`,
+  )
+  try {
+    await writeFile(temporaryPath, content, 'utf8')
+    await rename(temporaryPath, path)
+  } catch (err) {
+    await rm(temporaryPath, { force: true }).catch(() => undefined)
+    throw err
+  }
+}
+
+async function sourceFileExists(path: string): Promise<boolean> {
+  let info: Stats
+  try {
+    info = await stat(path)
+    await access(path, constants.R_OK)
+  } catch (err) {
+    if (isNotFoundError(err)) return false
+    throw err
+  }
+  if (!info.isFile()) {
+    throw new Error(`Expected Codex source file to be a file: ${path}`)
+  }
+  return true
 }
 
 function shellQuote(value: string): string {

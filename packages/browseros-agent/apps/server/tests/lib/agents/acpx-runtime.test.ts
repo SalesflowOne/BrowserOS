@@ -196,6 +196,37 @@ describe('AcpxRuntime', () => {
     )
   })
 
+  it('surfaces a clear error when selected cwd no longer exists', async () => {
+    const browserosDir = await mkdtemp(
+      join(tmpdir(), 'browseros-acpx-browseros-'),
+    )
+    const stateDir = await mkdtemp(join(tmpdir(), 'browseros-acpx-state-'))
+    tempDirs.push(browserosDir, stateDir)
+    const missingCwd = join(browserosDir, 'missing-workspace')
+    const calls: Array<{ method: string; input: unknown }> = []
+    const runtime = new AcpxRuntime({
+      browserosDir,
+      stateDir,
+      runtimeFactory: (options) => {
+        calls.push({ method: 'createRuntime', input: options })
+        return createFakeAcpRuntime(calls)
+      },
+    })
+    const agent = makeAgent({ id: 'agent-1', adapter: 'codex' })
+
+    await expect(
+      runtime.send({
+        agent,
+        sessionId: 'main',
+        sessionKey: agent.sessionKey,
+        cwd: missingCwd,
+        message: 'work here',
+        permissionMode: 'approve-all',
+      }),
+    ).rejects.toThrow(`Selected workspace does not exist: ${missingCwd}`)
+    expect(calls).toEqual([])
+  })
+
   it('loads history from the latest runtime-state session key', async () => {
     const browserosDir = await mkdtemp(
       join(tmpdir(), 'browseros-acpx-browseros-'),

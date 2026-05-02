@@ -5,6 +5,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import type { Stats } from 'node:fs'
 import { mkdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { OPENCLAW_GATEWAY_CONTAINER_PORT } from '@browseros/shared/constants/openclaw'
@@ -1076,10 +1077,27 @@ async function ensureUsableCwd(
     await mkdir(cwd, { recursive: true })
     return
   }
-  const info = await stat(cwd)
+  let info: Stats
+  try {
+    info = await stat(cwd)
+  } catch (err) {
+    if (isNotFoundError(err)) {
+      throw new Error(`Selected workspace does not exist: ${cwd}`)
+    }
+    throw err
+  }
   if (!info.isDirectory()) {
     throw new Error(`Selected workspace is not a directory: ${cwd}`)
   }
+}
+
+function isNotFoundError(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    err.code === 'ENOENT'
+  )
 }
 
 function buildAgentCommandEnv(
