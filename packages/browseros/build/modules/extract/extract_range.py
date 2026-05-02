@@ -79,7 +79,8 @@ def extract_commit_range(
         raise GitError(f"Head commit not found: {head_commit}")
     diff_base = resolve_base_commit(ctx, custom_base)
     if not validate_commit_exists(diff_base, ctx.chromium_src):
-        raise GitError(f"Custom base commit not found: {diff_base}")
+        label = "Custom base" if custom_base else "BASE_COMMIT"
+        raise GitError(f"{label} commit not found: {diff_base}")
 
     # Count commits in range for progress
     result = run_git_command(
@@ -213,7 +214,8 @@ def extract_commits_individually(
     """
     diff_base = resolve_base_commit(ctx, custom_base)
     if not validate_commit_exists(diff_base, ctx.chromium_src):
-        raise GitError(f"Custom base commit not found: {diff_base}")
+        label = "Custom base" if custom_base else "BASE_COMMIT"
+        raise GitError(f"{label} commit not found: {diff_base}")
 
     # Get list of commits in range
     result = run_git_command(

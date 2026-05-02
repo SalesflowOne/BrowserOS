@@ -172,7 +172,7 @@ def extract_commit(
     base: Optional[str] = Option(
         None,
         "--base",
-        help="Base commit to diff from (defaults to BASE_COMMIT)",
+        help="Base commit to diff from for BASE_COMMIT-relative extraction (defaults to BASE_COMMIT)",
     ),
     feature: bool = Option(
         False, "--feature", help="Add extracted files to a feature in features.yaml"
@@ -228,16 +228,8 @@ def extract_patch_cmd(
         raise typer.Exit(1)
 
     from ..modules.extract import extract_single_file_patch
-    from ..modules.extract.common import resolve_base_commit
-    from ..modules.extract.utils import GitError
 
-    try:
-        resolved_base = resolve_base_commit(ctx, base)
-    except GitError as e:
-        log_error(str(e))
-        raise typer.Exit(1)
-
-    success, error = extract_single_file_patch(ctx, chromium_path, resolved_base, force)
+    success, error = extract_single_file_patch(ctx, chromium_path, base, force)
     if not success:
         log_error(error or "Unknown error")
         raise typer.Exit(1)
@@ -245,7 +237,15 @@ def extract_patch_cmd(
 
     # Handle --feature flag
     if feature:
+        from ..modules.extract.common import resolve_base_commit
+        from ..modules.extract.utils import GitError
         from ..modules.feature import prompt_feature_selection, add_files_to_feature
+
+        try:
+            resolved_base = resolve_base_commit(ctx, base)
+        except GitError as e:
+            log_error(str(e))
+            raise typer.Exit(1)
 
         result = prompt_feature_selection(ctx, resolved_base[:12], None)
         if result is None:
