@@ -13,6 +13,7 @@ from ...common.utils import log_info, log_error, log_warning
 from .utils import (
     FilePatch,
     FileOperation,
+    GitError,
     run_git_command,
     parse_diff_output,
     write_patch_file,
@@ -21,6 +22,22 @@ from .utils import (
     log_extraction_summary,
     get_commit_changed_files_with_status,
 )
+
+
+def resolve_base_commit(ctx: Context, base: Optional[str]) -> str:
+    """Return an explicit base or the package BASE_COMMIT used for Chromium patches."""
+    if base:
+        return base
+
+    base_path = ctx.root_dir / "BASE_COMMIT"
+    try:
+        resolved = base_path.read_text(encoding="utf-8").strip()
+    except FileNotFoundError as exc:
+        raise GitError(f"BASE_COMMIT not found: {base_path}") from exc
+
+    if not resolved:
+        raise GitError(f"BASE_COMMIT is empty: {base_path}")
+    return resolved
 
 
 def check_overwrite(ctx: Context, file_patches: Dict, verbose: bool) -> bool:

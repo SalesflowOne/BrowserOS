@@ -22,8 +22,7 @@ from .utils import (
     create_binary_marker,
     log_extraction_summary,
 )
-from .common import check_overwrite, extract_with_base
-from .extract_commit import extract_single_commit
+from .common import check_overwrite, extract_with_base, resolve_base_commit
 
 
 def get_range_changed_files_with_status(
@@ -78,8 +77,9 @@ def extract_commit_range(
         raise GitError(f"Base commit not found: {base_commit}")
     if not validate_commit_exists(head_commit, ctx.chromium_src):
         raise GitError(f"Head commit not found: {head_commit}")
-    if custom_base and not validate_commit_exists(custom_base, ctx.chromium_src):
-        raise GitError(f"Custom base commit not found: {custom_base}")
+    diff_base = resolve_base_commit(ctx, custom_base)
+    if not validate_commit_exists(diff_base, ctx.chromium_src):
+        raise GitError(f"Custom base commit not found: {diff_base}")
 
     # Count commits in range for progress
     result = run_git_command(
@@ -94,63 +94,47 @@ def extract_commit_range(
 
     log_info(f"Processing {commit_count} commits")
 
-    # Step 2: Get diff based on whether we have a custom base
-    if custom_base:
-        # Get files changed in range WITH status to handle deletions correctly
-        changed_files = get_range_changed_files_with_status(
-            base_commit, head_commit, ctx.chromium_src
+    # Get files changed in range WITH status to handle deletions correctly
+    changed_files = get_range_changed_files_with_status(
+        base_commit, head_commit, ctx.chromium_src
+    )
+
+    if not changed_files:
+        log_warning("No files changed in range")
+        return 0, []
+
+    log_info(f"Found {len(changed_files)} files changed in range")
+
+    # Separate deleted files from others
+    deleted_files = [f for f, s in changed_files.items() if s == "D"]
+    non_deleted_files = [f for f, s in changed_files.items() if s != "D"]
+
+    file_patches = {}
+
+    # Handle deleted files directly
+    for file_path in deleted_files:
+        file_patches[file_path] = FilePatch(
+            file_path=file_path,
+            operation=FileOperation.DELETE,
+            patch_content=None,
+            is_binary=False,
         )
 
-        if not changed_files:
-            log_warning("No files changed in range")
-            return 0, []
-
-        log_info(f"Found {len(changed_files)} files changed in range")
-
-        # Separate deleted files from others
-        deleted_files = [f for f, s in changed_files.items() if s == "D"]
-        non_deleted_files = [f for f, s in changed_files.items() if s != "D"]
-
-        file_patches = {}
-
-        # Handle deleted files directly
-        for file_path in deleted_files:
-            file_patches[file_path] = FilePatch(
-                file_path=file_path,
-                operation=FileOperation.DELETE,
-                patch_content=None,
-                is_binary=False,
-            )
-
-        # Get diff from custom base for non-deleted files
-        if non_deleted_files:
-            diff_cmd = ["git", "diff", f"{custom_base}..{head_commit}"]
-            if include_binary:
-                diff_cmd.append("--binary")
-            diff_cmd.append("--")
-            diff_cmd.extend(non_deleted_files)
-
-            result = run_git_command(diff_cmd, cwd=ctx.chromium_src, timeout=120)
-
-            if result.returncode != 0:
-                raise GitError(f"Failed to get diff for range: {result.stderr}")
-
-            # Parse and merge with deleted files
-            parsed_patches = parse_diff_output(result.stdout)
-            file_patches.update(parsed_patches)
-    else:
-        # Regular diff from base_commit to head_commit
-        diff_cmd = ["git", "diff", f"{base_commit}..{head_commit}"]
+    # Get diff from BASE_COMMIT/custom base for non-deleted files.
+    if non_deleted_files:
+        diff_cmd = ["git", "diff", f"{diff_base}..{head_commit}"]
         if include_binary:
             diff_cmd.append("--binary")
+        diff_cmd.append("--")
+        diff_cmd.extend(non_deleted_files)
 
         result = run_git_command(diff_cmd, cwd=ctx.chromium_src, timeout=120)
 
         if result.returncode != 0:
             raise GitError(f"Failed to get diff for range: {result.stderr}")
 
-        # Parse diff into file patches
-        file_patches = parse_diff_output(result.stdout)
+        parsed_patches = parse_diff_output(result.stdout)
+        file_patches.update(parsed_patches)
 
     if not file_patches:
         log_warning("No changes found in commit range")
@@ -227,9 +211,9 @@ def extract_commits_individually(
     Returns:
         Tuple of (count, list of extracted file paths)
     """
-    # Validate custom base if provided
-    if custom_base and not validate_commit_exists(custom_base, ctx.chromium_src):
-        raise GitError(f"Custom base commit not found: {custom_base}")
+    diff_base = resolve_base_commit(ctx, custom_base)
+    if not validate_commit_exists(diff_base, ctx.chromium_src):
+        raise GitError(f"Custom base commit not found: {diff_base}")
 
     # Get list of commits in range
     result = run_git_command(
@@ -247,8 +231,7 @@ def extract_commits_individually(
         return 0, []
 
     log_info(f"Extracting patches from {len(commits)} commits individually")
-    if custom_base:
-        log_info(f"Using custom base: {custom_base}")
+    log_info(f"Using base: {diff_base}")
 
     total_extracted = 0
     all_extracted_files: List[str] = []
@@ -259,25 +242,14 @@ def extract_commits_individually(
     ) as commits_bar:
         for commit in commits_bar:
             try:
-                if custom_base:
-                    # Use extract_with_base for full diff from custom base
-                    extracted, files = extract_with_base(
-                        ctx,
-                        commit,
-                        custom_base,
-                        verbose=False,
-                        force=force,
-                        include_binary=include_binary,
-                    )
-                else:
-                    # Normal extraction from parent
-                    extracted, files = extract_single_commit(
-                        ctx,
-                        commit,
-                        verbose=False,
-                        force=force,
-                        include_binary=include_binary,
-                    )
+                extracted, files = extract_with_base(
+                    ctx,
+                    commit,
+                    diff_base,
+                    verbose=False,
+                    force=force,
+                    include_binary=include_binary,
+                )
                 total_extracted += extracted
                 all_extracted_files.extend(files)
             except GitError as e:
@@ -299,6 +271,7 @@ def extract_commits_individually(
 
 class ExtractRangeModule(CommandModule):
     """Extract patches from a range of commits"""
+
     produces = []
     requires = []
     description = "Extract patches from a range of commits"
@@ -306,6 +279,7 @@ class ExtractRangeModule(CommandModule):
     def validate(self, ctx: Context) -> None:
         """Validate git repository"""
         import shutil
+
         if not shutil.which("git"):
             raise ValidationError("Git is not available in PATH")
         if not validate_git_repository(ctx.chromium_src):
@@ -336,7 +310,7 @@ class ExtractRangeModule(CommandModule):
             force: Overwrite existing patches
             include_binary: Include binary files
             squash: Squash all commits into single patches
-            base: Use different base for diff (full diff from base for files in range)
+            base: Base commit to diff from. Defaults to BASE_COMMIT.
             feature: Prompt to add extracted files to a feature in features.yaml
         """
         try:
@@ -363,7 +337,9 @@ class ExtractRangeModule(CommandModule):
             if count == 0:
                 log_warning(f"No patches extracted from range {start}..{end}")
             else:
-                log_success(f"Successfully extracted {count} patches from {start}..{end}")
+                log_success(
+                    f"Successfully extracted {count} patches from {start}..{end}"
+                )
 
                 # Handle --feature flag
                 if feature and extracted_files:

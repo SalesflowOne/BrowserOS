@@ -14,7 +14,7 @@ from .utils import (
     validate_commit_exists,
     get_commit_info,
 )
-from .common import extract_normal, extract_with_base
+from .common import extract_with_base, resolve_base_commit
 
 
 def extract_single_commit(
@@ -33,7 +33,7 @@ def extract_single_commit(
         verbose: Show detailed output
         force: Overwrite existing patches
         include_binary: Include binary files
-        base: If provided, extract full diff from base for files in commit
+        base: Base commit to diff from. Defaults to BASE_COMMIT.
 
     Returns:
         Tuple of (count, list of extracted file paths)
@@ -50,16 +50,15 @@ def extract_single_commit(
         )
         log_info(f"  Subject: {commit_info['subject']}")
 
-    if base:
-        # With --base: Get files from commit, but diff from base
-        return extract_with_base(ctx, commit_hash, base, verbose, force, include_binary)
-    else:
-        # Normal behavior: diff against parent
-        return extract_normal(ctx, commit_hash, verbose, force, include_binary)
+    base_commit = resolve_base_commit(ctx, base)
+    return extract_with_base(
+        ctx, commit_hash, base_commit, verbose, force, include_binary
+    )
 
 
 class ExtractCommitModule(CommandModule):
     """Extract patches from a single commit"""
+
     produces = []
     requires = []
     description = "Extract patches from a single commit"
@@ -67,6 +66,7 @@ class ExtractCommitModule(CommandModule):
     def validate(self, ctx: Context) -> None:
         """Validate git repository"""
         import shutil
+
         if not shutil.which("git"):
             raise ValidationError("Git is not available in PATH")
         if not validate_git_repository(ctx.chromium_src):
@@ -93,7 +93,7 @@ class ExtractCommitModule(CommandModule):
             verbose: Show detailed output
             force: Overwrite existing patches
             include_binary: Include binary files
-            base: Extract full diff from base commit for files in COMMIT
+            base: Base commit to diff from. Defaults to BASE_COMMIT.
             feature: Prompt to add extracted files to a feature in features.yaml
         """
         try:

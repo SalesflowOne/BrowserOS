@@ -2,7 +2,7 @@
 Extract Patch - Extract patch for a single chromium file.
 """
 
-from typing import Tuple, Optional
+from typing import Optional, Tuple
 
 from ...common.context import Context
 from ...common.utils import log_info, log_warning
@@ -15,12 +15,13 @@ from .utils import (
     FileOperation,
     GitError,
 )
+from .common import resolve_base_commit
 
 
 def extract_single_file_patch(
     build_ctx: Context,
     chromium_path: str,
-    base: str,
+    base: Optional[str] = None,
     force: bool = False,
 ) -> Tuple[bool, Optional[str]]:
     """Extract patch for a single chromium file.
@@ -31,20 +32,25 @@ def extract_single_file_patch(
     Args:
         build_ctx: Build context
         chromium_path: Path to file in chromium (e.g., chrome/common/foo.h)
-        base: Base commit to diff against
+        base: Base commit to diff against. Defaults to BASE_COMMIT.
         force: If True, overwrite existing patch without prompting
 
     Returns:
         Tuple of (success: bool, error_message: Optional[str])
     """
-    if not validate_commit_exists(base, build_ctx.chromium_src):
-        return False, f"Base commit not found: {base}"
+    try:
+        base_commit = resolve_base_commit(build_ctx, base)
+    except GitError as e:
+        return False, str(e)
+
+    if not validate_commit_exists(base_commit, build_ctx.chromium_src):
+        return False, f"Base commit not found: {base_commit}"
 
     log_info(f"Extracting patch for: {chromium_path}")
-    log_info(f"  Base: {base[:12]}")
+    log_info(f"  Base: {base_commit[:12]}")
 
     # Get diff from base to working directory for this file
-    diff_cmd = ["git", "diff", base, "--", chromium_path]
+    diff_cmd = ["git", "diff", base_commit, "--", chromium_path]
     result = run_git_command(diff_cmd, cwd=build_ctx.chromium_src)
 
     if result.returncode != 0:
@@ -54,7 +60,7 @@ def extract_single_file_patch(
         # No diff - check if file exists in base vs working directory
         base_exists = (
             run_git_command(
-                ["git", "cat-file", "-e", f"{base}:{chromium_path}"],
+                ["git", "cat-file", "-e", f"{base_commit}:{chromium_path}"],
                 cwd=build_ctx.chromium_src,
             ).returncode
             == 0
@@ -64,7 +70,10 @@ def extract_single_file_patch(
         working_exists = working_file.exists()
 
         if not base_exists and not working_exists:
-            return False, f"File does not exist in base or working directory: {chromium_path}"
+            return (
+                False,
+                f"File does not exist in base or working directory: {chromium_path}",
+            )
 
         if base_exists and working_exists:
             return False, f"No changes found for: {chromium_path}"
@@ -97,7 +106,9 @@ def extract_single_file_patch(
     if patch_path.exists() and not force:
         import click
 
-        if not click.confirm(f"Patch already exists: {chromium_path}. Overwrite?", default=False):
+        if not click.confirm(
+            f"Patch already exists: {chromium_path}. Overwrite?", default=False
+        ):
             log_info("Extraction cancelled")
             return False, "Cancelled by user"
 
