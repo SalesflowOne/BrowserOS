@@ -24,6 +24,7 @@ import { INLINED_ENV } from './env'
 import {
   cleanOldSessions,
   ensureBrowserosDir,
+  getDbPath,
   removeServerConfigSync,
   writeServerConfig,
 } from './lib/browseros-dir'
@@ -179,9 +180,8 @@ export class Application {
     await migrateBuiltinSkills()
     await syncBuiltinSkills()
 
-    const dbPath = path.join(this.config.executionDir, 'db', 'browseros.sqlite')
     initializeDb({
-      dbPath,
+      dbPath: getDbPath(),
       resourcesDir: this.config.resourcesDir,
     })
 

@@ -89,6 +89,29 @@ describe('Application.start', () => {
       error: 'registry offline',
     })
   })
+
+  it('stores the database below the BrowserOS directory instead of the execution directory', async () => {
+    const originalBrowserosDir = process.env.BROWSEROS_DIR
+    process.env.BROWSEROS_DIR = '/tmp/browseros-dogfood'
+
+    try {
+      const { Application, initializeDb } = await setupApplicationTest()
+      const app = new Application(config)
+
+      await app.start()
+
+      expect(initializeDb).toHaveBeenCalledWith({
+        dbPath: '/tmp/browseros-dogfood/db/browseros.sqlite',
+        resourcesDir: config.resourcesDir,
+      })
+    } finally {
+      if (originalBrowserosDir === undefined) {
+        delete process.env.BROWSEROS_DIR
+      } else {
+        process.env.BROWSEROS_DIR = originalBrowserosDir
+      }
+    }
+  })
 })
 
 async function setupApplicationTest() {
@@ -121,7 +144,7 @@ async function setupApplicationTest() {
   spyOn(browserosDir, 'writeServerConfig').mockImplementation(async () => {})
   spyOn(browserosDir, 'removeServerConfigSync').mockImplementation(() => {})
 
-  spyOn(dbModule, 'initializeDb').mockImplementation(
+  const initializeDb = spyOn(dbModule, 'initializeDb').mockImplementation(
     () =>
       ({
         path: '/tmp/browseros-execution/db/browseros.sqlite',
@@ -192,6 +215,7 @@ async function setupApplicationTest() {
     loggerError,
     loggerInfo,
     loggerWarn,
+    initializeDb,
     openClawService: { prewarm, tryAutoStart },
   }
 }
