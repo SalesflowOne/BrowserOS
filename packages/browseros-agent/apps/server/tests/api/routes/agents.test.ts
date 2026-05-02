@@ -70,6 +70,34 @@ describe('createAgentRoutes', () => {
     expect(body).toContain('data: [DONE]')
   })
 
+  it('passes selected cwd from generic agent chat requests', async () => {
+    const agent: AgentDefinition = {
+      id: 'agent-1',
+      name: 'Review bot',
+      adapter: 'codex',
+      modelId: 'gpt-5.5',
+      reasoningEffort: 'medium',
+      permissionMode: 'approve-all',
+      sessionKey: 'agent:agent-1:main',
+      createdAt: 1000,
+      updatedAt: 1000,
+    }
+    const service = createFakeService([agent])
+    const route = new Hono().route('/agents', createAgentRoutes({ service }))
+
+    const response = await route.request('/agents/agent-1/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'hi', cwd: '/tmp/workspace' }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(service._lastStartTurnInput).toMatchObject({
+      agentId: 'agent-1',
+      cwd: '/tmp/workspace',
+    })
+  })
+
   it('returns 409 when starting a turn while one is active', async () => {
     const agent: AgentDefinition = {
       id: 'agent-1',

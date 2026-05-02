@@ -306,6 +306,7 @@ export function createAgentRoutes(deps: AgentRouteDeps = {}) {
           agentId,
           message: parsed.message,
           attachments: parsed.attachments,
+          cwd: parsed.cwd,
         })
       } catch (err) {
         if (err instanceof TurnAlreadyActiveError) {
@@ -621,7 +622,8 @@ async function parseEnqueueBody(
 async function parseChatBody(
   c: Context<Env>,
 ): Promise<
-  { message: string; attachments: InboundImageAttachment[] } | { error: string }
+  | { message: string; attachments: InboundImageAttachment[]; cwd?: string }
+  | { error: string }
 > {
   const body = await readJsonBody(c)
   if ('error' in body) return body
@@ -670,7 +672,13 @@ async function parseChatBody(
   if (!message && attachments.length === 0) {
     return { error: 'Message is required' }
   }
-  return { message, attachments }
+  return {
+    message,
+    attachments,
+    cwd:
+      readOptionalTrimmedString(body.value, 'cwd') ??
+      readOptionalTrimmedString(body.value, 'userWorkingDir'),
+  }
 }
 
 async function parseSidepanelAgentChatBody(
