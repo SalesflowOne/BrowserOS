@@ -35,7 +35,9 @@ export interface AgentRuntimePaths {
   effectiveCwd: string
   runtimeStatePath: string
   runtimeSkillsDir: string
+  runtimeRoot: string
   codexHome: string
+  claudeConfigDir: string
 }
 
 export function resolveAgentRuntimePaths(input: {
@@ -45,6 +47,7 @@ export function resolveAgentRuntimePaths(input: {
 }): AgentRuntimePaths {
   const harnessDir = join(input.browserosDir, 'agents', 'harness')
   const defaultWorkspaceCwd = join(harnessDir, 'workspace')
+  const runtimeRoot = join(harnessDir, input.agentId, 'runtime')
   return {
     browserosDir: input.browserosDir,
     harnessDir,
@@ -57,7 +60,9 @@ export function resolveAgentRuntimePaths(input: {
       `${input.agentId}.json`,
     ),
     runtimeSkillsDir: join(harnessDir, 'runtime-skills'),
-    codexHome: join(harnessDir, input.agentId, 'runtime', 'codex-home'),
+    runtimeRoot,
+    codexHome: join(runtimeRoot, 'codex-home'),
+    claudeConfigDir: join(runtimeRoot, 'claude-config'),
   }
 }
 
@@ -110,6 +115,35 @@ export async function materializeCodexHome(input: {
   }
 }
 
+const CLAUDE_CONFIG_SEED_FILES = [
+  '.credentials.json',
+  'credentials.json',
+  'settings.json',
+  'settings.local.json',
+  'CLAUDE.md',
+] as const
+
+/** Prepares the Claude config dir that the ACP adapter will see through CLAUDE_CONFIG_DIR. */
+export async function materializeClaudeConfig(input: {
+  paths: AgentRuntimePaths
+  sourceClaudeConfigDir?: string
+}): Promise<void> {
+  await mkdir(input.paths.claudeConfigDir, { recursive: true })
+  const source =
+    input.sourceClaudeConfigDir ??
+    process.env.CLAUDE_CONFIG_DIR?.trim() ??
+    join(homedir(), '.claude')
+  for (const file of CLAUDE_CONFIG_SEED_FILES) {
+    const sourcePath = join(source, file)
+    const targetPath = join(input.paths.claudeConfigDir, file)
+    if (file.includes('credentials')) {
+      await symlinkIfPresent(sourcePath, targetPath)
+    } else {
+      await copyIfPresent(sourcePath, targetPath)
+    }
+  }
+}
+
 /** Builds the stable BrowserOS operating instructions prepended to ACP turns. */
 export function buildAcpxRuntimePromptPrefix(input: {
   agent: AgentDefinition
@@ -134,6 +168,12 @@ BrowserOS has made runtime skills available for this ACPX session.
 Skill root: ${input.paths.runtimeSkillsDir}
 Available skills: ${input.skillNames.join(', ')}
 When a task calls for one of these skills, read its SKILL.md from that root and follow it.
+
+When the user asks you to remember, save feedback, store a preference, or update memory in this BrowserOS ACPX context, use the BrowserOS memory skill.
+Write BrowserOS memory only under AGENT_HOME:
+- AGENT_HOME/MEMORY.md for durable promoted preferences and operating patterns.
+- AGENT_HOME/memory/YYYY-MM-DD.md for daily notes and candidate memories.
+Do not use native Claude project memory, native CLI memory, or workspace files for BrowserOS memory.
 </browseros_acpx_runtime>`
 }
 
@@ -207,7 +247,7 @@ async function sourceFileExists(path: string): Promise<boolean> {
     throw err
   }
   if (!info.isFile()) {
-    throw new Error(`Expected Codex source file to be a file: ${path}`)
+    throw new Error(`Expected source file to be a file: ${path}`)
   }
   return true
 }

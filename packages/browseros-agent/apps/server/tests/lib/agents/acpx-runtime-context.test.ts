@@ -19,6 +19,7 @@ import {
   buildAcpxRuntimePromptPrefix,
   ensureAgentHome,
   ensureRuntimeSkills,
+  materializeClaudeConfig,
   materializeCodexHome,
   resolveAgentRuntimePaths,
   wrapCommandWithEnv,
@@ -55,6 +56,9 @@ describe('acpx runtime context helpers', () => {
     expect(paths.runtimeSkillsDir).toBe(
       join(browserosDir, 'agents', 'harness', 'runtime-skills'),
     )
+    expect(paths.runtimeRoot).toBe(
+      join(browserosDir, 'agents', 'harness', 'agent-1', 'runtime'),
+    )
     expect(paths.codexHome).toBe(
       join(
         browserosDir,
@@ -63,6 +67,16 @@ describe('acpx runtime context helpers', () => {
         'agent-1',
         'runtime',
         'codex-home',
+      ),
+    )
+    expect(paths.claudeConfigDir).toBe(
+      join(
+        browserosDir,
+        'agents',
+        'harness',
+        'agent-1',
+        'runtime',
+        'claude-config',
       ),
     )
   })
@@ -214,6 +228,54 @@ describe('acpx runtime context helpers', () => {
     ).rejects.toThrow(/config\.toml/)
   })
 
+  it('materializes Claude config with seed files without touching BrowserOS memory format', async () => {
+    const browserosDir = await mkdtemp(join(tmpdir(), 'browseros-context-'))
+    const sourceClaudeConfigDir = await mkdtemp(
+      join(tmpdir(), 'browseros-claude-src-'),
+    )
+    tempDirs.push(browserosDir, sourceClaudeConfigDir)
+    await writeFile(
+      join(sourceClaudeConfigDir, '.credentials.json'),
+      '{"token":"ok"}\n',
+    )
+    await writeFile(
+      join(sourceClaudeConfigDir, 'settings.json'),
+      '{"theme":"dark"}\n',
+    )
+    const paths = resolveAgentRuntimePaths({
+      browserosDir,
+      agentId: 'agent-1',
+    })
+
+    await ensureAgentHome(paths)
+    await materializeClaudeConfig({ paths, sourceClaudeConfigDir })
+
+    const credentials = await lstat(
+      join(paths.claudeConfigDir, '.credentials.json'),
+    )
+    expect(credentials.isSymbolicLink()).toBe(true)
+    expect(
+      await readFile(join(paths.claudeConfigDir, 'settings.json'), 'utf8'),
+    ).toBe('{"theme":"dark"}\n')
+    expect(
+      await readFile(join(paths.agentHome, 'MEMORY.md'), 'utf8'),
+    ).toContain('# MEMORY.md - What Persists')
+  })
+
+  it('rejects non-file Claude seed sources instead of silently skipping config', async () => {
+    const browserosDir = await mkdtemp(join(tmpdir(), 'browseros-context-'))
+    const sourceClaudeConfigDir = await mkdtemp(
+      join(tmpdir(), 'browseros-claude-src-'),
+    )
+    tempDirs.push(browserosDir, sourceClaudeConfigDir)
+    await mkdir(join(sourceClaudeConfigDir, 'settings.json'))
+    const paths = resolveAgentRuntimePaths({ browserosDir, agentId: 'agent-1' })
+
+    await expect(
+      materializeClaudeConfig({ paths, sourceClaudeConfigDir }),
+    ).rejects.toThrow(/settings\.json/)
+  })
+
   it('wraps commands with shell-quoted env vars', () => {
     expect(
       wrapCommandWithEnv('npx @zed-industries/codex-acp', {
@@ -256,5 +318,34 @@ describe('acpx runtime context helpers', () => {
       'Skill root: /tmp/browseros/agents/harness/runtime-skills',
     )
     expect(prompt).toContain('Available skills: browseros, memory, soul')
+  })
+
+  it('routes explicit memory requests to BrowserOS AGENT_HOME files', () => {
+    const agent: AgentDefinition = {
+      id: 'agent-1',
+      name: 'Researcher',
+      adapter: 'claude',
+      permissionMode: 'approve-all',
+      sessionKey: 'agent:agent-1:main',
+      createdAt: 1000,
+      updatedAt: 1000,
+    }
+    const paths = resolveAgentRuntimePaths({
+      browserosDir: '/tmp/browseros',
+      agentId: agent.id,
+      cwd: '/tmp/workspace',
+    })
+
+    const prompt = buildAcpxRuntimePromptPrefix({
+      agent,
+      paths,
+      skillNames: ['browseros', 'memory', 'soul'],
+    })
+
+    expect(prompt).toContain('When the user asks you to remember')
+    expect(prompt).toContain('use the BrowserOS memory skill')
+    expect(prompt).toContain('AGENT_HOME/MEMORY.md')
+    expect(prompt).toContain('AGENT_HOME/memory/YYYY-MM-DD.md')
+    expect(prompt).toContain('Do not use native Claude project memory')
   })
 })
