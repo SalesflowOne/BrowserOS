@@ -79,6 +79,18 @@ describe('acpx runtime context helpers', () => {
     const paths = resolveAgentRuntimePaths({ browserosDir, agentId: 'agent-1' })
 
     await ensureAgentHome(paths)
+    const seededSoul = await readFile(join(paths.agentHome, 'SOUL.md'), 'utf8')
+    const seededMemory = await readFile(
+      join(paths.agentHome, 'MEMORY.md'),
+      'utf8',
+    )
+    expect(seededSoul).toContain('# SOUL.md - Who You Are')
+    expect(seededSoul).toContain('## Continuity')
+    expect(seededSoul).toContain('If you change this file, tell the user')
+    expect(seededMemory).toContain('# MEMORY.md - What Persists')
+    expect(seededMemory).toContain('Daily notes are short-term evidence')
+    expect(seededMemory).toContain('Promote only stable patterns')
+
     await writeFile(join(paths.agentHome, 'SOUL.md'), '# Custom soul\n')
     await ensureAgentHome(paths)
 
@@ -111,8 +123,17 @@ describe('acpx runtime context helpers', () => {
       ),
     ).toContain('MEMORY.md')
     expect(
+      await readFile(
+        join(paths.runtimeSkillsDir, 'memory', 'SKILL.md'),
+        'utf8',
+      ),
+    ).toContain('Do not promote one-off facts')
+    expect(
       await readFile(join(paths.runtimeSkillsDir, 'soul', 'SKILL.md'), 'utf8'),
     ).toContain('SOUL.md')
+    expect(
+      await readFile(join(paths.runtimeSkillsDir, 'soul', 'SKILL.md'), 'utf8'),
+    ).toContain('If you change SOUL.md, tell the user')
   })
 
   it('materializes Codex home with auth symlink and all runtime skills', async () => {
