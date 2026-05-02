@@ -18,6 +18,8 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { HttpAgentError } from '../agent/errors'
 import { INLINED_ENV } from '../env'
 import { KlavisClient } from '../lib/clients/klavis/klavis-client'
+import { initializeOAuth, shutdownOAuth } from '../lib/clients/oauth'
+import { getDb } from '../lib/db'
 import { logger } from '../lib/logger'
 import { Sentry } from '../lib/sentry'
 import { getLimaHomeDir, resolveBundledLimactl, VM_NAME } from '../lib/vm'
@@ -30,6 +32,7 @@ import { createKlavisRoutes } from './routes/klavis'
 import { createMcpRoutes } from './routes/mcp'
 import { createMemoryRoutes } from './routes/memory'
 import { createMonitoringRoutes } from './routes/monitoring'
+import { createOAuthRoutes } from './routes/oauth'
 import { createOpenClawRoutes } from './routes/openclaw'
 import { createProviderRoutes } from './routes/provider'
 import { createRefinePromptRoutes } from './routes/refine-prompt'
@@ -85,6 +88,10 @@ export async function createHttpServer(config: HttpServerConfig) {
   } = config
 
   const { onShutdown } = config
+  const tokenManager = browserosId
+    ? initializeOAuth(getDb(), browserosId)
+    : null
+  if (!browserosId) shutdownOAuth()
 
   const aclPolicyService = new GlobalAclPolicyService()
   await aclPolicyService.load()
@@ -163,6 +170,7 @@ export async function createHttpServer(config: HttpServerConfig) {
       '/shutdown',
       createShutdownRoute({
         onShutdown: () => {
+          shutdownOAuth()
           stopKlavisBackground()
           klavisRef.handle?.close().catch((err) =>
             logger.warn('Failed to close Klavis proxy transport', {
@@ -183,9 +191,11 @@ export async function createHttpServer(config: HttpServerConfig) {
     .route('/refine-prompt', createRefinePromptRoutes({ browserosId }))
     .route(
       '/oauth',
-      new Hono().all('/*', (c) =>
-        c.json({ error: 'OAuth not available' }, 503),
-      ),
+      tokenManager
+        ? createOAuthRoutes({ tokenManager })
+        : new Hono().all('/*', (c) =>
+            c.json({ error: 'OAuth not available' }, 503),
+          ),
     )
     .route('/klavis', createKlavisRoutes({ browserosId: browserosId || '' }))
     .route(

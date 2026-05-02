@@ -8,6 +8,13 @@
       "when": 1777750582590,
       "tag": "0000_zippy_psylocke",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1777752799806,
+      "tag": "0001_lazy_orphan",
+      "breakpoints": true
     }
   ]
 }
