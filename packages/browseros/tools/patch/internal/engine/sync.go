@@ -63,8 +63,11 @@ func Sync(ctx context.Context, opts SyncOptions) (*SyncResult, error) {
 		RepoHead:  head,
 		Rebased:   opts.Rebase,
 	}
-	reportProgress(opts.Progress, "Inspecting workspace drift")
-	status, err := InspectWorkspace(ctx, opts.Workspace, opts.Repo)
+	status, err := InspectWorkspace(ctx, InspectWorkspaceOptions{
+		Workspace: opts.Workspace,
+		Repo:      opts.Repo,
+		Progress:  opts.Progress,
+	})
 	if err != nil {
 		return nil, err
 	}
