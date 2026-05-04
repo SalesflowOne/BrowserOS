@@ -40,6 +40,7 @@ import {
   type OpenClawAgentRecord,
   OpenClawCliClient,
   type OpenClawConfigBatchEntry,
+  type OpenClawSessionEntry,
 } from './openclaw-cli-client'
 import {
   buildOpenClawCliProviderModelRef,
@@ -61,6 +62,7 @@ import {
   OpenClawHttpClient,
   type OpenClawSessionHistory,
   type OpenClawSessionHistoryEvent,
+  type OpenClawSessionHistoryMessage,
 } from './openclaw-http-client'
 import { OpenClawObserver } from './openclaw-observer'
 import {
@@ -232,6 +234,57 @@ export function normalizeBrowserOSChatSessionKey(
 
 function getOpenClawBrowserOSSessionPrefix(agentId: string): string {
   return `agent:${agentId}:openai-user:browseros:${agentId}:`
+}
+
+const MAIN_SESSION_KEY_PATTERN = /^agent:([^:]+):main$/
+
+/**
+ * Extract the agent id from a main-session key (e.g. `agent:research:main`
+ * → `research`). Returns null when the key isn't a top-level main session,
+ * which signals the caller to use the per-session fetch path.
+ */
+function extractAgentIdFromMainSessionKey(sessionKey: string): string | null {
+  const match = MAIN_SESSION_KEY_PATTERN.exec(sessionKey)
+  return match?.[1] ?? null
+}
+
+/**
+ * Classify a session key by its source. The pattern is `agent:<id>:<kind>:...`;
+ * the third segment identifies how the session was started.
+ */
+function parseSessionSource(
+  sessionKey: string,
+): NonNullable<OpenClawSessionHistoryMessage['source']> {
+  const parts = sessionKey.split(':')
+  if (parts[0] !== 'agent' || parts.length < 3) return 'other'
+  switch (parts[2]) {
+    case 'main':
+      return 'main'
+    case 'cron':
+      return 'cron'
+    case 'hook':
+      return 'hook'
+    case 'channel':
+      return 'channel'
+    default:
+      return 'other'
+  }
+}
+
+/**
+ * Stable chronological order across sessions. Falls back to `messageSeq`
+ * when timestamps tie or are missing, preserving intra-session order.
+ */
+function compareMessageOrder(
+  a: OpenClawSessionHistoryMessage,
+  b: OpenClawSessionHistoryMessage,
+): number {
+  const aTs = a.timestamp ?? 0
+  const bTs = b.timestamp ?? 0
+  if (aTs !== bTs) return aTs - bTs
+  const aSeq = a.messageSeq ?? 0
+  const bSeq = b.messageSeq ?? 0
+  return aSeq - bSeq
 }
 
 export interface AgentOverview {
@@ -794,9 +847,99 @@ export class OpenClawService {
     input: { limit?: number; cursor?: string; signal?: AbortSignal } = {},
   ): Promise<OpenClawSessionHistory> {
     await this.assertGatewayReady()
-    return this.runControlPlaneCall(() =>
-      this.httpClient.getSessionHistory(sessionKey, input),
+    return this.runControlPlaneCall(async () => {
+      const agentId = extractAgentIdFromMainSessionKey(sessionKey)
+      if (!agentId) {
+        return this.httpClient.getSessionHistory(sessionKey, input)
+      }
+      return this.fetchAggregatedAgentHistory(sessionKey, agentId, input)
+    })
+  }
+
+  /**
+   * Aggregates the agent's main session and every sub-session (cron,
+   * hook, channel) into a single chronological response. The main
+   * session's own messages are included; each sub-session's messages
+   * are tagged with `source` and `subSessionKey` so the UI can
+   * distinguish autonomous turns from user-driven turns.
+   *
+   * Sub-session fetches that fail are logged and dropped — partial
+   * timelines are preferable to a hard failure that hides the main
+   * session.
+   */
+  private async fetchAggregatedAgentHistory(
+    mainSessionKey: string,
+    agentId: string,
+    input: { limit?: number; cursor?: string; signal?: AbortSignal },
+  ): Promise<OpenClawSessionHistory> {
+    const sessions = await this.cliClient
+      .listSessions(agentId)
+      .catch((err): OpenClawSessionEntry[] => {
+        logger.warn(
+          'Failed to list OpenClaw sub-sessions; falling back to main only',
+          { agentId, error: err instanceof Error ? err.message : String(err) },
+        )
+        return []
+      })
+
+    const targetKeys = new Set<string>([mainSessionKey])
+    for (const entry of sessions) {
+      if (entry.key?.startsWith(`agent:${agentId}:`)) {
+        targetKeys.add(entry.key)
+      }
+    }
+
+    const fetchedHistories = await Promise.all(
+      Array.from(targetKeys).map(async (key) => {
+        try {
+          const history = await this.httpClient.getSessionHistory(key, {
+            // Per-session limit — applied again post-merge below.
+            limit: input.limit,
+            signal: input.signal,
+          })
+          return { key, history }
+        } catch (err) {
+          logger.warn('Failed to fetch OpenClaw sub-session history', {
+            sessionKey: key,
+            error: err instanceof Error ? err.message : String(err),
+          })
+          return null
+        }
+      }),
     )
+
+    const merged: OpenClawSessionHistoryMessage[] = []
+    let truncated = false
+    for (const result of fetchedHistories) {
+      if (!result) continue
+      const source = parseSessionSource(result.key)
+      const isMain = result.key === mainSessionKey
+      for (const msg of result.history.messages) {
+        merged.push({
+          ...msg,
+          source,
+          // Annotate sub-session origin so the UI can render section
+          // markers without re-parsing the key.
+          ...(isMain ? {} : { subSessionKey: result.key }),
+        })
+      }
+      if (result.history.truncated) truncated = true
+    }
+
+    merged.sort(compareMessageOrder)
+
+    const limited =
+      typeof input.limit === 'number' && input.limit > 0
+        ? merged.slice(-input.limit)
+        : merged
+
+    return {
+      sessionKey: mainSessionKey,
+      messages: limited,
+      cursor: null,
+      hasMore: false,
+      truncated: truncated || limited.length < merged.length,
+    }
   }
 
   async streamSessionHistory(

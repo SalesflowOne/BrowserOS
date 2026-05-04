@@ -44,6 +44,17 @@ export interface OpenClawSessionHistoryMessage {
   messageId?: string
   messageSeq?: number
   timestamp?: number
+  /**
+   * Origin of this message when the response merges multiple sessions.
+   * Absent on single-session responses for backward compatibility.
+   */
+  source?: 'main' | 'cron' | 'hook' | 'channel' | 'other'
+  /**
+   * The session key this message originated from. Differs from the
+   * top-level `sessionKey` when sub-sessions (e.g. cron runs) are merged
+   * into a parent agent's main-session response.
+   */
+  subSessionKey?: string
 }
 
 export interface OpenClawSessionHistory {
