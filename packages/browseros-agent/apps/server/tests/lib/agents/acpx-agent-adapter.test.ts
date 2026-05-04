@@ -86,24 +86,30 @@ describe('prepareAcpxAgentContext', () => {
     expect(prepared.runPrompt).toContain('AGENT_HOME=')
   })
 
-  it('prepares OpenClaw without BrowserOS memory, skills, or MCP', async () => {
+  it('prepares OpenClaw without BrowserOS memory, host cwd, skills, or MCP', async () => {
     const browserosDir = await mkdtemp(join(tmpdir(), 'browseros-adapters-'))
     tempDirs.push(browserosDir)
+    const ignoredSelectedCwd = join(browserosDir, 'missing-selected-workspace')
     const prepared = await prepareAcpxAgentContext({
       browserosDir,
       agent: makeAgent('openclaw'),
       sessionId: 'main',
       sessionKey: 'agent:openclaw-agent:main',
-      cwdOverride: null,
-      isSelectedCwd: false,
+      cwdOverride: ignoredSelectedCwd,
+      isSelectedCwd: true,
       message: 'browse',
     })
 
+    expect(prepared.cwd).toBe(
+      join(browserosDir, 'agents', 'harness', 'workspace'),
+    )
     expect(prepared.commandEnv).toEqual({})
     expect(prepared.useBrowserosMcp).toBe(false)
     expect(prepared.openclawSessionKey).toBe('agent:openclaw-agent:main')
     expect(prepared.runtimeSessionKey).toBe('agent:openclaw-agent:main')
     expect(prepared.runPrompt).not.toContain('SOUL.md stores')
+    expect(prepared.runPrompt).not.toContain('BrowserOS memory skill')
+    expect(prepared.runPrompt).not.toContain('AGENT_HOME/MEMORY.md')
     expect(prepared.runPrompt).not.toContain('Available skills:')
   })
 })

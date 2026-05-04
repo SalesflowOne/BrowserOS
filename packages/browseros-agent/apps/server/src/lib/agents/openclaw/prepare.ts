@@ -19,16 +19,18 @@ export { maybeHandleOpenClawTurn } from './image-turn'
 const OPENCLAW_BROWSEROS_ACP_INSTRUCTIONS =
   '<role>You are running inside BrowserOS through the OpenClaw ACP adapter. Use your OpenClaw identity, memory, and browser tools.</role>'
 
-/** Prepares OpenClaw without BrowserOS SOUL/MEMORY or BrowserOS MCP. */
+/**
+ * Prepares OpenClaw without BrowserOS SOUL/MEMORY or BrowserOS MCP.
+ * OpenClaw runs inside the gateway VM/container, so a selected host cwd is not visible there.
+ */
 export async function prepareOpenClawContext(
   input: PrepareAcpxAgentContextInput,
 ): Promise<PreparedAcpxAgentContext> {
   const paths = resolveAgentRuntimePaths({
     browserosDir: input.browserosDir,
     agentId: input.agent.id,
-    cwd: input.cwdOverride,
   })
-  await ensureUsableCwd(paths.effectiveCwd, !input.isSelectedCwd)
+  await ensureUsableCwd(paths.effectiveCwd, true)
   return {
     cwd: paths.effectiveCwd,
     runtimeSessionKey: input.sessionKey,

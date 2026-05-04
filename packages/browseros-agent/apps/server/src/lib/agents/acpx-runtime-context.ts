@@ -144,7 +144,7 @@ export async function materializeClaudeConfig(input: {
   }
 }
 
-/** Builds the stable BrowserOS operating instructions prepended to ACP turns. */
+/** Builds stable BrowserOS-managed instructions for Claude/Codex ACP turns. */
 export function buildAcpxRuntimePromptPrefix(input: {
   agent: AgentDefinition
   paths: AgentRuntimePaths
