@@ -1,6 +1,6 @@
 import type { AgentEntry } from './useOpenClaw'
 
-export type HarnessAgentAdapter = 'claude' | 'codex' | 'openclaw'
+export type HarnessAgentAdapter = 'claude' | 'codex' | 'openclaw' | 'hermes'
 
 export type AgentHarnessStreamEvent =
   | {

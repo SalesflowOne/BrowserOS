@@ -56,7 +56,7 @@ export function canRename(_agent: AgentListItem): boolean {
  */
 export function workspaceLabel(agent: AgentListItem): string | null {
   if (!agent.detail) return null
-  if (/^(claude|codex|openclaw):main$/.test(agent.detail)) return null
+  if (/^(claude|codex|openclaw|hermes):main$/.test(agent.detail)) return null
   return agent.detail
 }
 

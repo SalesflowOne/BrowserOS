@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import { adapterLabel } from './AdapterIcon'
 import { buildAgentApiUrl } from './agent-api-url'
 import { mapHarnessAgentToEntry } from './agent-harness-types'
 
@@ -23,6 +24,34 @@ describe('mapHarnessAgentToEntry', () => {
       model: 'gpt-5.5',
       source: 'agent-harness',
     })
+  })
+
+  it('maps Hermes harness agents into chat-compatible entries', () => {
+    expect(
+      mapHarnessAgentToEntry({
+        id: 'agent-hermes',
+        name: 'Hermes bot',
+        adapter: 'hermes',
+        modelId: 'default',
+        reasoningEffort: 'default',
+        permissionMode: 'approve-all',
+        sessionKey: 'agent:agent-hermes:main',
+        createdAt: 1000,
+        updatedAt: 1000,
+      }),
+    ).toEqual({
+      agentId: 'agent-hermes',
+      name: 'Hermes bot',
+      workspace: 'hermes:main',
+      model: 'default',
+      source: 'agent-harness',
+    })
+  })
+})
+
+describe('adapterLabel', () => {
+  it('labels Hermes harness agents consistently', () => {
+    expect(adapterLabel('hermes')).toBe('Hermes')
   })
 })
 

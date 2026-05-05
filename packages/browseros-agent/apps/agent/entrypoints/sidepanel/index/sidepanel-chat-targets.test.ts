@@ -78,6 +78,15 @@ const adapters: HarnessAdapterDescriptor[] = [
       { id: 'high', label: 'High' },
     ],
   },
+  {
+    id: 'hermes',
+    name: 'Hermes',
+    defaultModelId: 'default',
+    defaultReasoningEffort: 'default',
+    modelControl: 'best-effort',
+    models: [],
+    reasoningEfforts: [{ id: 'default', label: 'Default', recommended: true }],
+  },
 ]
 
 const agents: HarnessAgent[] = [
@@ -103,6 +112,17 @@ const agents: HarnessAgent[] = [
     createdAt: timestamp,
     updatedAt: timestamp,
   },
+  {
+    id: 'agent-hermes',
+    name: 'Hermes Bot',
+    adapter: 'hermes',
+    modelId: 'default',
+    reasoningEffort: 'default',
+    permissionMode: 'approve-all',
+    sessionKey: 'agent:agent-hermes:main',
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  },
 ]
 
 describe('buildSidepanelChatTargets', () => {
@@ -114,6 +134,7 @@ describe('buildSidepanelChatTargets', () => {
       'anthropic-sonnet',
       'agent-codex',
       'agent-openclaw',
+      'agent-hermes',
     ])
   })
 
@@ -163,6 +184,39 @@ describe('buildSidepanelChatTargets', () => {
       recommended: true,
       reasoningEffort: 'medium',
       reasoningEffortLabel: 'Medium',
+    })
+  })
+
+  it('labels Hermes ACP targets from the adapter catalog', () => {
+    const targets = buildSidepanelChatTargets({ providers, adapters, agents })
+    const hermes = targets.find((target) => target.id === 'agent-hermes')
+
+    expect(hermes).toMatchObject({
+      kind: 'acp',
+      agentId: 'agent-hermes',
+      adapter: 'hermes',
+      adapterName: 'Hermes',
+      modelId: 'default',
+      modelLabel: 'default',
+      modelControl: 'best-effort',
+      reasoningEffort: 'default',
+      reasoningEffortLabel: 'Default',
+    })
+  })
+
+  it('uses the Hermes display name when catalog metadata is unavailable', () => {
+    const targets = buildSidepanelChatTargets({
+      providers,
+      adapters: adapters.filter((adapter) => adapter.id !== 'hermes'),
+      agents: agents.filter((agent) => agent.id === 'agent-hermes'),
+    })
+
+    expect(
+      targets.find((target) => target.id === 'agent-hermes'),
+    ).toMatchObject({
+      kind: 'acp',
+      adapter: 'hermes',
+      adapterName: 'Hermes',
     })
   })
 

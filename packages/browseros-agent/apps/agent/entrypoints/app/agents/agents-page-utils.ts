@@ -38,7 +38,16 @@ export function getRecoveryDetail(status: OpenClawStatus): string | null {
 }
 
 export function formatHarnessAdapter(adapter: HarnessAgentAdapter): string {
-  return adapter === 'claude' ? 'Claude Code' : 'Codex'
+  switch (adapter) {
+    case 'claude':
+      return 'Claude Code'
+    case 'codex':
+      return 'Codex'
+    case 'openclaw':
+      return 'OpenClaw'
+    case 'hermes':
+      return 'Hermes'
+  }
 }
 
 export function toProviderOptions(

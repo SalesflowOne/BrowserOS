@@ -3,7 +3,10 @@ import type { FC } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { formatRelativeTime } from '@/entrypoints/app/agents/agent-display.helpers'
-import type { HarnessAgent } from '@/entrypoints/app/agents/agent-harness-types'
+import type {
+  HarnessAgent,
+  HarnessAgentAdapter,
+} from '@/entrypoints/app/agents/agent-harness-types'
 import { AgentSummaryChips } from '@/entrypoints/app/agents/agent-row/AgentSummaryChips'
 import { formatTokens } from '@/entrypoints/app/agents/agent-row/agent-row.helpers'
 import type { AgentAdapterHealth } from '@/entrypoints/app/agents/agent-row/agent-row.types'
@@ -14,7 +17,7 @@ import { cn } from '@/lib/utils'
 interface ConversationHeaderProps {
   agent: HarnessAgent | null
   fallbackName: string
-  fallbackAdapter: 'claude' | 'codex' | 'openclaw' | 'unknown'
+  fallbackAdapter: HarnessAgentAdapter | 'unknown'
   adapterHealth: AgentAdapterHealth | null
   backLabel: string
   backTarget: 'home' | 'page'
