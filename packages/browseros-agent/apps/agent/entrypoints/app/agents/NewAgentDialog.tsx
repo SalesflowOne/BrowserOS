@@ -23,6 +23,7 @@ import type {
   HarnessAgentAdapter,
 } from './agent-harness-types'
 import type { CreateAgentRuntime, ProviderOption } from './agents-page-types'
+import { getHermesCliInstallPrompt } from './hermes-install-prompt'
 import { ProviderSelector } from './OpenClawControls'
 import {
   type OpenClawCliProvider,
@@ -89,6 +90,15 @@ export const NewAgentDialog: FC<NewAgentDialogProps> = ({
 }) => {
   const selectedHarnessAdapter =
     adapters.find((adapter) => adapter.id === harnessAdapterId) ?? adapters[0]
+  const selectedCreateAdapter =
+    createRuntime === 'openclaw'
+      ? selectedHarnessAdapter
+      : (adapters.find((adapter) => adapter.id === createRuntime) ??
+        selectedHarnessAdapter)
+  const hermesInstallPrompt = getHermesCliInstallPrompt({
+    createRuntime,
+    selectedAdapter: selectedCreateAdapter,
+  })
   const isHarnessRuntime = createRuntime !== 'openclaw'
   const openClawBlocked = createRuntime === 'openclaw' && !canManageOpenClaw
   const cliBlocked =
@@ -100,6 +110,7 @@ export const NewAgentDialog: FC<NewAgentDialogProps> = ({
     !creating &&
     !openClawBlocked &&
     !cliBlocked &&
+    !hermesInstallPrompt &&
     (createRuntime === 'openclaw'
       ? providers.length > 0
       : Boolean(selectedHarnessAdapter))
@@ -199,6 +210,29 @@ export const NewAgentDialog: FC<NewAgentDialogProps> = ({
 
           {isHarnessRuntime ? (
             <>
+              {hermesInstallPrompt ? (
+                <Alert>
+                  <AlertCircle className="size-4" />
+                  <AlertTitle>{hermesInstallPrompt.title}</AlertTitle>
+                  <AlertDescription>
+                    <div className="grid gap-2">
+                      <p>{hermesInstallPrompt.description}</p>
+                      <code className="rounded bg-muted px-2 py-1 font-mono text-xs">
+                        {hermesInstallPrompt.installCommand}
+                      </code>
+                      <a
+                        href={hermesInstallPrompt.docsUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary text-xs underline underline-offset-4"
+                      >
+                        Hermes ACP setup
+                      </a>
+                    </div>
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+
               <div className="grid gap-2">
                 <Label htmlFor="harness-model">Model</Label>
                 <Select
