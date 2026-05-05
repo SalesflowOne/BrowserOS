@@ -64,6 +64,19 @@ describe('cleanHistoryUserText', () => {
     expect(cleanHistoryUserText(raw)).toBe("print('hello')\nprint('world')")
   })
 
+  it('drops a Subagent Context message entirely', () => {
+    // OpenClaw seeds a nested subagent's session with a "Subagent
+    // Context" prefix that's pure scaffolding. The actual task lives in
+    // the system prompt, so the user message body is meaningless to
+    // surface. cleanHistoryUserText returns empty; the converter then
+    // skips the entry so it doesn't render an empty bubble.
+    const raw =
+      '[Subagent Context] You are running as a subagent (depth 1/1). ' +
+      'Results auto-announce to your requester; do not busy-poll for status.\n\n' +
+      'Begin. Your assigned task is in the system prompt under **Your Role**.'
+    expect(cleanHistoryUserText(raw)).toBe('')
+  })
+
   it('drops empty chunks left by leading queued marker', () => {
     // The blob often opens with a marker (no content before it). Empty
     // chunks should be dropped so we don't emit a leading newline.
@@ -125,6 +138,77 @@ describe('convertOpenClawHistoryToAgentHistory', () => {
     expect(out.items.map((i) => ({ role: i.role, text: i.text }))).toEqual([
       { role: 'user', text: 'Print hello' },
       { role: 'assistant', text: 'hello' },
+    ])
+  })
+
+  it('drops assistant turns that have only reasoning (no text, no tools)', () => {
+    // MiniMax with thinking:minimal often returns only `thinking` blocks
+    // for trivial prompts ("Print hello"). The empty text bubble with a
+    // dangling reasoning collapsible reads as broken UI; cleaner to skip.
+    const raw: OpenClawSessionHistory = {
+      sessionKey: 'agent:demo:main',
+      messages: [
+        {
+          role: 'user',
+          content: '' as never,
+          ...({
+            content: [{ type: 'text', text: 'hi' }],
+          } as unknown as { content: never }),
+          timestamp: 1000,
+        },
+        {
+          role: 'assistant',
+          content: '' as never,
+          ...({
+            content: [
+              {
+                type: 'thinking',
+                thinking: 'I should respond with a greeting.',
+              },
+            ],
+          } as unknown as { content: never }),
+          timestamp: 1001,
+        },
+      ],
+    }
+    const out = convertOpenClawHistoryToAgentHistory('demo', raw)
+    expect(out.items.map((i) => ({ role: i.role, text: i.text }))).toEqual([
+      { role: 'user', text: 'hi' },
+    ])
+  })
+
+  it('drops Subagent Context user messages entirely (no empty bubble)', () => {
+    const raw: OpenClawSessionHistory = {
+      sessionKey: 'agent:demo:main',
+      messages: [
+        {
+          role: 'user',
+          content: '' as never,
+          ...({
+            content: [
+              {
+                type: 'text',
+                text:
+                  '[Subagent Context] You are running as a subagent (depth 1/1).\n\n' +
+                  'Begin. Your assigned task is in the system prompt.',
+              },
+            ],
+          } as unknown as { content: never }),
+          timestamp: 1000,
+        },
+        {
+          role: 'assistant',
+          content: '' as never,
+          ...({
+            content: [{ type: 'text', text: 'real reply' }],
+          } as unknown as { content: never }),
+          timestamp: 1001,
+        },
+      ],
+    }
+    const out = convertOpenClawHistoryToAgentHistory('demo', raw)
+    expect(out.items.map((i) => ({ role: i.role, text: i.text }))).toEqual([
+      { role: 'assistant', text: 'real reply' },
     ])
   })
 

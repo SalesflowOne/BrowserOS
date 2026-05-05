@@ -43,6 +43,7 @@ const BROWSEROS_SYSTEM_REMINDER_BLOCK =
   /\n*<system-reminder>[\s\S]*?<\/system-reminder>\s*$/
 const QUEUED_MARKER_LINE =
   /^\[Queued user message that arrived while the previous turn was still active\]\s*$/m
+const SUBAGENT_CONTEXT_PREFIX = /^\[Subagent Context\][\s\S]*$/
 
 /**
  * Strip OpenClaw + BrowserOS scaffolding from a "user" message before
@@ -59,6 +60,11 @@ const QUEUED_MARKER_LINE =
  *     `[Queued user message that arrived while the previous turn was
  *     still active]`. We split on those markers and clean each chunk
  *     independently, then re-join the non-empty results.
+ *   - Subagent context prefix: when an agent invokes a nested subagent,
+ *     OpenClaw seeds the subagent's session with `[Subagent Context]
+ *     You are running as a subagent (depth N/M). ...` followed by
+ *     internal task framing. The actual task lives in the system prompt;
+ *     this user message is pure scaffolding and gets dropped entirely.
  *
  * For each, we extract just the user-facing text. Non-matching messages
  * fall through unchanged so any future pattern we don't recognize stays
@@ -85,6 +91,12 @@ export function cleanHistoryUserText(raw: string): string {
 function cleanSingleUserMessage(raw: string): string {
   const trimmed = raw.trim()
   if (!trimmed) return ''
+  // Subagent context seed: pure scaffolding, drop entirely. The real
+  // task lives in the subagent's system prompt; the user-message body
+  // is just framing the model never produced.
+  if (SUBAGENT_CONTEXT_PREFIX.test(trimmed)) {
+    return ''
+  }
   const cronMatch = CRON_PROMPT_PREFIX_PATTERN.exec(trimmed)
   if (cronMatch) {
     const payload = cronMatch[2] ?? ''
@@ -155,10 +167,14 @@ export function convertOpenClawHistoryToAgentHistory(
     const reasoningText = collectThinking(blocks).trim()
     const toolCallEntries = collectToolCalls(blocks, pendingByToolCallId)
 
-    // Skip entries that would render as completely empty cards. A turn
-    // that is *only* tool calls still has value — the user sees what
-    // tools the agent reached for — so don't filter those.
-    if (!text && !reasoningText && toolCallEntries.length === 0) continue
+    // Skip empty entries. Two cases:
+    //   - User: cleaner returned empty after stripping scaffolding (e.g.
+    //     dropped Subagent Context message). No bubble to render.
+    //   - Assistant: model returned only thinking blocks (common with
+    //     MiniMax `thinking: minimal` for trivial prompts) and no text
+    //     or tools. The empty bubble + dangling reasoning collapsible
+    //     reads as broken UI; cleaner to drop the turn entirely.
+    if (!text && toolCallEntries.length === 0) continue
 
     const entry: AgentHistoryEntry = {
       id: message.messageId ?? nextId(),
