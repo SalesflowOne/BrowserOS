@@ -16,6 +16,7 @@ var Version = "dev"
 var (
 	jsonOut  bool
 	verbose  bool
+	llmTxt   bool
 	appState *app.App
 )
 
@@ -100,11 +101,21 @@ Pass a checkout name to run from anywhere, for example "browseros-patch diff ch1
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		if llmTxt {
+			if cmd.Parent() != nil {
+				return fmt.Errorf("--llm-txt is only valid without a subcommand")
+			}
+			return nil
+		}
 		var err error
 		appState, err = app.Load(jsonOut, verbose, "")
 		return err
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if llmTxt {
+			fmt.Fprint(cmd.OutOrStdout(), llmTxtGuide())
+			return nil
+		}
 		return cmd.Help()
 	},
 }
@@ -117,6 +128,7 @@ func init() {
 	cobra.AddTemplateFunc("groupedHelp", groupedHelp)
 	rootCmd.SetUsageTemplate(usageTemplate)
 	rootCmd.PersistentFlags().BoolVar(&jsonOut, "json", false, "Emit JSON output")
+	rootCmd.PersistentFlags().BoolVar(&llmTxt, "llm-txt", false, "Print concise plain-text guidance for coding agents")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
 }

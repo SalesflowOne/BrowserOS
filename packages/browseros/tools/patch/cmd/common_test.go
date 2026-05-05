@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -179,5 +180,89 @@ func TestSrcFlagExplainsDirectCheckoutPath(t *testing.T) {
 		if !strings.Contains(flag.Usage, "without registry lookup") {
 			t.Fatalf("%s --src usage should explain registry bypass, got %q", name, flag.Usage)
 		}
+	}
+}
+
+func TestLLMTxtGuideContent(t *testing.T) {
+	text := llmTxtGuide()
+	for _, want := range []string{
+		"patch repo",
+		"chromium_patches/",
+		"Chromium checkout",
+		"checkout name",
+		"--src",
+		"browseros-patch diff ch1",
+		"browseros-patch list",
+		"browseros-patch status ch1",
+		"browseros-patch sync ch1",
+		"browseros-patch apply ch1",
+		"browseros-patch extract ch1",
+		"list reads only registered Chromium checkouts",
+		"does not inspect sync state",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("expected llm txt to contain %q, got:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "\x1b[") {
+		t.Fatalf("llm txt should be uncolored, got:\n%s", text)
+	}
+}
+
+func TestRootLLMTxtPrintsWithoutLoadingApp(t *testing.T) {
+	oldAppState := appState
+	oldLLMTxt := llmTxt
+	t.Cleanup(func() {
+		appState = oldAppState
+		llmTxt = oldLLMTxt
+		rootCmd.SetArgs(nil)
+		rootCmd.SetOut(nil)
+		rootCmd.SetErr(nil)
+	})
+
+	appState = nil
+	llmTxt = false
+	var stdout bytes.Buffer
+	rootCmd.SetArgs([]string{"--llm-txt"})
+	rootCmd.SetOut(&stdout)
+	rootCmd.SetErr(io.Discard)
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("execute --llm-txt: %v", err)
+	}
+	if appState != nil {
+		t.Fatalf("--llm-txt should not load app state")
+	}
+	if !strings.Contains(stdout.String(), "browseros-patch diff ch1") {
+		t.Fatalf("expected llm txt output, got:\n%s", stdout.String())
+	}
+}
+
+func TestLLMTxtRejectedWithSubcommand(t *testing.T) {
+	oldAppState := appState
+	oldLLMTxt := llmTxt
+	t.Cleanup(func() {
+		appState = oldAppState
+		llmTxt = oldLLMTxt
+		rootCmd.SetArgs(nil)
+		rootCmd.SetOut(nil)
+		rootCmd.SetErr(nil)
+	})
+
+	appState = nil
+	llmTxt = false
+	rootCmd.SetArgs([]string{"diff", "--llm-txt"})
+	rootCmd.SetOut(io.Discard)
+	rootCmd.SetErr(io.Discard)
+
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatalf("expected --llm-txt subcommand error")
+	}
+	if !strings.Contains(err.Error(), "--llm-txt is only valid without a subcommand") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if appState != nil {
+		t.Fatalf("--llm-txt subcommand error should not load app state")
 	}
 }
