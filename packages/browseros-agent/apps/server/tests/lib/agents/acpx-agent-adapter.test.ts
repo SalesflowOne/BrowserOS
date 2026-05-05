@@ -110,4 +110,28 @@ describe('prepareAcpxAgentContext', () => {
     expect(prepared.runPrompt).not.toContain('AGENT_HOME/MEMORY.md')
     expect(prepared.runPrompt).not.toContain('Available skills:')
   })
+
+  it('prepares Hermes with HERMES_HOME pointing at the BrowserOS-managed agent home', async () => {
+    const browserosDir = await mkdtemp(join(tmpdir(), 'browseros-adapters-'))
+    tempDirs.push(browserosDir)
+    const prepared = await prepareAcpxAgentContext({
+      browserosDir,
+      agent: makeAgent('hermes'),
+      sessionId: 'main',
+      sessionKey: 'agent:hermes-agent:main',
+      cwdOverride: null,
+      isSelectedCwd: false,
+      message: 'remember this',
+    })
+
+    expect(prepared.commandEnv.HERMES_HOME).toContain('/hermes-agent/home')
+    expect(prepared.commandEnv).not.toHaveProperty('AGENT_HOME')
+    expect(prepared.commandEnv).not.toHaveProperty('CODEX_HOME')
+    expect(prepared.commandEnv).not.toHaveProperty('CLAUDE_CONFIG_DIR')
+    expect(prepared.useBrowserosMcp).toBe(true)
+    expect(prepared.openclawSessionKey).toBeNull()
+    expect(prepared.runtimeSessionKey).toMatch(
+      /^agent:hermes-agent:main:[a-f0-9]{16}$/,
+    )
+  })
 })

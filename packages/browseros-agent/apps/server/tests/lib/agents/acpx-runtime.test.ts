@@ -955,6 +955,42 @@ Use the BrowserOS MCP server for all browser tasks, including browsing the web, 
     expect(command).toContain('/runtime/codex-home')
   })
 
+  it('resolves the Hermes adapter to `hermes acp` with HERMES_HOME env', async () => {
+    const browserosDir = await mkdtemp(
+      join(tmpdir(), 'browseros-acpx-browseros-'),
+    )
+    const stateDir = await mkdtemp(join(tmpdir(), 'browseros-acpx-state-'))
+    tempDirs.push(browserosDir, stateDir)
+    const calls: Array<{ method: string; input: unknown }> = []
+    const runtime = new AcpxRuntime({
+      browserosDir,
+      stateDir,
+      runtimeFactory: (options) => {
+        calls.push({ method: 'createRuntime', input: options })
+        return createFakeAcpRuntime(calls)
+      },
+    })
+    const agent = makeAgent({ id: 'agent-1', adapter: 'hermes' })
+
+    await collectStream(
+      await runtime.send({
+        agent,
+        sessionId: 'main',
+        sessionKey: agent.sessionKey,
+        message: 'hi',
+        permissionMode: 'approve-all',
+      }),
+    )
+
+    const command =
+      getCreateRuntimeOptions(calls).agentRegistry.resolve('hermes')
+    expect(command).toContain('env HERMES_HOME=')
+    expect(command).toContain('hermes acp')
+    expect(command).not.toContain('AGENT_HOME=')
+    expect(command).not.toContain('CODEX_HOME=')
+    expect(command).not.toContain('CLAUDE_CONFIG_DIR=')
+  })
+
   it('does not reuse an Acpx runtime across different command identities', async () => {
     const browserosDir = await mkdtemp(
       join(tmpdir(), 'browseros-acpx-browseros-'),

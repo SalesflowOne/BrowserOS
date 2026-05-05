@@ -143,7 +143,8 @@ export const NewAgentDialog: FC<NewAgentDialogProps> = ({
                 if (
                   value === 'openclaw' ||
                   value === 'claude' ||
-                  value === 'codex'
+                  value === 'codex' ||
+                  value === 'hermes'
                 ) {
                   onRuntimeChange(value)
                   if (value !== 'openclaw') onHarnessAdapterChange(value)
