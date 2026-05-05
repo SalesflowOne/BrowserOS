@@ -736,6 +736,14 @@ function createBrowserosAgentRegistry(input: {
         )
       }
 
+      if (lower === 'hermes') {
+        // Phase A: Hermes runs as a host process. The user installs it via
+        // setup-hermes.sh which puts `hermes` on PATH. We spawn it directly
+        // with HERMES_HOME pointing at the per-agent BrowserOS-managed home.
+        // Phase A.5 will swap this to `nerdctl exec` into a Hermes container.
+        return wrapCommandWithEnv('hermes acp', input.commandEnv)
+      }
+
       if (lower === 'claude' || lower === 'codex') {
         return wrapCommandWithEnv(registry.resolve(agentName), input.commandEnv)
       }

@@ -140,6 +140,7 @@ export function createAgentPageActions(input: AgentPageActionInput) {
       openclaw: handleOpenClawCreate,
       claude: handleHarnessCreate,
       codex: handleHarnessCreate,
+      hermes: handleHarnessCreate,
     }
     void createByRuntime[input.createRuntime]()
   }

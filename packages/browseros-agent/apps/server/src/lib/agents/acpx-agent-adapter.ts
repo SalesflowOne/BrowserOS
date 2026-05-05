@@ -9,6 +9,7 @@ import type { OpenClawGatewayChatClient } from '../../api/services/openclaw/open
 import type { AgentDefinition } from './agent-types'
 import { prepareClaudeCodeContext } from './claude-code/prepare'
 import { prepareCodexContext } from './codex/prepare'
+import { prepareHermesContext } from './hermes/prepare'
 import {
   maybeHandleOpenClawTurn,
   prepareOpenClawContext,
@@ -58,6 +59,7 @@ const ADAPTERS: Record<AgentDefinition['adapter'], AcpxAgentAdapter> = {
     prepare: prepareOpenClawContext,
     maybeHandleTurn: maybeHandleOpenClawTurn,
   },
+  hermes: { prepare: prepareHermesContext },
 }
 
 export function getAcpxAgentAdapter(
