@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -23,19 +24,21 @@ func DetectForCommand(reg *Registry, cwd string, commandPath string) (Entry, err
 		return Entry{}, err
 	}
 	clean := filepath.Clean(abs)
+	realClean := canonicalPath(clean)
 	var best Entry
 	bestLen := -1
 	for _, ws := range reg.Workspaces {
 		base := filepath.Clean(ws.Path)
-		if clean == base || strings.HasPrefix(clean, base+string(filepath.Separator)) {
-			if len(base) > bestLen {
+		realBase := canonicalPath(base)
+		if containsPath(clean, base) || containsPath(realClean, realBase) {
+			if len(realBase) > bestLen {
 				best = ws
-				bestLen = len(base)
+				bestLen = len(realBase)
 			}
 		}
 	}
 	if bestLen == -1 {
-		return Entry{}, errors.New(detectErrorMessage(reg, clean, commandPath))
+		return Entry{}, errors.New(detectErrorMessage(reg, clean, realClean, commandPath))
 	}
 	return best, nil
 }
@@ -61,25 +64,41 @@ func ResolveForCommand(reg *Registry, name string, cwd string, src string, comma
 	return DetectForCommand(reg, cwd, commandPath)
 }
 
-func detectErrorMessage(reg *Registry, cleanCWD string, commandPath string) string {
+func detectErrorMessage(reg *Registry, cleanCWD string, resolvedCWD string, commandPath string) string {
 	var builder strings.Builder
 	builder.WriteString("not inside a registered Chromium checkout\n")
-	builder.WriteString("cwd: " + cleanCWD + "\n")
-	if resolved, err := filepath.EvalSymlinks(cleanCWD); err == nil && resolved != cleanCWD {
-		builder.WriteString("resolved cwd: " + resolved + "\n")
+	builder.WriteString("cwd: " + cleanCWD)
+	if resolvedCWD != cleanCWD {
+		builder.WriteString("\nresolved cwd: " + resolvedCWD)
 	}
-	builder.WriteString("registered checkouts:\n")
-	for _, ws := range reg.Workspaces {
-		builder.WriteString(fmt.Sprintf("  %s  %s\n", ws.Name, ws.Path))
+	builder.WriteString("\nregistered checkouts:")
+	sorted := append([]Entry(nil), reg.Workspaces...)
+	slices.SortFunc(sorted, func(a, b Entry) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+	for _, ws := range sorted {
+		builder.WriteString(fmt.Sprintf("\n  %s  %s", ws.Name, ws.Path))
 	}
-	builder.WriteString("try: " + namedCheckoutExample(reg, commandPath))
-	return strings.TrimRight(builder.String(), "\n")
+	builder.WriteString("\ntry: " + namedCheckoutExample(sorted, commandPath))
+	return builder.String()
 }
 
-func namedCheckoutExample(reg *Registry, commandPath string) string {
+func namedCheckoutExample(workspaces []Entry, commandPath string) string {
 	commandPath = strings.TrimSpace(commandPath)
 	if commandPath == "" {
 		commandPath = "browseros-patch diff"
 	}
-	return commandPath + " " + reg.Workspaces[0].Name
+	return commandPath + " " + workspaces[0].Name
+}
+
+func canonicalPath(path string) string {
+	realPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return filepath.Clean(path)
+	}
+	return filepath.Clean(realPath)
+}
+
+func containsPath(path string, base string) bool {
+	return path == base || strings.HasPrefix(path, base+string(filepath.Separator))
 }

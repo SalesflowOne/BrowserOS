@@ -37,6 +37,10 @@ func TestRegistryDetectsLongestMatchingWorkspace(t *testing.T) {
 			t.Fatalf("mkdir: %v", err)
 		}
 	}
+	detectedPath := filepath.Join(child, "chrome", "browser")
+	if err := os.MkdirAll(detectedPath, 0o755); err != nil {
+		t.Fatalf("mkdir detected path: %v", err)
+	}
 
 	reg := &Registry{Version: 1}
 	if _, err := reg.Add("parent", parent); err != nil {
@@ -46,12 +50,62 @@ func TestRegistryDetectsLongestMatchingWorkspace(t *testing.T) {
 		t.Fatalf("add child: %v", err)
 	}
 
-	ws, err := Detect(reg, filepath.Join(child, "chrome", "browser"))
+	ws, err := Detect(reg, detectedPath)
 	if err != nil {
 		t.Fatalf("Detect: %v", err)
 	}
 	if ws.Name != "child" {
 		t.Fatalf("expected child workspace, got %q", ws.Name)
+	}
+}
+
+func TestDetectMatchesSymlinkedWorkingDirectory(t *testing.T) {
+	root := t.TempDir()
+	workspacePath := filepath.Join(root, "chromium-1", "src")
+	if err := os.MkdirAll(filepath.Join(workspacePath, ".git"), 0o755); err != nil {
+		t.Fatalf("mkdir workspace: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(workspacePath, "chrome", "browser"), 0o755); err != nil {
+		t.Fatalf("mkdir workspace child: %v", err)
+	}
+	linkPath := filepath.Join(root, "ch-1")
+	if err := os.Symlink(workspacePath, linkPath); err != nil {
+		t.Fatalf("symlink workspace: %v", err)
+	}
+
+	reg := &Registry{Version: 1}
+	if _, err := reg.Add("ch1", workspacePath); err != nil {
+		t.Fatalf("add workspace: %v", err)
+	}
+
+	ws, err := Detect(reg, filepath.Join(linkPath, "chrome", "browser"))
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	if ws.Name != "ch1" {
+		t.Fatalf("expected ch1 workspace, got %q", ws.Name)
+	}
+}
+
+func TestRegistryAddStoresCanonicalWorkspacePath(t *testing.T) {
+	root := t.TempDir()
+	workspacePath := filepath.Join(root, "chromium-1", "src")
+	if err := os.MkdirAll(filepath.Join(workspacePath, ".git"), 0o755); err != nil {
+		t.Fatalf("mkdir workspace: %v", err)
+	}
+	linkPath := filepath.Join(root, "ch-1")
+	if err := os.Symlink(workspacePath, linkPath); err != nil {
+		t.Fatalf("symlink workspace: %v", err)
+	}
+
+	reg := &Registry{Version: 1}
+	entry, err := reg.Add("ch1", linkPath)
+	if err != nil {
+		t.Fatalf("add workspace: %v", err)
+	}
+	expectedPath := canonicalPath(workspacePath)
+	if entry.Path != expectedPath {
+		t.Fatalf("expected canonical path %q, got %q", expectedPath, entry.Path)
 	}
 }
 
@@ -134,6 +188,39 @@ func TestDetectOutsideRegisteredCheckoutErrorShowsResolvedCWD(t *testing.T) {
 	for _, want := range []string{
 		"cwd: " + linkOutside,
 		"resolved cwd: " + resolvedOutside,
+	} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("expected error to contain %q, got:\n%s", want, message)
+		}
+	}
+}
+
+func TestDetectErrorIncludesPathContextAndCheckoutHint(t *testing.T) {
+	root := t.TempDir()
+	workspacePath := filepath.Join(root, "chromium-1", "src")
+	if err := os.MkdirAll(filepath.Join(workspacePath, ".git"), 0o755); err != nil {
+		t.Fatalf("mkdir workspace: %v", err)
+	}
+	outsidePath := filepath.Join(root, "outside")
+	if err := os.MkdirAll(outsidePath, 0o755); err != nil {
+		t.Fatalf("mkdir outside: %v", err)
+	}
+
+	reg := &Registry{Version: 1}
+	if _, err := reg.Add("ch1", workspacePath); err != nil {
+		t.Fatalf("add workspace: %v", err)
+	}
+
+	_, err := Detect(reg, outsidePath)
+	if err == nil {
+		t.Fatalf("expected Detect to fail")
+	}
+	message := err.Error()
+	for _, want := range []string{
+		"cwd: " + outsidePath,
+		"registered checkouts:",
+		"ch1  " + canonicalPath(workspacePath),
+		"try: browseros-patch diff ch1",
 	} {
 		if !strings.Contains(message, want) {
 			t.Fatalf("expected error to contain %q, got:\n%s", want, message)

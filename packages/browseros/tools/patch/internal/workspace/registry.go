@@ -70,7 +70,7 @@ func NormalizeWorkspacePath(raw string) (string, error) {
 	if _, err := os.Stat(filepath.Join(clean, ".git")); err != nil {
 		return "", fmt.Errorf("checkout is not a git checkout: %s", clean)
 	}
-	return clean, nil
+	return canonicalPath(clean), nil
 }
 
 func (r *Registry) Get(name string) (Entry, error) {
