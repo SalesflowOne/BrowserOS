@@ -20,7 +20,7 @@ var (
 )
 
 var groupOrder = []string{
-	"Workspace:",
+	"Chromium Checkouts:",
 	"Core:",
 	"Conflict:",
 	"Remote:",
@@ -85,7 +85,7 @@ const usageTemplate = `{{helpHeader "Usage:"}}{{if .Runnable}}
 
 var rootCmd = &cobra.Command{
 	Use:           "browseros-patch",
-	Short:         "Workspace-centric BrowserOS patch tooling for Chromium checkouts",
+	Short:         "BrowserOS patch tooling for Chromium checkouts",
 	Version:       Version,
 	SilenceUsage:  true,
 	SilenceErrors: true,

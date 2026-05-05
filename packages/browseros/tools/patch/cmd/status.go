@@ -11,9 +11,9 @@ import (
 func init() {
 	var src string
 	command := &cobra.Command{
-		Use:         "status [workspace]",
+		Use:         "status [checkout]",
 		Annotations: map[string]string{"group": "Core:"},
-		Short:       "Show workspace sync state",
+		Short:       "Show checkout sync state",
 		Args:        cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ws, err := resolveWorkspace(cmd, args, src)

@@ -73,3 +73,49 @@ func TestResolveWorkspaceErrorUsesCurrentCommandExample(t *testing.T) {
 		t.Fatalf("expected command-specific example, got:\n%s", err)
 	}
 }
+
+func TestPublicHelpUsesCheckoutTerminology(t *testing.T) {
+	help := rootCmd.Short + groupedHelp(rootCmd)
+	for _, want := range []string{
+		"Chromium checkouts",
+		"Chromium Checkouts:",
+	} {
+		if !strings.Contains(help, want) {
+			t.Fatalf("expected help to contain %q, got:\n%s", want, help)
+		}
+	}
+	for _, forbidden := range []string{
+		"Workspace-centric",
+		"Workspace:",
+		" workspace",
+		" workspaces",
+	} {
+		if strings.Contains(help, forbidden) {
+			t.Fatalf("expected help not to contain %q, got:\n%s", forbidden, help)
+		}
+	}
+}
+
+func TestCheckoutCommandUsageTerminology(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		use  string
+	}{
+		{name: "diff", use: "diff [checkout]"},
+		{name: "status", use: "status [checkout]"},
+		{name: "apply", use: "apply [checkout] [-- files...]"},
+		{name: "sync", use: "sync [checkout]"},
+		{name: "extract", use: "extract [checkout] [--range <start> <end>] [-- files...]"},
+	} {
+		cmd, _, err := rootCmd.Find([]string{tc.name})
+		if err != nil {
+			t.Fatalf("find %s: %v", tc.name, err)
+		}
+		if cmd.Use != tc.use {
+			t.Fatalf("%s use = %q, want %q", tc.name, cmd.Use, tc.use)
+		}
+		if strings.Contains(strings.ToLower(cmd.Short), "workspace") {
+			t.Fatalf("%s short should use checkout terminology: %q", tc.name, cmd.Short)
+		}
+	}
+}

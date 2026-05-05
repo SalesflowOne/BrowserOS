@@ -12,9 +12,9 @@ import (
 func init() {
 	var src string
 	command := &cobra.Command{
-		Use:         "diff [workspace]",
+		Use:         "diff [checkout]",
 		Annotations: map[string]string{"group": "Core:"},
-		Short:       "Preview patch differences for a workspace",
+		Short:       "Preview patch differences for a checkout",
 		Args:        cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ws, err := resolveWorkspace(cmd, args, src)

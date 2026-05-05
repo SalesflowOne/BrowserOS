@@ -13,9 +13,9 @@ func init() {
 	var rebase bool
 	var remote string
 	command := &cobra.Command{
-		Use:         "sync [workspace]",
+		Use:         "sync [checkout]",
 		Annotations: map[string]string{"group": "Core:"},
-		Short:       "Sync a workspace with the latest patch repo state",
+		Short:       "Sync a checkout with the latest patch repo state",
 		Args:        cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ws, err := resolveWorkspace(cmd, args, src)

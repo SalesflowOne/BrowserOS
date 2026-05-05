@@ -140,3 +140,23 @@ func TestDetectOutsideRegisteredCheckoutErrorShowsResolvedCWD(t *testing.T) {
 		}
 	}
 }
+
+func TestRegistryErrorsUseCheckoutTerminology(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	if _, err := NormalizeWorkspacePath(file); err == nil {
+		t.Fatalf("expected not-directory error")
+	} else if !strings.Contains(err.Error(), "checkout path is not a directory") {
+		t.Fatalf("expected checkout terminology, got %q", err)
+	}
+
+	reg := &Registry{Version: 1}
+	if _, err := reg.Get("missing"); err == nil {
+		t.Fatalf("expected missing checkout error")
+	} else if !strings.Contains(err.Error(), `checkout "missing" not found`) {
+		t.Fatalf("expected checkout terminology, got %q", err)
+	}
+}

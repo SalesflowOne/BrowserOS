@@ -14,14 +14,14 @@ func init() {
 	var changed string
 	var rangeEnd string
 	command := &cobra.Command{
-		Use:         "apply [workspace] [-- files...]",
+		Use:         "apply [checkout] [-- files...]",
 		Annotations: map[string]string{"group": "Core:"},
-		Short:       "Apply repo patches to a workspace",
+		Short:       "Apply repo patches to a checkout",
 		Args:        cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			positional, filters := splitWorkspaceAndFilters(cmd, args)
 			if len(positional) > 1 {
-				return fmt.Errorf("expected at most one workspace name")
+				return fmt.Errorf("expected at most one checkout name")
 			}
 			ws, err := resolveWorkspace(cmd, positional, src)
 			if err != nil {
