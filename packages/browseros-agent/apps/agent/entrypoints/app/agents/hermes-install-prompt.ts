@@ -34,7 +34,7 @@ export function getHermesCliInstallPrompt(input: {
     title: 'Hermes CLI not installed',
     description: `${
       reason ? `${reason}. ` : ''
-    }Install Hermes with the ACP extra, then make sure hermes is on PATH.`,
+    }Install Hermes normally, then add the ACP extra and make sure hermes is on PATH.`,
     docsUrl: HERMES_ACP_DOCS_URL,
     installCommand: "pip install -e '.[acp]'",
   }

@@ -7,7 +7,7 @@ import { describe, expect, it } from 'bun:test'
 import { AdapterHealthChecker } from '../../../src/lib/agents/adapter-health'
 
 describe('AdapterHealthChecker', () => {
-  it('probes Hermes with its local CLI version command', async () => {
+  it('probes Hermes with its ACP subcommand', async () => {
     const calls: Array<{ command: string; timeout: number }> = []
     const checker = new AdapterHealthChecker({
       probeTimeoutMs: 123,
@@ -19,7 +19,7 @@ describe('AdapterHealthChecker', () => {
     const health = await checker.getHealth('hermes')
 
     expect(health.healthy).toBe(true)
-    expect(calls).toEqual([{ command: 'hermes --version', timeout: 123 }])
+    expect(calls).toEqual([{ command: 'hermes acp --help', timeout: 123 }])
   })
 
   it('returns a friendly missing-command reason for Hermes', async () => {
@@ -33,7 +33,7 @@ describe('AdapterHealthChecker', () => {
 
     expect(health).toMatchObject({
       healthy: false,
-      reason: 'hermes --version failed: command not found',
+      reason: 'hermes acp --help failed: command not found',
     })
   })
 

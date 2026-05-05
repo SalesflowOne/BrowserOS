@@ -119,7 +119,7 @@ export class AdapterHealthChecker {
 const ADAPTER_HEALTH_COMMANDS: Partial<Record<AgentAdapter, string>> = {
   claude: 'claude --version',
   codex: 'codex --version',
-  hermes: 'hermes --version',
+  hermes: 'hermes acp --help',
 }
 
 function friendlyProbeFailure(adapter: AgentAdapter, raw: string): string {

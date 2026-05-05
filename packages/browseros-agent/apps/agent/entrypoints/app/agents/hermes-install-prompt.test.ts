@@ -19,7 +19,7 @@ describe('getHermesCliInstallPrompt', () => {
           reasoningEfforts: [],
           health: {
             healthy: false,
-            reason: 'hermes --version failed: command not found',
+            reason: 'hermes acp --help failed: command not found',
             checkedAt: 1000,
           },
         },
@@ -27,7 +27,7 @@ describe('getHermesCliInstallPrompt', () => {
     ).toEqual({
       title: 'Hermes CLI not installed',
       description:
-        'hermes --version failed: command not found. Install Hermes with the ACP extra, then make sure hermes is on PATH.',
+        'hermes acp --help failed: command not found. Install Hermes normally, then add the ACP extra and make sure hermes is on PATH.',
       docsUrl: HERMES_ACP_DOCS_URL,
       installCommand: "pip install -e '.[acp]'",
     })

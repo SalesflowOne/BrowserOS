@@ -256,24 +256,26 @@ export const NewAgentDialog: FC<NewAgentDialogProps> = ({
                 </div>
               ) : null}
 
-              <div className="grid gap-2">
-                <Label htmlFor="harness-effort">Reasoning</Label>
-                <Select
-                  value={harnessReasoningEffort}
-                  onValueChange={onHarnessReasoningChange}
-                >
-                  <SelectTrigger id="harness-effort">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {harnessReasoningEfforts.map((effort) => (
-                      <SelectItem key={effort.id} value={effort.id}>
-                        {effort.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {harnessReasoningEfforts.length > 1 ? (
+                <div className="grid gap-2">
+                  <Label htmlFor="harness-effort">Reasoning</Label>
+                  <Select
+                    value={harnessReasoningEffort}
+                    onValueChange={onHarnessReasoningChange}
+                  >
+                    <SelectTrigger id="harness-effort">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {harnessReasoningEfforts.map((effort) => (
+                        <SelectItem key={effort.id} value={effort.id}>
+                          {effort.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null}
             </>
           ) : null}
         </div>
