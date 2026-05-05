@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -72,6 +73,70 @@ func TestResolveWorkspaceErrorUsesCurrentCommandExample(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), `browseros-patch diff ch1`) {
 		t.Fatalf("expected command-specific example, got:\n%s", err)
+	}
+}
+
+func TestResolveWorkspaceNamedCheckoutIgnoresCWD(t *testing.T) {
+	oldAppState := appState
+	t.Cleanup(func() {
+		appState = oldAppState
+	})
+
+	root := t.TempDir()
+	registered := filepath.Join(root, "chromium-src")
+	outside := filepath.Join(root, "outside")
+	appState = &app.App{
+		CWD: outside,
+		Registry: &workspace.Registry{Version: 1, Workspaces: []workspace.Entry{
+			{Name: "ch1", Path: registered},
+		}},
+	}
+
+	rootCmd := &cobra.Command{Use: "browseros-patch"}
+	diffCmd := &cobra.Command{Use: "diff"}
+	rootCmd.AddCommand(diffCmd)
+
+	ws, err := resolveWorkspace(diffCmd, []string{"ch1"}, "")
+	if err != nil {
+		t.Fatalf("resolve named checkout: %v", err)
+	}
+	if ws.Path != registered {
+		t.Fatalf("resolved path = %q, want %q", ws.Path, registered)
+	}
+}
+
+func TestListReadsOnlyRegistry(t *testing.T) {
+	oldAppState := appState
+	oldJSONOut := jsonOut
+	t.Cleanup(func() {
+		appState = oldAppState
+		jsonOut = oldJSONOut
+	})
+
+	missingCheckout := filepath.Join(t.TempDir(), "missing-src")
+	appState = &app.App{
+		Registry: &workspace.Registry{Version: 1, Workspaces: []workspace.Entry{
+			{Name: "ch1", Path: missingCheckout},
+		}},
+	}
+	jsonOut = false
+
+	listCmd, _, err := rootCmd.Find([]string{"list"})
+	if err != nil {
+		t.Fatalf("find list: %v", err)
+	}
+
+	var runErr error
+	output := captureStdout(t, func() {
+		runErr = listCmd.RunE(listCmd, nil)
+	})
+	if runErr != nil {
+		t.Fatalf("list should not inspect checkout path: %v", runErr)
+	}
+	for _, want := range []string{"ch1", missingCheckout} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected list output to contain %q, got:\n%s", want, output)
+		}
 	}
 }
 
@@ -265,4 +330,30 @@ func TestLLMTxtRejectedWithSubcommand(t *testing.T) {
 	if appState != nil {
 		t.Fatalf("--llm-txt subcommand error should not load app state")
 	}
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+
+	oldStdout := os.Stdout
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe stdout: %v", err)
+	}
+	os.Stdout = writer
+	defer func() {
+		os.Stdout = oldStdout
+	}()
+
+	fn()
+	os.Stdout = oldStdout
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close stdout writer: %v", err)
+	}
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("read stdout: %v", err)
+	}
+	return string(output)
 }
