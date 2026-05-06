@@ -15,7 +15,32 @@ function truncateForLog(value: string | undefined): string | undefined {
 export interface GuiPointResult {
   x: number
   y: number
+  hitElement: GuiHitElement | null
   log: Record<string, unknown>
+}
+
+export interface GuiHitElement {
+  tagName: string
+  role?: string
+  ariaLabel?: string
+  labelText?: string
+  textContent?: string
+}
+
+function summarizeHitElement(
+  hitElement: Awaited<
+    ReturnType<ToolContext['browser']['resolveElementProperties']>
+  >,
+): GuiHitElement | null {
+  if (!hitElement) return null
+
+  return {
+    tagName: hitElement.tagName,
+    role: hitElement.role,
+    ariaLabel: truncateForLog(hitElement.ariaLabel),
+    labelText: truncateForLog(hitElement.labelText),
+    textContent: truncateForLog(hitElement.textContent),
+  }
 }
 
 export async function resolveGuiPoint(
@@ -54,10 +79,12 @@ export async function resolveGuiPoint(
           .resolveElementProperties(page, hitElementId)
           .catch(() => null)
       : null
+  const hitElementSummary = summarizeHitElement(hitElement)
 
   return {
     x,
     y,
+    hitElement: hitElementSummary,
     log: {
       page,
       pageUrl: truncateForLog(pageInfo?.url),
@@ -75,15 +102,7 @@ export async function resolveGuiPoint(
       },
       viewport,
       hitElementId,
-      hitElement: hitElement
-        ? {
-            tagName: hitElement.tagName,
-            role: hitElement.role,
-            ariaLabel: truncateForLog(hitElement.ariaLabel),
-            labelText: truncateForLog(hitElement.labelText),
-            textContent: truncateForLog(hitElement.textContent),
-          }
-        : null,
+      hitElement: hitElementSummary,
     },
   }
 }

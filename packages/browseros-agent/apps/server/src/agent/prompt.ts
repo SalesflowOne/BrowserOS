@@ -138,7 +138,7 @@ function getCapabilities(
 
 ### Browser Control
 Use these browser tools under the GUI click model constraint:
-- \`click\` captures the current page screenshot internally, asks the GUI click model where to click based on your prompt, then executes that coordinate click.
+- \`click\` captures the current page screenshot internally, asks the GUI click model where to click based on your prompt, then executes that coordinate click. Make sure to be brief, concise and capture the semantic essence of where you want to click. 
 - \`hover\` captures the current page screenshot internally, asks the GUI model where to hover based on your prompt, then moves the cursor there.
 - \`type_text\` types into the currently focused element. Use it after \`click\` focuses a text field.
 - \`scroll\` scrolls the page viewport.
@@ -226,7 +226,8 @@ function getExecution(
 
 - Use \`click\` for visible page targets. It is the only click path that should choose page coordinates.
 - Use \`hover\` for visible hover targets, \`type_text\` after focusing a field, and \`scroll\` to move the viewport.
-- Use \`take_screenshot\` when you need explicit visual feedback about the current page before choosing the next action. Do not call it after every action by default.
+- Use \`take_screenshot\` when you need explicit visual feedback about the current page before choosing the next action.
+- After each \`click\` or \`hover\`, inspect the returned \`hitElement\` before choosing the next action. If it is null or does not match the intended target, use \`take_screenshot\` or retry with a more specific visual prompt.
 - Use \`new_page\` or \`navigate_page\` to open websites. Use \`get_active_page\`, \`list_pages\`, and \`close_page\` only when needed for page management.
 - Use the Page ID from Browser Context directly.
 - Do not try to observe the page with snapshots, DOM, accessibility trees, scripts, link extraction, or text extraction.
@@ -331,7 +332,7 @@ function getToolSelection(
 - Use \`hover\` for hover menus or targets that reveal content.
 - Use \`type_text\` only after a prior GUI click likely focused a text input. Include a newline in \`text\` when you need to submit with Enter.
 - Use \`scroll\` to move the page viewport when the target is likely below or above the visible area.
-- Use \`take_screenshot\` sparingly when you need visual feedback before deciding what to click, type, hover, or scroll next.
+- Use \`take_screenshot\` when you need visual feedback before deciding what to click, type, hover, or scroll next.
 - The \`prompt\` argument should describe the visible target to click, for example: "click the search box", "click the Add to Cart button", or "click the first product result".
 - Use page-opening and page-management tools only to get to the website or manage tabs; they do not replace visual page clicking.
 - Do not request or rely on element IDs, snapshots, DOM nodes, page text, scripts, link extraction, or coordinate click tools.
@@ -676,7 +677,6 @@ function getStyle(
 <tool_call_style>
 - Keep click prompts concise and visual.
 - Do not narrate routine clicks before calling the tool.
-- After a click, continue from your best estimate of the page state.
 </tool_call_style>
 
 - Be concise.

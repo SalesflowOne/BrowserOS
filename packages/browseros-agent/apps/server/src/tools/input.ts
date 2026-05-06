@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { logger } from '../lib/logger'
 import { defineToolWithCategory, type ToolContext } from './framework'
-import { resolveGuiPoint } from './gui-click-resolver'
+import { type GuiHitElement, resolveGuiPoint } from './gui-click-resolver'
 import type { ToolResponse } from './response'
 
 const pageParam = z.number().describe('Page ID (from list_pages)')
@@ -9,6 +9,39 @@ const defineInputTool = defineToolWithCategory('input')
 const elementParam = z
   .number()
   .describe('Element ID from snapshot (the number in [N])')
+const guiHitElementOutput = z
+  .object({
+    tagName: z.string(),
+    role: z.string().optional(),
+    ariaLabel: z.string().optional(),
+    labelText: z.string().optional(),
+    textContent: z.string().optional(),
+  })
+  .nullable()
+
+function quoteForAgent(value: string): string {
+  return JSON.stringify(value)
+}
+
+function formatHitElementForAgent(hitElement: GuiHitElement | null): string {
+  if (!hitElement) {
+    return 'The click was successful, but no hit element could be resolved at the click point.'
+  }
+
+  const details = [`tagName=${quoteForAgent(hitElement.tagName)}`]
+  if (hitElement.role) details.push(`role=${quoteForAgent(hitElement.role)}`)
+  if (hitElement.ariaLabel) {
+    details.push(`ariaLabel=${quoteForAgent(hitElement.ariaLabel)}`)
+  }
+  if (hitElement.labelText) {
+    details.push(`labelText=${quoteForAgent(hitElement.labelText)}`)
+  }
+  if (hitElement.textContent) {
+    details.push(`textContent=${quoteForAgent(hitElement.textContent)}`)
+  }
+
+  return `The click was successful and hit the element: ${details.join(', ')}.`
+}
 
 async function enforceAcl(
   toolName: string,
@@ -67,9 +100,14 @@ export const click = defineInputTool({
     clickCount: z.number(),
     x: z.number(),
     y: z.number(),
+    hitElement: guiHitElementOutput,
   }),
   handler: async (args, ctx, response) => {
-    const { x, y, log } = await resolveGuiPoint(ctx, args.page, args.prompt)
+    const { x, y, hitElement, log } = await resolveGuiPoint(
+      ctx,
+      args.page,
+      args.prompt,
+    )
     const clickLog = {
       ...log,
       clickPoint: { x, y },
@@ -87,7 +125,7 @@ export const click = defineInputTool({
       button: args.button,
       clickCount: args.clickCount,
     })
-    response.text('tool call executed successfully')
+    response.text(formatHitElementForAgent(hitElement))
     response.data({
       action: 'click',
       page: args.page,
@@ -96,6 +134,7 @@ export const click = defineInputTool({
       clickCount: args.clickCount,
       x,
       y,
+      hitElement,
     })
   },
 })

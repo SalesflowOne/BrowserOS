@@ -256,15 +256,18 @@ describe('input tools', () => {
           prompt: 'click the Submit button',
         })
         assert.ok(!clickResult.isError, textOf(clickResult))
-        assert.strictEqual(
+        assert.match(
           textOf(clickResult),
-          'tool call executed successfully',
+          /The click was successful and hit the element: .*tagName="button".*textContent="Submit"/,
         )
-        const clickData = structuredOf<{ action: string; prompt: string }>(
-          clickResult,
-        )
+        const clickData = structuredOf<{
+          action: string
+          prompt: string
+          hitElement: { tagName: string; textContent?: string } | null
+        }>(clickResult)
         assert.strictEqual(clickData.action, 'click')
         assert.strictEqual(clickData.prompt, 'click the Submit button')
+        assert.strictEqual(clickData.hitElement?.tagName, 'button')
       })
 
       const output = await execute(evaluate_script, {
