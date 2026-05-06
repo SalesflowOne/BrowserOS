@@ -31,7 +31,14 @@ describe('AgisdkStateDiffGrader artifacts', () => {
         reward: 0,
         pass: false,
         message: 'Missing entree',
-        per_criterion: [{ passed: false, detail: 'entree missing' }],
+        per_criterion: [
+          {
+            passed: false,
+            detail: 'cart item mismatch',
+            expected_value: 'Entree',
+            actual_value: 'Soup',
+          },
+        ],
       },
       stderr: 'criterion log',
     })
@@ -53,6 +60,17 @@ describe('AgisdkStateDiffGrader artifacts', () => {
     const result = await grader.grade(input)
 
     expect(result.pass).toBe(false)
+    expect(result.reasoning).toContain('Failed criteria:')
+    expect(result.reasoning).toContain('expected=Entree')
+    expect(result.reasoning).toContain('actual=Soup')
+    expect(result.details?.failed_criteria).toEqual([
+      {
+        index: 0,
+        detail: 'cart item mismatch',
+        expected: 'Entree',
+        actual: 'Soup',
+      },
+    ])
     expect(
       JSON.parse(
         await readFile(
@@ -69,6 +87,21 @@ describe('AgisdkStateDiffGrader artifacts', () => {
         ),
       ),
     ).toMatchObject({ message: 'Missing entree' })
+    expect(
+      JSON.parse(
+        await readFile(
+          join(dir, 'grader-artifacts/agisdk_state_diff/failed-criteria.json'),
+          'utf-8',
+        ),
+      ),
+    ).toEqual([
+      {
+        index: 0,
+        detail: 'cart item mismatch',
+        expected: 'Entree',
+        actual: 'Soup',
+      },
+    ])
     expect(
       await readFile(
         join(dir, 'grader-artifacts/agisdk_state_diff/stderr.txt'),

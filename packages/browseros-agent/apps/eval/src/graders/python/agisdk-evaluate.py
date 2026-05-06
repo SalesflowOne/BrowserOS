@@ -26,6 +26,18 @@ import sys
 _STRICT = os.environ.get("AGISDK_STRICT_STRINGS", "").lower() in ("1", "true", "yes")
 
 
+def _json_safe(value: object) -> object:
+    try:
+        json.dumps(value)
+        return value
+    except TypeError:
+        if isinstance(value, dict):
+            return {str(k): _json_safe(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [_json_safe(v) for v in value]
+        return str(value)
+
+
 def _soft_string_match(detail: object) -> bool:
     """Return True iff `detail` is `{actual_value, expected_value}` with both
     strings and a non-empty `expected_value` that is contained in `actual_value`
@@ -87,7 +99,16 @@ def main():
         for r in results:
             passed = bool(r[0])
             detail = r[1] if len(r) > 1 else ""
-            entry: dict = {"passed": passed, "detail": str(detail)}
+            entry: dict = {
+                "passed": passed,
+                "detail": str(detail),
+                "raw_detail": _json_safe(detail),
+            }
+            if isinstance(detail, dict):
+                if "actual_value" in detail:
+                    entry["actual_value"] = _json_safe(detail.get("actual_value"))
+                if "expected_value" in detail:
+                    entry["expected_value"] = _json_safe(detail.get("expected_value"))
             if not _STRICT and not passed and _soft_string_match(detail):
                 entry["passed"] = True
                 entry["softened"] = True

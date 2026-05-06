@@ -31,6 +31,16 @@ interface AgisdkEvaluatorOutput {
   per_criterion: unknown[]
 }
 
+interface FailedAgisdkCriterion {
+  index: number
+  detail: string
+  expected?: unknown
+  actual?: unknown
+}
+
+const MAX_REASONING_CRITERIA = 8
+const MAX_REASONING_DETAIL_CHARS = 700
+
 export class AgisdkStateDiffGrader implements Grader {
   name = 'agisdk_state_diff'
 
@@ -99,15 +109,23 @@ export class AgisdkStateDiffGrader implements Grader {
         'stderr.txt',
         evaluation.stderr,
       )
+      const failedCriteria = this.extractFailedCriteria(result.per_criterion)
+      if (failedCriteria.length > 0) {
+        await writeGraderJsonArtifact(
+          input,
+          this.name,
+          'failed-criteria.json',
+          failedCriteria,
+        )
+      }
       return {
         score: result.reward,
         pass: result.pass,
-        reasoning:
-          result.message ||
-          (result.pass ? 'All criteria passed' : 'Some criteria failed'),
+        reasoning: this.buildReasoning(result, failedCriteria),
         details: {
           reward: result.reward,
           per_criterion: result.per_criterion,
+          failed_criteria: failedCriteria,
           origin,
           agisdk_task_id: taskId,
         },
@@ -146,6 +164,69 @@ export class AgisdkStateDiffGrader implements Grader {
     }
 
     return null
+  }
+
+  private buildReasoning(
+    result: AgisdkEvaluatorOutput,
+    failedCriteria: FailedAgisdkCriterion[],
+  ): string {
+    const base =
+      result.message ||
+      (result.pass ? 'All criteria passed' : 'Some criteria failed')
+
+    if (result.pass || failedCriteria.length === 0) return base
+
+    const shown = failedCriteria.slice(0, MAX_REASONING_CRITERIA)
+    const lines = shown.map(
+      (criterion) =>
+        `${criterion.index + 1}. ${this.formatFailedCriterion(criterion)}`,
+    )
+    const remaining = failedCriteria.length - shown.length
+    if (remaining > 0) {
+      lines.push(`... ${remaining} more failed criteria`)
+    }
+
+    return `${base}\nFailed criteria:\n${lines.join('\n')}`
+  }
+
+  private extractFailedCriteria(
+    perCriterion: unknown[],
+  ): FailedAgisdkCriterion[] {
+    return perCriterion.flatMap((criterion, index) => {
+      if (!criterion || typeof criterion !== 'object') return []
+      const record = criterion as Record<string, unknown>
+      if (record.passed === true) return []
+
+      const detail =
+        typeof record.detail === 'string'
+          ? record.detail
+          : this.stringifyCriterionValue(record.raw_detail ?? record)
+      const failed: FailedAgisdkCriterion = {
+        index,
+        detail,
+      }
+      if ('expected_value' in record) failed.expected = record.expected_value
+      if ('actual_value' in record) failed.actual = record.actual_value
+      return [failed]
+    })
+  }
+
+  private formatFailedCriterion(criterion: FailedAgisdkCriterion): string {
+    const parts = [criterion.detail]
+    if ('expected' in criterion) {
+      parts.push(`expected=${this.stringifyCriterionValue(criterion.expected)}`)
+    }
+    if ('actual' in criterion) {
+      parts.push(`actual=${this.stringifyCriterionValue(criterion.actual)}`)
+    }
+
+    const text = parts.join(' | ')
+    if (text.length <= MAX_REASONING_DETAIL_CHARS) return text
+    return `${text.slice(0, MAX_REASONING_DETAIL_CHARS)}... (+${text.length - MAX_REASONING_DETAIL_CHARS} chars)`
+  }
+
+  private stringifyCriterionValue(value: unknown): string {
+    return typeof value === 'string' ? value : JSON.stringify(value)
   }
 
   private async fetchFinishState(

@@ -256,7 +256,24 @@ function printTaskProgress(
     for (const [name, gr] of Object.entries(result.graderResults)) {
       const icon = gr.pass ? 'PASS' : 'FAIL'
       console.log(`    ${name}: ${icon}`)
+      if (!gr.pass && gr.reasoning) {
+        printIndentedReasoning(gr.reasoning, '      ')
+      }
     }
+  }
+}
+
+function printIndentedReasoning(
+  reasoning: string,
+  indent: string,
+  maxLines = 12,
+): void {
+  const lines = reasoning.trim().split('\n')
+  for (const line of lines.slice(0, maxLines)) {
+    console.log(`${indent}${line}`)
+  }
+  if (lines.length > maxLines) {
+    console.log(`${indent}... ${lines.length - maxLines} more lines`)
   }
 }
 
