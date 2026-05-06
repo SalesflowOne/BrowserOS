@@ -3,7 +3,10 @@
  * Copyright 2025 BrowserOS
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
-import type { LLMProvider } from '@browseros/shared/schemas/llm'
+import type {
+  AcpPermissionMode,
+  LLMProvider,
+} from '@browseros/shared/schemas/llm'
 
 export interface ProviderConfig {
   provider: LLMProvider
@@ -50,4 +53,12 @@ export interface ResolvedAgentConfig {
   origin?: 'sidepanel' | 'newtab'
   /** BrowserOS installation ID for credit-based tracking. */
   browserosId?: string
+
+  // ACP (acpx-ai-provider) — only meaningful when provider === 'acp'.
+  /** acpx built-in agent id (e.g. 'claude', 'codex', 'gemini'). */
+  acpAgentId?: string
+  /** Optional default cwd used when no chat workspace is selected. */
+  acpDefaultCwd?: string
+  /** Permission mode handed to the ACP agent. Defaults to 'approve-reads'. */
+  acpPermissionMode?: AcpPermissionMode
 }

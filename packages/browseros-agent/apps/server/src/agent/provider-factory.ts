@@ -7,8 +7,11 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { EXTERNAL_URLS } from '@browseros/shared/constants/urls'
 import { LLM_PROVIDERS } from '@browseros/shared/schemas/llm'
 import { createOpenRouter } from '@openrouter/ai-sdk-provider'
+import { createAcpxProvider } from 'acpx-ai-provider'
 import type { LanguageModel } from 'ai'
 import { createBrowserOSFetch } from '../lib/browseros-fetch'
+import { getBrowserOSMcpUrl } from '../lib/clients/acp/mcp-url'
+import { getSharedAcpRuntime } from '../lib/clients/acp/runtime-singleton'
 import { createCodexFetch } from '../lib/clients/oauth/codex-fetch'
 import { createCopilotFetch } from '../lib/clients/oauth/copilot-fetch'
 import { logger } from '../lib/logger'
@@ -199,6 +202,53 @@ function createChatGPTProFactory(
   }).responses
 }
 
+function createAcpFactory(
+  config: ResolvedAgentConfig,
+): (modelId: string) => unknown {
+  if (!config.acpAgentId) {
+    throw new Error(
+      'ACP provider requires acpAgentId — pick an ACP agent in the LLM settings.',
+    )
+  }
+  // Per-call cwd: chat workspace selector wins; fall back to the
+  // default the user pinned on the provider record. ACP agents
+  // require a working directory to start a session.
+  const cwd = config.workingDir ?? config.acpDefaultCwd
+  if (!cwd) {
+    throw new Error(
+      'ACP provider needs a working directory. Select a workspace from the chat composer or set a default workspace on the ACP provider.',
+    )
+  }
+  // Session key keeps state distinct per (agent, cwd, conversation) so
+  // workspace switches inside a chat correctly fork sessions and
+  // separate conversations don't bleed context.
+  const sessionKey = `browseros::${config.acpAgentId}::${cwd}::${config.conversationId}`
+  const provider = createAcpxProvider({
+    agent: config.acpAgentId,
+    cwd,
+    sessionKey,
+    permissionMode: config.acpPermissionMode ?? 'approve-reads',
+    nonInteractivePermissions: 'deny',
+    mcpServers: [
+      // ACP agents discover the BrowserOS browser-tool surface via
+      // this single HTTP MCP server. Host-side AI SDK tools are
+      // skipped for the ACP path (acpx-ai-provider doesn't plumb
+      // them through), so this is the only seam by which ACP agents
+      // gain access to BrowserOS capabilities.
+      {
+        type: 'http',
+        name: 'browseros',
+        url: getBrowserOSMcpUrl(),
+      },
+    ],
+    runtime: getSharedAcpRuntime(),
+  })
+  // ACP agents pick the model inside their own CLI; the modelId
+  // argument is ignored. Wrap so the dispatch table's
+  // `factory(config)(config.model)` call still type-checks.
+  return () => provider.languageModel()
+}
+
 const PROVIDER_FACTORIES: Record<string, ProviderFactory> = {
   [LLM_PROVIDERS.ANTHROPIC]: createAnthropicFactory,
   [LLM_PROVIDERS.OPENAI]: createOpenAIFactory,
@@ -214,6 +264,7 @@ const PROVIDER_FACTORIES: Record<string, ProviderFactory> = {
   [LLM_PROVIDERS.CHATGPT_PRO]: createChatGPTProFactory,
   [LLM_PROVIDERS.GITHUB_COPILOT]: createGitHubCopilotFactory,
   [LLM_PROVIDERS.QWEN_CODE]: createQwenCodeFactory,
+  [LLM_PROVIDERS.ACP]: createAcpFactory,
 }
 
 export function createLanguageModel(

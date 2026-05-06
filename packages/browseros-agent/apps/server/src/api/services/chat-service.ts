@@ -64,6 +64,9 @@ export class ChatService {
       origin: request.origin,
       declinedApps: request.declinedApps,
       browserosId: this.deps.browserosId,
+      acpAgentId: llmConfig.acpAgentId,
+      acpDefaultCwd: llmConfig.acpDefaultCwd,
+      acpPermissionMode: llmConfig.acpPermissionMode,
     }
     const llmConfigKey = this.buildLlmConfigKey(agentConfig)
 
@@ -413,6 +416,11 @@ export class ChatService {
       reasoningSummary: config.reasoningSummary,
       contextWindowSize: config.contextWindowSize,
       supportsImages: config.supportsImages,
+      acpAgentId: config.acpAgentId,
+      acpPermissionMode: config.acpPermissionMode,
+      // acpDefaultCwd is intentionally excluded — workingDir already
+      // forces a session rebuild on workspace change, and the default
+      // is only consulted when workingDir is unset.
     })
   }
 

@@ -97,17 +97,28 @@ export class AiSdkAgent {
       }
     }
 
+    // ACP agents (acpx-ai-provider) discover their tools via MCP
+    // servers passed into the provider factory — host-side AI SDK
+    // `tool({ execute })` callbacks are not plumbed through to the
+    // ACP child process. Skipping the entire host-side tool build
+    // keeps the BrowserOS browser-tool surface as the single source
+    // truth (the ACP agent reaches it over the BrowserOS MCP HTTP
+    // endpoint we registered in the provider factory).
+    const isAcpProvider = config.resolvedConfig.provider === LLM_PROVIDERS.ACP
+
     // Build browser tools from the unified tool registry
     const originPageId = config.browserContext?.activeTab?.pageId
-    const allBrowserTools = buildBrowserToolSet(
-      config.registry,
-      config.browser,
-      config.resolvedConfig.workingDir,
-      {
-        origin: config.resolvedConfig.origin,
-        originPageId,
-      },
-    )
+    const allBrowserTools = isAcpProvider
+      ? {}
+      : buildBrowserToolSet(
+          config.registry,
+          config.browser,
+          config.resolvedConfig.workingDir,
+          {
+            origin: config.resolvedConfig.origin,
+            originPageId,
+          },
+        )
     const browserTools = config.resolvedConfig.chatMode
       ? Object.fromEntries(
           Object.entries(allBrowserTools).filter(([name]) =>
@@ -115,18 +126,22 @@ export class AiSdkAgent {
           ),
         )
       : allBrowserTools
-    if (config.resolvedConfig.chatMode) {
+    if (config.resolvedConfig.chatMode && !isAcpProvider) {
       logger.info('Chat mode enabled, restricting to read-only browser tools', {
         allowedTools: Array.from(CHAT_MODE_ALLOWED_TOOLS),
       })
     }
 
-    // Build external MCP server specs (Klavis, custom) and connect clients
-    const specs = await buildMcpServerSpecs({
-      browserContext: config.browserContext,
-      klavisClient: config.klavisClient,
-      browserosId: config.browserosId,
-    })
+    // Build external MCP server specs (Klavis, custom) and connect clients.
+    // Skipped for ACP — Klavis/custom MCP wiring for ACP agents is a
+    // known follow-up; v1 ACP only exposes BrowserOS tools.
+    const specs = isAcpProvider
+      ? []
+      : await buildMcpServerSpecs({
+          browserContext: config.browserContext,
+          klavisClient: config.klavisClient,
+          browserosId: config.browserosId,
+        })
     const { clients, tools: rawExternalMcpTools } =
       await createMcpClients(specs)
 
@@ -168,12 +183,15 @@ export class AiSdkAgent {
 
     // Add filesystem tools — skip in chat mode (read-only) and when no workspace is selected
     const filesystemTools =
-      !config.resolvedConfig.chatMode && config.resolvedConfig.workingDir
+      !isAcpProvider &&
+      !config.resolvedConfig.chatMode &&
+      config.resolvedConfig.workingDir
         ? buildFilesystemToolSet(config.resolvedConfig.workingDir)
         : {}
-    const memoryTools = config.resolvedConfig.chatMode
-      ? {}
-      : buildMemoryToolSet()
+    const memoryTools =
+      isAcpProvider || config.resolvedConfig.chatMode
+        ? {}
+        : buildMemoryToolSet()
     const tools = {
       ...browserTools,
       ...externalMcpTools,
@@ -187,6 +205,13 @@ export class AiSdkAgent {
     ) {
       delete tools.suggest_schedule
       delete tools.suggest_app_connection
+    }
+
+    if (isAcpProvider) {
+      logger.info('ACP provider: host-side tools skipped, using MCP only', {
+        conversationId: config.resolvedConfig.conversationId,
+        acpAgentId: config.resolvedConfig.acpAgentId,
+      })
     }
 
     // Build system prompt with optional section exclusions

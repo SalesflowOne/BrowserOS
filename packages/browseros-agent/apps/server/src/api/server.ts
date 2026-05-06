@@ -15,6 +15,7 @@ import { cors } from 'hono/cors'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { HttpAgentError } from '../agent/errors'
 import { INLINED_ENV } from '../env'
+import { setBrowserOSMcpUrl } from '../lib/clients/acp/mcp-url'
 import { KlavisClient } from '../lib/clients/klavis/klavis-client'
 import { initializeOAuth } from '../lib/clients/oauth'
 import { getDb } from '../lib/db'
@@ -78,6 +79,12 @@ export async function createHttpServer(config: HttpServerConfig) {
   } = config
 
   const { onShutdown } = config
+
+  // Publish the MCP URL so the ACP provider factory can pass it to
+  // acpx-ai-provider — locally-spawned ACP agents discover the full
+  // browser-tool surface over MCP without host-side AI SDK tool
+  // injection (which acpx-ai-provider doesn't support today).
+  setBrowserOSMcpUrl(`http://127.0.0.1:${port}/mcp`)
 
   // Initialize OAuth token manager (callback server binds lazily on first PKCE login)
   const tokenManager = browserosId
