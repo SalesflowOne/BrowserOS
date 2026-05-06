@@ -38,7 +38,6 @@ import type {
   AgentStreamEvent,
 } from '../../../lib/agents/types'
 import { logger } from '../../../lib/logger'
-import type { OpenClawGatewayChatClient } from '../openclaw/openclaw-gateway-chat-client'
 
 export type AgentLiveness = 'working' | 'idle' | 'asleep' | 'error'
 
@@ -152,12 +151,33 @@ export interface GatewayStatusSnapshot {
     | null
 }
 
+/**
+ * Per-turn event the harness emits to subscribers. Lets services that
+ * want to track liveness for a specific adapter (e.g. OpenClaw's
+ * ClawSession dashboard) react to the same stream the chat panel sees,
+ * without each adapter spawning its own gateway-side observer.
+ */
+export type TurnLifecycleEvent =
+  | { type: 'turn_started' }
+  | { type: 'turn_event'; event: AgentStreamEvent }
+  | { type: 'turn_ended'; error?: string }
+
+export type TurnLifecycleListener = (
+  agent: {
+    id: string
+    adapter: AgentDefinition['adapter']
+    sessionKey: string
+  },
+  event: TurnLifecycleEvent,
+) => void
+
 export class AgentHarnessService {
   private readonly agentStore: AgentStore
   private readonly runtime: AgentRuntime
   private readonly openclawProvisioner: OpenClawProvisioner | null
   private readonly turnRegistry: TurnRegistry
   private readonly messageQueue: FileMessageQueue
+  private readonly turnLifecycleListeners = new Set<TurnLifecycleListener>()
   private inFlightReconcile: Promise<void> | null = null
   // In-memory liveness tracker. Lost on server restart (acceptable —
   // `lastUsedAt` survives via the acpx session record's `lastUsedAt`,
@@ -174,7 +194,6 @@ export class AgentHarnessService {
       runtime?: AgentRuntime
       browserosServerPort?: number
       openclawGateway?: OpenclawGatewayAccessor
-      openclawGatewayChat?: OpenClawGatewayChatClient
       openclawProvisioner?: OpenClawProvisioner
       turnRegistry?: TurnRegistry
       messageQueue?: FileMessageQueue
@@ -186,7 +205,6 @@ export class AgentHarnessService {
       new AcpxRuntime({
         browserosServerPort: deps.browserosServerPort,
         openclawGateway: deps.openclawGateway,
-        openclawGatewayChat: deps.openclawGatewayChat,
       })
     this.openclawProvisioner = deps.openclawProvisioner ?? null
     this.turnRegistry = deps.turnRegistry ?? new TurnRegistry()
@@ -311,6 +329,39 @@ export class AgentHarnessService {
       lastUsedAt: last,
       lastUserMessage: null,
       tokens: null,
+    }
+  }
+
+  /**
+   * Subscribe to turn lifecycle events for every running agent. Returns
+   * an unsubscribe function. Listeners are best-effort: a throwing
+   * listener does not break the turn.
+   */
+  onTurnLifecycle(listener: TurnLifecycleListener): () => void {
+    this.turnLifecycleListeners.add(listener)
+    return () => this.turnLifecycleListeners.delete(listener)
+  }
+
+  private emitTurnLifecycle(
+    agent: AgentDefinition,
+    event: TurnLifecycleEvent,
+  ): void {
+    if (this.turnLifecycleListeners.size === 0) return
+    const summary = {
+      id: agent.id,
+      adapter: agent.adapter,
+      sessionKey: agent.sessionKey,
+    }
+    for (const listener of this.turnLifecycleListeners) {
+      try {
+        listener(summary, event)
+      } catch (err) {
+        logger.warn('Turn lifecycle listener threw', {
+          agentId: agent.id,
+          eventType: event.type,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
     }
   }
 
@@ -627,6 +678,7 @@ export class AgentHarnessService {
       prompt: input.message,
     })
     this.notifyTurnStarted(agent.id)
+    this.emitTurnLifecycle(agent, { type: 'turn_started' })
 
     // Kick off the runtime call in the background. The per-turn
     // AbortController — NOT the HTTP request signal — is what cancels
@@ -746,6 +798,7 @@ export class AgentHarnessService {
           if (done) break
           if (value.type === 'error') lastErrorMessage = value.message
           this.turnRegistry.pushEvent(turnId, value)
+          this.emitTurnLifecycle(agent, { type: 'turn_event', event: value })
         }
       } finally {
         try {
@@ -784,6 +837,10 @@ export class AgentHarnessService {
     } finally {
       this.notifyTurnEnded(agent.id, {
         ok: lastErrorMessage === undefined,
+        error: lastErrorMessage,
+      })
+      this.emitTurnLifecycle(agent, {
+        type: 'turn_ended',
         error: lastErrorMessage,
       })
     }

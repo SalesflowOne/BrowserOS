@@ -17,6 +17,7 @@ import {
   OPENCLAW_IMAGE,
 } from '@browseros/shared/constants/openclaw'
 import { DEFAULT_PORTS } from '@browseros/shared/constants/ports'
+import type { AgentStreamEvent } from '../../../lib/agents/types'
 import { getOpenClawDir } from '../../../lib/browseros-dir'
 import { logger } from '../../../lib/logger'
 import { withProcessLock } from '../../../lib/process-lock'
@@ -62,7 +63,6 @@ import {
   type OpenClawSessionHistory,
   type OpenClawSessionHistoryEvent,
 } from './openclaw-http-client'
-import { OpenClawObserver } from './openclaw-observer'
 import {
   type ResolvedOpenClawProviderConfig,
   resolveSupportedOpenClawProvider,
@@ -270,7 +270,6 @@ export class OpenClawService {
   private stopLogTail: (() => void) | null = null
   private lifecycleLock: Promise<void> = Promise.resolve()
   private clawSession = new ClawSession()
-  private observer = new OpenClawObserver(this.clawSession)
 
   constructor(config: OpenClawServiceConfig = {}) {
     this.openclawDir = getOpenClawDir()
@@ -327,6 +326,70 @@ export class OpenClawService {
   /** Read the current ClawSession state for an agent (read-only snapshot). */
   getAgentState(agentId: string): AgentSessionState {
     return this.clawSession.getState(agentId)
+  }
+
+  /**
+   * Drive the live-status state machine from a turn lifecycle event the
+   * AgentHarnessService observed. Replaces the previous WS observer
+   * pipeline that re-tapped the same gateway events; the harness already
+   * sees them as ACP `session/update` notifications, so we forward those
+   * here. Caller passes the stream events verbatim.
+   *
+   * `tool_call` and `tool_call_update` populate `currentTool` so the
+   * dashboard SSE keeps its existing payload shape. `done` clears
+   * working state to `idle`; `error` keeps a sticky error badge.
+   */
+  recordAgentTurnEvent(
+    agentId: string,
+    sessionKey: string,
+    event:
+      | { type: 'turn_started' }
+      | { type: 'turn_event'; event: AgentStreamEvent }
+      | { type: 'turn_ended'; error?: string },
+  ): void {
+    if (event.type === 'turn_started') {
+      this.clawSession.transition(agentId, 'working', { sessionKey })
+      return
+    }
+    if (event.type === 'turn_ended') {
+      if (event.error !== undefined) {
+        this.clawSession.transition(agentId, 'error', {
+          sessionKey,
+          error: event.error,
+        })
+      } else {
+        this.clawSession.transition(agentId, 'idle', { sessionKey })
+      }
+      return
+    }
+    const inner = event.event
+    if (inner.type === 'tool_call') {
+      this.clawSession.transition(agentId, 'working', {
+        sessionKey,
+        currentTool: inner.title ?? null,
+      })
+      return
+    }
+    if (inner.type === 'error') {
+      this.clawSession.transition(agentId, 'error', {
+        sessionKey,
+        error: inner.message,
+      })
+      return
+    }
+    if (inner.type === 'done') {
+      this.clawSession.transition(agentId, 'idle', { sessionKey })
+      return
+    }
+    if (inner.type === 'text_delta') {
+      // Heartbeat — keep the existing `working` row fresh; preserve
+      // the last-known currentTool by passing it through.
+      const prev = this.clawSession.getState(agentId)
+      this.clawSession.transition(agentId, 'working', {
+        sessionKey,
+        currentTool: prev.currentTool,
+      })
+    }
   }
 
   // ── Lifecycle ────────────────────────────────────────────────────────
@@ -509,7 +572,6 @@ export class OpenClawService {
     return this.withLifecycleLock('stop', async () => {
       logger.info('Stopping OpenClaw service', { hostPort: this.hostPort })
       this.controlPlaneStatus = 'disconnected'
-      this.observer.disconnect()
       this.stopGatewayLogTail()
       await this.runtime.stopGateway()
       logger.info('OpenClaw container stopped')
@@ -579,7 +641,6 @@ export class OpenClawService {
 
   async shutdown(): Promise<void> {
     this.controlPlaneStatus = 'disconnected'
-    this.observer.disconnect()
     this.stopGatewayLogTail()
     try {
       await this.runtime.stopGateway()
@@ -1056,7 +1117,6 @@ export class OpenClawService {
       this.controlPlaneStatus = 'connected'
       this.lastGatewayError = null
       this.lastRecoveryReason = null
-      this.ensureObserverConnected()
       return result
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -1066,13 +1126,6 @@ export class OpenClawService {
       this.lastRecoveryReason = reason
       throw error
     }
-  }
-
-  private ensureObserverConnected(): void {
-    if (this.observer.isConnected()) return
-    // ClawSession starts empty after the JSONL seed was removed; the WS
-    // observer fills in agent status as events arrive.
-    this.observer.connect(`http://127.0.0.1:${this.hostPort}`)
   }
 
   private classifyControlPlaneError(

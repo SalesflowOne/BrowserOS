@@ -43,7 +43,6 @@ import {
   TurnAlreadyActiveError,
   UnknownAgentError,
 } from '../services/agents/agent-harness-service'
-import type { OpenClawGatewayChatClient } from '../services/openclaw/openclaw-gateway-chat-client'
 import type { Env } from '../types'
 import { resolveBrowserContextPageIds } from '../utils/resolve-browser-context-page-ids'
 
@@ -109,18 +108,19 @@ type AgentRouteDeps = {
   openclawGateway?: OpenclawGatewayAccessor
   /**
    * Optional. Enables the image-attachment carve-out for OpenClaw
-   * agents — image-bearing turns route through the gateway HTTP
-   * `/v1/chat/completions` instead of the ACP bridge (which drops
-   * image content blocks).
-   */
-  openclawGatewayChat?: OpenClawGatewayChatClient
-  /**
    * Required to dual-create/delete `openclaw` adapter agents on the
    * gateway side. Without this, openclaw create requests fail with 503.
    */
   openclawProvisioner?: OpenClawProvisioner
   /** Optional override; defaults to a fresh in-memory checker. */
   adapterHealth?: AdapterHealthChecker
+  /**
+   * Optional listener attached to the constructed harness. Receives
+   * turn lifecycle events for every running agent. Wired by the server
+   * to feed OpenClaw's ClawSession dashboard from the same stream the
+   * chat panel sees, so no second WS observer is needed.
+   */
+  onTurnLifecycle?: import('../services/agents/agent-harness-service').TurnLifecycleListener
 }
 
 type SidepanelAgentChatRequest = {
@@ -139,9 +139,11 @@ export function createAgentRoutes(deps: AgentRouteDeps = {}) {
     new AgentHarnessService({
       browserosServerPort: deps.browserosServerPort,
       openclawGateway: deps.openclawGateway,
-      openclawGatewayChat: deps.openclawGatewayChat,
       openclawProvisioner: deps.openclawProvisioner,
     })
+  if (deps.onTurnLifecycle && service instanceof AgentHarnessService) {
+    service.onTurnLifecycle(deps.onTurnLifecycle)
+  }
   // One checker per route mount. Cached probes refresh every 5min;
   // tests can swap in an alternate via deps if needed.
   const adapterHealth = deps.adapterHealth ?? new AdapterHealthChecker()
