@@ -39,11 +39,31 @@ const CRON_DELIVERY_TRAILER =
 const QUEUED_MARKER_LINE =
   /^\[Queued user message that arrived while the previous turn was still active\]\s*$/m
 const SUBAGENT_CONTEXT_PREFIX = /^\[Subagent Context\][\s\S]*$/
-// Emitted by OpenClaw's acp-cli (`[Working directory: <path>]\n\n` before
-// the user text — see /app/dist/acp-cli-*.js in the gateway image). We
-// strip the line as a unit by anchoring on the closing bracket + double
-// newline so any path content is consumed without a content-shape regex.
-const OPENCLAW_WORKDIR_PREFIX = /^\[Working directory: [^\]]*\]\n\n/
+// Emitted by OpenClaw's acp-cli ahead of the BrowserOS envelope. Three
+// prefix shapes (any combination, in this stack order):
+//
+//   1. `[media attached: <internal-path> (<mime>)]`        ← per attachment
+//   2. `[<weekday> <YYYY-MM-DD HH:MM> <TZ>]`               ← injectTimestamp
+//   3. `[Working directory: <path>]`                       ← acp-cli prefixCwd
+//
+// Stacks #1 may appear multiple times (one per image). Stack #2 and #3
+// can render on the same line separated by a space. Each known prefix is
+// anchored on its content shape (not just `[…]`) to avoid clobbering
+// user-typed lines that happen to start with a bracket.
+const OPENCLAW_MEDIA_PREFIX_LINE = /^\[media attached:[^\]\n]*\]\n/
+const OPENCLAW_TIMESTAMP_PREFIX =
+  /^\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{4}-\d{2}-\d{2} \d{2}:\d{2}[^\]\n]*\][ \t]*/
+const OPENCLAW_WORKDIR_PREFIX = /^\[Working directory: [^\]\n]*\]\n+/
+
+function stripOpenClawAcpCliEnvelope(value: string): string {
+  let s = value
+  while (OPENCLAW_MEDIA_PREFIX_LINE.test(s)) {
+    s = s.replace(OPENCLAW_MEDIA_PREFIX_LINE, '')
+  }
+  s = s.replace(OPENCLAW_TIMESTAMP_PREFIX, '')
+  s = s.replace(OPENCLAW_WORKDIR_PREFIX, '')
+  return s
+}
 
 /**
  * Strip OpenClaw + BrowserOS scaffolding from a "user" message before
@@ -99,10 +119,11 @@ function cleanSingleUserMessage(raw: string): string {
     const payload = cronMatch[2] ?? ''
     return payload.replace(CRON_DELIVERY_TRAILER, '').trim()
   }
-  // Strip OpenClaw's acp-cli workdir prefix before delegating, so the
-  // BrowserOS unwrap helper's `^<role>` anchor matches.
-  const withoutWorkdir = trimmed.replace(OPENCLAW_WORKDIR_PREFIX, '')
-  return unwrapBrowserosAcpUserMessage(withoutWorkdir).trim()
+  // Strip OpenClaw's acp-cli envelope (media-attached lines + timestamp
+  // + workdir) before delegating, so the BrowserOS unwrap helper's
+  // `^<role>` anchor matches.
+  const withoutEnvelope = stripOpenClawAcpCliEnvelope(trimmed)
+  return unwrapBrowserosAcpUserMessage(withoutEnvelope).trim()
 }
 
 type RichBlock =

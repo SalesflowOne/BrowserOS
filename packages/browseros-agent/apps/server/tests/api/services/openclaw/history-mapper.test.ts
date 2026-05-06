@@ -57,6 +57,28 @@ describe('cleanHistoryUserText', () => {
     expect(cleanHistoryUserText(raw)).toBe('hey')
   })
 
+  it('strips the full OpenClaw acp-cli envelope on image-attachment turns', () => {
+    // OpenClaw 2026.5.4+ (post image-bypass deletion) wraps user
+    // messages with stacked envelope lines:
+    //   [media attached: <path> (<mime>)]
+    //   [<weekday> <date> <tz>] [Working directory: <path>]
+    //   <BrowserOS role envelope>
+    const raw =
+      '[media attached: /home/node/.openclaw/media/inbound/image---abc.png (image/png)]\n' +
+      '[Thu 2026-05-07 02:07 GMT+5:30] [Working directory: /Users/me/.browseros-dev/agents/harness/workspace]\n\n' +
+      `${ROLE_BLOCK}\n\n<user_request>\nWhat color is this?\n</user_request>`
+    expect(cleanHistoryUserText(raw)).toBe('What color is this?')
+  })
+
+  it('strips multiple stacked [media attached:] lines (one per attachment)', () => {
+    const raw =
+      '[media attached: /home/node/.openclaw/media/inbound/image---a.png (image/png)]\n' +
+      '[media attached: /home/node/.openclaw/media/inbound/image---b.jpg (image/jpeg)]\n' +
+      '[Thu 2026-05-07 02:07 GMT+5:30] [Working directory: /workspace]\n\n' +
+      `${ROLE_BLOCK}\n\n<user_request>\nCompare these.\n</user_request>`
+    expect(cleanHistoryUserText(raw)).toBe('Compare these.')
+  })
+
   it('splits queued-marker concatenations and cleans each chunk', () => {
     // When multiple prompts queue up while a turn is active, BrowserOS
     // joins them with the queued-marker line. Each chunk between markers
