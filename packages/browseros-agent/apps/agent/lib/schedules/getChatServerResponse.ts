@@ -131,6 +131,10 @@ export async function getChatServerResponse(
       secretAccessKey: provider?.secretAccessKey,
       region: provider?.region,
       sessionToken: provider?.sessionToken,
+      // ACP (acpx-ai-provider)
+      acpAgentId: provider?.acpAgentId,
+      acpDefaultCwd: provider?.acpDefaultCwd,
+      acpPermissionMode: provider?.acpPermissionMode,
       browserContext:
         request.activeTab ||
         request.windowId ||

@@ -341,6 +341,10 @@ export const useChatSession = (options?: ChatSessionOptions) => {
             // ChatGPT Pro (Codex)
             reasoningEffort: provider?.reasoningEffort,
             reasoningSummary: provider?.reasoningSummary,
+            // ACP (acpx-ai-provider)
+            acpAgentId: provider?.acpAgentId,
+            acpDefaultCwd: provider?.acpDefaultCwd,
+            acpPermissionMode: provider?.acpPermissionMode,
             browserContext,
             origin: options?.origin ?? 'sidepanel',
             userSystemPrompt: personalizationRef.current,
