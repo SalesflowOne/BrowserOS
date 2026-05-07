@@ -13,6 +13,7 @@
  * the container can actually open.
  */
 
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { getVmStateDir } from '../../../lib/browseros-dir'
 
@@ -43,4 +44,49 @@ export function getHermesAgentHomeHostDir(input: {
     input.agentId,
     'home',
   )
+}
+
+/**
+ * Write a Hermes per-agent provider config into the on-host home dir.
+ * The dir lives under <browserosDir>/vm/hermes/harness/<agentId>/home/
+ * which is bind-mounted into the container at /data/agents/harness/<id>/home/.
+ *
+ * Idempotent: writes always overwrite (last-write-wins).
+ *
+ * `~/.hermes/` global config is unrelated and untouched. The
+ * seedHermesHomeFromGlobal helper in prepare.ts only copies from global
+ * if the per-agent files DON'T already exist — so once this helper
+ * has written per-agent config.yaml/.env, the global seed becomes a
+ * no-op for that agent.
+ */
+export async function writeHermesPerAgentProvider(input: {
+  browserosDir?: string
+  agentId: string
+  providerId: string
+  envVarName: string
+  apiKey: string
+  modelId: string
+  baseUrl?: string
+}): Promise<void> {
+  const home = getHermesAgentHomeHostDir({
+    browserosDir: input.browserosDir,
+    agentId: input.agentId,
+  })
+  await mkdir(home, { recursive: true })
+
+  const yamlLines = [
+    'model:',
+    `  default: ${JSON.stringify(input.modelId)}`,
+    `  provider: ${JSON.stringify(input.providerId)}`,
+  ]
+  if (input.baseUrl) {
+    yamlLines.push(`  base_url: ${JSON.stringify(input.baseUrl)}`)
+  }
+  yamlLines.push('')
+  await writeFile(join(home, 'config.yaml'), yamlLines.join('\n'), {
+    mode: 0o600,
+  })
+
+  const envLines: string[] = [`${input.envVarName}=${input.apiKey}`, '']
+  await writeFile(join(home, '.env'), envLines.join('\n'), { mode: 0o600 })
 }

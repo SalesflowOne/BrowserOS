@@ -10,6 +10,7 @@ import type {
   CreateAgentRuntime,
   ProviderOption,
 } from './agents-page-types'
+import type { HermesProviderFieldsValue } from './HermesProviderFields'
 import { findOpenClawCliProviderById } from './openclaw-cli-providers'
 import type {
   AgentEntry,
@@ -22,6 +23,7 @@ export interface AgentPageActionInput {
   createRuntime: CreateAgentRuntime
   harnessModelId: string
   harnessReasoningEffort: string
+  hermesProviderFields: HermesProviderFieldsValue
   navigate: NavigateFunction
   newName: string
   selectableOpenClawProviders: ProviderOption[]
@@ -31,6 +33,9 @@ export interface AgentPageActionInput {
     adapter: HarnessAgentAdapter
     modelId?: string
     reasoningEffort?: string
+    providerType?: string
+    apiKey?: string
+    baseUrl?: string
   }) => Promise<HarnessAgent>
   createOpenClawAgent: (
     input: OpenClawAgentMutationInput,
@@ -114,20 +119,49 @@ export function createAgentPageActions(input: AgentPageActionInput) {
   const handleHarnessCreate = async () => {
     if (!input.newName.trim()) return
 
+    const isHermes = input.createRuntime === 'hermes'
+    const hermesFields = input.hermesProviderFields
+    // For Hermes, replace the model dropdown's value with the inline
+    // form's modelId (the dropdown is empty for adapter=hermes since
+    // catalog has no models). When the user opted into the global-
+    // config fallback, omit provider/model/api fields entirely so the
+    // backend doesn't write per-agent config.yaml/.env.
+    const hermesProviderType =
+      isHermes && !hermesFields.useGlobalConfig
+        ? hermesFields.providerType
+        : undefined
+    const hermesApiKey =
+      isHermes && !hermesFields.useGlobalConfig && hermesFields.apiKey.trim()
+        ? hermesFields.apiKey
+        : undefined
+    const hermesBaseUrl =
+      isHermes && !hermesFields.useGlobalConfig && hermesFields.baseUrl?.trim()
+        ? hermesFields.baseUrl
+        : undefined
+    const effectiveModelId = isHermes
+      ? hermesFields.useGlobalConfig
+        ? undefined
+        : hermesFields.modelId.trim() || undefined
+      : input.harnessModelId || undefined
+
     input.setCreateError(null)
     try {
       const agent = await input.createHarnessAgent({
         name: input.newName.trim(),
         adapter: input.createRuntime as HarnessAgentAdapter,
-        modelId: input.harnessModelId || undefined,
+        modelId: effectiveModelId,
         reasoningEffort: input.harnessReasoningEffort || undefined,
+        providerType: hermesProviderType,
+        apiKey: hermesApiKey,
+        baseUrl: hermesBaseUrl,
       })
       input.setCreateOpen(false)
       input.setNewName('')
       track(AGENT_CREATED_EVENT, {
         runtime: input.createRuntime,
-        model_id: input.harnessModelId || undefined,
+        model_id: effectiveModelId,
         reasoning_effort: input.harnessReasoningEffort || undefined,
+        provider_type: hermesProviderType,
       })
       input.navigate(`/agents/${agent.id}`)
     } catch (err) {

@@ -4,6 +4,9 @@
  */
 
 import { describe, expect, it } from 'bun:test'
+import { mkdtempSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { AgentHarnessService } from '../../../../src/api/services/agents/agent-harness-service'
 import type { AgentStore } from '../../../../src/lib/agents/agent-store'
 import type { AgentDefinition } from '../../../../src/lib/agents/agent-types'
@@ -439,6 +442,126 @@ describe('AgentHarnessService', () => {
     await collectStream(await service.send({ agentId: agent.id, message: 'x' }))
     const listed = await service.listAgentsWithActivity()
     expect(listed[0]?.status).toBe('error')
+  })
+
+  it('writes a per-agent Hermes config.yaml + .env when adapter=hermes and apiKey present', async () => {
+    const agents: AgentDefinition[] = []
+    const browserosDir = mkdtempSync(join(tmpdir(), 'browseros-hermes-test-'))
+    const service = new AgentHarnessService({
+      agentStore: createAgentStore(agents) as AgentStore,
+      runtime: stubRuntime(),
+      browserosDir,
+    })
+
+    const agent = await service.createAgent({
+      name: 'Hermes bot',
+      adapter: 'hermes',
+      providerType: 'openrouter',
+      apiKey: 'sk-or-v1-test-key',
+      modelId: 'anthropic/claude-haiku-4.5',
+    })
+
+    const homeDir = join(
+      browserosDir,
+      'vm',
+      'hermes',
+      'harness',
+      agent.id,
+      'home',
+    )
+    const yaml = readFileSync(join(homeDir, 'config.yaml'), 'utf8')
+    const env = readFileSync(join(homeDir, '.env'), 'utf8')
+    expect(yaml).toContain('"openrouter"')
+    expect(yaml).toContain('"anthropic/claude-haiku-4.5"')
+    expect(env).toContain('OPENROUTER_API_KEY=sk-or-v1-test-key')
+  })
+
+  it('skips Hermes per-agent provider write when apiKey is missing (legacy fallback)', async () => {
+    const agents: AgentDefinition[] = []
+    const browserosDir = mkdtempSync(join(tmpdir(), 'browseros-hermes-test-'))
+    const service = new AgentHarnessService({
+      agentStore: createAgentStore(agents) as AgentStore,
+      runtime: stubRuntime(),
+      browserosDir,
+    })
+
+    const agent = await service.createAgent({
+      name: 'Hermes bot',
+      adapter: 'hermes',
+    })
+
+    const homeDir = join(
+      browserosDir,
+      'vm',
+      'hermes',
+      'harness',
+      agent.id,
+      'home',
+    )
+    expect(() => readFileSync(join(homeDir, 'config.yaml'), 'utf8')).toThrow()
+    expect(() => readFileSync(join(homeDir, '.env'), 'utf8')).toThrow()
+  })
+
+  it('writes Hermes per-agent base_url for the custom provider', async () => {
+    const agents: AgentDefinition[] = []
+    const browserosDir = mkdtempSync(join(tmpdir(), 'browseros-hermes-test-'))
+    const service = new AgentHarnessService({
+      agentStore: createAgentStore(agents) as AgentStore,
+      runtime: stubRuntime(),
+      browserosDir,
+    })
+
+    const agent = await service.createAgent({
+      name: 'Custom Hermes',
+      adapter: 'hermes',
+      providerType: 'custom',
+      apiKey: 'sk-test',
+      modelId: 'my-model',
+      baseUrl: 'https://api.example.com/v1',
+    })
+
+    const homeDir = join(
+      browserosDir,
+      'vm',
+      'hermes',
+      'harness',
+      agent.id,
+      'home',
+    )
+    const yaml = readFileSync(join(homeDir, 'config.yaml'), 'utf8')
+    const env = readFileSync(join(homeDir, '.env'), 'utf8')
+    expect(yaml).toContain('"custom"')
+    expect(yaml).toContain('"my-model"')
+    expect(yaml).toContain('"https://api.example.com/v1"')
+    // 'custom' provider uses OPENAI_API_KEY per the registry.
+    expect(env).toContain('OPENAI_API_KEY=sk-test')
+  })
+
+  it('skips Hermes per-agent provider write when providerType is unknown', async () => {
+    const agents: AgentDefinition[] = []
+    const browserosDir = mkdtempSync(join(tmpdir(), 'browseros-hermes-test-'))
+    const service = new AgentHarnessService({
+      agentStore: createAgentStore(agents) as AgentStore,
+      runtime: stubRuntime(),
+      browserosDir,
+    })
+
+    const agent = await service.createAgent({
+      name: 'Unknown Hermes',
+      adapter: 'hermes',
+      providerType: 'gemini',
+      apiKey: 'sk-test',
+    })
+
+    const homeDir = join(
+      browserosDir,
+      'vm',
+      'hermes',
+      'harness',
+      agent.id,
+      'home',
+    )
+    expect(() => readFileSync(join(homeDir, 'config.yaml'), 'utf8')).toThrow()
   })
 })
 

@@ -683,11 +683,14 @@ async function parseCreateAgentBody(c: Context<Env>): Promise<
       ? record.reasoningEffort.trim()
       : undefined
 
-  // OpenClaw agents resolve their model from the gateway-side provider
-  // config rather than from the harness catalog. Skip catalog model
-  // validation for that adapter; everything else still uses the catalog.
+  // OpenClaw and Hermes resolve their model from per-agent provider
+  // config (gateway / config.yaml) rather than from the harness catalog.
+  // Skip catalog model validation for those adapters — both have an
+  // empty `models: []` in the catalog by design — everything else still
+  // uses the catalog for validation.
   if (
     record.adapter !== 'openclaw' &&
+    record.adapter !== 'hermes' &&
     !isSupportedAgentModel(record.adapter, modelId)
   ) {
     return { error: 'Invalid modelId' }

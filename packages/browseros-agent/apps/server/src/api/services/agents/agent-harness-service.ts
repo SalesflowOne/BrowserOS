@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
+import { HERMES_SUPPORTED_PROVIDERS } from '@browseros/shared/constants/hermes'
 import {
   AcpxRuntime,
   type HermesGatewayAccessor,
@@ -25,6 +26,7 @@ import {
   type QueuedMessage,
   type QueuedMessageAttachment,
 } from '../../../lib/agents/message-queue'
+import { writeHermesPerAgentProvider } from '../hermes/hermes-paths'
 
 export {
   MessageQueueFullError,
@@ -173,6 +175,12 @@ export class AgentHarnessService {
   private readonly turnRegistry: TurnRegistry
   private readonly messageQueue: FileMessageQueue
   /**
+   * Optional override for the BrowserOS dir used by Hermes per-agent
+   * provider config writes. Defaults to the global `getBrowserosDir()`
+   * lookup at write time when undefined; tests can inject a tmp dir.
+   */
+  private readonly browserosDir: string | undefined
+  /**
    * Lazy-initialised so tests that swap in a fake `agentStore` don't
    * eagerly hit `getDb()` (which throws when the test harness hasn't
    * called `initializeDb`). Tests that exercise file attribution can
@@ -195,6 +203,7 @@ export class AgentHarnessService {
       agentStore?: AgentStore
       runtime?: AgentRuntime
       browserosServerPort?: number
+      browserosDir?: string
       openclawGateway?: OpenclawGatewayAccessor
       openclawGatewayChat?: OpenClawGatewayChatClient
       openclawProvisioner?: OpenClawProvisioner
@@ -216,6 +225,7 @@ export class AgentHarnessService {
     this.openclawProvisioner = deps.openclawProvisioner ?? null
     this.turnRegistry = deps.turnRegistry ?? new TurnRegistry()
     this.messageQueue = deps.messageQueue ?? new FileMessageQueue()
+    this.browserosDir = deps.browserosDir
     if (deps.producedFilesStore) {
       this.explicitProducedFilesStore = deps.producedFilesStore
     }
@@ -478,6 +488,15 @@ export class AgentHarnessService {
   async createAgent(input: CreateAgentInput): Promise<AgentDefinition> {
     const agent = await this.agentStore.create(input)
 
+    // Hermes adapter: write the per-agent provider config (config.yaml +
+    // .env) into the on-host home dir BEFORE the first chat. Skipped
+    // silently when providerType / apiKey are absent — the legacy
+    // seedHermesHomeFromGlobal path then takes over from ~/.hermes/.
+    if (agent.adapter === 'hermes') {
+      await this.maybeWriteHermesPerAgentProvider(agent.id, input)
+      return agent
+    }
+
     if (agent.adapter !== 'openclaw') {
       return agent
     }
@@ -515,6 +534,39 @@ export class AgentHarnessService {
         })
       })
       throw err
+    }
+  }
+
+  /**
+   * Write Hermes' per-agent config.yaml + .env into the on-host home
+   * dir when the create payload includes a known providerType + apiKey.
+   * Skipped silently otherwise — the legacy seedHermesHomeFromGlobal
+   * path still copies from `~/.hermes/` on first chat.
+   */
+  private async maybeWriteHermesPerAgentProvider(
+    agentId: string,
+    input: CreateAgentInput,
+  ): Promise<void> {
+    if (!input.apiKey || !input.providerType) return
+    const providerEntry = HERMES_SUPPORTED_PROVIDERS.find(
+      (p) => p.id === input.providerType,
+    )
+    if (!providerEntry) return
+    try {
+      await writeHermesPerAgentProvider({
+        browserosDir: this.browserosDir,
+        agentId,
+        providerId: providerEntry.id,
+        envVarName: providerEntry.envKey,
+        apiKey: input.apiKey.trim(),
+        modelId: input.modelId?.trim() || providerEntry.defaultModel,
+        baseUrl: input.baseUrl?.trim() || undefined,
+      })
+    } catch (err) {
+      logger.warn('Failed to write per-agent Hermes provider config', {
+        agentId,
+        error: err instanceof Error ? err.message : String(err),
+      })
     }
   }
 

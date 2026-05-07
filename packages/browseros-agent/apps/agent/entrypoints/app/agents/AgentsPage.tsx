@@ -31,6 +31,10 @@ import {
   toOpenClawListItem,
 } from './agents-page-utils'
 import { GatewayStatusBar } from './GatewayStatusBar'
+import {
+  getInitialHermesProviderFieldsValue,
+  type HermesProviderFieldsValue,
+} from './HermesProviderFields'
 import { NewAgentDialog } from './NewAgentDialog'
 import {
   ControlPlaneAlert,
@@ -106,6 +110,8 @@ export const AgentsPage: FC = () => {
   )
   const [harnessModelId, setHarnessModelId] = useState('')
   const [harnessReasoningEffort, setHarnessReasoningEffort] = useState('')
+  const [hermesProviderFields, setHermesProviderFields] =
+    useState<HermesProviderFieldsValue>(getInitialHermesProviderFieldsValue())
   const [showTerminal, setShowTerminal] = useState(false)
   const [cliAuthModalOpen, setCliAuthModalOpen] = useState(false)
   const [pageError, setPageError] = useState<string | null>(null)
@@ -228,6 +234,7 @@ export const AgentsPage: FC = () => {
       createRuntime,
       harnessModelId,
       harnessReasoningEffort,
+      hermesProviderFields,
       navigate,
       newName,
       selectableOpenClawProviders,
@@ -386,6 +393,7 @@ export const AgentsPage: FC = () => {
           harnessAdapterId={harnessAdapterId}
           harnessModelId={harnessModelId}
           harnessReasoningEffort={harnessReasoningEffort}
+          hermesProviderFields={hermesProviderFields}
           name={newName}
           open={createOpen}
           providers={selectableOpenClawProviders}
@@ -401,12 +409,14 @@ export const AgentsPage: FC = () => {
             if (!open) {
               setCreateError(null)
               createHarnessAgent.reset()
+              setHermesProviderFields(getInitialHermesProviderFieldsValue())
             }
           }}
           onRuntimeChange={setCreateRuntime}
           onHarnessAdapterChange={handleHarnessAdapterChange}
           onHarnessModelChange={setHarnessModelId}
           onHarnessReasoningChange={setHarnessReasoningEffort}
+          onHermesProviderFieldsChange={setHermesProviderFields}
           onNameChange={setNewName}
           onProviderChange={setCreateProviderId}
         />
