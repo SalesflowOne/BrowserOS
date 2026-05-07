@@ -53,14 +53,14 @@ describe('sanitizeMessagesForToolset', () => {
     'take_snapshot',
     'filesystem_read',
     'filesystem_write',
-    'memory_search',
+    'search_history',
   ])
 
   const noFilesystemTools = new Set([
     'navigate_page',
     'click',
     'take_snapshot',
-    'memory_search',
+    'search_history',
   ])
 
   it('preserves messages with no tool parts', () => {

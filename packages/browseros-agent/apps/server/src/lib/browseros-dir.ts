@@ -23,20 +23,8 @@ export function logDevelopmentBrowserosDir(): void {
   logger.info(`Using development BrowserOS directory: ${getBrowserosDir()}`)
 }
 
-export function getMemoryDir(): string {
-  return join(getBrowserosDir(), PATHS.MEMORY_DIR_NAME)
-}
-
 export function getSessionsDir(): string {
   return join(getBrowserosDir(), PATHS.SESSIONS_DIR_NAME)
-}
-
-export function getSoulPath(): string {
-  return join(getBrowserosDir(), PATHS.SOUL_FILE_NAME)
-}
-
-export function getCoreMemoryPath(): string {
-  return join(getMemoryDir(), PATHS.CORE_MEMORY_FILE_NAME)
 }
 
 export function getSkillsDir(): string {
@@ -112,7 +100,6 @@ export function removeServerConfigSync(): void {
 
 export async function ensureBrowserosDir(): Promise<void> {
   logDevelopmentBrowserosDir()
-  await mkdir(getMemoryDir(), { recursive: true })
   await mkdir(getSkillsDir(), { recursive: true })
   await mkdir(getBuiltinSkillsDir(), { recursive: true })
   await mkdir(getSessionsDir(), { recursive: true })

@@ -23,12 +23,13 @@ Activate when the user asks to monitor a page for changes, watch for price drops
 2. **Capture the baseline.** Navigate to the page and extract the current state:
    - Use `navigate_page` to load the target URL
    - Use `get_page_content` or `evaluate_script` to extract the specific content to track
-   - Save the baseline to memory using `memory_write` with a descriptive key like `monitor:{url-slug}:baseline`
+   - If a workspace is available, save the baseline to a file with a descriptive name like `monitor-{url-slug}-baseline.md`
+   - If no workspace is available, return the baseline in chat so the user can provide it on the next check
 
 3. **Check for changes.** On subsequent checks:
    - Navigate to the same URL
    - Extract the same content using the same method
-   - Compare against the saved baseline
+   - Compare against the saved or user-provided baseline
    - Report differences
 
 4. **Report findings:**
@@ -52,7 +53,7 @@ Last checked: [current date/time]
 Monitoring: [what you're tracking]
 ```
 
-5. **Update the baseline** after reporting changes, using `memory_write` to store the new state.
+5. **Update the baseline** after reporting changes. Save the new baseline to the workspace when available, otherwise include it in the response.
 
 ## Tips
 

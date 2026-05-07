@@ -66,14 +66,6 @@ const VERB_OVERRIDES: Record<string, string> = {
   write_file: 'Wrote file',
   find_files: 'Searched files',
 
-  // Memory
-  read_soul: 'Read soul memory',
-  read_core: 'Read core memory',
-  write_memory: 'Wrote memory',
-  search_memory: 'Searched memory',
-  update_soul: 'Updated soul memory',
-  update_core: 'Updated core memory',
-
   // Web
   web_search: 'Searched the web',
   web_fetch: 'Fetched URL',
@@ -180,7 +172,6 @@ const SUBJECT_EXTRACTORS: Record<string, SubjectExtractor> = {
   web_search: (i) => quote(stringField(i, 'query', 'q')),
   search_history: (i) => quote(stringField(i, 'query', 'text')),
   search_bookmarks: (i) => quote(stringField(i, 'query', 'text')),
-  search_memory: (i) => quote(stringField(i, 'query', 'q')),
   search_dom: (i) => quote(stringField(i, 'query', 'selector')),
   search_documentation: (i) => quote(stringField(i, 'query', 'q')),
   find_files: (i) => quote(stringField(i, 'pattern', 'query')),
@@ -253,11 +244,6 @@ const SUBJECT_EXTRACTORS: Record<string, SubjectExtractor> = {
   read_file: (i) => basename(stringField(i, 'path')),
   write_file: (i) => basename(stringField(i, 'path')),
 
-  // Memory writes — show first chars of content
-  write_memory: (i) => truncate(stringField(i, 'content', 'text'), 40),
-  update_soul: (i) => truncate(stringField(i, 'content'), 40),
-  update_core: (i) => truncate(stringField(i, 'content'), 40),
-
   // Bookmarks
   create_bookmark: (i) => stringField(i, 'title') ?? formatUrl(i.url),
   remove_bookmark: (i) => stringField(i, 'id', 'title'),
@@ -292,12 +278,9 @@ function canonicalName(rawName: string): string {
 function humanizeToolName(rawName: string): string {
   const stripped = canonicalName(rawName)
   const words = stripped.split(/[_-]/).filter((w) => w.length > 0)
-  if (words.length === 0) return rawName
-  const first = words[0]!
-  return [
-    first.charAt(0).toUpperCase() + first.slice(1),
-    ...words.slice(1),
-  ].join(' ')
+  const [first, ...rest] = words
+  if (!first) return rawName
+  return [first.charAt(0).toUpperCase() + first.slice(1), ...rest].join(' ')
 }
 
 /**

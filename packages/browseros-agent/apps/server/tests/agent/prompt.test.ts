@@ -12,7 +12,7 @@
  *
  * The tests are organized by concern:
  *
- * 1. SECTION PRESENCE — Ensures all 14 v6 sections exist in the output.
+ * 1. SECTION PRESENCE — Ensures all v6 sections exist in the output.
  *    If a section disappears, the agent loses an entire category of guidance.
  *
  * 2. WORKSPACE GATING — The most critical behavioral gate. Filesystem tools
@@ -35,8 +35,7 @@
  *    unconnected) is battle-tested but fragile. Tests verify the dynamic app
  *    lists render correctly.
  *
- * 7. MEMORY & IDENTITY — Conditional on mode. Must appear in regular mode,
- *    must be absent in chat mode. Soul bootstrap is a separate conditional.
+ * 7. MEMORY & SOUL UNSHIPPED — Must remain absent from prompt guidance.
  *
  * 8. SECTION EXCLUSION — The exclude mechanism lets ai-sdk-agent.ts remove
  *    sections at runtime (e.g., nudges for scheduled tasks). Tests verify
@@ -67,7 +66,6 @@ import {
 function buildRegular(overrides?: Partial<BuildSystemPromptOptions>): string {
   return buildSystemPrompt({
     workspaceDir: '/home/user/workspace',
-    soulContent: 'Be helpful and concise.',
     ...overrides,
   })
 }
@@ -76,7 +74,6 @@ function buildRegular(overrides?: Partial<BuildSystemPromptOptions>): string {
 function buildChatMode(overrides?: Partial<BuildSystemPromptOptions>): string {
   return buildSystemPrompt({
     chatMode: true,
-    soulContent: 'Be helpful and concise.',
     ...overrides,
   })
 }
@@ -102,7 +99,7 @@ function buildScheduled(overrides?: Partial<BuildSystemPromptOptions>): string {
 // ---------------------------------------------------------------------------
 
 describe('section presence', () => {
-  it('includes all 14 v6 sections in regular mode', () => {
+  it('includes all v6 sections in regular mode', () => {
     const prompt = buildRegular()
 
     // Each section has a unique XML tag or heading that identifies it
@@ -114,7 +111,6 @@ describe('section presence', () => {
       '<tool_selection>', // tool-selection
       '<external_integrations>', // external-integrations
       '<error_recovery>', // error-recovery
-      '<memory_and_identity>', // memory-and-identity
       '<workspace>', // workspace
       '<nudge_tools>', // nudges
       '<style_rules>', // style
@@ -285,8 +281,8 @@ describe('mode-aware framing', () => {
   })
 
   it('chat mode excludes memory-and-identity section', () => {
-    // Why: chat mode is read-only — no memory writes, no soul updates.
-    // The agent shouldn't even see memory tool instructions.
+    // Why: product-level Memory/Soul is unshipped, so chat mode should not
+    // see any leftover section or tool guidance either.
     const prompt = buildChatMode()
     expect(prompt).not.toContain('<memory_and_identity>')
     expect(prompt).not.toContain('memory_update_core')
@@ -666,141 +662,20 @@ describe('external integrations', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 8. MEMORY & IDENTITY
+// 8. MEMORY & SOUL UNSHIPPED
 //
-// Why: Soul (personality) and memory (facts) were separate v5 sections
-// with no indication they're related systems. v6 merges them into a
-// coherent section. The section is conditional:
-//
-// - Regular mode: full section with soul + memory
-// - Chat mode: omitted entirely (read-only, no writes)
-// - Soul bootstrap: adds first-meeting instructions
+// Why: the product-level Memory/Soul feature is unshipped. The regular
+// agent prompt must not advertise unavailable tools, files, or behavior.
 // ---------------------------------------------------------------------------
 
-describe('memory and identity', () => {
-  it('includes soul content when provided', () => {
-    const prompt = buildRegular({ soulContent: 'Be direct and concise.' })
-    expect(prompt).toContain('Be direct and concise.')
-    expect(prompt).toContain('### Your Personality (SOUL.md)')
-  })
-
-  it('includes memory tool instructions', () => {
+describe('memory and soul unshipped', () => {
+  it('omits memory and soul guidance from regular prompts', () => {
     const prompt = buildRegular()
-    expect(prompt).toContain('memory_search')
-    expect(prompt).toContain('memory_write')
-    expect(prompt).toContain('memory_update_core')
-    expect(prompt).toContain('memory_read_core')
-  })
-
-  it('discourages use of deprecated memory_save_core', () => {
-    // Why: memory_save_core overwrites the entire file and risks data loss.
-    // The prompt must steer the agent to memory_update_core instead.
-    const prompt = buildRegular()
-    expect(prompt).toContain('Do NOT use `memory_save_core`')
-    expect(prompt).toContain('deprecated')
-  })
-
-  it('explains memory_update_core merge-based API', () => {
-    // Why: The agent must understand that memory_update_core handles merging
-    // internally via additions/removals — it should never rewrite the full file.
-    const prompt = buildRegular()
-    expect(prompt).toContain('additions')
-    expect(prompt).toContain('removals')
-    expect(prompt).toContain('handles merging internally')
-  })
-
-  it('explains two-tier memory model with core and daily distinction', () => {
-    // Why: The agent must understand when to use core vs daily memory.
-    // Without clear tier distinction, the agent may store transient info
-    // in core (bloating it) or permanent facts in daily (losing them after 30 days).
-    const prompt = buildRegular()
-    expect(prompt).toContain('Core memory')
-    expect(prompt).toContain('CORE.md')
-    expect(prompt).toContain('permanent facts')
-    expect(prompt).toContain('Daily memory')
-    expect(prompt).toContain('YYYY-MM-DD.md')
-    expect(prompt).toContain('Auto-expire after 30 days')
-  })
-
-  it('documents memory_write appends timestamped entries', () => {
-    // Why: The agent should know daily entries are timestamped and appended,
-    // not overwritten, so it doesn't repeat context already saved today.
-    const prompt = buildRegular()
-    expect(prompt).toContain('append a timestamped entry')
-    expect(prompt).toContain('HH:MM')
-  })
-
-  it('documents memory_search fuzzy matching and SOUL.md exclusion', () => {
-    // Why: The agent must know that memory_search uses fuzzy matching
-    // (pass multiple keywords for better results) and does NOT search
-    // SOUL.md — otherwise it may expect personality info from a memory search.
-    const prompt = buildRegular()
-    expect(prompt).toContain('fuzzy-search core + daily')
-    expect(prompt).toContain('multiple keywords')
-    expect(prompt).toContain('does NOT search SOUL.md')
-    expect(prompt).toContain('soul_read')
-  })
-
-  it('documents soul_update max line limit', () => {
-    // Why: soul_update overwrites SOUL.md and truncates beyond 150 lines.
-    // The agent needs to know this to avoid silently losing personality rules.
-    const prompt = buildRegular()
-    expect(prompt).toContain('max 150 lines')
-  })
-
-  it('includes when-to-use-which decision rules', () => {
-    // Why: Concrete decision rules prevent the agent from guessing
-    // which tier to use. Without these, transient info ends up in core
-    // and permanent facts end up in daily (lost after 30 days).
-    const prompt = buildRegular()
-    expect(prompt).toContain('fact about themselves')
-    expect(prompt).toContain('core memory')
-    expect(prompt).toContain('situational')
-    expect(prompt).toContain('daily memory')
-    expect(prompt).toContain('promote it to core')
-  })
-
-  it('includes soul evolution instructions', () => {
-    const prompt = buildRegular({ soulContent: 'Be helpful.' })
-    expect(prompt).toContain('soul_update')
-    expect(prompt).toContain('soul_read')
-    expect(prompt).toContain('SOUL.md is NOT for storing facts about the user')
-  })
-
-  it('includes soul tool instructions even when soulContent is empty', () => {
-    // Why: When SOUL.md doesn't exist yet (new user, file not created),
-    // soulContent is an empty string. The agent still needs to know about
-    // soul_update and soul_read so it can create the initial personality.
-    // Without this, the agent has zero knowledge of the soul system.
-    const prompt = buildRegular({ soulContent: '' })
-    expect(prompt).toContain('soul_update')
-    expect(prompt).toContain('soul_read')
-    expect(prompt).toContain('SOUL.md defines')
-    expect(prompt).toContain('SOUL.md is NOT for storing facts about the user')
-  })
-
-  it('includes soul bootstrap when flag is set', () => {
-    const prompt = buildRegular({
-      soulContent: 'Template content.',
-      isSoulBootstrap: true,
-    })
-    expect(prompt).toContain('<soul_bootstrap>')
-    expect(prompt).toContain('first time meeting this user')
-  })
-
-  it('omits soul bootstrap when flag is not set', () => {
-    const prompt = buildRegular({
-      soulContent: 'Personalized content.',
-      isSoulBootstrap: false,
-    })
-    expect(prompt).not.toContain('<soul_bootstrap>')
-  })
-
-  it('is fully omitted in chat mode', () => {
-    const prompt = buildChatMode()
     expect(prompt).not.toContain('<memory_and_identity>')
     expect(prompt).not.toContain('memory_search')
     expect(prompt).not.toContain('soul_update')
+    expect(prompt).not.toContain('SOUL.md')
+    expect(prompt).not.toContain('CORE.md')
   })
 })
 
@@ -953,9 +828,9 @@ describe('style and tool call patterns', () => {
 // 12. ERROR RECOVERY
 //
 // Why: v5 only covered "element not found" and "click failed." v6 adds
-// recovery patterns for JavaScript errors, Strata failures, filesystem
-// errors, and memory errors. Without these, the agent either loops on
-// failures or escalates to the user for every error type.
+// recovery patterns for JavaScript errors, Strata failures, and filesystem
+// errors. Without these, the agent either loops on failures or escalates to
+// the user for every error type.
 // ---------------------------------------------------------------------------
 
 describe('error recovery', () => {
@@ -983,10 +858,10 @@ describe('error recovery', () => {
     expect(prompt).toContain('Partial failure')
   })
 
-  it('includes memory error patterns in regular mode', () => {
+  it('omits unshipped memory error patterns in regular mode', () => {
     const prompt = buildRegular()
-    expect(prompt).toContain('### Memory errors')
-    expect(prompt).toContain('proceed without memory context')
+    expect(prompt).not.toContain('### Memory errors')
+    expect(prompt).not.toContain('memory_search')
   })
 })
 
@@ -1212,7 +1087,6 @@ describe('new-tab origin', () => {
   function buildNewTab(overrides?: Partial<BuildSystemPromptOptions>): string {
     return buildSystemPrompt({
       workspaceDir: '/home/user/workspace',
-      soulContent: 'Be helpful and concise.',
       origin: 'newtab',
       ...overrides,
     })

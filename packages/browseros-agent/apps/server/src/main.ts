@@ -34,7 +34,6 @@ import { logger } from './lib/logger'
 import { metrics } from './lib/metrics'
 import { isPortInUseError } from './lib/port-binding'
 import { Sentry } from './lib/sentry'
-import { seedSoulTemplate } from './lib/soul'
 import { migrateBuiltinSkills } from './skills/migrate'
 import {
   startSkillSync,
@@ -176,7 +175,6 @@ export class Application {
     this.configureLogDirectory()
     await ensureBrowserosDir()
     await cleanOldSessions()
-    await seedSoulTemplate()
     await migrateBuiltinSkills()
     await syncBuiltinSkills()
 

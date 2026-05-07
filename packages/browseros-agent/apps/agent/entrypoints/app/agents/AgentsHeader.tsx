@@ -7,11 +7,10 @@ interface AgentsHeaderProps {
 }
 
 /**
- * Mirrors the visual shape of `SoulHeader` and `ScheduledTasksHeader`
- * so the page reads as part of the same family. Loose lifecycle
- * controls that used to sit next to the title moved into
- * `GatewayStatusBar` — they're OpenClaw-specific and don't apply to
- * Claude/Codex agents.
+ * Mirrors the visual shape of `ScheduledTasksHeader` so the page reads as
+ * part of the same family. Loose lifecycle controls that used to sit next to
+ * the title moved into `GatewayStatusBar` — they're OpenClaw-specific and
+ * don't apply to Claude/Codex agents.
  */
 export const AgentsHeader: FC<AgentsHeaderProps> = ({ onCreateAgent }) => {
   return (
