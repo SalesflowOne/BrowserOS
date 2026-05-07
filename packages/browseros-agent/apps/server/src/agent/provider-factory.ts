@@ -11,13 +11,47 @@ import { createAcpxProvider } from 'acpx-ai-provider'
 import type { LanguageModel } from 'ai'
 import { createBrowserOSFetch } from '../lib/browseros-fetch'
 import { getBrowserOSMcpUrl } from '../lib/clients/acp/mcp-url'
-import { getSharedAcpRuntime } from '../lib/clients/acp/runtime-singleton'
 import { ensureAcpScratchDir } from '../lib/clients/acp/workspace'
 import { createCodexFetch } from '../lib/clients/oauth/codex-fetch'
 import { createCopilotFetch } from '../lib/clients/oauth/copilot-fetch'
 import { logger } from '../lib/logger'
 import { createOpenRouterCompatibleFetch } from '../lib/openrouter-fetch'
 import type { ResolvedAgentConfig } from './types'
+
+/**
+ * Per-agent flag injection for `approve-all` mode.
+ *
+ * Some agents (codex notably) have an INTERNAL sandbox layer that is
+ * separate from the ACP permission flow. With default flags codex-acp
+ * runs codex in `read_only` sandbox + `on_request` approval policy —
+ * meaning a write attempt is blocked at the codex layer BEFORE it ever
+ * hits acpx's permission resolver. The user sees the tool start
+ * (`tool-input-start`) and immediately get cancelled, with no
+ * permission prompt and no error message.
+ *
+ * When the user explicitly picks `approve-all` we relax codex's
+ * internal gates so writes actually go through. Other modes keep
+ * codex's default sandbox so the user gets the conservative behavior
+ * they asked for.
+ *
+ * Shape mirrors acpx's default `AGENT_REGISTRY` entries (the prefix
+ * comes from acpx; we only append the `-c` config overrides).
+ */
+function buildAgentRegistryOverrides(
+  agentId: string,
+  permissionMode: 'approve-all' | 'approve-reads' | 'deny-all',
+): Record<string, string> | undefined {
+  if (permissionMode !== 'approve-all') return undefined
+  if (agentId === 'codex') {
+    return {
+      codex:
+        'npx @zed-industries/codex-acp@^0.12.0' +
+        ' -c approval_policy="never"' +
+        ' -c sandbox_mode="workspace-write"',
+    }
+  }
+  return undefined
+}
 
 type ProviderFactory = (
   config: ResolvedAgentConfig,
@@ -226,11 +260,12 @@ function createAcpFactory(
   // workspace switches inside a chat correctly fork sessions and
   // separate conversations don't bleed context.
   const sessionKey = `browseros::${config.acpAgentId}::${cwd}::${config.conversationId}`
+  const permissionMode = config.acpPermissionMode ?? 'approve-reads'
   const provider = createAcpxProvider({
     agent: config.acpAgentId,
     cwd,
     sessionKey,
-    permissionMode: config.acpPermissionMode ?? 'approve-reads',
+    permissionMode,
     nonInteractivePermissions: 'deny',
     mcpServers: [
       // ACP agents discover the BrowserOS browser-tool surface via
@@ -244,7 +279,16 @@ function createAcpFactory(
         url: getBrowserOSMcpUrl(),
       },
     ],
-    runtime: getSharedAcpRuntime(),
+    // Build a fresh runtime per conversation so the agent-registry
+    // overrides above actually apply. acpx-ai-provider's
+    // `agentRegistryOverrides` is consumed during runtime
+    // construction; passing a pre-built runtime would silently ignore
+    // it. Trade-off: each conversation pays one runtime construction
+    // cost (sub-second; no child processes spawned until first turn).
+    agentRegistryOverrides: buildAgentRegistryOverrides(
+      config.acpAgentId,
+      permissionMode,
+    ),
   })
   // ACP agents pick the model inside their own CLI; the modelId
   // argument is ignored. Wrap so the dispatch table's
