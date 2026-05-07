@@ -10,8 +10,6 @@ import { OnboardingDemo } from '../onboarding/demo/OnboardingDemo'
 import { FeaturesPage } from '../onboarding/features/Features'
 import { Onboarding } from '../onboarding/index/Onboarding'
 import { StepsLayout } from '../onboarding/steps/StepsLayout'
-import { AclSettingsPage } from './acl-settings/AclSettingsPage'
-import { AdminDashboardPage } from './admin-dashboard/AdminDashboardPage'
 import { AgentCommandConversation } from './agent-command/AgentCommandConversation'
 import { AgentCommandHome } from './agent-command/AgentCommandHome'
 import { AgentCommandLayout } from './agent-command/agent-command-layout'
@@ -34,7 +32,6 @@ import { ScheduledTasksPage } from './scheduled-tasks/ScheduledTasksPage'
 import { SearchProviderPage } from './search-provider/SearchProviderPage'
 import { SkillsPage } from './skills/SkillsPage'
 import { SoulPage } from './soul/SoulPage'
-import { ToolApprovalsPage } from './tool-approvals/ToolApprovalsPage'
 import { UsagePage } from './usage/UsagePage'
 
 function getSurveyParams(): { maxTurns?: number; experimentId?: string } {
@@ -130,9 +127,6 @@ export const App: FC = () => {
               </Route>
             </>
           ) : null}
-          {alphaEnabled ? (
-            <Route path="admin" element={<AdminDashboardPage />} />
-          ) : null}
         </Route>
 
         {/* Settings with dedicated sidebar */}
@@ -146,12 +140,6 @@ export const App: FC = () => {
             <Route path="search" element={<SearchProviderPage />} />
             <Route path="survey" element={<SurveyPage {...surveyParams} />} />
             <Route path="usage" element={<UsagePage />} />
-            {alphaEnabled ? (
-              <>
-                <Route path="acl" element={<AclSettingsPage />} />
-                <Route path="approvals" element={<ToolApprovalsPage />} />
-              </>
-            ) : null}
           </Route>
         </Route>
 
@@ -186,18 +174,12 @@ export const App: FC = () => {
           path="/settings/skills"
           element={<Navigate to="/home/skills" replace />}
         />
-        <Route
-          path="/audit"
-          element={<Navigate to={alphaEnabled ? '/admin' : '/home'} replace />}
-        />
+        <Route path="/audit" element={<Navigate to="/home" replace />} />
         <Route
           path="/observability"
-          element={<Navigate to={alphaEnabled ? '/admin' : '/home'} replace />}
+          element={<Navigate to="/home" replace />}
         />
-        <Route
-          path="/executions"
-          element={<Navigate to={alphaEnabled ? '/admin' : '/home'} replace />}
-        />
+        <Route path="/executions" element={<Navigate to="/home" replace />} />
         <Route path="/options/*" element={<OptionsRedirect />} />
 
         {/* Fallback to home */}

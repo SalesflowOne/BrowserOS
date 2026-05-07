@@ -12,8 +12,6 @@ import { metrics } from '../../lib/metrics'
 import { Sentry } from '../../lib/sentry'
 import { getMonitoringService } from '../../monitoring/service'
 import type { ToolRegistry } from '../../tools/tool-registry'
-import type { GlobalAclPolicyService } from '../services/acl/global-acl-policy'
-import { resolveAclPolicyForMcpRequest } from '../services/acl/resolve-acl-policy'
 import type { KlavisProxyRef } from '../services/klavis/strata-proxy'
 import { createMcpServer } from '../services/mcp/mcp-server'
 import type { Env } from '../types'
@@ -24,7 +22,6 @@ interface McpRouteDeps {
   browser: Browser
   executionDir: string
   resourcesDir: string
-  policyService: GlobalAclPolicyService
   klavisRef?: KlavisProxyRef
 }
 
@@ -49,9 +46,6 @@ export function createMcpRoutes(deps: McpRouteDeps) {
       monitoringService.resolveSessionForMcpRequest(explicitAgentId)
     const agentId = activeSession?.agentId
     metrics.log('mcp.request', { scopeId })
-    const aclRules = await resolveAclPolicyForMcpRequest({
-      policyService: deps.policyService,
-    })
     const monitoringSessionId = activeSession?.monitoringSessionId
     const observer =
       monitoringSessionId && agentId
@@ -62,7 +56,6 @@ export function createMcpRoutes(deps: McpRouteDeps) {
     // no ID collisions. Required by MCP SDK 1.26.0+ security fix (GHSA-345p-7cg4-v4c7).
     const mcpServer = createMcpServer({
       ...deps,
-      aclRules,
       observer,
     })
     const transport = new StreamableHTTPTransport({

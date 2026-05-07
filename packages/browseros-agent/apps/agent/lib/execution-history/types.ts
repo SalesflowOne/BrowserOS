@@ -8,17 +8,9 @@ export type ExecutionTaskStatus =
 export type ExecutionStepState =
   | 'input-streaming'
   | 'input-available'
-  | 'approval-requested'
-  | 'approval-responded'
   | 'output-available'
   | 'output-error'
   | 'output-denied'
-
-export interface ExecutionStepApproval {
-  id: string
-  approved?: boolean
-  reason?: string
-}
 
 export interface ExecutionStepRecord {
   id: string
@@ -31,7 +23,6 @@ export interface ExecutionStepRecord {
   output?: unknown
   errorText?: string
   previewText: string
-  approval?: ExecutionStepApproval
 }
 
 export interface ExecutionTaskRecord {
@@ -46,7 +37,6 @@ export interface ExecutionTaskRecord {
   responseText?: string
   responsePreview?: string
   actionCount: number
-  approvalCount: number
   deniedCount: number
   errorCount: number
   steps: ExecutionStepRecord[]

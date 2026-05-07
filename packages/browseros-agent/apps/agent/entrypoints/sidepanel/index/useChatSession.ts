@@ -5,7 +5,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import useDeepCompareEffect from 'use-deep-compare-effect'
 import type { Provider } from '@/components/chat/chatComponentTypes'
-import { aclRulesStorage } from '@/lib/acl/storage'
 import { Capabilities, Feature } from '@/lib/browseros/capabilities'
 import { useAgentServerUrl } from '@/lib/browseros/useBrowserOSProviders'
 import type { ChatAction } from '@/lib/chat-actions/types'
@@ -26,28 +25,12 @@ import { useInvalidateCredits } from '@/lib/credits/useCredits'
 import { declinedAppsStorage } from '@/lib/declined-apps/storage'
 import { useGraphqlQuery } from '@/lib/graphql/useGraphqlQuery'
 import { createDefaultBrowserOSProvider } from '@/lib/llm-providers/storage'
-import type {
-  ApprovalResponseData,
-  ChatRequestBrowserContext,
-} from '@/lib/messaging/server/buildChatRequestBody'
+import type { ChatRequestBrowserContext } from '@/lib/messaging/server/buildChatRequestBody'
 import { track } from '@/lib/metrics/track'
 import { searchActionsStorage } from '@/lib/search-actions/searchActionsStorage'
 import { selectedTextStorage } from '@/lib/selected-text/selectedTextStorage'
 import { sentry } from '@/lib/sentry/sentry'
 import { stopAgentStorage } from '@/lib/stop-agent/stop-agent-storage'
-import {
-  type ApprovalResponse,
-  approvalResponsesStorage,
-  extractPendingApprovals,
-  pendingToolApprovalsStorage,
-  removeApprovalResponsesById,
-  removePendingApprovalsById,
-  replacePendingApprovalsForConversation,
-} from '@/lib/tool-approvals/approval-sync-storage'
-import {
-  normalizeToolApprovalConfig,
-  toolApprovalConfigStorage,
-} from '@/lib/tool-approvals/storage'
 import { selectedWorkspaceStorage } from '@/lib/workspace/workspace-storage'
 import type { ChatMode } from './chatTypes'
 import { GetConversationWithMessagesDocument } from './graphql/chatSessionDocument'
@@ -60,29 +43,6 @@ import {
 import { useExecutionHistoryTracker } from './useExecutionHistoryTracker'
 import { useNotifyActiveTab } from './useNotifyActiveTab'
 import { useRemoteConversationSave } from './useRemoteConversationSave'
-
-const extractApprovalResponses = (
-  messages: UIMessage[],
-): ApprovalResponseData[] | null => {
-  const lastMsg = messages[messages.length - 1]
-  if (lastMsg?.role !== 'assistant') return null
-
-  const approvals: ApprovalResponseData[] = []
-  for (const part of lastMsg.parts) {
-    const p = part as {
-      state?: string
-      approval?: { id: string; approved?: boolean; reason?: string }
-    }
-    if (p.state === 'approval-responded' && p.approval?.approved != null) {
-      approvals.push({
-        approvalId: p.approval.id,
-        approved: p.approval.approved,
-        reason: p.approval.reason,
-      })
-    }
-  }
-  return approvals.length > 0 ? approvals : null
-}
 
 const getLastMessageText = (messages: UIMessage[]) => {
   const lastMessage = messages[messages.length - 1]
@@ -280,7 +240,6 @@ export const useChatSession = (options?: ChatSessionOptions) => {
   }
 
   const modeRef = useRef<ChatMode>(mode)
-  const approvalJustRespondedRef = useRef(false)
   const textToActionRef = useRef<Map<string, ChatAction>>(textToAction)
   const workingDirRef = useRef<string | undefined>(undefined)
   const selectionMapRef = useRef<
@@ -338,7 +297,6 @@ export const useChatSession = (options?: ChatSessionOptions) => {
     status,
     stop,
     error: chatError,
-    addToolApprovalResponse,
   } = useChat({
     transport: new DefaultChatTransport({
       prepareSendMessagesRequest: async ({ messages }) => {
@@ -366,11 +324,6 @@ export const useChatSession = (options?: ChatSessionOptions) => {
         })
 
         const declinedApps = await declinedAppsStorage.getValue()
-        const allAclRules = await aclRulesStorage.getValue()
-        const enabledAclRules = allAclRules.filter((r) => r.enabled)
-        const approvalConfig = normalizeToolApprovalConfig(
-          await toolApprovalConfigStorage.getValue(),
-        )
 
         const supportsArrayConversation = await Capabilities.supports(
           Feature.PREVIOUS_CONVERSATION_ARRAY,
@@ -400,20 +353,6 @@ export const useChatSession = (options?: ChatSessionOptions) => {
           userWorkingDir: workingDirRef.current,
           previousConversation,
           declinedApps,
-          aclRules: enabledAclRules,
-          toolApprovalConfig: approvalConfig,
-        }
-
-        const approvalResponses =
-          target?.kind === 'acp' ? null : extractApprovalResponses(messages)
-        if (approvalResponses) {
-          return buildSidepanelPreparedSendMessagesRequest({
-            agentServerUrl: agentUrlRef.current ?? undefined,
-            target,
-            fallbackProvider,
-            ...commonRequest,
-            approvalResponses,
-          })
         }
 
         const message = getLastMessageText(messages)
@@ -440,13 +379,7 @@ export const useChatSession = (options?: ChatSessionOptions) => {
         return result
       },
     }),
-    sendAutomaticallyWhen: () => {
-      if (approvalJustRespondedRef.current) {
-        approvalJustRespondedRef.current = false
-        return selectedChatTargetRef.current?.kind !== 'acp'
-      }
-      return false
-    },
+    sendAutomaticallyWhen: () => false,
     onFinish: async ({ message, isAbort, isError }) => {
       await finishExecutionTask({
         responseText: getLastMessageText([message]),
@@ -575,69 +508,6 @@ export const useChatSession = (options?: ChatSessionOptions) => {
     if (chatError) invalidateCredits()
   }, [chatError, invalidateCredits])
 
-  // Sync pending tool approvals to shared storage for the admin dashboard
-  useEffect(() => {
-    let isCancelled = false
-
-    const syncPendingApprovals = async () => {
-      const pending = extractPendingApprovals(
-        messages,
-        conversationIdRef.current,
-      )
-      const current = (await pendingToolApprovalsStorage.getValue()) ?? []
-      if (isCancelled) return
-
-      await pendingToolApprovalsStorage.setValue(
-        replacePendingApprovalsForConversation(
-          current,
-          conversationIdRef.current,
-          pending,
-        ),
-      )
-    }
-
-    syncPendingApprovals()
-
-    return () => {
-      isCancelled = true
-    }
-  }, [messages])
-
-  // Watch for approval responses from the admin dashboard
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only set up once
-  useEffect(() => {
-    const handleResponses = async (responses: ApprovalResponse[]) => {
-      if (!responses?.length) return
-      try {
-        for (const resp of responses) {
-          respondToToolApproval({
-            id: resp.approvalId,
-            approved: resp.approved,
-            reason: resp.reason,
-          })
-        }
-        const approvalIds = responses.map((resp) => resp.approvalId)
-        const currentResponses =
-          (await approvalResponsesStorage.getValue()) ?? []
-        const currentPending =
-          (await pendingToolApprovalsStorage.getValue()) ?? []
-
-        await approvalResponsesStorage.setValue(
-          removeApprovalResponsesById(currentResponses, approvalIds),
-        )
-        await pendingToolApprovalsStorage.setValue(
-          removePendingApprovalsById(currentPending, approvalIds),
-        )
-      } catch {
-        // Leave storage intact so the dashboard can retry
-      }
-    }
-
-    approvalResponsesStorage.getValue().then(handleResponses)
-    const unwatch = approvalResponsesStorage.watch(handleResponses)
-    return () => unwatch()
-  }, [])
-
   const isIntegrationsSynced = options?.isIntegrationsSynced ?? true
   const isIntegrationsSyncedRef = useRef(isIntegrationsSynced)
   const pendingMessageRef = useRef<{
@@ -736,15 +606,6 @@ export const useChatSession = (options?: ChatSessionOptions) => {
     return () => unwatch()
   }, [])
 
-  const respondToToolApproval = (params: {
-    id: string
-    approved: boolean
-    reason?: string
-  }) => {
-    approvalJustRespondedRef.current = true
-    addToolApprovalResponse(params)
-  }
-
   const resetConversationState = () => {
     stop()
     void finishExecutionTask({ isAbort: true })
@@ -834,6 +695,5 @@ export const useChatSession = (options?: ChatSessionOptions) => {
     disliked,
     onClickDislike,
     conversationId,
-    addToolApprovalResponse: respondToToolApproval,
   }
 }

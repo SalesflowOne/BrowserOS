@@ -4,7 +4,6 @@ import {
   CircleDotDashed,
   Clock3,
   ShieldAlert,
-  ShieldCheck,
   XCircle,
 } from 'lucide-react'
 import { type FC, useState } from 'react'
@@ -27,8 +26,6 @@ const formatToolName = (name: string) =>
 const formatStateLabel = (state: ExecutionStepRecord['state']) => {
   if (state === 'input-streaming') return 'Preparing'
   if (state === 'input-available') return 'Running'
-  if (state === 'approval-requested') return 'Approval Needed'
-  if (state === 'approval-responded') return 'Approval Responded'
   if (state === 'output-available') return 'Completed'
   if (state === 'output-denied') return 'Denied'
   return 'Error'
@@ -39,16 +36,8 @@ const getStateIcon = (step: ExecutionStepRecord) => {
     return <CheckCircle2 className="h-4 w-4 text-green-500" />
   }
 
-  if (
-    step.state === 'input-streaming' ||
-    step.state === 'input-available' ||
-    step.state === 'approval-requested'
-  ) {
+  if (step.state === 'input-streaming' || step.state === 'input-available') {
     return <Clock3 className="h-4 w-4 text-[var(--accent-orange)]" />
-  }
-
-  if (step.state === 'approval-responded') {
-    return <ShieldCheck className="h-4 w-4 text-blue-500" />
   }
 
   if (step.state === 'output-denied') {
@@ -62,26 +51,14 @@ const getStateIcon = (step: ExecutionStepRecord) => {
   return <CircleDotDashed className="h-4 w-4 text-muted-foreground" />
 }
 
-const isAclBlocked = (step: ExecutionStepRecord) =>
-  Boolean(
-    step.errorText?.includes('Action blocked by ACL rule') ||
-      step.approval?.reason?.includes('Action blocked by ACL rule') ||
-      step.previewText === 'Blocked by ACL rule',
-  )
-
 const shouldShowPreview = (step: ExecutionStepRecord) =>
-  step.state === 'input-streaming' ||
-  step.state === 'input-available' ||
-  step.state === 'approval-requested' ||
-  step.state === 'approval-responded'
+  step.state === 'input-streaming' || step.state === 'input-available'
 
 export const ExecutionStepItem: FC<{
   step: ExecutionStepRecord
   defaultOpen?: boolean
 }> = ({ step, defaultOpen = false }) => {
   const [open, setOpen] = useState(defaultOpen)
-  const deniedReason =
-    step.state === 'output-denied' ? step.approval?.reason : undefined
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
@@ -100,9 +77,6 @@ export const ExecutionStepItem: FC<{
                 <Badge variant="secondary">
                   {formatStateLabel(step.state)}
                 </Badge>
-                {isAclBlocked(step) && (
-                  <Badge variant="outline">ACL Blocked</Badge>
-                )}
               </div>
               {shouldShowPreview(step) && (
                 <p className="mt-1 text-muted-foreground text-xs">
@@ -126,7 +100,7 @@ export const ExecutionStepItem: FC<{
                 Result
               </h4>
               <div className="rounded-md bg-orange-500/10 p-3 text-orange-700 text-sm dark:text-orange-300">
-                {deniedReason ?? 'The requested action was denied.'}
+                The requested action was denied.
               </div>
             </div>
           ) : (

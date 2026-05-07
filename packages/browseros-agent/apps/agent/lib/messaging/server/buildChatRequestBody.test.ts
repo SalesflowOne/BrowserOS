@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'bun:test'
 import type { LlmProviderConfig } from '@/lib/llm-providers/types'
-import type { ToolApprovalConfig } from '@/lib/tool-approvals/types'
 import { buildChatRequestBody } from './buildChatRequestBody'
 
 const provider: LlmProviderConfig = {
@@ -16,19 +15,7 @@ const provider: LlmProviderConfig = {
 }
 
 describe('buildChatRequestBody', () => {
-  it('preserves approval config and browser context on approval resumes', () => {
-    const toolApprovalConfig: ToolApprovalConfig = {
-      categories: {
-        input: true,
-        navigation: true,
-        observation: true,
-        screenshots: true,
-        scripts: true,
-        'data-modification': true,
-        assistant: true,
-      },
-    }
-
+  it('omits unshipped governance controls from chat requests', () => {
     const body = buildChatRequestBody({
       conversationId: '6ff46e3b-e45a-40a4-9157-ca520e800f43',
       provider,
@@ -43,16 +30,22 @@ describe('buildChatRequestBody', () => {
         enabledMcpServers: ['slack'],
       },
       userSystemPrompt: 'Stay in the current tab.',
-      toolApprovalConfig,
+      aclRules: [
+        {
+          id: 'checkout',
+          sitePattern: 'https://example.com/*',
+          enabled: true,
+        },
+      ],
+      toolApprovalConfig: { categories: { input: true } },
       toolApprovalResponses: [
         {
           approvalId: 'approval-1',
           approved: true,
         },
       ],
-    })
+    } as Parameters<typeof buildChatRequestBody>[0])
 
-    expect(body.toolApprovalConfig).toEqual(toolApprovalConfig)
     expect(body.browserContext).toEqual({
       windowId: 2,
       activeTab: {
@@ -62,23 +55,9 @@ describe('buildChatRequestBody', () => {
       },
       enabledMcpServers: ['slack'],
     })
-    expect(body.toolApprovalResponses).toEqual([
-      {
-        approvalId: 'approval-1',
-        approved: true,
-      },
-    ])
-  })
-
-  it('omits empty approval configs from requests', () => {
-    const body = buildChatRequestBody({
-      conversationId: '6ff46e3b-e45a-40a4-9157-ca520e800f43',
-      provider,
-      toolApprovalConfig: {
-        categories: {},
-      },
-    })
-
-    expect(body.toolApprovalConfig).toBeUndefined()
+    const bodyRecord = body as Record<string, unknown>
+    expect(bodyRecord.aclRules).toBeUndefined()
+    expect(bodyRecord.toolApprovalConfig).toBeUndefined()
+    expect(bodyRecord.toolApprovalResponses).toBeUndefined()
   })
 })

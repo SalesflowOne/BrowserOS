@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import type { AclRule } from '@browseros/shared/types/acl'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { SetLevelRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import type { Browser } from '../../../browser/browser'
@@ -23,7 +22,6 @@ export interface McpServiceDeps {
   browser: Browser
   executionDir: string
   resourcesDir: string
-  aclRules?: AclRule[]
   klavisRef?: KlavisProxyRef
   observer?: ToolExecutionObserver
 }
@@ -49,7 +47,6 @@ export function createMcpServer(deps: McpServiceDeps): McpServer {
       workingDir: deps.executionDir,
       resourcesDir: deps.resourcesDir,
     },
-    aclRules: deps.aclRules,
     observer: deps.observer,
   })
 

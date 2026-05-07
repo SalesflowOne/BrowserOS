@@ -30,7 +30,6 @@ function createTask(input: StartExecutionTaskInput): ExecutionTaskRecord {
     startedAt: new Date().toISOString(),
     status: 'running',
     actionCount: 0,
-    approvalCount: 0,
     deniedCount: 0,
     errorCount: 0,
     steps: [],
@@ -117,7 +116,6 @@ export function useExecutionHistoryTracker() {
         responsePreview:
           getResponsePreview(assistantMessage) || activeTask.responsePreview,
         actionCount: normalized.actionCount,
-        approvalCount: normalized.approvalCount,
         deniedCount: normalized.deniedCount,
         errorCount: normalized.errorCount,
         steps: normalized.steps,
