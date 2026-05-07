@@ -4,9 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import { copyFile, mkdir, stat } from 'node:fs/promises'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { mkdir } from 'node:fs/promises'
 
 import { HERMES_CONTAINER_HARNESS_DIR } from '@browseros/shared/constants/hermes'
 import {
@@ -21,33 +19,6 @@ import {
   finishBrowserosManagedContext,
   prepareBrowserosManagedContext,
 } from '../acpx-agent-common'
-
-const HERMES_GLOBAL_HOME = join(homedir(), '.hermes')
-// Files we copy from the user's global Hermes install into each per-agent
-// HERMES_HOME on first use. Hermes owns them thereafter; we only seed when
-// missing so a re-prepare won't clobber edits the agent has made.
-const HERMES_SEED_FILES = ['config.yaml', '.env', 'auth.json'] as const
-
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await stat(path)
-    return true
-  } catch {
-    return false
-  }
-}
-
-async function seedHermesHomeFromGlobal(agentHome: string): Promise<void> {
-  if (!(await pathExists(HERMES_GLOBAL_HOME))) return
-  await mkdir(agentHome, { recursive: true })
-  for (const file of HERMES_SEED_FILES) {
-    const src = join(HERMES_GLOBAL_HOME, file)
-    const dest = join(agentHome, file)
-    if (await pathExists(dest)) continue
-    if (!(await pathExists(src))) continue
-    await copyFile(src, dest)
-  }
-}
 
 /**
  * Translate a host-side hermes home path to its in-container equivalent.
@@ -73,11 +44,16 @@ function translateHermesHomeToContainerPath(
 }
 
 /**
- * Prepares Hermes with a per-agent HERMES_HOME. Host-side seeding writes
- * the user's global hermes config (config.yaml/.env/auth.json) into the
- * per-agent home under `<browserosDir>/vm/hermes/harness/<id>/home` so
- * the container can read them via the bind mount; HERMES_HOME inside the
- * container is the container-side path (`/data/agents/harness/<id>/home`).
+ * Prepares Hermes with a per-agent HERMES_HOME under
+ * `<browserosDir>/vm/hermes/harness/<id>/home`. The provider config
+ * (config.yaml + .env) was written into this directory at agent-create
+ * time by AgentHarnessService.writeHermesPerAgentProvider. There is no
+ * fallback to a global `~/.hermes/` install — Hermes agents always
+ * carry their own provider config.
+ *
+ * HERMES_HOME inside the container is the container-side path
+ * (`/data/agents/harness/<id>/home`) so Hermes resolves it correctly
+ * when the runtime spawns `hermes acp` via `nerdctl exec`.
  */
 export async function prepareHermesContext(
   input: PrepareAcpxAgentContextInput,
@@ -92,7 +68,6 @@ export async function prepareHermesContext(
     agentId: input.agent.id,
   })
   await mkdir(hermesAgentHome, { recursive: true })
-  await seedHermesHomeFromGlobal(hermesAgentHome)
 
   const hermesAgentHomeInContainer = translateHermesHomeToContainerPath(
     hermesAgentHome,

@@ -10,7 +10,6 @@ import type {
   CreateAgentRuntime,
   ProviderOption,
 } from './agents-page-types'
-import type { HermesProviderFieldsValue } from './HermesProviderFields'
 import { findOpenClawCliProviderById } from './openclaw-cli-providers'
 import type {
   AgentEntry,
@@ -21,12 +20,13 @@ import type {
 export interface AgentPageActionInput {
   createProviderId: string
   createRuntime: CreateAgentRuntime
+  createHermesProviderId: string
   harnessModelId: string
   harnessReasoningEffort: string
-  hermesProviderFields: HermesProviderFieldsValue
   navigate: NavigateFunction
   newName: string
   selectableOpenClawProviders: ProviderOption[]
+  selectableHermesProviders: ProviderOption[]
   setupProviderId: string
   createHarnessAgent: (input: {
     name: string
@@ -120,28 +120,16 @@ export function createAgentPageActions(input: AgentPageActionInput) {
     if (!input.newName.trim()) return
 
     const isHermes = input.createRuntime === 'hermes'
-    const hermesFields = input.hermesProviderFields
-    // For Hermes, replace the model dropdown's value with the inline
-    // form's modelId (the dropdown is empty for adapter=hermes since
-    // catalog has no models). When the user opted into the global-
-    // config fallback, omit provider/model/api fields entirely so the
-    // backend doesn't write per-agent config.yaml/.env.
-    const hermesProviderType =
-      isHermes && !hermesFields.useGlobalConfig
-        ? hermesFields.providerType
-        : undefined
-    const hermesApiKey =
-      isHermes && !hermesFields.useGlobalConfig && hermesFields.apiKey.trim()
-        ? hermesFields.apiKey
-        : undefined
-    const hermesBaseUrl =
-      isHermes && !hermesFields.useGlobalConfig && hermesFields.baseUrl?.trim()
-        ? hermesFields.baseUrl
-        : undefined
+    // Hermes pulls every provider field from the user's selected entry
+    // in the global LLM-providers list (managed under AI Settings). The
+    // backend rejects creation if any required field is missing.
+    const hermesProvider = isHermes
+      ? input.selectableHermesProviders.find(
+          (option) => option.id === input.createHermesProviderId,
+        )
+      : undefined
     const effectiveModelId = isHermes
-      ? hermesFields.useGlobalConfig
-        ? undefined
-        : hermesFields.modelId.trim() || undefined
+      ? hermesProvider?.modelId
       : input.harnessModelId || undefined
 
     input.setCreateError(null)
@@ -151,9 +139,9 @@ export function createAgentPageActions(input: AgentPageActionInput) {
         adapter: input.createRuntime as HarnessAgentAdapter,
         modelId: effectiveModelId,
         reasoningEffort: input.harnessReasoningEffort || undefined,
-        providerType: hermesProviderType,
-        apiKey: hermesApiKey,
-        baseUrl: hermesBaseUrl,
+        providerType: hermesProvider?.type,
+        apiKey: hermesProvider?.apiKey,
+        baseUrl: hermesProvider?.baseUrl,
       })
       input.setCreateOpen(false)
       input.setNewName('')
@@ -161,7 +149,7 @@ export function createAgentPageActions(input: AgentPageActionInput) {
         runtime: input.createRuntime,
         model_id: effectiveModelId,
         reasoning_effort: input.harnessReasoningEffort || undefined,
-        provider_type: hermesProviderType,
+        provider_type: hermesProvider?.type,
       })
       input.navigate(`/agents/${agent.id}`)
     } catch (err) {

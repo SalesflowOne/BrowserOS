@@ -10,6 +10,7 @@ import { createAgentPageActions } from './agents-page-actions'
 import {
   useDefaultAgentName,
   useHarnessAgentDefaults,
+  useHermesProviderSelection,
   useOpenClawProviderSelection,
 } from './agents-page-hooks'
 import {
@@ -31,10 +32,6 @@ import {
   toOpenClawListItem,
 } from './agents-page-utils'
 import { GatewayStatusBar } from './GatewayStatusBar'
-import {
-  getInitialHermesProviderFieldsValue,
-  type HermesProviderFieldsValue,
-} from './HermesProviderFields'
 import { NewAgentDialog } from './NewAgentDialog'
 import {
   ControlPlaneAlert,
@@ -110,8 +107,7 @@ export const AgentsPage: FC = () => {
   )
   const [harnessModelId, setHarnessModelId] = useState('')
   const [harnessReasoningEffort, setHarnessReasoningEffort] = useState('')
-  const [hermesProviderFields, setHermesProviderFields] =
-    useState<HermesProviderFieldsValue>(getInitialHermesProviderFieldsValue())
+  const [createHermesProviderId, setCreateHermesProviderId] = useState('')
   const [showTerminal, setShowTerminal] = useState(false)
   const [cliAuthModalOpen, setCliAuthModalOpen] = useState(false)
   const [pageError, setPageError] = useState<string | null>(null)
@@ -138,6 +134,14 @@ export const AgentsPage: FC = () => {
     setSetupProviderId,
     cliAuthModalOpen,
     setCliAuthModalOpen,
+  })
+  const { selectableHermesProviders } = useHermesProviderSelection({
+    providers,
+    defaultProviderId,
+    createOpen,
+    createRuntime,
+    createHermesProviderId,
+    setCreateHermesProviderId,
   })
   useDefaultAgentName(createOpen, setNewName)
   useHarnessAgentDefaults({
@@ -232,12 +236,13 @@ export const AgentsPage: FC = () => {
     createAgentPageActions({
       createProviderId,
       createRuntime,
+      createHermesProviderId,
       harnessModelId,
       harnessReasoningEffort,
-      hermesProviderFields,
       navigate,
       newName,
       selectableOpenClawProviders,
+      selectableHermesProviders,
       setupProviderId,
       createHarnessAgent: createHarnessAgent.mutateAsync,
       createOpenClawAgent,
@@ -393,7 +398,8 @@ export const AgentsPage: FC = () => {
           harnessAdapterId={harnessAdapterId}
           harnessModelId={harnessModelId}
           harnessReasoningEffort={harnessReasoningEffort}
-          hermesProviderFields={hermesProviderFields}
+          hermesProviders={selectableHermesProviders}
+          hermesSelectedProviderId={createHermesProviderId}
           name={newName}
           open={createOpen}
           providers={selectableOpenClawProviders}
@@ -409,14 +415,14 @@ export const AgentsPage: FC = () => {
             if (!open) {
               setCreateError(null)
               createHarnessAgent.reset()
-              setHermesProviderFields(getInitialHermesProviderFieldsValue())
+              setCreateHermesProviderId('')
             }
           }}
           onRuntimeChange={setCreateRuntime}
           onHarnessAdapterChange={handleHarnessAdapterChange}
           onHarnessModelChange={setHarnessModelId}
           onHarnessReasoningChange={setHarnessReasoningEffort}
-          onHermesProviderFieldsChange={setHermesProviderFields}
+          onHermesProviderChange={setCreateHermesProviderId}
           onNameChange={setNewName}
           onProviderChange={setCreateProviderId}
         />

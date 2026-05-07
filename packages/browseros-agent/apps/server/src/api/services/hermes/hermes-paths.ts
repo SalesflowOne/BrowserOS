@@ -31,9 +31,10 @@ export function getHermesHarnessHostDir(browserosDir?: string): string {
 }
 
 /**
- * Per-agent home directory on the host. Stays parallel to the
- * Claude/Codex layout so prepare.ts can seed config.yaml/.env/auth.json
- * here before the container reads them via the bind mount.
+ * Per-agent home directory on the host. The Hermes container reads
+ * `config.yaml` + `.env` from here via the harness bind mount; both
+ * files are written at agent-create time by AgentHarnessService and
+ * stay constant across turns.
  */
 export function getHermesAgentHomeHostDir(input: {
   browserosDir?: string
@@ -51,13 +52,10 @@ export function getHermesAgentHomeHostDir(input: {
  * The dir lives under <browserosDir>/vm/hermes/harness/<agentId>/home/
  * which is bind-mounted into the container at /data/agents/harness/<id>/home/.
  *
- * Idempotent: writes always overwrite (last-write-wins).
- *
- * `~/.hermes/` global config is unrelated and untouched. The
- * seedHermesHomeFromGlobal helper in prepare.ts only copies from global
- * if the per-agent files DON'T already exist — so once this helper
- * has written per-agent config.yaml/.env, the global seed becomes a
- * no-op for that agent.
+ * Idempotent: writes always overwrite (last-write-wins). The provider
+ * id, env var name, and credentials must be supplied by the caller —
+ * Hermes agents always carry their own config; there is no
+ * `~/.hermes/` fallback.
  */
 export async function writeHermesPerAgentProvider(input: {
   browserosDir?: string

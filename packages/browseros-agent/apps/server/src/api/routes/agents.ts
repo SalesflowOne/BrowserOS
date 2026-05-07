@@ -38,6 +38,7 @@ import {
   type AgentDefinitionWithActivity,
   AgentHarnessService,
   type GatewayStatusSnapshot,
+  HermesProviderConfigInvalidError,
   InvalidAgentUpdateError,
   MessageQueueFullError,
   type OpenClawProvisioner,
@@ -925,6 +926,9 @@ function handleAgentRouteError(c: Context<Env>, err: unknown) {
     return c.json({ error: err.message }, 404)
   }
   if (err instanceof InvalidAgentUpdateError) {
+    return c.json({ error: err.message }, 400)
+  }
+  if (err instanceof HermesProviderConfigInvalidError) {
     return c.json({ error: err.message }, 400)
   }
   if (err instanceof MessageQueueFullError) {

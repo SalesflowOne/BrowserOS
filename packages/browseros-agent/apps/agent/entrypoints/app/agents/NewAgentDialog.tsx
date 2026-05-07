@@ -23,10 +23,6 @@ import type {
   HarnessAgentAdapter,
 } from './agent-harness-types'
 import type { CreateAgentRuntime, ProviderOption } from './agents-page-types'
-import {
-  HermesProviderFields,
-  type HermesProviderFieldsValue,
-} from './HermesProviderFields'
 import { ProviderSelector } from './OpenClawControls'
 import {
   type OpenClawCliProvider,
@@ -44,7 +40,8 @@ interface NewAgentDialogProps {
   harnessAdapterId: HarnessAgentAdapter
   harnessModelId: string
   harnessReasoningEffort: string
-  hermesProviderFields: HermesProviderFieldsValue
+  hermesProviders: ProviderOption[]
+  hermesSelectedProviderId: string
   name: string
   open: boolean
   providers: ProviderOption[]
@@ -60,7 +57,7 @@ interface NewAgentDialogProps {
   onHarnessAdapterChange: (adapter: HarnessAgentAdapter) => void
   onHarnessModelChange: (modelId: string) => void
   onHarnessReasoningChange: (reasoningEffort: string) => void
-  onHermesProviderFieldsChange: (next: HermesProviderFieldsValue) => void
+  onHermesProviderChange: (providerId: string) => void
   onNameChange: (name: string) => void
   onProviderChange: (providerId: string) => void
 }
@@ -75,7 +72,8 @@ export const NewAgentDialog: FC<NewAgentDialogProps> = ({
   harnessAdapterId,
   harnessModelId,
   harnessReasoningEffort,
-  hermesProviderFields,
+  hermesProviders,
+  hermesSelectedProviderId,
   name,
   open,
   providers,
@@ -91,7 +89,7 @@ export const NewAgentDialog: FC<NewAgentDialogProps> = ({
   onHarnessAdapterChange,
   onHarnessModelChange,
   onHarnessReasoningChange,
-  onHermesProviderFieldsChange,
+  onHermesProviderChange,
   onNameChange,
   onProviderChange,
 }) => {
@@ -105,17 +103,15 @@ export const NewAgentDialog: FC<NewAgentDialogProps> = ({
     createRuntime === 'openclaw' &&
     !!selectedCliProvider &&
     !cliAuthStatus?.loggedIn
-  const hermesIncomplete =
+  const hermesBlocked =
     isHermesRuntime &&
-    !hermesProviderFields.useGlobalConfig &&
-    (!hermesProviderFields.apiKey.trim() ||
-      !hermesProviderFields.modelId.trim())
+    (hermesProviders.length === 0 || !hermesSelectedProviderId)
   const canCreate =
     Boolean(name.trim()) &&
     !creating &&
     !openClawBlocked &&
     !cliBlocked &&
-    !hermesIncomplete &&
+    !hermesBlocked &&
     (createRuntime === 'openclaw'
       ? providers.length > 0
       : Boolean(selectedHarnessAdapter))
@@ -214,9 +210,11 @@ export const NewAgentDialog: FC<NewAgentDialogProps> = ({
           ) : null}
 
           {isHermesRuntime ? (
-            <HermesProviderFields
-              value={hermesProviderFields}
-              onChange={onHermesProviderFieldsChange}
+            <ProviderSelector
+              providers={hermesProviders}
+              defaultProviderId={defaultProviderId}
+              selectedId={hermesSelectedProviderId}
+              onSelect={onHermesProviderChange}
             />
           ) : null}
 
