@@ -32,7 +32,7 @@ import type {
   AgentHistoryEntry,
   AgentHistoryToolCall,
 } from './agent-types'
-import { getHermesRuntime } from './runtime'
+import { getHermesRuntime } from './hermes'
 import type {
   AgentHistoryPage,
   AgentPromptInput,

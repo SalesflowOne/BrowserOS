@@ -20,12 +20,14 @@ import type {
 import type { AgentDefinition } from '../../../lib/agents/agent-types'
 import { DbAgentStore } from '../../../lib/agents/db-agent-store'
 import {
+  getHermesProviderMapping,
+  writeHermesPerAgentProvider,
+} from '../../../lib/agents/hermes'
+import {
   FileMessageQueue,
   type QueuedMessage,
   type QueuedMessageAttachment,
 } from '../../../lib/agents/message-queue'
-import { writeHermesPerAgentProvider } from '../hermes/hermes-paths'
-import { getHermesProviderMapping } from '../hermes/hermes-provider-map'
 
 export {
   MessageQueueFullError,

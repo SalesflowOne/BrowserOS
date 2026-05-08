@@ -15,9 +15,11 @@ import {
 } from '../../../../../../packages/shared/src/constants/hermes'
 import {
   configureHermesRuntime,
-  getAgentRuntimeRegistry,
   getHermesRuntime,
   HermesContainerRuntime,
+} from '../../../../src/lib/agents/hermes'
+import {
+  getAgentRuntimeRegistry,
   resetAgentRuntimeRegistry,
 } from '../../../../src/lib/agents/runtime'
 import type {

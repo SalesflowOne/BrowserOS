@@ -123,7 +123,7 @@ async function setupApplicationTest() {
   )
   const claudeModule = await import('../src/lib/agents/claude')
   const codexModule = await import('../src/lib/agents/codex')
-  const runtimeModule = await import('../src/lib/agents/runtime')
+  const hermesModule = await import('../src/lib/agents/hermes')
   const browserosDir = await import('../src/lib/browseros-dir')
   const dbModule = await import('../src/lib/db')
   const identityModule = await import('../src/lib/identity')
@@ -211,10 +211,10 @@ async function setupApplicationTest() {
 
   const hermesExecuteAction = mock(async () => {})
   const fakeHermesRuntime = { executeAction: hermesExecuteAction } as never
-  spyOn(runtimeModule, 'configureHermesRuntime').mockImplementation(
+  spyOn(hermesModule, 'configureHermesRuntime').mockImplementation(
     () => fakeHermesRuntime,
   )
-  spyOn(runtimeModule, 'getHermesRuntime').mockImplementation(
+  spyOn(hermesModule, 'getHermesRuntime').mockImplementation(
     () => fakeHermesRuntime,
   )
   spyOn(claudeModule, 'configureClaudeRuntime').mockImplementation(

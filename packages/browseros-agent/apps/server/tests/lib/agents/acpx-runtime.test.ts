@@ -21,9 +21,9 @@ import {
   unwrapBrowserosAcpUserMessage,
 } from '../../../src/lib/agents/acpx-runtime'
 import type { AgentDefinition } from '../../../src/lib/agents/agent-types'
+import { HermesContainerRuntime } from '../../../src/lib/agents/hermes'
 import {
   getAgentRuntimeRegistry,
-  HermesContainerRuntime,
   resetAgentRuntimeRegistry,
 } from '../../../src/lib/agents/runtime'
 import type { AgentStreamEvent } from '../../../src/lib/agents/types'

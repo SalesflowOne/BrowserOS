@@ -23,7 +23,7 @@ import type { ServerConfig } from './config'
 import { INLINED_ENV } from './env'
 import { configureClaudeRuntime } from './lib/agents/claude'
 import { configureCodexRuntime } from './lib/agents/codex'
-import { configureHermesRuntime, getHermesRuntime } from './lib/agents/runtime'
+import { configureHermesRuntime, getHermesRuntime } from './lib/agents/hermes'
 import {
   cleanOldSessions,
   ensureBrowserosDir,

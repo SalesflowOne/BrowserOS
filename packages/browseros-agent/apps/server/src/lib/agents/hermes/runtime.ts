@@ -15,11 +15,6 @@ import {
   HERMES_CONTAINER_NAME,
   HERMES_IMAGE,
 } from '@browseros/shared/constants/hermes'
-import {
-  getHermesAgentHomeHostDir,
-  getHermesHarnessHostDir,
-  getHermesHostStateDir,
-} from '../../../api/services/hermes/hermes-paths'
 import { getBrowserosDir } from '../../browseros-dir'
 import { ContainerCli } from '../../container/container-cli'
 import { ImageLoader } from '../../container/image-loader'
@@ -46,9 +41,14 @@ import {
   finishBrowserosManagedContext,
   prepareBrowserosManagedContext,
 } from '../acpx-agent-common'
-import { ContainerAgentRuntime } from './container-agent-runtime'
-import { getAgentRuntimeRegistry } from './registry'
-import type { ExecSpec } from './types'
+import { ContainerAgentRuntime } from '../runtime/container-agent-runtime'
+import { getAgentRuntimeRegistry } from '../runtime/registry'
+import type { ExecSpec } from '../runtime/types'
+import {
+  getHermesAgentHomeHostDir,
+  getHermesHarnessHostDir,
+  getHermesHostStateDir,
+} from './paths'
 
 const HERMES_BINARY = '/opt/hermes/.venv/bin/hermes'
 
