@@ -94,6 +94,7 @@ export {
   type FileSnapshot,
   type FileSnapshotEntry,
   type FinalizeTurnInput,
+  type ProducedFileRow,
   ProducedFilesStore,
   type ResolvedFile,
   resolveSafeWorkspacePath,
