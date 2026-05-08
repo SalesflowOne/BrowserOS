@@ -838,7 +838,8 @@ describe('OpenClawService', () => {
     service.openclawDir = tempDir
     service.runtime = {
       ensureReady,
-      isReady: async (hostPort?: number) => hostPort === occupiedPort,
+      // Persisted port is reachable on /readyz; auth pass keeps it.
+      isReady: async () => true,
       restartGateway,
       waitForReady,
     }
