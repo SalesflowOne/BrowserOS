@@ -46,12 +46,21 @@ export interface ContainerSpec {
   command?: string[]
 }
 
+export interface ContainerPortMapping {
+  containerPort: number
+  protocol: string
+  hostIp: string | null
+  hostPort: number
+}
+
 export interface ContainerInfo {
   id: string | null
   name: string
   image: string | null
   status: string | null
   running: boolean | null
+  /** Flat view of `NetworkSettings.Ports`. Empty if the container has no published ports. */
+  ports: ContainerPortMapping[]
 }
 
 export interface WaitForContainerNameReleaseOptions {

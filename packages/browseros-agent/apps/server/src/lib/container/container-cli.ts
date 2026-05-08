@@ -13,6 +13,7 @@ import {
 import { LimaCli } from '../vm/lima-cli'
 import type {
   ContainerInfo,
+  ContainerPortMapping,
   ContainerSpec,
   LogFn,
   MountSpec,
@@ -300,6 +301,9 @@ function parseContainerInfo(
   const object = isRecord(container) ? container : {}
   const config = isRecord(object.Config) ? object.Config : {}
   const state = isRecord(object.State) ? object.State : {}
+  const networkSettings = isRecord(object.NetworkSettings)
+    ? object.NetworkSettings
+    : {}
   const name = stringValue(object.Name)?.replace(/^\/+/, '') ?? fallbackName
   const status = stringValue(state.Status) ?? stringValue(object.Status)
   const running =
@@ -315,7 +319,31 @@ function parseContainerInfo(
     image: stringValue(config.Image) ?? stringValue(object.Image),
     status,
     running,
+    ports: parsePortMappings(networkSettings.Ports),
   }
+}
+
+function parsePortMappings(raw: unknown): ContainerPortMapping[] {
+  if (!isRecord(raw)) return []
+  const mappings: ContainerPortMapping[] = []
+  for (const [key, value] of Object.entries(raw)) {
+    const [portPart, protocol = 'tcp'] = key.split('/')
+    const containerPort = Number.parseInt(portPart ?? '', 10)
+    if (!Number.isInteger(containerPort)) continue
+    if (!Array.isArray(value)) continue
+    for (const binding of value) {
+      if (!isRecord(binding)) continue
+      const hostPort = Number.parseInt(stringValue(binding.HostPort) ?? '', 10)
+      if (!Number.isInteger(hostPort)) continue
+      mappings.push({
+        containerPort,
+        protocol,
+        hostIp: stringValue(binding.HostIp) ?? null,
+        hostPort,
+      })
+    }
+  }
+  return mappings
 }
 
 export function isNoSuchContainer(stderr: string): boolean {

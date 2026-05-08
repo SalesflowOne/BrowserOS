@@ -50,6 +50,7 @@ function makeDeps(opts: { lockDir: string }): {
       image: 'docker.io/openclaw:latest',
       status: 'running',
       running: true,
+      ports: [],
     }),
     removeContainer: async () => {},
     waitForContainerNameRelease: async () => {},
@@ -224,6 +225,57 @@ describe('OpenClawContainerRuntime', () => {
     expect(out).toContain('openclaw acp --url ws://127.0.0.1:18789')
     expect(out).toContain('-e OPENCLAW_HIDE_BANNER=1')
     expect(out).toContain('--session agent:main:main')
+  })
+
+  it('syncState adopts the actual host port when persisted port drifted', async () => {
+    const lockDir = mkTempDir()
+    const browserosDir = '/host/browseros'
+    const fakeCli = {
+      inspectContainer: async (): Promise<ContainerInfo | null> => ({
+        id: 'cid',
+        name: OPENCLAW_GATEWAY_CONTAINER_NAME,
+        image: 'docker.io/openclaw:latest',
+        status: 'running',
+        running: true,
+        ports: [
+          {
+            containerPort: OPENCLAW_GATEWAY_CONTAINER_PORT,
+            protocol: 'tcp',
+            hostIp: '127.0.0.1',
+            hostPort: 18790,
+          },
+        ],
+      }),
+      removeContainer: async () => {},
+      waitForContainerNameRelease: async () => {},
+      createContainer: async () => {},
+      startContainer: async () => {},
+      waitForContainerRunning: async () => {},
+      exec: async () => 0,
+    }
+    const deps: ManagedContainerDeps = {
+      cli: fakeCli as unknown as ManagedContainerDeps['cli'],
+      loader: {
+        ensureImageLoaded: async () => {},
+      } as ManagedContainerDeps['loader'],
+      vm: {
+        ensureReady: async () => {},
+        getDefaultGateway: async () => '192.168.5.2',
+        isReady: async () => true,
+        stopVm: async () => {},
+      } as unknown as ManagedContainerDeps['vm'],
+      limactlPath: '/opt/homebrew/bin/limactl',
+      limaHome: '/Users/dev/.browseros/lima',
+      vmName: 'browseros-vm',
+      lockDir,
+    }
+    const runtime = new OpenClawContainerRuntime(deps, {
+      browserosDir,
+      openclawDir: `${browserosDir}/vm/openclaw`,
+    })
+    runtime.setHostPort(18789)
+    await runtime.syncState()
+    expect(runtime.getHostPort()).toBe(18790)
   })
 
   it('compat methods delegate to inherited base primitives', () => {

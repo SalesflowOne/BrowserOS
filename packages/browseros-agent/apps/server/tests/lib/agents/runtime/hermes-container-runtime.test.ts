@@ -54,6 +54,7 @@ function makeDeps(opts: {
       image: HERMES_IMAGE,
       status: 'running',
       running: true,
+      ports: [],
     }),
     removeContainer: async () => {},
     waitForContainerNameRelease: async () => {},

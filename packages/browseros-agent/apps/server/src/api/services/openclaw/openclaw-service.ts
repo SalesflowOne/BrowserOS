@@ -69,7 +69,11 @@ import {
   type ResolvedOpenClawProviderConfig,
   resolveSupportedOpenClawProvider,
 } from './openclaw-provider-map'
-import { allocateGatewayPort, readPersistedGatewayPort } from './runtime-state'
+import {
+  allocateGatewayPort,
+  readPersistedGatewayPort,
+  writePersistedGatewayPort,
+} from './runtime-state'
 
 const READY_TIMEOUT_MS = 30_000
 const AGENT_NAME_PATTERN = /^[a-z][a-z0-9-]*$/
@@ -1129,6 +1133,7 @@ export class OpenClawService {
       // tests that mock `service.runtime` with a partial fake don't
       // crash here.
       await this.runtime.syncState?.()
+      await this.adoptRuntimeHostPort()
 
       const isSetUp = existsSync(this.getStateConfigPath())
       if (!isSetUp) return
@@ -1165,6 +1170,7 @@ export class OpenClawService {
         // drive the state transitions, so without this the UI sees
         // `not_installed` for a gateway that's actually running.
         await this.runtime.syncState?.()
+        await this.adoptRuntimeHostPort()
 
         await this.runControlPlaneCall(() => this.cliClient.probe())
         await this.ensureAllCliProvidersInstalled()
@@ -1265,6 +1271,31 @@ export class OpenClawService {
     // mock omits setHostPort.
     this.runtime.setHostPort?.(hostPort)
     this.httpClient = new OpenClawHttpClient(this.hostPort)
+  }
+
+  /**
+   * If runtime.syncState reconciled the host port from the live
+   * container mapping, adopt it on the service side and rewrite
+   * runtime-state.json so subsequent boots don't drift again.
+   */
+  private async adoptRuntimeHostPort(): Promise<void> {
+    const runtimePort = this.runtime.getHostPort?.()
+    if (typeof runtimePort !== 'number' || runtimePort === this.hostPort) {
+      return
+    }
+    logger.info('Adopting reconciled OpenClaw gateway host port', {
+      previous: this.hostPort,
+      actual: runtimePort,
+    })
+    this.setPort(runtimePort)
+    try {
+      await writePersistedGatewayPort(this.openclawDir, runtimePort)
+    } catch (err) {
+      logger.warn('Failed to persist reconciled OpenClaw gateway port', {
+        port: runtimePort,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
   }
 
   private async ensureGatewayPortAllocated(

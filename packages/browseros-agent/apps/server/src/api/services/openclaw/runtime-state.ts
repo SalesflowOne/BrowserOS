@@ -60,7 +60,7 @@ export async function readPersistedGatewayPort(
   }
 }
 
-async function writePersistedGatewayPort(
+export async function writePersistedGatewayPort(
   openclawDir: string,
   port: number,
 ): Promise<void> {

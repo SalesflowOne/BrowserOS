@@ -96,6 +96,7 @@ function makeFakeDeps(opts: { lockDir: string }): ManagedContainerDeps & {
       image: 'docker.io/test:latest',
       status: 'running',
       running: true,
+      ports: [],
     }),
     removeContainer: async () => {},
     waitForContainerNameRelease: async () => {},

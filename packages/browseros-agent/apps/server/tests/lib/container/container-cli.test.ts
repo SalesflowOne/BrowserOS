@@ -193,11 +193,42 @@ describe('ContainerCli', () => {
       image: 'openclaw:v1',
       status: 'running',
       running: true,
+      ports: [],
     })
 
     await expect(readFile(logPath, 'utf8')).resolves.toContain(
       "lima-browseros-vm 'nerdctl' 'container' 'inspect' '--format' '{{json .}}' 'gateway'",
     )
+  })
+
+  it('parses NetworkSettings.Ports into a flat ports array', async () => {
+    const sshPath = await fakeSsh(
+      {
+        stdout: JSON.stringify({
+          ID: 'abc123',
+          Name: 'gateway',
+          Config: { Image: 'openclaw:v1' },
+          State: { Status: 'running', Running: true },
+          NetworkSettings: {
+            Ports: {
+              '18789/tcp': [{ HostIp: '127.0.0.1', HostPort: '18790' }],
+            },
+          },
+        }),
+      },
+      logPath,
+    )
+    const cli = await createCli(sshPath, tempDir)
+
+    const info = await cli.inspectContainer('gateway')
+    expect(info?.ports).toEqual([
+      {
+        containerPort: 18789,
+        protocol: 'tcp',
+        hostIp: '127.0.0.1',
+        hostPort: 18790,
+      },
+    ])
   })
 
   it('returns null when inspected containers are absent', async () => {

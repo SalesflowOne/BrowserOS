@@ -238,9 +238,10 @@ export class OpenClawContainerRuntime extends ContainerAgentRuntime {
 
   /** Sync internal state from the actual container — used at boot
    *  when the gateway may already be running from a previous server
-   *  process and the runtime's state machine starts fresh. Without
-   *  this, the UI sees `not_installed` for an actively-running
-   *  gateway because nothing has driven the state transitions. */
+   *  process and the runtime's state machine starts fresh. Also
+   *  reconciles `hostPort` against the live port mapping when the
+   *  persisted runtime-state.json drifted from what the container
+   *  was actually started with. */
   async syncState(): Promise<void> {
     try {
       const info = await this.deps.cli.inspectContainer(
@@ -251,6 +252,18 @@ export class OpenClawContainerRuntime extends ContainerAgentRuntime {
         return
       }
       if (info.running) {
+        const mapped = info.ports.find(
+          (p) =>
+            p.containerPort === OPENCLAW_GATEWAY_CONTAINER_PORT &&
+            p.protocol === 'tcp',
+        )
+        if (mapped && mapped.hostPort !== this.hostPort) {
+          logger.info('OpenClaw runtime host port reconciled from container', {
+            previous: this.hostPort,
+            actual: mapped.hostPort,
+          })
+          this.hostPort = mapped.hostPort
+        }
         if (await fetchOk(`http://127.0.0.1:${this.hostPort}/readyz`)) {
           this.setState('running')
           return
