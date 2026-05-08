@@ -1,7 +1,10 @@
-import { Loader2 } from 'lucide-react'
+import { Loader2, Terminal as TerminalIcon } from 'lucide-react'
 import { type FC, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { useLlmProviders } from '@/lib/llm-providers/useLlmProviders'
+import { cn } from '@/lib/utils'
 import { AgentList } from './AgentList'
 import { AgentsHeader } from './AgentsHeader'
 import { AgentTerminal } from './AgentTerminal'
@@ -31,14 +34,14 @@ import {
   toHarnessListItem,
   toOpenClawListItem,
 } from './agents-page-utils'
-import { GatewayStatusBar } from './GatewayStatusBar'
 import { NewAgentDialog } from './NewAgentDialog'
 import {
   ControlPlaneAlert,
-  GatewayStateCards,
   InlineErrorAlert,
   LifecycleAlert,
 } from './OpenClawControls'
+import { RuntimeControlPanel } from './runtime-controls/RuntimeControlPanel'
+import { RuntimeStatusBar } from './runtime-controls/RuntimeStatusBar'
 import { SetupOpenClawDialog } from './SetupOpenClawDialog'
 import {
   useAgentAdapters,
@@ -83,7 +86,6 @@ export const AgentsPage: FC = () => {
     setupOpenClaw,
     createAgent: createOpenClawAgent,
     deleteAgent: deleteOpenClawAgent,
-    startOpenClaw,
     restartOpenClaw,
     reconnectOpenClaw,
     actionInProgress,
@@ -329,26 +331,39 @@ export const AgentsPage: FC = () => {
           />
         ) : null}
 
-        <GatewayStateCards
-          actionInProgress={actionInProgress}
-          status={status}
-          onOpenSetup={() => setSetupOpen(true)}
-          onRestart={() => {
-            void runWithPageErrorHandling(restartOpenClaw)
-          }}
-          onStart={() => {
-            void runWithPageErrorHandling(startOpenClaw)
-          }}
+        <RuntimeControlPanel
+          adapter="openclaw"
+          extras={
+            status?.status === 'uninitialized' ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setSetupOpen(true)}
+              >
+                Configure provider…
+              </Button>
+            ) : null
+          }
         />
 
         {showGatewayStatusBar ? (
-          <GatewayStatusBar
-            status={status}
-            actionInProgress={actionInProgress}
-            onOpenTerminal={() => setShowTerminal(true)}
-            onRestart={() => {
-              void runWithPageErrorHandling(restartOpenClaw)
-            }}
+          <RuntimeStatusBar
+            adapter="openclaw"
+            extraPill={
+              status ? (
+                <ControlPlanePill status={status.controlPlaneStatus} />
+              ) : null
+            }
+            extraActions={
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowTerminal(true)}
+              >
+                <TerminalIcon className="mr-1.5 h-3.5 w-3.5" />
+                Terminal
+              </Button>
+            }
           />
         ) : null}
 
@@ -429,4 +444,54 @@ export const AgentsPage: FC = () => {
       </div>
     </div>
   )
+}
+
+const ControlPlanePill: FC<{ status: string }> = ({ status }) => {
+  const pill = pillForControlPlane(status)
+  return (
+    <Badge variant={pill.variant} className={cn('gap-1.5', pill.className)}>
+      <span className={cn('inline-block h-1.5 w-1.5 rounded-full', pill.dot)} />
+      {pill.label}
+    </Badge>
+  )
+}
+
+interface ControlPlanePillKind {
+  variant: 'default' | 'secondary' | 'outline' | 'destructive'
+  label: string
+  dot: string
+  className?: string
+}
+
+function pillForControlPlane(status: string): ControlPlanePillKind {
+  switch (status) {
+    case 'connected':
+      return {
+        variant: 'secondary',
+        label: 'Control plane connected',
+        dot: 'bg-emerald-500',
+        className: 'bg-emerald-50 text-emerald-900 hover:bg-emerald-50',
+      }
+    case 'connecting':
+    case 'reconnecting':
+    case 'recovering':
+      return {
+        variant: 'secondary',
+        label: 'Connecting',
+        dot: 'bg-amber-500 animate-pulse',
+        className: 'bg-amber-50 text-amber-900 hover:bg-amber-50',
+      }
+    case 'failed':
+      return {
+        variant: 'destructive',
+        label: 'Needs attention',
+        dot: 'bg-destructive-foreground',
+      }
+    default:
+      return {
+        variant: 'outline',
+        label: 'Disconnected',
+        dot: 'bg-muted-foreground/40',
+      }
+  }
 }
