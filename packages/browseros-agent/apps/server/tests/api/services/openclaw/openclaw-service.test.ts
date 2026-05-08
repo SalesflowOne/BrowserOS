@@ -900,6 +900,43 @@ describe('OpenClawService', () => {
     expect(ensureReady).toHaveBeenCalledTimes(1)
   })
 
+  it('stops the stale gateway before re-allocating port on auth mismatch', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'openclaw-service-'))
+    await mkdir(join(tempDir, '.openclaw'), { recursive: true })
+    await writeFile(
+      join(tempDir, '.openclaw', 'openclaw.json'),
+      JSON.stringify({ gateway: { auth: { token: 'cli-token' } } }),
+    )
+    const occupiedPort = getSyntheticOccupiedPort()
+    await writeFile(
+      join(tempDir, '.openclaw', 'runtime-state.json'),
+      `${JSON.stringify({ gatewayPort: occupiedPort }, null, 2)}\n`,
+    )
+    const ensureReady = mock(async () => {})
+    const restartGateway = mock(async () => {})
+    const stopGateway = mock(async () => {})
+    const waitForReady = mock(async () => true)
+    const probe = mock(async () => {})
+    const service = new OpenClawService() as MutableOpenClawService
+
+    service.openclawDir = tempDir
+    service.runtime = {
+      ensureReady,
+      isReady: async () => true,
+      restartGateway,
+      stopGateway,
+      waitForReady,
+    }
+    service.cliClient = { probe }
+    mockGatewayAuth(401)
+
+    await service.restart()
+
+    expect(stopGateway).toHaveBeenCalledTimes(1)
+    expect(restartGateway).toHaveBeenCalledTimes(1)
+    expect(service.getPort()).not.toBe(occupiedPort)
+  })
+
   it('stop calls runtime.stopGateway', async () => {
     const stopGateway = mock(async () => {})
     const service = new OpenClawService() as MutableOpenClawService

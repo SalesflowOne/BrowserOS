@@ -1312,6 +1312,25 @@ export class OpenClawService {
     ) {
       return
     }
+    if (currentPortReady) {
+      // Port is reachable but auth rejected — a stale gateway from a
+      // previous boot or token rotation owns it. Stop our container
+      // first so the upcoming start cycle actually creates a fresh
+      // one: ManagedContainer.start no-ops when state==='running',
+      // so without this the realloc would bump the persisted port
+      // while leaving the old container still bound to the old one.
+      logProgress?.('Stopping stale OpenClaw gateway before re-allocating port')
+      logger.info('Stopping stale OpenClaw gateway before re-allocating port', {
+        hostPort: this.hostPort,
+      })
+      try {
+        await this.runtime.stopGateway?.()
+      } catch (err) {
+        logger.warn('Failed to stop stale OpenClaw gateway before realloc', {
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
+    }
     const hostPort = await allocateGatewayPort(this.openclawDir, {
       excludePort: currentPortReady ? this.hostPort : undefined,
     })
