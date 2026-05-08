@@ -8,7 +8,7 @@ import type { AgentDefinition } from './agent-types'
 import { prepareClaudeCodeContext } from './claude'
 import { prepareCodexContext } from './codex'
 import { prepareHermesContext } from './hermes'
-import { prepareOpenClawContext } from './openclaw/prepare'
+import { prepareOpenClawContext } from './openclaw'
 
 export interface PreparedAcpxAgentContext {
   cwd: string
@@ -19,8 +19,7 @@ export interface PreparedAcpxAgentContext {
   useBrowserosMcp: boolean
   /**
    * Hostname the agent should use to reach the BrowserOS HTTP MCP server.
-   * Default `127.0.0.1` is correct for host-process adapters (claude, codex,
-   * Phase A host-mode hermes). Container-spawned adapters override this to
+   * Default `127.0.0.1` is correct for host-process adapters. Container-spawned adapters override this to
    * `host.containers.internal` so the URL injected into ACP newSession's
    * mcpServers resolves from inside the container.
    */
