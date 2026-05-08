@@ -387,17 +387,35 @@ export function configureOpenClawRuntime(
   const browserosDir = options.browserosDir ?? getBrowserosDir()
   const openclawDir = getOpenClawDir()
   const resourcesDir = options.resourcesDir ?? null
-  const limactlPath = resourcesDir
-    ? resolveBundledLimactl(resourcesDir)
-    : 'limactl'
+  // Resolve bundled paths optimistically — on platforms / CI runners
+  // without Lima, fall back to the bare command names so construction
+  // succeeds. Lifecycle ops will fail at spawn time with the same
+  // "not on PATH" error, matching how the other runtimes degrade.
+  const limactlPath = (() => {
+    if (!resourcesDir) return 'limactl'
+    try {
+      return resolveBundledLimactl(resourcesDir)
+    } catch (err) {
+      logger.warn('OpenClaw bundled limactl unavailable; falling back', {
+        error: err instanceof Error ? err.message : String(err),
+      })
+      return 'limactl'
+    }
+  })()
+  const templatePath = (() => {
+    if (!resourcesDir) return undefined
+    try {
+      return resolveBundledLimaTemplate(resourcesDir)
+    } catch {
+      return undefined
+    }
+  })()
   const limaHome = getLimaHomeDir(browserosDir)
 
   const vm = new VmRuntime({
     limactlPath,
     limaHome,
-    templatePath: resourcesDir
-      ? resolveBundledLimaTemplate(resourcesDir)
-      : undefined,
+    templatePath,
     browserosRoot: browserosDir,
   })
   const cli = new ContainerCli({ limactlPath, limaHome, vmName: VM_NAME })
