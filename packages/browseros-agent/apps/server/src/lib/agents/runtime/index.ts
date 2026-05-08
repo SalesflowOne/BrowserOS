@@ -36,6 +36,14 @@ export {
   type HostProcessAgentRuntimeDeps,
 } from './host-process-agent-runtime'
 export {
+  type ConfigureOpenClawRuntimeOptions,
+  configureOpenClawRuntime,
+  getOpenClawRuntime,
+  OpenClawContainerRuntime,
+  type OpenClawContainerRuntimeConfig,
+  prepareOpenClawContext,
+} from './openclaw-container-runtime'
+export {
   AgentRuntimeRegistry,
   getAgentRuntimeRegistry,
   resetAgentRuntimeRegistry,
