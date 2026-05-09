@@ -607,6 +607,7 @@ export class Browser {
   async closePage(page: number): Promise<void> {
     let info = await this.resolvePageInfo(page)
     if (!info) throw this.unknownPageError(page)
+    const targetIdsToDetach = new Set([info.targetId])
 
     try {
       await this.cdp.Browser.closeTab({ targetId: info.targetId })
@@ -620,12 +621,15 @@ export class Browser {
       }
 
       info = refreshed
+      targetIdsToDetach.add(info.targetId)
       await this.cdp.Browser.closeTab({ targetId: info.targetId })
     }
 
     this.consoleCollector.detach(page)
     this.pages.delete(page)
-    this.sessions.delete(info.targetId)
+    for (const targetId of targetIdsToDetach) {
+      this.sessions.delete(targetId)
+    }
   }
 
   // --- Navigation ---

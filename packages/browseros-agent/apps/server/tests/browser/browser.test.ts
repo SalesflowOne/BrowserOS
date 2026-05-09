@@ -11,6 +11,8 @@ import { Browser } from '../../src/browser/browser'
 
 class FakeCdpBackend {
   readonly closeTabCalls: CloseTabParams[] = []
+  private nextSessionId = 1
+  private readonly protocolSessions = new Map<string, ProtocolApi>()
   tabs: TabInfo[]
 
   Browser = {
@@ -34,6 +36,11 @@ class FakeCdpBackend {
 
   Target = {
     on: () => () => {},
+    attachToTarget: async () => {
+      const sessionId = `session-${this.nextSessionId++}`
+      this.protocolSessions.set(sessionId, createProtocolSession())
+      return { sessionId }
+    },
   }
 
   constructor(tabs: TabInfo[]) {
@@ -48,12 +55,24 @@ class FakeCdpBackend {
   async getTargets(): Promise<[]> {
     return []
   }
-  session(): ProtocolApi {
-    throw new Error('session not implemented')
+  session(sessionId: string): ProtocolApi {
+    const session = this.protocolSessions.get(sessionId)
+    if (!session) throw new Error(`Unknown session ${sessionId}`)
+    return session
   }
   onSessionEvent(): () => void {
     return () => {}
   }
+}
+
+function createProtocolSession(): ProtocolApi {
+  return {
+    Page: { enable: async () => {} },
+    DOM: { enable: async () => {} },
+    Runtime: { enable: async () => {} },
+    Log: { enable: async () => {} },
+    Accessibility: { enable: async () => {} },
+  } as unknown as ProtocolApi
 }
 
 function createTab(overrides: Partial<TabInfo>): TabInfo {
@@ -82,6 +101,22 @@ function createBrowser(tabs: TabInfo[]): {
     browser: new Browser(cdp as unknown as CdpBackend),
     cdp,
   }
+}
+
+function getSessionCache(browser: Browser): Map<string, string> {
+  return (browser as unknown as { sessions: Map<string, string> }).sessions
+}
+
+async function attachSession(
+  browser: Browser,
+  targetId: string,
+  pageId: number,
+): Promise<void> {
+  await (
+    browser as unknown as {
+      attachToPage(targetId: string, pageId: number): Promise<string>
+    }
+  ).attachToPage(targetId, pageId)
 }
 
 describe('Browser', () => {
@@ -125,5 +160,28 @@ describe('Browser', () => {
       { targetId: 'target-403-new' },
     ])
     assert.strictEqual(cdp.tabs.length, 0)
+  })
+
+  it('clears stale session cache when closePage retries with a refreshed target ID', async () => {
+    const { browser, cdp } = createBrowser([
+      createTab({ tabId: 404, targetId: 'target-404-old' }),
+    ])
+
+    const pages = await browser.listPages()
+    await attachSession(browser, 'target-404-old', pages[0].pageId)
+    assert.deepStrictEqual(
+      [...getSessionCache(browser).keys()],
+      ['target-404-old'],
+    )
+
+    cdp.tabs[0].targetId = 'target-404-new'
+
+    await browser.closePage(pages[0].pageId)
+
+    assert.deepStrictEqual(cdp.closeTabCalls, [
+      { targetId: 'target-404-old' },
+      { targetId: 'target-404-new' },
+    ])
+    assert.deepStrictEqual([...getSessionCache(browser).keys()], [])
   })
 })
