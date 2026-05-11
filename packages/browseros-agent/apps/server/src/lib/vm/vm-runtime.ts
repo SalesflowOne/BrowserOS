@@ -15,6 +15,7 @@ import { VM_TELEMETRY_EVENTS } from './telemetry'
 
 export type LogFn = (msg: string) => void
 const ROOTLESS_CONTAINERD_MARKER = 'runtime:containerd-rootless'
+const ensureReadyPromises = new Map<string, Promise<void>>()
 
 export interface VmRuntimeDeps {
   limactlPath: string
@@ -43,6 +44,30 @@ export class VmRuntime {
   }
 
   async ensureReady(onLog?: LogFn): Promise<void> {
+    const lockKey = this.ensureReadyLockKey()
+    const existing = ensureReadyPromises.get(lockKey)
+    if (existing) {
+      onLog?.('Waiting for BrowserOS VM...')
+      await existing
+      return
+    }
+
+    const promise = this.ensureReadyOnce(onLog)
+    ensureReadyPromises.set(lockKey, promise)
+    try {
+      await promise
+    } finally {
+      if (ensureReadyPromises.get(lockKey) === promise) {
+        ensureReadyPromises.delete(lockKey)
+      }
+    }
+  }
+
+  private ensureReadyLockKey(): string {
+    return `${this.deps.limaHome}:${VM_NAME}`
+  }
+
+  private async ensureReadyOnce(onLog?: LogFn): Promise<void> {
     const started = Date.now()
     logger.info(VM_TELEMETRY_EVENTS.ensureReadyStart, {
       limaHome: this.deps.limaHome,

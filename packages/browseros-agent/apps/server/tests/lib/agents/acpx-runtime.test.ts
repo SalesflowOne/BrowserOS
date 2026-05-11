@@ -22,6 +22,8 @@ import {
 } from '../../../src/lib/agents/acpx-runtime'
 import type { AgentDefinition } from '../../../src/lib/agents/agent-types'
 import {
+  ClaudeRuntime,
+  CodexRuntime,
   getAgentRuntimeRegistry,
   HermesContainerRuntime,
   resetAgentRuntimeRegistry,
@@ -42,15 +44,23 @@ describe('AcpxRuntime', () => {
 
   it('uses acpx/runtime to ensure a session and stream a turn', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'browseros-acpx-runtime-'))
+    const browserosDir = await mkdtemp(
+      join(tmpdir(), 'browseros-acpx-browseros-'),
+    )
     const stateDir = await mkdtemp(join(tmpdir(), 'browseros-acpx-state-'))
-    tempDirs.push(cwd, stateDir)
+    tempDirs.push(cwd, browserosDir, stateDir)
     const calls: Array<{ method: string; input: unknown }> = []
     const runtimeFactory = (options: AcpRuntimeOptions): AcpxCoreRuntime => {
       calls.push({ method: 'createRuntime', input: options })
       return createFakeAcpRuntime(calls)
     }
 
-    const runtime = new AcpxRuntime({ cwd, stateDir, runtimeFactory })
+    const runtime = new AcpxRuntime({
+      browserosDir,
+      cwd,
+      stateDir,
+      runtimeFactory,
+    })
     const agent: AgentDefinition = {
       id: 'agent-1',
       name: 'Review bot',
@@ -78,8 +88,15 @@ describe('AcpxRuntime', () => {
       'setConfigOption',
       'startTurn',
     ])
+    const expectedCwd = join(
+      browserosDir,
+      'vm',
+      'codex',
+      'harness',
+      'workspace',
+    )
     expect(calls[0]?.input).toMatchObject({
-      cwd,
+      cwd: expectedCwd,
       permissionMode: 'approve-all',
       nonInteractivePermissions: 'fail',
     })
@@ -87,7 +104,7 @@ describe('AcpxRuntime', () => {
       sessionKey: expect.stringMatching(/^agent:agent-1:main:[a-f0-9]{16}$/),
       agent: 'codex',
       mode: 'persistent',
-      cwd,
+      cwd: expectedCwd,
     })
     expect(calls[2]?.input).toMatchObject({
       key: 'reasoning_effort',
@@ -152,7 +169,13 @@ describe('AcpxRuntime', () => {
       }),
     )
 
-    const expectedCwd = join(browserosDir, 'agents', 'harness', 'workspace')
+    const expectedCwd = join(
+      browserosDir,
+      'vm',
+      'claude',
+      'harness',
+      'workspace',
+    )
     expect(calls[0]?.input).toMatchObject({ cwd: expectedCwd })
     expect(calls[1]?.input).toMatchObject({ cwd: expectedCwd })
     expect((calls[1]?.input as { sessionKey: string }).sessionKey).toMatch(
@@ -167,7 +190,7 @@ describe('AcpxRuntime', () => {
     expect(text).toContain('<user_request>\nremember this\n</user_request>')
   })
 
-  it('uses selected cwd in the runtime fingerprint', async () => {
+  it('ignores selected host cwd for container runtime fingerprint', async () => {
     const browserosDir = await mkdtemp(
       join(tmpdir(), 'browseros-acpx-browseros-'),
     )
@@ -196,14 +219,21 @@ describe('AcpxRuntime', () => {
       }),
     )
 
-    expect(calls[0]?.input).toMatchObject({ cwd: selected })
-    expect(calls[1]?.input).toMatchObject({ cwd: selected })
+    const expectedCwd = join(
+      browserosDir,
+      'vm',
+      'codex',
+      'harness',
+      'workspace',
+    )
+    expect(calls[0]?.input).toMatchObject({ cwd: expectedCwd })
+    expect(calls[1]?.input).toMatchObject({ cwd: expectedCwd })
     expect((calls[1]?.input as { sessionKey: string }).sessionKey).toMatch(
       /^agent:agent-1:main:[a-f0-9]{16}$/,
     )
   })
 
-  it('surfaces a clear error when selected cwd no longer exists', async () => {
+  it('does not surface host-cwd errors for container runtimes because selected host cwd is ignored', async () => {
     const browserosDir = await mkdtemp(
       join(tmpdir(), 'browseros-acpx-browseros-'),
     )
@@ -221,8 +251,8 @@ describe('AcpxRuntime', () => {
     })
     const agent = makeAgent({ id: 'agent-1', adapter: 'codex' })
 
-    await expect(
-      runtime.send({
+    await collectStream(
+      await runtime.send({
         agent,
         sessionId: 'main',
         sessionKey: agent.sessionKey,
@@ -230,8 +260,10 @@ describe('AcpxRuntime', () => {
         message: 'work here',
         permissionMode: 'approve-all',
       }),
-    ).rejects.toThrow(`Selected workspace does not exist: ${missingCwd}`)
-    expect(calls).toEqual([])
+    )
+    expect(calls[0]?.input).toMatchObject({
+      cwd: join(browserosDir, 'vm', 'codex', 'harness', 'workspace'),
+    })
   })
 
   it('loads history from the latest runtime-state session key', async () => {
@@ -727,10 +759,15 @@ Use the BrowserOS MCP server for all browser tasks, including browsing the web, 
   })
 
   it('continues the turn when runtime config control is unavailable', async () => {
+    const browserosDir = await mkdtemp(
+      join(tmpdir(), 'browseros-acpx-browseros-'),
+    )
+    const stateDir = await mkdtemp(join(tmpdir(), 'browseros-acpx-state-'))
+    tempDirs.push(browserosDir, stateDir)
     const calls: Array<{ method: string; input: unknown }> = []
     const runtime = new AcpxRuntime({
-      cwd: '/tmp/browseros-acpx-runtime',
-      stateDir: '/tmp/browseros-acpx-state',
+      browserosDir,
+      stateDir,
       runtimeFactory: () => createFakeAcpRuntime(calls, { failConfig: true }),
     })
     const agent: AgentDefinition = {
@@ -769,10 +806,15 @@ Use the BrowserOS MCP server for all browser tasks, including browsing the web, 
   })
 
   it('configures BrowserOS MCP and wraps turns with browser instructions', async () => {
+    const browserosDir = await mkdtemp(
+      join(tmpdir(), 'browseros-acpx-browseros-'),
+    )
+    const stateDir = await mkdtemp(join(tmpdir(), 'browseros-acpx-state-'))
+    tempDirs.push(browserosDir, stateDir)
     const calls: Array<{ method: string; input: unknown }> = []
     const runtime = new AcpxRuntime({
-      cwd: '/tmp/browseros-acpx-runtime',
-      stateDir: '/tmp/browseros-acpx-state',
+      browserosDir,
+      stateDir,
       browserosServerPort: 9321,
       runtimeFactory: (options) => {
         calls.push({ method: 'createRuntime', input: options })
@@ -804,7 +846,7 @@ Use the BrowserOS MCP server for all browser tasks, including browsing the web, 
         {
           type: 'http',
           name: 'browseros',
-          url: 'http://127.0.0.1:9321/mcp',
+          url: 'http://host.containers.internal:9321/mcp',
           headers: [],
         },
       ],
@@ -819,10 +861,15 @@ Use the BrowserOS MCP server for all browser tasks, including browsing the web, 
   })
 
   it('escapes user request tag boundaries in wrapped prompts', async () => {
+    const browserosDir = await mkdtemp(
+      join(tmpdir(), 'browseros-acpx-browseros-'),
+    )
+    const stateDir = await mkdtemp(join(tmpdir(), 'browseros-acpx-state-'))
+    tempDirs.push(browserosDir, stateDir)
     const calls: Array<{ method: string; input: unknown }> = []
     const runtime = new AcpxRuntime({
-      cwd: '/tmp/browseros-acpx-runtime',
-      stateDir: '/tmp/browseros-acpx-state',
+      browserosDir,
+      stateDir,
       runtimeFactory: () => createFakeAcpRuntime(calls),
     })
     const agent: AgentDefinition = {
@@ -856,10 +903,15 @@ Use the BrowserOS MCP server for all browser tasks, including browsing the web, 
   })
 
   it('does not pass native CLI permission flags to ACP adapters', async () => {
+    const browserosDir = await mkdtemp(
+      join(tmpdir(), 'browseros-acpx-browseros-'),
+    )
+    const stateDir = await mkdtemp(join(tmpdir(), 'browseros-acpx-state-'))
+    tempDirs.push(browserosDir, stateDir)
     const calls: Array<{ method: string; input: unknown }> = []
     const runtime = new AcpxRuntime({
-      cwd: '/tmp/browseros-acpx-runtime',
-      stateDir: '/tmp/browseros-acpx-state',
+      browserosDir,
+      stateDir,
       runtimeFactory: (options) => {
         calls.push({ method: 'createRuntime', input: options })
         return createFakeAcpRuntime(calls)
@@ -924,10 +976,11 @@ Use the BrowserOS MCP server for all browser tasks, including browsing the web, 
     const command =
       getCreateRuntimeOptions(calls).agentRegistry.resolve('claude')
     expect(command).toContain('env AGENT_HOME=')
+    expect(command).toContain('/vm/claude/harness/')
     expect(command).not.toContain('CLAUDE_CONFIG_DIR=')
     expect(command).not.toContain('CODEX_HOME=')
-    // Spawn must go through acpx-core's npx wrapper for the official
-    // claude-agent-acp package, not a bare `claude` binary.
+    // Spawn must go through the installed ACP adapter, not a bare `claude`
+    // binary.
     expect(command).toContain('claude-agent-acp')
   })
 
@@ -962,10 +1015,124 @@ Use the BrowserOS MCP server for all browser tasks, including browsing the web, 
       getCreateRuntimeOptions(calls).agentRegistry.resolve('codex')
     expect(command).toContain('env AGENT_HOME=')
     expect(command).toContain('CODEX_HOME=')
+    expect(command).toContain('/vm/codex/harness/')
     expect(command).toContain('/runtime/codex-home')
-    // Spawn must go through acpx-core's npx wrapper for the official
-    // codex-acp package, not a bare `codex` binary.
+    // Spawn must go through the installed ACP adapter, not a bare `codex`
+    // binary.
     expect(command).toContain('codex-acp')
+  })
+
+  it('resolves the Claude adapter to a container `nerdctl exec claude-agent-acp` command when a ClaudeRuntime is registered', async () => {
+    const browserosDir = await mkdtemp(
+      join(tmpdir(), 'browseros-acpx-browseros-'),
+    )
+    const stateDir = await mkdtemp(join(tmpdir(), 'browseros-acpx-state-'))
+    tempDirs.push(browserosDir, stateDir)
+    const fakeManagedDeps: ManagedContainerDeps = {
+      cli: {} as ManagedContainerDeps['cli'],
+      loader: {} as ManagedContainerDeps['loader'],
+      vm: {} as ManagedContainerDeps['vm'],
+      limactlPath: '/opt/homebrew/bin/limactl',
+      limaHome: '/Users/dev/.browseros-dev/lima',
+      vmName: 'browseros-vm',
+      lockDir: stateDir,
+    }
+    const claudeRuntime = new ClaudeRuntime(fakeManagedDeps, {
+      browserosDir,
+      claudeHarnessHostDir: join(browserosDir, 'vm', 'claude', 'harness'),
+    })
+    getAgentRuntimeRegistry().register(claudeRuntime)
+
+    const calls: Array<{ method: string; input: unknown }> = []
+    const runtime = new AcpxRuntime({
+      browserosDir,
+      stateDir,
+      runtimeFactory: (options) => {
+        calls.push({ method: 'createRuntime', input: options })
+        return createFakeAcpRuntime(calls)
+      },
+    })
+    const agent = makeAgent({ id: 'agent-1', adapter: 'claude' })
+
+    await collectStream(
+      await runtime.send({
+        agent,
+        sessionId: 'main',
+        sessionKey: agent.sessionKey,
+        message: 'hi',
+        permissionMode: 'approve-all',
+      }),
+    )
+
+    const command =
+      getCreateRuntimeOptions(calls).agentRegistry.resolve('claude')
+    expect(command).toContain('env LIMA_HOME=/Users/dev/.browseros-dev/lima')
+    expect(command).toContain(
+      '/opt/homebrew/bin/limactl shell --workdir / browseros-vm --',
+    )
+    expect(command).toContain('nerdctl exec -i')
+    expect(command).toContain('browseros-claude-claude-agent-1')
+    expect(command).toContain('claude-agent-acp')
+    expect(command).toContain('AGENT_HOME=')
+    expect(command).toContain('/vm/claude/harness/')
+    expect(command).not.toContain('CODEX_HOME=')
+    expect(command).not.toContain('CLAUDE_CONFIG_DIR=')
+  })
+
+  it('resolves the Codex adapter to a container `nerdctl exec codex-acp` command when a CodexRuntime is registered', async () => {
+    const browserosDir = await mkdtemp(
+      join(tmpdir(), 'browseros-acpx-browseros-'),
+    )
+    const stateDir = await mkdtemp(join(tmpdir(), 'browseros-acpx-state-'))
+    tempDirs.push(browserosDir, stateDir)
+    const fakeManagedDeps: ManagedContainerDeps = {
+      cli: {} as ManagedContainerDeps['cli'],
+      loader: {} as ManagedContainerDeps['loader'],
+      vm: {} as ManagedContainerDeps['vm'],
+      limactlPath: '/opt/homebrew/bin/limactl',
+      limaHome: '/Users/dev/.browseros-dev/lima',
+      vmName: 'browseros-vm',
+      lockDir: stateDir,
+    }
+    const codexRuntime = new CodexRuntime(fakeManagedDeps, {
+      browserosDir,
+      codexHarnessHostDir: join(browserosDir, 'vm', 'codex', 'harness'),
+    })
+    getAgentRuntimeRegistry().register(codexRuntime)
+
+    const calls: Array<{ method: string; input: unknown }> = []
+    const runtime = new AcpxRuntime({
+      browserosDir,
+      stateDir,
+      runtimeFactory: (options) => {
+        calls.push({ method: 'createRuntime', input: options })
+        return createFakeAcpRuntime(calls)
+      },
+    })
+    const agent = makeAgent({ id: 'agent-1', adapter: 'codex' })
+
+    await collectStream(
+      await runtime.send({
+        agent,
+        sessionId: 'main',
+        sessionKey: agent.sessionKey,
+        message: 'hi',
+        permissionMode: 'approve-all',
+      }),
+    )
+
+    const command =
+      getCreateRuntimeOptions(calls).agentRegistry.resolve('codex')
+    expect(command).toContain('env LIMA_HOME=/Users/dev/.browseros-dev/lima')
+    expect(command).toContain(
+      '/opt/homebrew/bin/limactl shell --workdir / browseros-vm --',
+    )
+    expect(command).toContain('nerdctl exec -i')
+    expect(command).toContain('browseros-codex-codex-agent-1')
+    expect(command).toContain('codex-acp')
+    expect(command).toContain('CODEX_HOME=')
+    expect(command).toContain('/vm/codex/harness/')
+    expect(command).not.toContain('CLAUDE_CONFIG_DIR=')
   })
 
   it('resolves the Hermes adapter to a container `nerdctl exec hermes acp` command when a HermesContainerRuntime is registered', async () => {
@@ -1219,10 +1386,15 @@ Use the BrowserOS MCP server for all browser tasks, including browsing the web, 
   })
 
   it('sets Claude approve-all sessions to bypass permissions before starting a turn', async () => {
+    const browserosDir = await mkdtemp(
+      join(tmpdir(), 'browseros-acpx-browseros-'),
+    )
+    const stateDir = await mkdtemp(join(tmpdir(), 'browseros-acpx-state-'))
+    tempDirs.push(browserosDir, stateDir)
     const calls: Array<{ method: string; input: unknown }> = []
     const runtime = new AcpxRuntime({
-      cwd: '/tmp/browseros-acpx-runtime',
-      stateDir: '/tmp/browseros-acpx-state',
+      browserosDir,
+      stateDir,
       runtimeFactory: () => createFakeAcpRuntime(calls),
     })
     const agent: AgentDefinition = {
@@ -1256,10 +1428,15 @@ Use the BrowserOS MCP server for all browser tasks, including browsing the web, 
   })
 
   it('continues Claude approve-all turns when mode control is unavailable', async () => {
+    const browserosDir = await mkdtemp(
+      join(tmpdir(), 'browseros-acpx-browseros-'),
+    )
+    const stateDir = await mkdtemp(join(tmpdir(), 'browseros-acpx-state-'))
+    tempDirs.push(browserosDir, stateDir)
     const calls: Array<{ method: string; input: unknown }> = []
     const runtime = new AcpxRuntime({
-      cwd: '/tmp/browseros-acpx-runtime',
-      stateDir: '/tmp/browseros-acpx-state',
+      browserosDir,
+      stateDir,
       runtimeFactory: () =>
         createFakeAcpRuntime(calls, { omitModeControl: true }),
     })
@@ -1314,10 +1491,15 @@ Use the BrowserOS MCP server for all browser tasks, including browsing the web, 
   })
 
   it('reuses cached runtime instances across per-turn timeouts', async () => {
+    const browserosDir = await mkdtemp(
+      join(tmpdir(), 'browseros-acpx-browseros-'),
+    )
+    const stateDir = await mkdtemp(join(tmpdir(), 'browseros-acpx-state-'))
+    tempDirs.push(browserosDir, stateDir)
     const calls: Array<{ method: string; input: unknown }> = []
     const runtime = new AcpxRuntime({
-      cwd: '/tmp/browseros-acpx-runtime',
-      stateDir: '/tmp/browseros-acpx-state',
+      browserosDir,
+      stateDir,
       runtimeFactory: (options) => {
         calls.push({ method: 'createRuntime', input: options })
         return createFakeAcpRuntime(calls)
@@ -1393,7 +1575,8 @@ async function createLatestRuntimeStateForTest(input: {
   await saveLatestRuntimeState(
     join(
       input.browserosDir,
-      'agents',
+      'vm',
+      'codex',
       'harness',
       'runtime-state',
       `${input.agentId}.json`,
@@ -1401,10 +1584,11 @@ async function createLatestRuntimeStateForTest(input: {
     {
       sessionId: 'main',
       runtimeSessionKey: input.runtimeSessionKey,
-      cwd: join(input.browserosDir, 'agents', 'harness', 'workspace'),
+      cwd: join(input.browserosDir, 'vm', 'codex', 'harness', 'workspace'),
       agentHome: join(
         input.browserosDir,
-        'agents',
+        'vm',
+        'codex',
         'harness',
         input.agentId,
         'home',

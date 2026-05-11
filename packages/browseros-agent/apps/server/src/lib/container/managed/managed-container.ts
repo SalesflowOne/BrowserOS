@@ -206,8 +206,13 @@ export abstract class ManagedContainer {
           intervalMs: probeOpts?.intervalMs ?? 500,
         })
         // Run the subclass-defined probe — usually a `--version` exec
-        // or HTTP /readyz call. Failing this is errored, not stopped.
-        const probeOk = await this.readinessProbe()
+        // or HTTP /readyz call. The container can report running
+        // before its entrypoint has completed setup, so retry within
+        // the same readiness budget before marking it errored.
+        const probeOk = await this.waitForReadinessProbe({
+          timeoutMs: probeOpts?.timeoutMs ?? 30_000,
+          intervalMs: probeOpts?.intervalMs ?? 500,
+        })
         if (!probeOk) {
           this.setState(
             'errored',
@@ -226,6 +231,18 @@ export abstract class ManagedContainer {
         throw err
       }
     })
+  }
+
+  private async waitForReadinessProbe(opts: {
+    timeoutMs: number
+    intervalMs: number
+  }): Promise<boolean> {
+    const deadline = Date.now() + opts.timeoutMs
+    while (true) {
+      if (await this.readinessProbe()) return true
+      if (Date.now() >= deadline) return false
+      await Bun.sleep(Math.min(opts.intervalMs, deadline - Date.now()))
+    }
   }
 
   /** Stop and remove the container. Image and per-agent data preserved. */

@@ -19,9 +19,7 @@ import {
   getHermesRuntime,
   HermesContainerRuntime,
   resetAgentRuntimeRegistry,
-  startHermesRuntimeBestEffort,
 } from '../../../../src/lib/agents/runtime'
-import type { RuntimeAction } from '../../../../src/lib/agents/runtime/types'
 import type {
   ManagedContainerDeps,
   MountRoot,
@@ -159,6 +157,7 @@ describe('HermesContainerRuntime', () => {
     const runtime = new HermesContainerRuntime(deps, {
       hermesHarnessHostDir: '/host/browseros/vm/hermes/harness',
     })
+    runtime.descriptor.readinessProbe = { timeoutMs: 20, intervalMs: 1 }
     await expect(runtime.start()).rejects.toThrow(/probe failed/i)
     expect(runtime.getState()).toBe('errored')
   })
@@ -249,79 +248,6 @@ describe('HermesContainerRuntime', () => {
       expect(() => configureHermesRuntime({ browserosDir })).toThrow(
         /already registered/,
       )
-    })
-  })
-
-  describe('startHermesRuntimeBestEffort', () => {
-    it('configures Hermes and schedules install + start actions', async () => {
-      const actions: RuntimeAction[] = []
-      const runtime = {
-        executeAction: async (action: RuntimeAction) => {
-          actions.push(action)
-        },
-      } as HermesContainerRuntime
-
-      const result = startHermesRuntimeBestEffort({
-        resourcesDir: '/Applications/BrowserOS.app/Contents/Resources',
-        configureRuntime: (options) => {
-          expect(options).toEqual({
-            resourcesDir: '/Applications/BrowserOS.app/Contents/Resources',
-          })
-          return runtime
-        },
-        onError: (phase, error) => {
-          throw new Error(`${phase}: ${String(error)}`)
-        },
-      })
-
-      expect(result).toBe(runtime)
-      expect(actions).toEqual([{ type: 'install' }, { type: 'start' }])
-    })
-
-    it('returns null when Hermes configuration throws', () => {
-      const errors: Array<{ phase: string; message: string }> = []
-
-      const result = startHermesRuntimeBestEffort({
-        configureRuntime: () => {
-          throw new Error('unsupported')
-        },
-        onError: (phase, error) => {
-          errors.push({
-            phase,
-            message: error instanceof Error ? error.message : String(error),
-          })
-        },
-      })
-
-      expect(result).toBeNull()
-      expect(errors).toEqual([{ phase: 'configure', message: 'unsupported' }])
-    })
-
-    it('reports install and start failures without throwing', async () => {
-      const errors: Array<{ phase: string; message: string }> = []
-      const runtime = {
-        executeAction: async (action: RuntimeAction) => {
-          throw new Error(`${action.type} failed`)
-        },
-      } as HermesContainerRuntime
-
-      const result = startHermesRuntimeBestEffort({
-        configureRuntime: () => runtime,
-        onError: (phase, error) => {
-          errors.push({
-            phase,
-            message: error instanceof Error ? error.message : String(error),
-          })
-        },
-      })
-
-      expect(result).toBe(runtime)
-      await Promise.resolve()
-      await Promise.resolve()
-      expect(errors).toEqual([
-        { phase: 'install', message: 'install failed' },
-        { phase: 'start', message: 'start failed' },
-      ])
     })
   })
 })

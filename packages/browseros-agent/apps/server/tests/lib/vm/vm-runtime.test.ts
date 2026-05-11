@@ -62,6 +62,39 @@ describe('VmRuntime', () => {
     ).resolves.toContain('mountPoint: "/mnt/browseros/vm"')
   })
 
+  it('serializes concurrent ensureReady calls against the same Lima home', async () => {
+    const limactlPath = await fakeLimactl(
+      { list: { stdout: '' }, create: {}, start: {} },
+      logPath,
+    )
+    const sshPath = await prepareReadySsh(limaHome, logPath)
+    const runtimeDeps = {
+      limactlPath,
+      limaHome,
+      sshPath,
+      templatePath,
+      browserosRoot: root,
+    }
+    const runtimeA = new VmRuntime(runtimeDeps)
+    const runtimeB = new VmRuntime(runtimeDeps)
+    const runtimeC = new VmRuntime(runtimeDeps)
+
+    await Promise.all([
+      runtimeA.ensureReady(),
+      runtimeB.ensureReady(),
+      runtimeC.ensureReady(),
+    ])
+
+    const log = await readFile(logPath, 'utf8')
+    expect(log.match(/ARGS:list --format json/g)).toHaveLength(1)
+    expect(
+      log.match(new RegExp(`ARGS:create --tty=false --name=${VM_NAME}`, 'g')),
+    ).toHaveLength(1)
+    expect(
+      log.match(new RegExp(`ARGS:start --tty=false ${VM_NAME}`, 'g')),
+    ).toHaveLength(1)
+  })
+
   it('returns fast when the VM is already running', async () => {
     const limactlPath = await fakeLimactl(
       {

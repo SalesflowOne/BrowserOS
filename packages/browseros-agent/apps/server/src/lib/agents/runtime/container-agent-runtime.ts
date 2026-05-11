@@ -16,6 +16,7 @@ import type {
   ContainerStatusSnapshot,
 } from '../../container/managed'
 import { ManagedContainer } from '../../container/managed'
+import { logger } from '../../logger'
 import type { AgentRuntime } from './agent-runtime'
 import { ActionNotSupportedError } from './errors'
 import type {
@@ -118,4 +119,43 @@ function actionToCapability(action: RuntimeAction): RuntimeCapability {
   // function so the gate can grow more nuanced (e.g. action-specific
   // sub-capabilities) without re-flowing the dispatcher.
   return action.type as RuntimeCapability
+}
+
+export function startContainerRuntimeBestEffort(
+  configure: () => ContainerAgentRuntime | null,
+): ContainerAgentRuntime | null {
+  let runtime: ContainerAgentRuntime | null
+  try {
+    runtime = configure()
+  } catch (err) {
+    logger.warn(
+      'Container runtime configuration failed, continuing without it',
+      {
+        error: err instanceof Error ? err.message : String(err),
+      },
+    )
+    return null
+  }
+
+  if (!runtime) return null
+
+  scheduleContainerRuntimeAction(runtime, { type: 'install' }, 'prewarm failed')
+  scheduleContainerRuntimeAction(
+    runtime,
+    { type: 'start' },
+    'container start failed',
+  )
+  return runtime
+}
+
+function scheduleContainerRuntimeAction(
+  runtime: ContainerAgentRuntime,
+  action: RuntimeAction,
+  failureMessage: string,
+): void {
+  void runtime.executeAction(action).catch((err) =>
+    logger.warn(`${runtime.descriptor.displayName} ${failureMessage}`, {
+      error: err instanceof Error ? err.message : String(err),
+    }),
+  )
 }

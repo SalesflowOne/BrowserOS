@@ -23,6 +23,7 @@ import { logger } from '../logger'
 import { prepareAcpxAgentContext } from './acpx-agent-adapter'
 import {
   resolveAgentRuntimePaths,
+  resolveVmAgentRuntimePaths,
   wrapCommandWithEnv,
 } from './acpx-runtime-context'
 import { loadLatestRuntimeState } from './acpx-runtime-state'
@@ -35,7 +36,7 @@ import {
   type OpenclawGatewayAccessor,
   resolveOpenclawAcpCommand,
 } from './openclaw/acp-command'
-import { getHermesRuntime } from './runtime'
+import { getClaudeRuntime, getCodexRuntime, getHermesRuntime } from './runtime'
 import type {
   AgentHistoryPage,
   AgentPromptInput,
@@ -192,10 +193,17 @@ export class AcpxRuntime implements AgentRuntime {
   private async loadLatestSessionRecord(
     agent: AgentPromptInput['agent'],
   ): Promise<AcpSessionRecord | null> {
-    const paths = resolveAgentRuntimePaths({
-      browserosDir: this.browserosDir,
-      agentId: agent.id,
-    })
+    const paths =
+      agent.adapter === 'claude' || agent.adapter === 'codex'
+        ? resolveVmAgentRuntimePaths({
+            browserosDir: this.browserosDir,
+            adapter: agent.adapter,
+            agentId: agent.id,
+          })
+        : resolveAgentRuntimePaths({
+            browserosDir: this.browserosDir,
+            agentId: agent.id,
+          })
     const latest = await loadLatestRuntimeState(paths.runtimeStatePath)
     if (latest) {
       const latestRecord = await this.sessionStore.load(
@@ -706,14 +714,17 @@ function createBrowserosAgentRegistry(input: {
         return wrapCommandWithEnv('hermes acp', input.commandEnv)
       }
 
-      // claude + codex resolve through acpx-core's built-in registry
-      // because the canonical command is an npx wrapper around the
-      // upstream ACP-adapter package (e.g. `npx @zed-industries/codex-acp`),
-      // and the package version range lives inside acpx-core. The
-      // ClaudeRuntime / CodexRuntime registrations still drive health
-      // probing and per-turn prep; only the spawn command source-of-
-      // truth stays in acpx-core.
-      if (lower === 'claude' || lower === 'codex') {
+      if (lower === 'claude') {
+        const runtime = getClaudeRuntime()
+        if (runtime)
+          return runtime.buildExecArgv(runtime.getAcpExecSpec(input.commandEnv))
+        return wrapCommandWithEnv(registry.resolve(agentName), input.commandEnv)
+      }
+
+      if (lower === 'codex') {
+        const runtime = getCodexRuntime()
+        if (runtime)
+          return runtime.buildExecArgv(runtime.getAcpExecSpec(input.commandEnv))
         return wrapCommandWithEnv(registry.resolve(agentName), input.commandEnv)
       }
 

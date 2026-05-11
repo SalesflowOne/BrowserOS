@@ -13,8 +13,19 @@ import { getAgentServerUrl } from '@/lib/browseros/helpers'
 
 interface AgentTerminalProps {
   onBack: () => void
+  target?: TerminalTargetId
+  agentId?: string
   initialCommand?: string
   onSessionExit?: () => void
+}
+
+type TerminalTargetId = 'openclaw' | 'claude' | 'codex' | 'hermes'
+
+interface TerminalTargetOption {
+  id: TerminalTargetId
+  label: string
+  workingDir: string
+  shell: string
 }
 
 type TerminalServerMessage =
@@ -23,6 +34,7 @@ type TerminalServerMessage =
   | { type: 'error'; message: string }
 
 const TERMINAL_HOME_DIR = OPENCLAW_CONTAINER_HOME
+const DEFAULT_TARGET: TerminalTargetId = 'openclaw'
 const TERMINAL_FONT_FAMILY =
   '"Geist Mono", Menlo, Monaco, "Courier New", monospace'
 
@@ -118,11 +130,14 @@ function parseTerminalMessage(data: unknown): TerminalServerMessage | null {
 
 export const AgentTerminal: FC<AgentTerminalProps> = ({
   onBack,
+  target = DEFAULT_TARGET,
+  agentId,
   initialCommand,
   onSessionExit,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
+  const sentInitialCommandRef = useRef(false)
   // Refs keep the mount-once effect from tearing down the PTY when the
   // parent re-renders with new inline callbacks.
   const initialCommandRef = useRef(initialCommand)
@@ -131,6 +146,45 @@ export const AgentTerminal: FC<AgentTerminalProps> = ({
   onSessionExitRef.current = onSessionExit
 
   const [copied, setCopied] = useState(false)
+  const [selectedTarget, setSelectedTarget] = useState<TerminalTargetId>(target)
+  const [targets, setTargets] = useState<TerminalTargetOption[]>([])
+
+  const selectedTargetInfo = targets.find(
+    (entry) => entry.id === selectedTarget,
+  )
+  const workingDir = selectedTargetInfo?.workingDir ?? TERMINAL_HOME_DIR
+  const shell = selectedTargetInfo?.shell ?? OPENCLAW_TERMINAL_SHELL
+
+  useEffect(() => {
+    setSelectedTarget(target)
+  }, [target])
+
+  useEffect(() => {
+    const ac = new AbortController()
+    const loadTargets = async (): Promise<void> => {
+      try {
+        const baseUrl = await getAgentServerUrl()
+        if (ac.signal.aborted) return
+        const url = new URL('/terminal/targets', baseUrl)
+        if (agentId) url.searchParams.set('agentId', agentId)
+        const res = await fetch(url, { signal: ac.signal })
+        if (!res.ok) return
+        const body = (await res.json()) as { targets?: TerminalTargetOption[] }
+        const nextTargets = body.targets ?? []
+        setTargets(nextTargets)
+        setSelectedTarget((current) =>
+          nextTargets.length > 0 &&
+          !nextTargets.some((entry) => entry.id === current)
+            ? nextTargets[0].id
+            : current,
+        )
+      } catch {
+        if (!ac.signal.aborted) setTargets([])
+      }
+    }
+    void loadTargets()
+    return () => ac.abort()
+  }, [agentId])
 
   // Copy the current xterm selection to the browser clipboard. No-op
   // if nothing is selected — users who want the whole buffer can
@@ -151,6 +205,8 @@ export const AgentTerminal: FC<AgentTerminalProps> = ({
 
   useEffect(() => {
     if (!containerRef.current) return
+
+    sentInitialCommandRef.current = false
 
     const terminal = new Terminal({
       fontSize: 14,
@@ -226,6 +282,8 @@ export const AgentTerminal: FC<AgentTerminalProps> = ({
       if (ac.signal.aborted) return
       const wsUrl = new URL('/terminal/ws', baseUrl)
       wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:'
+      wsUrl.searchParams.set('target', selectedTarget)
+      if (agentId) wsUrl.searchParams.set('agentId', agentId)
 
       ws = new WebSocket(wsUrl)
       // If the effect was cleaned up between the await above and now,
@@ -242,7 +300,10 @@ export const AgentTerminal: FC<AgentTerminalProps> = ({
         terminal.focus()
         sendResize()
         const cmd = initialCommandRef.current
-        if (cmd) sendMessage({ type: 'input', data: `${cmd}\n` })
+        if (cmd && !sentInitialCommandRef.current) {
+          sentInitialCommandRef.current = true
+          sendMessage({ type: 'input', data: `${cmd}\n` })
+        }
       }
 
       ws.onmessage = (event) => {
@@ -303,7 +364,7 @@ export const AgentTerminal: FC<AgentTerminalProps> = ({
       terminal.dispose()
       terminalRef.current = null
     }
-  }, [])
+  }, [agentId, selectedTarget])
 
   return (
     <div className="flex h-[calc(100dvh-10rem)] min-h-[32rem] w-full flex-col py-2 sm:min-h-[42rem] sm:py-4">
@@ -318,10 +379,25 @@ export const AgentTerminal: FC<AgentTerminalProps> = ({
                 Container Terminal
               </div>
               <div className="truncate text-muted-foreground text-sm">
-                OpenClaw shell in {TERMINAL_HOME_DIR}
+                {selectedTargetInfo?.label ?? 'Managed runtime'} shell
               </div>
             </div>
           </div>
+          {targets.length > 1 && (
+            <select
+              value={selectedTarget}
+              onChange={(event) =>
+                setSelectedTarget(event.currentTarget.value as TerminalTargetId)
+              }
+              className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+            >
+              {targets.map((entry) => (
+                <option key={entry.id} value={entry.id}>
+                  {entry.label}
+                </option>
+              ))}
+            </select>
+          )}
           <Button variant="outline" size="sm" onClick={handleCopy}>
             {copied ? (
               <Check className="mr-1 size-3.5" />
@@ -336,10 +412,10 @@ export const AgentTerminal: FC<AgentTerminalProps> = ({
           <div className="agent-terminal-shell flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-background">
             <div className="flex items-center justify-between gap-3 border-border border-b px-4 py-2.5">
               <div className="truncate font-mono text-muted-foreground text-xs">
-                {TERMINAL_HOME_DIR}
+                {workingDir}
               </div>
               <div className="font-mono text-[11px] text-muted-foreground">
-                {OPENCLAW_TERMINAL_SHELL.split('/').pop()}
+                {shell.split('/').pop()}
               </div>
             </div>
 

@@ -12,7 +12,7 @@ export {
   configureClaudeRuntime,
   getClaudeRuntime,
   prepareClaudeCodeContext,
-} from './claude-host-process-runtime'
+} from './claude-container-runtime'
 export {
   CodexRuntime,
   type CodexRuntimeConfig,
@@ -20,8 +20,11 @@ export {
   configureCodexRuntime,
   getCodexRuntime,
   prepareCodexContext,
-} from './codex-host-process-runtime'
-export { ContainerAgentRuntime } from './container-agent-runtime'
+} from './codex-container-runtime'
+export {
+  ContainerAgentRuntime,
+  startContainerRuntimeBestEffort,
+} from './container-agent-runtime'
 export { ActionNotSupportedError, RuntimeNotReadyError } from './errors'
 export {
   type ConfigureHermesRuntimeOptions,
@@ -30,8 +33,6 @@ export {
   HermesContainerRuntime,
   type HermesContainerRuntimeConfig,
   prepareHermesContext,
-  type StartHermesRuntimeBestEffortOptions,
-  startHermesRuntimeBestEffort,
 } from './hermes-container-runtime'
 export {
   HostProcessAgentRuntime,

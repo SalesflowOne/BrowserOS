@@ -90,6 +90,28 @@ describe('Application.start', () => {
     })
   })
 
+  it('starts Claude, Codex, and Hermes runtimes without blocking HTTP startup', async () => {
+    const { Application, createHttpServer, runtimeActions } =
+      await setupApplicationTest()
+    const app = new Application(config)
+
+    await app.start()
+
+    expect(createHttpServer).toHaveBeenCalledTimes(1)
+    expect(runtimeActions.claude).toEqual([
+      { type: 'install' },
+      { type: 'start' },
+    ])
+    expect(runtimeActions.codex).toEqual([
+      { type: 'install' },
+      { type: 'start' },
+    ])
+    expect(runtimeActions.hermes).toEqual([
+      { type: 'install' },
+      { type: 'start' },
+    ])
+  })
+
   it('stores the database below the BrowserOS directory instead of the execution directory', async () => {
     const originalBrowserosDir = process.env.BROWSEROS_DIR
     process.env.BROWSEROS_DIR = '/tmp/browseros-dogfood'
@@ -207,8 +229,32 @@ async function setupApplicationTest() {
       }) as never,
   )
 
-  const hermesExecuteAction = mock(async () => {})
-  const fakeHermesRuntime = { executeAction: hermesExecuteAction } as never
+  const runtimeActions = {
+    hermes: [] as Array<{ type: string }>,
+    claude: [] as Array<{ type: string }>,
+    codex: [] as Array<{ type: string }>,
+  }
+  const hermesExecuteAction = mock(async (action: { type: string }) => {
+    runtimeActions.hermes.push(action)
+  })
+  const fakeHermesRuntime = {
+    descriptor: { displayName: 'Hermes' },
+    executeAction: hermesExecuteAction,
+  } as never
+  const claudeExecuteAction = mock(async (action: { type: string }) => {
+    runtimeActions.claude.push(action)
+  })
+  const fakeClaudeRuntime = {
+    descriptor: { displayName: 'Claude Code' },
+    executeAction: claudeExecuteAction,
+  } as never
+  const codexExecuteAction = mock(async (action: { type: string }) => {
+    runtimeActions.codex.push(action)
+  })
+  const fakeCodexRuntime = {
+    descriptor: { displayName: 'Codex' },
+    executeAction: codexExecuteAction,
+  } as never
   spyOn(runtimeModule, 'configureHermesRuntime').mockImplementation(
     () => fakeHermesRuntime,
   )
@@ -216,10 +262,16 @@ async function setupApplicationTest() {
     () => fakeHermesRuntime,
   )
   spyOn(runtimeModule, 'configureClaudeRuntime').mockImplementation(
-    () => ({}) as never,
+    () => fakeClaudeRuntime,
   )
   spyOn(runtimeModule, 'configureCodexRuntime').mockImplementation(
-    () => ({}) as never,
+    () => fakeCodexRuntime,
+  )
+  spyOn(runtimeModule, 'getClaudeRuntime').mockImplementation(
+    () => fakeClaudeRuntime,
+  )
+  spyOn(runtimeModule, 'getCodexRuntime').mockImplementation(
+    () => fakeCodexRuntime,
   )
 
   const { Application } = await import('../src/main')
@@ -234,5 +286,8 @@ async function setupApplicationTest() {
     initializeDb,
     openClawService: { prewarm, tryAutoStart },
     hermesService: { executeAction: hermesExecuteAction },
+    claudeService: { executeAction: claudeExecuteAction },
+    codexService: { executeAction: codexExecuteAction },
+    runtimeActions,
   }
 }

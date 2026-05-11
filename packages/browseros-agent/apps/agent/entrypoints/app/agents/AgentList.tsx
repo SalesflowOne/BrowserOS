@@ -30,6 +30,7 @@ interface AgentListProps {
   deletingAgentKey: string | null
   onCreateAgent: () => void
   onDeleteAgent: (agent: AgentListItem) => void
+  onOpenTerminal?: (agent: AgentListItem) => void
   onPinToggle: (agent: AgentListItem, next: boolean) => void
 }
 
@@ -42,6 +43,7 @@ export const AgentList: FC<AgentListProps> = ({
   deletingAgentKey,
   onCreateAgent,
   onDeleteAgent,
+  onOpenTerminal,
   onPinToggle,
 }) => {
   const adapterHealth = useMemo(() => {
@@ -104,6 +106,7 @@ export const AgentList: FC<AgentListProps> = ({
             data={data}
             deleting={deletingAgentKey === agent.key}
             onDelete={onDeleteAgent}
+            onOpenTerminal={onOpenTerminal}
             onPinToggle={onPinToggle}
           />
         )

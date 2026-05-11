@@ -5,6 +5,7 @@ import {
   MoreHorizontal,
   Pencil,
   RotateCcw,
+  Terminal,
   Trash2,
 } from 'lucide-react'
 import type { FC } from 'react'
@@ -36,6 +37,7 @@ interface AgentActionsProps {
   activeTurnId: string | null
   deleting?: boolean
   onDelete: (agent: AgentListItem) => void
+  onOpenTerminal?: (agent: AgentListItem) => void
 }
 
 /**
@@ -50,6 +52,7 @@ export const AgentActions: FC<AgentActionsProps> = ({
   activeTurnId,
   deleting,
   onDelete,
+  onOpenTerminal,
 }) => {
   const navigate = useNavigate()
   const allowDelete = canDeleteAgent(agent)
@@ -102,6 +105,12 @@ export const AgentActions: FC<AgentActionsProps> = ({
             <Copy className="mr-2 size-3.5" />
             Copy id
           </DropdownMenuItem>
+          {onOpenTerminal && (
+            <DropdownMenuItem onSelect={() => onOpenTerminal(agent)}>
+              <Terminal className="mr-2 size-3.5" />
+              Open terminal
+            </DropdownMenuItem>
+          )}
           <ComingSoonItem
             icon={Pencil}
             label="Rename"

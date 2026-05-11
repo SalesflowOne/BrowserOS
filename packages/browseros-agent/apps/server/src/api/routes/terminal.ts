@@ -7,7 +7,8 @@ import {
 } from '../services/terminal/terminal-protocol'
 import {
   createTerminalSession,
-  TERMINAL_HOME_DIR,
+  listTerminalTargets,
+  resolveTerminalTarget,
   type TerminalSession,
 } from '../services/terminal/terminal-session'
 import type { Env } from '../types'
@@ -15,10 +16,17 @@ import type { Env } from '../types'
 export const TERMINAL_WS_PATH = '/terminal/ws'
 
 interface TerminalRouteDeps {
+  browserosDir: string
   containerName: string
+  listRunningContainers?: () => Promise<string[]>
   limaHome: string
   limactlPath: string | (() => string)
   vmName: string
+}
+
+interface TerminalRequestTarget {
+  target?: string | null
+  agentId?: string | null
 }
 
 function safeSend(ws: { send(data: string): void }, data: string): void {
@@ -39,7 +47,10 @@ function sendExit(ws: { send(data: string): void }, exitCode: number): void {
   safeSend(ws, serializeTerminalServerMessage({ type: 'exit', exitCode }))
 }
 
-export function createTerminalSocketEvents(deps: TerminalRouteDeps) {
+export function createTerminalSocketEvents(
+  deps: TerminalRouteDeps,
+  requestTarget: TerminalRequestTarget = {},
+) {
   let session: TerminalSession | null = null
 
   return {
@@ -49,12 +60,17 @@ export function createTerminalSocketEvents(deps: TerminalRouteDeps) {
           typeof deps.limactlPath === 'function'
             ? deps.limactlPath()
             : deps.limactlPath
+        const target = resolveTerminalTarget({
+          browserosDir: deps.browserosDir,
+          target: requestTarget.target,
+          agentId: requestTarget.agentId,
+          openclawContainerName: deps.containerName,
+        })
         session = createTerminalSession({
-          containerName: deps.containerName,
           limaHome: deps.limaHome,
           limactlPath,
+          target,
           vmName: deps.vmName,
-          workingDir: TERMINAL_HOME_DIR,
           onOutput(data) {
             sendOutput(ws, data)
           },
@@ -95,8 +111,28 @@ export function createTerminalSocketEvents(deps: TerminalRouteDeps) {
 }
 
 export function createTerminalRoutes(deps: TerminalRouteDeps) {
-  return new Hono<Env>().get(
-    '/ws',
-    upgradeWebSocket(() => createTerminalSocketEvents(deps)),
-  )
+  return new Hono<Env>()
+    .get('/targets', async (c) => {
+      let runningContainers: Set<string> | undefined
+      if (deps.listRunningContainers) {
+        runningContainers = new Set(await deps.listRunningContainers())
+      }
+      return c.json({
+        targets: listTerminalTargets({
+          browserosDir: deps.browserosDir,
+          agentId: c.req.query('agentId'),
+          runningContainers,
+          openclawContainerName: deps.containerName,
+        }),
+      })
+    })
+    .get(
+      '/ws',
+      upgradeWebSocket((c) =>
+        createTerminalSocketEvents(deps, {
+          target: c.req.query('target'),
+          agentId: c.req.query('agentId'),
+        }),
+      ),
+    )
 }

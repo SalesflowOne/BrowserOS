@@ -4,6 +4,7 @@
  */
 
 import { describe, expect, it } from 'bun:test'
+import { CLAUDE_CONTAINER_NAME } from '@browseros/shared/constants/claude'
 import { OPENCLAW_GATEWAY_CONTAINER_NAME } from '@browseros/shared/constants/openclaw'
 import {
   parseTerminalClientMessage,
@@ -12,7 +13,8 @@ import {
 import {
   buildTerminalEnv,
   buildTerminalExecCommand,
-  TERMINAL_HOME_DIR,
+  listTerminalTargets,
+  resolveTerminalTarget,
 } from '../../../src/api/services/terminal/terminal-session'
 
 describe('terminal protocol', () => {
@@ -56,8 +58,10 @@ describe('terminal protocol', () => {
       buildTerminalExecCommand(
         'limactl',
         'browseros-vm',
-        OPENCLAW_GATEWAY_CONTAINER_NAME,
-        TERMINAL_HOME_DIR,
+        resolveTerminalTarget({
+          browserosDir: '/tmp/browseros',
+          target: 'openclaw',
+        }),
       ),
     ).toEqual([
       'limactl',
@@ -71,6 +75,61 @@ describe('terminal protocol', () => {
       '/home/node/.openclaw',
       OPENCLAW_GATEWAY_CONTAINER_NAME,
       '/bin/sh',
+    ])
+  })
+
+  it('builds a Claude terminal command with the selected agent home', () => {
+    const target = resolveTerminalTarget({
+      browserosDir: '/tmp/browseros',
+      target: 'claude',
+      agentId: 'agent-1',
+    })
+
+    const agentHome = '/tmp/browseros/vm/claude/harness/agent-1/home'
+    expect(target).toMatchObject({
+      id: 'claude',
+      containerName: CLAUDE_CONTAINER_NAME,
+      workingDir: agentHome,
+      env: {
+        AGENT_HOME: agentHome,
+        HOME: agentHome,
+      },
+    })
+    expect(buildTerminalExecCommand('limactl', 'browseros-vm', target)).toEqual(
+      [
+        'limactl',
+        'shell',
+        'browseros-vm',
+        '--',
+        'nerdctl',
+        'exec',
+        '-it',
+        '-e',
+        `AGENT_HOME=${agentHome}`,
+        '-e',
+        `HOME=${agentHome}`,
+        '-w',
+        agentHome,
+        CLAUDE_CONTAINER_NAME,
+        '/bin/sh',
+      ],
+    )
+  })
+
+  it('lists only running managed terminal targets for an agent', () => {
+    expect(
+      listTerminalTargets({
+        browserosDir: '/tmp/browseros',
+        agentId: 'agent-1',
+        runningContainers: new Set([CLAUDE_CONTAINER_NAME]),
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        id: 'claude',
+        label: 'Claude Code runtime',
+        containerName: CLAUDE_CONTAINER_NAME,
+        running: true,
+      }),
     ])
   })
 

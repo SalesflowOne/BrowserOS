@@ -49,6 +49,14 @@ import {
 } from './useAgents'
 import { useOpenClawAgents, useOpenClawMutations } from './useOpenClaw'
 
+type TerminalTargetId = 'openclaw' | 'claude' | 'codex' | 'hermes'
+
+interface TerminalLaunch {
+  target: TerminalTargetId
+  agentId?: string
+  initialCommand?: string
+}
+
 export const AgentsPage: FC = () => {
   const navigate = useNavigate()
   const { providers, defaultProviderId } = useLlmProviders()
@@ -108,7 +116,9 @@ export const AgentsPage: FC = () => {
   const [harnessModelId, setHarnessModelId] = useState('')
   const [harnessReasoningEffort, setHarnessReasoningEffort] = useState('')
   const [createHermesProviderId, setCreateHermesProviderId] = useState('')
-  const [showTerminal, setShowTerminal] = useState(false)
+  const [terminalLaunch, setTerminalLaunch] = useState<TerminalLaunch | null>(
+    null,
+  )
   const [cliAuthModalOpen, setCliAuthModalOpen] = useState(false)
   const [pageError, setPageError] = useState<string | null>(null)
   const [createError, setCreateError] = useState<string | null>(null)
@@ -232,6 +242,20 @@ export const AgentsPage: FC = () => {
     setHarnessReasoningEffort(descriptor?.defaultReasoningEffort ?? '')
   }
 
+  const handleOpenAgentTerminal = (agent: {
+    agentId: string
+    runtimeLabel: string
+  }) => {
+    const target =
+      harnessAgentLookup.get(agent.agentId)?.adapter ??
+      inferTerminalTarget(agent.runtimeLabel)
+    if (!target) return
+    setTerminalLaunch({
+      target,
+      agentId: agent.agentId,
+    })
+  }
+
   const { handleCreate, handleDelete, handleSetup, runWithPageErrorHandling } =
     createAgentPageActions({
       createProviderId,
@@ -258,14 +282,22 @@ export const AgentsPage: FC = () => {
       setupOpenClaw,
     })
 
-  if (showTerminal) {
-    return <AgentTerminal onBack={() => setShowTerminal(false)} />
+  if (terminalLaunch) {
+    return (
+      <AgentTerminal
+        onBack={() => setTerminalLaunch(null)}
+        target={terminalLaunch.target}
+        agentId={terminalLaunch.agentId}
+        initialCommand={terminalLaunch.initialCommand}
+      />
+    )
   }
 
   if (cliAuthModalOpen && authTerminalProvider) {
     return (
       <AgentTerminal
         onBack={() => setCliAuthModalOpen(false)}
+        target="openclaw"
         initialCommand={authTerminalProvider.authLoginCommand}
         onSessionExit={() => setCliAuthModalOpen(false)}
       />
@@ -345,7 +377,7 @@ export const AgentsPage: FC = () => {
           <GatewayStatusBar
             status={status}
             actionInProgress={actionInProgress}
-            onOpenTerminal={() => setShowTerminal(true)}
+            onOpenTerminal={() => setTerminalLaunch({ target: 'openclaw' })}
             onRestart={() => {
               void runWithPageErrorHandling(restartOpenClaw)
             }}
@@ -363,6 +395,7 @@ export const AgentsPage: FC = () => {
           onDeleteAgent={(agent) => {
             void handleDelete(agent)
           }}
+          onOpenTerminal={handleOpenAgentTerminal}
           onPinToggle={(agent, next) => {
             // Optimistic mutation; harness-only — gateway-original
             // OpenClaw entries are gated server-side via the harness
@@ -429,4 +462,13 @@ export const AgentsPage: FC = () => {
       </div>
     </div>
   )
+}
+
+function inferTerminalTarget(label: string): TerminalTargetId | null {
+  const lower = label.toLowerCase()
+  if (lower === 'claude code') return 'claude'
+  if (lower === 'codex') return 'codex'
+  if (lower === 'hermes') return 'hermes'
+  if (lower === 'openclaw') return 'openclaw'
+  return null
 }

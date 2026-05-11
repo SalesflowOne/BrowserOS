@@ -57,11 +57,11 @@ export const AgentSummaryChips: FC<AgentSummaryChipsProps> = ({
           </HoverCardTrigger>
           <HoverCardContent side="right" className="w-72 text-sm">
             <div className="font-medium">
-              {adapterLabel(adapter)} CLI not available
+              {adapterLabel(adapter)} runtime unavailable
             </div>
             <div className="mt-1 text-muted-foreground text-xs">
               {adapterHealth.reason ??
-                'Adapter binary missing on $PATH. Install it from the adapter docs to use this agent.'}
+                'BrowserOS is still preparing this runtime. Retry after it is ready or use another adapter.'}
             </div>
           </HoverCardContent>
         </HoverCard>

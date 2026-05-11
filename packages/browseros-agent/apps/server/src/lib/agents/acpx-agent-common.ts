@@ -33,13 +33,19 @@ export interface BrowserosManagedContext {
 /** Builds the common BrowserOS-managed home, skills, cwd, and prompt prefix for Claude/Codex. */
 export async function prepareBrowserosManagedContext(
   input: PrepareAcpxAgentContextInput,
+  options: { paths?: AgentRuntimePaths; isDefaultWorkspace?: boolean } = {},
 ): Promise<BrowserosManagedContext> {
-  const paths = resolveAgentRuntimePaths({
-    browserosDir: input.browserosDir,
-    agentId: input.agent.id,
-    cwd: input.cwdOverride,
-  })
-  await ensureUsableCwd(paths.effectiveCwd, !input.isSelectedCwd)
+  const paths =
+    options.paths ??
+    resolveAgentRuntimePaths({
+      browserosDir: input.browserosDir,
+      agentId: input.agent.id,
+      cwd: input.cwdOverride,
+    })
+  await ensureUsableCwd(
+    paths.effectiveCwd,
+    options.isDefaultWorkspace ?? !input.isSelectedCwd,
+  )
   await ensureAgentHome(paths)
   const skillNames = await ensureRuntimeSkills(paths.runtimeSkillsDir)
   const promptPrefix = buildAcpxRuntimePromptPrefix({

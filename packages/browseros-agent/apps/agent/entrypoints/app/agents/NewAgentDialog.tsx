@@ -23,6 +23,7 @@ import type {
   HarnessAgentAdapter,
 } from './agent-harness-types'
 import type { CreateAgentRuntime, ProviderOption } from './agents-page-types'
+import { getAdapterReadinessAlert } from './new-agent-dialog.helpers'
 import { ProviderSelector } from './OpenClawControls'
 import {
   type OpenClawCliProvider,
@@ -95,6 +96,11 @@ export const NewAgentDialog: FC<NewAgentDialogProps> = ({
 }) => {
   const selectedHarnessAdapter =
     adapters.find((adapter) => adapter.id === harnessAdapterId) ?? adapters[0]
+  const selectedRuntimeAdapter =
+    createRuntime === 'openclaw'
+      ? undefined
+      : adapters.find((adapter) => adapter.id === createRuntime)
+  const adapterReadinessAlert = getAdapterReadinessAlert(selectedRuntimeAdapter)
   const isHarnessRuntime = createRuntime !== 'openclaw'
   const isHermesRuntime = createRuntime === 'hermes'
   const isClassicHarnessRuntime = isHarnessRuntime && !isHermesRuntime
@@ -112,6 +118,7 @@ export const NewAgentDialog: FC<NewAgentDialogProps> = ({
     !openClawBlocked &&
     !cliBlocked &&
     !hermesBlocked &&
+    !adapterReadinessAlert &&
     (createRuntime === 'openclaw'
       ? providers.length > 0
       : Boolean(selectedHarnessAdapter))
@@ -175,6 +182,16 @@ export const NewAgentDialog: FC<NewAgentDialogProps> = ({
               </SelectContent>
             </Select>
           </div>
+
+          {adapterReadinessAlert ? (
+            <Alert>
+              <AlertCircle className="size-4" />
+              <AlertTitle>{adapterReadinessAlert.title}</AlertTitle>
+              <AlertDescription>
+                {adapterReadinessAlert.description}
+              </AlertDescription>
+            </Alert>
+          ) : null}
 
           {createRuntime === 'openclaw' ? (
             <>

@@ -48,10 +48,12 @@ class TestContainer extends ManagedContainer {
     defaultImage: 'docker.io/test:latest',
     containerName: 'test-container',
     platforms: ['darwin' as NodeJS.Platform],
+    readinessProbe: { timeoutMs: 20, intervalMs: 1 },
   }
 
   probeOutcome: boolean | Error = true
   probeCalls = 0
+  falseProbeCallsBeforeSuccess = 0
 
   protected mountRoots(): readonly MountRoot[] {
     return [
@@ -73,6 +75,10 @@ class TestContainer extends ManagedContainer {
 
   protected async readinessProbe(): Promise<boolean> {
     this.probeCalls += 1
+    if (this.falseProbeCallsBeforeSuccess > 0) {
+      this.falseProbeCallsBeforeSuccess -= 1
+      return false
+    }
     if (this.probeOutcome instanceof Error) throw this.probeOutcome
     return this.probeOutcome
   }
@@ -167,6 +173,18 @@ describe('ManagedContainer', () => {
       await expect(c.start()).rejects.toThrow(/probe failed/i)
       expect(c.getState()).toBe('errored')
       expect(c.getStatusSnapshot().lastError).toMatch(/probe failed/i)
+    })
+
+    it('retries readiness probe before landing in running', async () => {
+      const lockDir = mkTempDir()
+      const deps = makeFakeDeps({ lockDir })
+      const c = new TestContainer(deps)
+      c.falseProbeCallsBeforeSuccess = 2
+
+      await c.start()
+
+      expect(c.getState()).toBe('running')
+      expect(c.probeCalls).toBe(3)
     })
 
     it('stop() force-transitions to stopped even from errored', async () => {

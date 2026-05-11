@@ -33,6 +33,7 @@ export const AgentRowCard: FC<AgentRowCardProps> = ({
   data,
   deleting,
   onDelete,
+  onOpenTerminal,
   onPinToggle,
 }) => {
   return (
@@ -92,6 +93,7 @@ export const AgentRowCard: FC<AgentRowCardProps> = ({
           activeTurnId={data.activeTurnId}
           deleting={deleting}
           onDelete={onDelete}
+          onOpenTerminal={onOpenTerminal}
         />
       </div>
     </div>

@@ -17,8 +17,10 @@ import { cors } from 'hono/cors'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { HttpAgentError } from '../agent/errors'
 import { INLINED_ENV } from '../env'
+import { getBrowserosDir } from '../lib/browseros-dir'
 import { KlavisClient } from '../lib/clients/klavis/klavis-client'
 import { initializeOAuth, shutdownOAuth } from '../lib/clients/oauth'
+import { ContainerCli } from '../lib/container/container-cli'
 import { getDb } from '../lib/db'
 import { logger } from '../lib/logger'
 import { Sentry } from '../lib/sentry'
@@ -109,14 +111,24 @@ export async function createHttpServer(config: HttpServerConfig) {
     .use('/*', requireTrustedAppOrigin())
     .route('/', createOpenClawRoutes())
 
+  const browserosDir = getBrowserosDir()
+  const terminalLimaHome = getLimaHomeDir(browserosDir)
+  const resolveTerminalLimactl = () => resolveBundledLimactl(resourcesDir)
   const terminalRoutes = new Hono<Env>()
     .use('/*', requireTrustedAppOrigin())
     .route(
       '/',
       createTerminalRoutes({
+        browserosDir,
         containerName: OPENCLAW_GATEWAY_CONTAINER_NAME,
-        limaHome: getLimaHomeDir(),
-        limactlPath: () => resolveBundledLimactl(resourcesDir),
+        limaHome: terminalLimaHome,
+        limactlPath: resolveTerminalLimactl,
+        listRunningContainers: async () =>
+          new ContainerCli({
+            limactlPath: resolveTerminalLimactl(),
+            limaHome: terminalLimaHome,
+            vmName: VM_NAME,
+          }).ps({ namesOnly: true }),
         vmName: VM_NAME,
       }),
     )

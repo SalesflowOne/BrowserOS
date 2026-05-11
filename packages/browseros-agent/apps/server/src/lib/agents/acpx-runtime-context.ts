@@ -6,15 +6,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { constants, type Stats } from 'node:fs'
-import {
-  access,
-  readFile,
-  rename,
-  rm,
-  stat,
-  symlink,
-  writeFile,
-} from 'node:fs/promises'
+import { access, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { ensureDirectory } from '../ensure-directory'
@@ -64,6 +56,31 @@ export function resolveAgentRuntimePaths(input: {
   }
 }
 
+export function resolveVmAgentRuntimePaths(input: {
+  browserosDir: string
+  adapter: 'claude' | 'codex'
+  agentId: string
+}): AgentRuntimePaths {
+  const harnessDir = join(input.browserosDir, 'vm', input.adapter, 'harness')
+  const defaultWorkspaceCwd = join(harnessDir, 'workspace')
+  const runtimeRoot = join(harnessDir, input.agentId, 'runtime')
+  return {
+    browserosDir: input.browserosDir,
+    harnessDir,
+    agentHome: join(harnessDir, input.agentId, 'home'),
+    defaultWorkspaceCwd,
+    effectiveCwd: defaultWorkspaceCwd,
+    runtimeStatePath: join(
+      harnessDir,
+      'runtime-state',
+      `${input.agentId}.json`,
+    ),
+    runtimeSkillsDir: join(harnessDir, 'runtime-skills'),
+    runtimeRoot,
+    codexHome: join(runtimeRoot, 'codex-home'),
+  }
+}
+
 /** Seeds the stable per-agent identity and memory home without overwriting edits. */
 export async function ensureAgentHome(paths: AgentRuntimePaths): Promise<void> {
   await ensureDirectory(join(paths.agentHome, 'memory'))
@@ -94,9 +111,10 @@ export async function materializeCodexHome(input: {
     input.sourceCodexHome ??
     process.env.CODEX_HOME?.trim() ??
     join(homedir(), '.codex')
-  await symlinkIfPresent(
+  await copyIfPresent(
     join(source, 'auth.json'),
     join(input.paths.codexHome, 'auth.json'),
+    { overwrite: true },
   )
   for (const file of ['config.json', 'config.toml', 'instructions.md']) {
     await copyIfPresent(join(source, file), join(input.paths.codexHome, file))
@@ -110,6 +128,23 @@ export async function materializeCodexHome(input: {
         'utf8',
       ),
     )
+  }
+}
+
+/** Prepares the Claude home that Claude Code sees through HOME/.claude. */
+export async function materializeClaudeHome(input: {
+  paths: AgentRuntimePaths
+  sourceClaudeHome?: string
+}): Promise<void> {
+  const source =
+    input.sourceClaudeHome ??
+    process.env.CLAUDE_CONFIG_DIR?.trim() ??
+    join(homedir(), '.claude')
+  const target = join(input.paths.agentHome, '.claude')
+  for (const file of ['settings.json', 'CLAUDE.md']) {
+    await copyIfPresent(join(source, file), join(target, file), {
+      overwrite: true,
+    })
   }
 }
 
@@ -203,19 +238,17 @@ async function writeFileIfMissing(
   }
 }
 
-async function symlinkIfPresent(source: string, target: string): Promise<void> {
-  if (!(await sourceFileExists(source))) return
-  await ensureDirectory(dirname(target))
-  try {
-    await symlink(source, target)
-  } catch (err) {
-    if (!isAlreadyExistsError(err)) throw err
-  }
-}
-
-async function copyIfPresent(source: string, target: string): Promise<void> {
+async function copyIfPresent(
+  source: string,
+  target: string,
+  opts: { overwrite?: boolean } = {},
+): Promise<void> {
   if (!(await sourceFileExists(source))) return
   const content = await readFile(source, 'utf8')
+  if (opts.overwrite) {
+    await writeFileAtomic(target, content)
+    return
+  }
   await ensureDirectory(dirname(target))
   try {
     await writeFile(target, content, { encoding: 'utf8', flag: 'wx' })

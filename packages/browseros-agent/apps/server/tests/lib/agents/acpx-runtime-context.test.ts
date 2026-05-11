@@ -6,11 +6,11 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import {
   chmod,
-  lstat,
   mkdir,
   mkdtemp,
   readFile,
   rm,
+  stat,
   writeFile,
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -19,6 +19,7 @@ import {
   buildAcpxRuntimePromptPrefix,
   ensureAgentHome,
   ensureRuntimeSkills,
+  materializeClaudeHome,
   materializeCodexHome,
   resolveAgentRuntimePaths,
   wrapCommandWithEnv,
@@ -161,7 +162,7 @@ describe('acpx runtime context helpers', () => {
     expect(await readFile(skillPath, 'utf8')).toContain('BrowserOS MCP')
   })
 
-  it('materializes Codex home with auth symlink and all runtime skills', async () => {
+  it('materializes Codex home with copied auth and all runtime skills', async () => {
     const browserosDir = await mkdtemp(join(tmpdir(), 'browseros-context-'))
     const sourceCodexHome = await mkdtemp(
       join(tmpdir(), 'browseros-codex-src-'),
@@ -174,8 +175,11 @@ describe('acpx runtime context helpers', () => {
 
     await materializeCodexHome({ paths, skillNames: skills, sourceCodexHome })
 
-    const auth = await lstat(join(paths.codexHome, 'auth.json'))
-    expect(auth.isSymbolicLink()).toBe(true)
+    const auth = await stat(join(paths.codexHome, 'auth.json'))
+    expect(auth.isFile()).toBe(true)
+    expect(await readFile(join(paths.codexHome, 'auth.json'), 'utf8')).toBe(
+      '{"ok":true}\n',
+    )
     expect(await readFile(join(paths.codexHome, 'config.toml'), 'utf8')).toBe(
       'model = "test"\n',
     )
@@ -185,6 +189,32 @@ describe('acpx runtime context helpers', () => {
         'utf8',
       ),
     ).toContain('BrowserOS MCP')
+  })
+
+  it('materializes Claude home with portable settings under HOME/.claude', async () => {
+    const browserosDir = await mkdtemp(join(tmpdir(), 'browseros-context-'))
+    const sourceClaudeHome = await mkdtemp(
+      join(tmpdir(), 'browseros-claude-src-'),
+    )
+    tempDirs.push(browserosDir, sourceClaudeHome)
+    await writeFile(
+      join(sourceClaudeHome, 'settings.json'),
+      '{"apiKeyHelper":"echo test"}\n',
+    )
+    await writeFile(join(sourceClaudeHome, 'CLAUDE.md'), '# User memory\n')
+    const paths = resolveAgentRuntimePaths({ browserosDir, agentId: 'agent-1' })
+
+    await materializeClaudeHome({
+      paths,
+      sourceClaudeHome,
+    })
+
+    expect(
+      await readFile(join(paths.agentHome, '.claude', 'settings.json'), 'utf8'),
+    ).toBe('{"apiKeyHelper":"echo test"}\n')
+    expect(
+      await readFile(join(paths.agentHome, '.claude', 'CLAUDE.md'), 'utf8'),
+    ).toBe('# User memory\n')
   })
 
   it('rejects non-file Codex auth sources instead of silently skipping auth', async () => {

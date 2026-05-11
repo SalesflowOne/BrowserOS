@@ -47,5 +47,6 @@ export interface AgentRowData {
 
 export interface AgentRowCallbacks {
   onDelete: (agent: AgentListItem) => void
+  onOpenTerminal?: (agent: AgentListItem) => void
   onPinToggle: (agent: AgentListItem, next: boolean) => void
 }

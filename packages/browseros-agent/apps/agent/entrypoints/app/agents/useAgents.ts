@@ -70,6 +70,7 @@ export function useAgentAdapters(enabled = true) {
       return data.adapters ?? []
     },
     enabled: Boolean(baseUrl) && !urlLoading && enabled,
+    refetchInterval: enabled ? 5_000 : false,
   })
 
   return {

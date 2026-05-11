@@ -3,18 +3,20 @@
  * Copyright 2025 BrowserOS
  */
 
-import { describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it, mock, spyOn } from 'bun:test'
 import {
   ActionNotSupportedError,
   ContainerAgentRuntime,
   type RuntimeCapability,
   type RuntimeStatusSnapshot,
+  startContainerRuntimeBestEffort,
 } from '../../../../src/lib/agents/runtime'
 import type {
   ManagedContainerDeps,
   MountRoot,
 } from '../../../../src/lib/container/managed'
 import type { ContainerSpec } from '../../../../src/lib/container/types'
+import { logger } from '../../../../src/lib/logger'
 
 interface Call {
   kind: 'install' | 'start' | 'stop' | 'restart' | 'reset'
@@ -87,6 +89,10 @@ function makeDeps(): ManagedContainerDeps {
 }
 
 describe('ContainerAgentRuntime', () => {
+  afterEach(() => {
+    mock.restore()
+  })
+
   it('default capabilities cover lifecycle + reset levels + logs', () => {
     const r = new TestRuntime(makeDeps())
     expect(r.getCapabilities()).toEqual([
@@ -183,6 +189,31 @@ describe('ContainerAgentRuntime', () => {
       await expect(
         r.executeAction({ type: 'check-auth' }),
       ).rejects.toBeInstanceOf(ActionNotSupportedError)
+    })
+  })
+
+  describe('startContainerRuntimeBestEffort', () => {
+    it('configures a container runtime and schedules install + start', () => {
+      const r = new TestRuntime(makeDeps())
+
+      const result = startContainerRuntimeBestEffort(() => r)
+
+      expect(result).toBe(r)
+      expect(r.calls.map((c) => c.kind)).toEqual(['install', 'start'])
+    })
+
+    it('returns null when configuration throws', () => {
+      const loggerWarn = spyOn(logger, 'warn').mockImplementation(() => {})
+
+      const result = startContainerRuntimeBestEffort(() => {
+        throw new Error('limactl missing')
+      })
+
+      expect(result).toBeNull()
+      expect(loggerWarn).toHaveBeenCalledWith(
+        'Container runtime configuration failed, continuing without it',
+        { error: 'limactl missing' },
+      )
     })
   })
 })

@@ -24,8 +24,11 @@ import { INLINED_ENV } from './env'
 import {
   configureClaudeRuntime,
   configureCodexRuntime,
+  configureHermesRuntime,
+  getClaudeRuntime,
+  getCodexRuntime,
   getHermesRuntime,
-  startHermesRuntimeBestEffort,
+  startContainerRuntimeBestEffort,
 } from './lib/agents/runtime'
 import {
   cleanOldSessions,
@@ -66,8 +69,6 @@ export class Application {
 
     const resourcesDir = path.resolve(this.config.resourcesDir)
     configureVmRuntime({ resourcesDir })
-    configureClaudeRuntime()
-    configureCodexRuntime()
     await this.initCoreServices()
 
     if (!this.config.cdpPort) {
@@ -158,7 +159,15 @@ export class Application {
       })
     }
 
-    startHermesRuntimeBestEffort({ resourcesDir })
+    startContainerRuntimeBestEffort(() =>
+      configureClaudeRuntime({ resourcesDir }),
+    )
+    startContainerRuntimeBestEffort(() =>
+      configureCodexRuntime({ resourcesDir }),
+    )
+    startContainerRuntimeBestEffort(() =>
+      configureHermesRuntime({ resourcesDir }),
+    )
 
     metrics.log('http_server.started', { version: VERSION })
   }
@@ -170,6 +179,12 @@ export class Application {
       .shutdown()
       .catch(() => {})
     getHermesRuntime()
+      ?.executeAction({ type: 'stop' })
+      .catch(() => {})
+    getClaudeRuntime()
+      ?.executeAction({ type: 'stop' })
+      .catch(() => {})
+    getCodexRuntime()
       ?.executeAction({ type: 'stop' })
       .catch(() => {})
     removeServerConfigSync()
