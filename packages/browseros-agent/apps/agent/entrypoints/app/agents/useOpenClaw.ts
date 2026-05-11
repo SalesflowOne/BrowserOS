@@ -9,36 +9,6 @@ export interface AgentEntry {
   source?: 'openclaw' | 'agent-harness'
 }
 
-/**
- * Vestige type kept so the legacy UI helpers in agents-page-utils +
- * OpenClawControls + agents-page-types still compile. Those files are
- * the next deletion target — once they're gone this can vanish too.
- */
-export interface OpenClawStatus {
-  status: 'uninitialized' | 'starting' | 'running' | 'stopped' | 'error'
-  podmanAvailable: boolean
-  machineReady: boolean
-  port: number | null
-  agentCount: number
-  error: string | null
-  controlPlaneStatus:
-    | 'disconnected'
-    | 'connecting'
-    | 'connected'
-    | 'reconnecting'
-    | 'recovering'
-    | 'failed'
-  lastGatewayError: string | null
-  lastRecoveryReason:
-    | 'transient_disconnect'
-    | 'signature_expired'
-    | 'pairing_required'
-    | 'token_mismatch'
-    | 'container_not_ready'
-    | 'unknown'
-    | null
-}
-
 export interface OpenClawAgentMutationInput {
   name: string
   providerType?: string
@@ -69,13 +39,6 @@ export function getModelDisplayName(model: unknown): string | undefined {
 export const OPENCLAW_QUERY_KEYS = {
   agents: 'openclaw-agents',
 } as const
-
-export type GatewayLifecycleAction =
-  | 'setup'
-  | 'start'
-  | 'stop'
-  | 'restart'
-  | 'reconnect'
 
 async function clawFetch<T>(
   baseUrl: string,
