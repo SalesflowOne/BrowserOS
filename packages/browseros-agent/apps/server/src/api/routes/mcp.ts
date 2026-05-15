@@ -28,6 +28,12 @@ interface McpRouteDeps {
   klavisRef?: KlavisProxyRef
 }
 
+function parseOptionalNumber(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined
+  const n = Number(value)
+  return Number.isFinite(n) ? n : undefined
+}
+
 export function createMcpRoutes(deps: McpRouteDeps) {
   const app = new Hono<Env>()
 
@@ -58,12 +64,20 @@ export function createMcpRoutes(deps: McpRouteDeps) {
         ? monitoringService.createObserver(monitoringSessionId, agentId)
         : undefined
 
+    // Lets the host pin every browser tool call in this request to a
+    // specific window. register-mcp.ts injects this into args.windowId
+    // for any tool whose zod input schema has a windowId field.
+    const defaultWindowId = parseOptionalNumber(
+      c.req.header('X-BrowserOS-Default-Window-Id'),
+    )
+
     // Per-request server + transport: no shared state, no race conditions,
     // no ID collisions. Required by MCP SDK 1.26.0+ security fix (GHSA-345p-7cg4-v4c7).
     const mcpServer = createMcpServer({
       ...deps,
       aclRules,
       observer,
+      defaultWindowId,
     })
     const transport = new StreamableHTTPTransport({
       sessionIdGenerator: undefined,
