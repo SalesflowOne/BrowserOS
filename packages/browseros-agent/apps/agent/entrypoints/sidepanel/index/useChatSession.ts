@@ -571,7 +571,7 @@ export const useChatSession = (options?: ChatSessionOptions) => {
     if (chatError) invalidateCredits()
   }, [chatError, invalidateCredits])
 
-  // Sync pending tool approvals to shared storage for the admin dashboard
+  // Sync pending tool approvals to shared storage
   useEffect(() => {
     let isCancelled = false
 
@@ -599,7 +599,7 @@ export const useChatSession = (options?: ChatSessionOptions) => {
     }
   }, [messages])
 
-  // Watch for approval responses from the admin dashboard
+  // Watch for approval responses
   // biome-ignore lint/correctness/useExhaustiveDependencies: only set up once
   useEffect(() => {
     const handleResponses = async (responses: ApprovalResponse[]) => {
