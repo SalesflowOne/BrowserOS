@@ -56,10 +56,6 @@ export const TIPS: Tip[] = [
     text: 'If BrowserOS offers to connect an app, saying yes lets it use that app directly next time.',
   },
   {
-    id: 'soul-md',
-    text: "Tell the assistant things like 'be more direct' or 'always ask first,' and it updates your SOUL.md.",
-  },
-  {
     id: 'sync-to-cloud',
     text: 'Sign in to sync your chats, settings, and scheduled tasks across devices. API keys stay on each device.',
   },
@@ -82,10 +78,6 @@ export const TIPS: Tip[] = [
   {
     id: 'vertical-tabs',
     text: 'Turn on Vertical Tabs in Settings > Customization to move your tabs into a readable list on the left.',
-  },
-  {
-    id: 'memory',
-    text: "Say 'remember this' to save something important, or ask 'what do you remember about X?' later.",
   },
 ]
 

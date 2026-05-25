@@ -128,7 +128,6 @@ async function setupApplicationTest() {
   const loggerModule = await import('../src/lib/logger')
   const metricsModule = await import('../src/lib/metrics')
   const sentryModule = await import('../src/lib/sentry')
-  const soulModule = await import('../src/lib/soul')
   const migrateModule = await import('../src/skills/migrate')
   const remoteSyncModule = await import('../src/skills/remote-sync')
 
@@ -179,7 +178,6 @@ async function setupApplicationTest() {
   spyOn(sentryModule.Sentry, 'setUser').mockImplementation(() => {})
   spyOn(sentryModule.Sentry, 'captureException').mockImplementation(() => {})
 
-  spyOn(soulModule, 'seedSoulTemplate').mockImplementation(async () => {})
   spyOn(migrateModule, 'migrateBuiltinSkills').mockImplementation(
     async () => {},
   )

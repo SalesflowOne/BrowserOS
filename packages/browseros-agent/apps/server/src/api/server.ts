@@ -30,7 +30,6 @@ import { createCreditsRoutes } from './routes/credits'
 import { createHealthRoute } from './routes/health'
 import { createKlavisRoutes } from './routes/klavis'
 import { createMcpRoutes } from './routes/mcp'
-import { createMemoryRoutes } from './routes/memory'
 import { createMonitoringRoutes } from './routes/monitoring'
 import { createOAuthRoutes } from './routes/oauth'
 import { createOpenClawRoutes } from './routes/openclaw'
@@ -38,7 +37,6 @@ import { createProviderRoutes } from './routes/provider'
 import { createRefinePromptRoutes } from './routes/refine-prompt'
 import { createShutdownRoute } from './routes/shutdown'
 import { createSkillsRoutes } from './routes/skills'
-import { createSoulRoutes } from './routes/soul'
 import { createStatusRoute } from './routes/status'
 import { createTerminalRoutes } from './routes/terminal'
 import { GlobalAclPolicyService } from './services/acl/global-acl-policy'
@@ -194,8 +192,6 @@ export async function createHttpServer(config: HttpServerConfig) {
       }),
     )
     .route('/status', createStatusRoute({ browser }))
-    .route('/soul', createSoulRoutes())
-    .route('/memory', createMemoryRoutes())
     .route('/skills', createSkillsRoutes())
     .route('/monitoring', monitoringRoutes)
     .route('/acl-rules', aclRoutes)

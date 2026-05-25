@@ -49,7 +49,7 @@ MCP server and AI agent loop powering BrowserOS browser automation. This is the 
 
 ## MCP Tools
 
-53+ tools organized by category:
+Tools organized by category:
 
 | Category | Tools |
 |----------|-------|
@@ -64,7 +64,6 @@ MCP server and AI agent loop powering BrowserOS browser automation. This is the 
 | **History** | `history_search`, `history_recent`, `history_delete`, `history_delete_range` |
 | **Tab Groups** | `group_list`, `group_create`, `group_update`, `group_ungroup`, `group_close` |
 | **Filesystem** | `ls`, `read`, `write`, `edit`, `find`, `grep`, `bash` |
-| **Memory** | `read_core`, `update_core`, `read_soul`, `update_soul`, `search_memory`, `write_memory` |
 | **DOM** | `dom`, `dom_search` |
 | **Console** | `get_console_messages` |
 | **Other** | `browseros_info`, `handle_dialog`, `wait_for`, `download`, `export_pdf`, `output_file`, `nudges` |
@@ -118,7 +117,6 @@ apps/server/
 │   │   ├── navigation.ts
 │   │   ├── input.ts
 │   │   ├── snapshot.ts
-│   │   ├── memory/
 │   │   ├── filesystem/
 │   │   └── ...
 │   ├── skills/                # Skills system

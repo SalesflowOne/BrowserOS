@@ -1,12 +1,10 @@
 import {
-  Brain,
   CalendarClock,
   Cpu,
   Home,
   PlugZap,
   Settings,
   Shield,
-  Sparkles,
   Wand2,
 } from 'lucide-react'
 import type { FC } from 'react'
@@ -52,18 +50,6 @@ const primaryNavItems: NavItem[] = [
     to: '/home/skills',
     icon: Wand2,
     feature: Feature.SKILLS_SUPPORT,
-  },
-  {
-    name: 'Memory',
-    to: '/home/memory',
-    icon: Brain,
-    feature: Feature.MEMORY_SUPPORT,
-  },
-  {
-    name: 'Soul',
-    to: '/home/soul',
-    icon: Sparkles,
-    feature: Feature.SOUL_SUPPORT,
   },
   {
     name: 'Governance',
