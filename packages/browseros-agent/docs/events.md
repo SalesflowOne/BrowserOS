@@ -149,7 +149,6 @@ Prefix: `browseros.native.extension.`
 | `onboarding.step.viewed` | — | Onboarding step viewed |
 | `onboarding.step.completed` | — | Onboarding step completed |
 | `onboarding.about.submitted` | — | User submitted "about me" info |
-| `onboarding.soul.selected` | — | User selected a soul/persona |
 | `onboarding.connect_apps.viewed` | — | Connect apps step viewed |
 | `onboarding.app.connected` | — | App connected during onboarding |
 | `onboarding.connect_apps.skipped` | — | Connect apps step skipped |

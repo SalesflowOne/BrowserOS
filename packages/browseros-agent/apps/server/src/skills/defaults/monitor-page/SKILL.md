@@ -23,12 +23,13 @@ Activate when the user asks to monitor a page for changes, watch for price drops
 2. **Capture the baseline.** Navigate to the page and extract the current state:
    - Use `navigate_page` to load the target URL
    - Use `get_page_content` or `evaluate_script` to extract the specific content to track
-   - Keep the baseline in the task output. If a workspace is selected, save it to a file with a descriptive name like `monitor-{url-slug}-baseline.md`
+   - For recurring or scheduled monitoring, require a selected workspace and save the baseline to a durable file with a descriptive name like `monitor-{url-slug}-baseline.md`
+   - If no workspace is selected, include the baseline in the response and explain that future comparisons need either the same conversation context or a selected workspace file
 
 3. **Check for changes.** On subsequent checks:
    - Navigate to the same URL
    - Extract the same content using the same method
-   - Compare against the prior baseline from the conversation or workspace file
+   - Compare against the prior baseline from the current conversation or the workspace baseline file
    - Report differences
 
 4. **Report findings:**
@@ -52,11 +53,11 @@ Last checked: [current date/time]
 Monitoring: [what you're tracking]
 ```
 
-5. **Update the baseline** after reporting changes by including the new baseline in the response or updating the workspace baseline file.
+5. **Update the baseline** after reporting changes by updating the workspace baseline file. If no workspace is selected, include the new baseline in the response for manual follow-up.
 
 ## Tips
 
 - For price monitoring, extract just the price element rather than the full page to avoid false positives from ad changes.
 - Use `evaluate_script` with specific CSS selectors for precise element tracking.
-- Suggest the user set a reminder to ask you to check again — BrowserOS doesn't yet have scheduled tasks.
+- Suggest a scheduled task only when a durable workspace baseline is available for future runs.
 - For stock availability, look for phrases like "In Stock", "Out of Stock", or "Add to Cart" button presence.
