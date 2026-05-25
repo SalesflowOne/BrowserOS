@@ -1,11 +1,4 @@
-import {
-  CalendarClock,
-  Cpu,
-  Home,
-  PlugZap,
-  Settings,
-  Shield,
-} from 'lucide-react'
+import { CalendarClock, Cpu, Home, PlugZap, Settings } from 'lucide-react'
 import type { FC } from 'react'
 import { NavLink, useLocation } from 'react-router'
 import {
@@ -45,12 +38,10 @@ const primaryNavItems: NavItem[] = [
     feature: Feature.ALPHA_FEATURES_SUPPORT,
   },
   {
-    name: 'Governance',
-    to: '/admin',
-    icon: Shield,
-    feature: Feature.ALPHA_FEATURES_SUPPORT,
+    name: 'Settings',
+    to: '/settings/ai',
+    icon: Settings,
   },
-  { name: 'Settings', to: '/settings/ai', icon: Settings },
 ]
 
 function isNavItemActive(item: NavItem, pathname: string): boolean {

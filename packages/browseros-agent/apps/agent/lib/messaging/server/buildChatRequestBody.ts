@@ -1,4 +1,3 @@
-import type { AclRule } from '@browseros/shared/types/acl'
 import type { ChatMode } from '@/entrypoints/sidepanel/index/chatTypes'
 import type { LlmProviderConfig } from '@/lib/llm-providers/types'
 import type { ToolApprovalConfig } from '@/lib/tool-approvals/types'
@@ -44,7 +43,6 @@ interface ChatRequestBodyParams {
   supportsImages?: boolean
   previousConversation?: ChatHistoryEntry[] | string
   declinedApps?: string[]
-  aclRules?: AclRule[]
   selectedText?: string
   selectedTextSource?: {
     url: string
@@ -75,7 +73,6 @@ export const buildChatRequestBody = ({
   supportsImages,
   previousConversation,
   declinedApps,
-  aclRules,
   selectedText,
   selectedTextSource,
   toolApprovalConfig,
@@ -106,7 +103,6 @@ export const buildChatRequestBody = ({
   supportsImages: supportsImages ?? provider.supportsImages,
   previousConversation,
   declinedApps: declinedApps?.length ? declinedApps : undefined,
-  aclRules: aclRules?.length ? aclRules : undefined,
   selectedText,
   selectedTextSource,
   toolApprovalConfig: toRequestToolApprovalConfig(toolApprovalConfig),

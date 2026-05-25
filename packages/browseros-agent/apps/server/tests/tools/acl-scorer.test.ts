@@ -2,9 +2,12 @@ import { describe, it, setDefaultTimeout } from 'bun:test'
 import assert from 'node:assert'
 import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
-import type { AclRule, ElementProperties } from '@browseros/shared/types/acl'
 import { editDistanceRatio } from '../../src/tools/acl/acl-edit-distance'
-import { scoreFixture } from '../../src/tools/acl/acl-scorer'
+import {
+  type AclRule,
+  type ElementProperties,
+  scoreFixture,
+} from '../../src/tools/acl/acl-scorer'
 
 const TEST_TIMEOUT_MS = 30_000
 

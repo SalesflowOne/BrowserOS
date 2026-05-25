@@ -10,8 +10,6 @@ import { OnboardingDemo } from '../onboarding/demo/OnboardingDemo'
 import { FeaturesPage } from '../onboarding/features/Features'
 import { Onboarding } from '../onboarding/index/Onboarding'
 import { StepsLayout } from '../onboarding/steps/StepsLayout'
-import { AclSettingsPage } from './acl-settings/AclSettingsPage'
-import { AdminDashboardPage } from './admin-dashboard/AdminDashboardPage'
 import { AgentCommandConversation } from './agent-command/AgentCommandConversation'
 import { AgentCommandHome } from './agent-command/AgentCommandHome'
 import { AgentCommandLayout } from './agent-command/agent-command-layout'
@@ -122,9 +120,6 @@ export const App: FC = () => {
               </Route>
             </>
           ) : null}
-          {alphaEnabled ? (
-            <Route path="admin" element={<AdminDashboardPage />} />
-          ) : null}
         </Route>
 
         {/* Settings with dedicated sidebar */}
@@ -139,10 +134,7 @@ export const App: FC = () => {
             <Route path="survey" element={<SurveyPage {...surveyParams} />} />
             <Route path="usage" element={<UsagePage />} />
             {alphaEnabled ? (
-              <>
-                <Route path="acl" element={<AclSettingsPage />} />
-                <Route path="approvals" element={<ToolApprovalsPage />} />
-              </>
+              <Route path="approvals" element={<ToolApprovalsPage />} />
             ) : null}
           </Route>
         </Route>
@@ -170,18 +162,12 @@ export const App: FC = () => {
           path="/settings/connect-mcp"
           element={<Navigate to="/connect-apps" replace />}
         />
-        <Route
-          path="/audit"
-          element={<Navigate to={alphaEnabled ? '/admin' : '/home'} replace />}
-        />
+        <Route path="/audit" element={<Navigate to="/home" replace />} />
         <Route
           path="/observability"
-          element={<Navigate to={alphaEnabled ? '/admin' : '/home'} replace />}
+          element={<Navigate to="/home" replace />}
         />
-        <Route
-          path="/executions"
-          element={<Navigate to={alphaEnabled ? '/admin' : '/home'} replace />}
-        />
+        <Route path="/executions" element={<Navigate to="/home" replace />} />
         <Route path="/options/*" element={<OptionsRedirect />} />
 
         {/* Fallback to home */}

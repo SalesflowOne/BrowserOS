@@ -107,7 +107,6 @@ function commonRequestInput() {
       { role: 'assistant' as const, content: 'Prior answer' },
     ],
     declinedApps: ['gmail'],
-    aclRules: [{ id: 'rule-1', sitePattern: '*://*/*', enabled: true }],
     selectedText: 'selected text',
     selectedTextSource: {
       url: 'https://example.com',

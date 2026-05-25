@@ -240,7 +240,6 @@ export class ChatService {
         klavisRef: this.deps.klavisRef,
         browserosId: this.deps.browserosId,
         aiSdkDevtoolsEnabled: this.deps.aiSdkDevtoolsEnabled,
-        aclRules: request.aclRules,
       })
       session = {
         agent,
@@ -252,8 +251,6 @@ export class ChatService {
       }
       sessionStore.set(request.conversationId, session)
     }
-
-    session.agent.updateAclRules(request.aclRules)
 
     if (isNewSession && request.previousConversation?.length) {
       for (const msg of request.previousConversation) {
@@ -416,7 +413,6 @@ export class ChatService {
       klavisRef: this.deps.klavisRef,
       browserosId: this.deps.browserosId,
       aiSdkDevtoolsEnabled: this.deps.aiSdkDevtoolsEnabled,
-      aclRules: request.aclRules,
     })
     const newSession: AgentSession = {
       agent,

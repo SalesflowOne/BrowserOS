@@ -1,25 +1,20 @@
 import { afterAll, describe, it } from 'bun:test'
 import assert from 'node:assert'
 import type { Browser } from '../../src/browser/browser'
-import { disposeSemanticPipeline } from '../../src/tools/acl/acl-embeddings'
 import { executeTool, type ToolContext } from '../../src/tools/framework'
 import {
   check,
   click,
-  click_at,
   fill,
   hover,
   press_key,
   scroll,
   select_option,
-  type_at,
   uncheck,
 } from '../../src/tools/input'
-import { close_page, navigate_page, new_page } from '../../src/tools/navigation'
+import { close_page, new_page } from '../../src/tools/navigation'
 import { evaluate_script, take_snapshot } from '../../src/tools/snapshot'
 import { cleanupWithBrowser, withBrowser } from '../__helpers__/with-browser'
-
-process.env.ACL_EMBEDDING_DISABLE = 'true'
 
 function textOf(result: {
   content: { type: string; text?: string }[]
@@ -53,72 +48,6 @@ function findElementId(snapshotText: string, label: string): number {
   const match = snapshotText.match(regex)
   if (!match) throw new Error(`Element "${label}" not found in snapshot`)
   return Number.parseInt(match[1], 10)
-}
-
-async function pointInsideElement(
-  ctx: ToolContext,
-  pageId: number,
-  elementDomId: string,
-): Promise<{ x: number; y: number }> {
-  const pointResult = await executeTool(
-    evaluate_script,
-    {
-      page: pageId,
-      expression: `(() => {
-        const el = document.getElementById(${JSON.stringify(elementDomId)});
-        if (!el) return null;
-        const rect = el.getBoundingClientRect();
-        const insetX = Math.max(1, Math.min(10, Math.floor(rect.width / 4)));
-        const insetY = Math.max(1, Math.min(10, Math.floor(rect.height / 4)));
-        const candidates = [
-          {
-            x: Math.round(rect.left + rect.width / 2),
-            y: Math.round(rect.top + rect.height / 2),
-          },
-          {
-            x: Math.round(rect.left + insetX),
-            y: Math.round(rect.top + insetY),
-          },
-          {
-            x: Math.round(rect.right - insetX),
-            y: Math.round(rect.top + insetY),
-          },
-          {
-            x: Math.round(rect.left + insetX),
-            y: Math.round(rect.bottom - insetY),
-          },
-          {
-            x: Math.round(rect.right - insetX),
-            y: Math.round(rect.bottom - insetY),
-          },
-        ];
-        for (const candidate of candidates) {
-          const target = document.elementFromPoint(candidate.x, candidate.y);
-          if (target && (target === el || el.contains(target))) {
-            return { ...candidate, matched: true, hitId: target.id || null };
-          }
-        }
-        const fallback = candidates[0];
-        const fallbackTarget = document.elementFromPoint(fallback.x, fallback.y);
-        return {
-          ...fallback,
-          matched: false,
-          hitId: fallbackTarget instanceof Element ? fallbackTarget.id || null : null,
-        };
-      })()`,
-    },
-    ctx,
-    AbortSignal.timeout(30_000),
-  )
-  const point = structuredOf<{
-    value: { x: number; y: number; matched: boolean; hitId: string | null }
-  } | null>(pointResult)?.value
-  assert.ok(point, `Expected a point for #${elementDomId}`)
-  assert.ok(
-    point.matched,
-    `Expected coordinates inside #${elementDomId}, got ${point.hitId ?? 'null'}`,
-  )
-  return { x: point.x, y: point.y }
 }
 
 const FORM_PAGE = `data:text/html,${encodeURIComponent(`<!DOCTYPE html>
@@ -158,10 +87,7 @@ const FORM_PAGE = `data:text/html,${encodeURIComponent(`<!DOCTYPE html>
   </script>
 </body></html>`)}`
 
-afterAll(async () => {
-  await disposeSemanticPipeline()
-  await cleanupWithBrowser()
-})
+afterAll(cleanupWithBrowser)
 
 describe('input tools', () => {
   it('fill types text into an input', async () => {
@@ -457,174 +383,6 @@ describe('input tools', () => {
       assert.ok(textOf(hoverResult).includes('Hovered'))
 
       await execute(close_page, { page: pageId })
-    })
-  }, 60_000)
-
-  it('applies updated ACL rules on an existing tool context', async () => {
-    await withBrowser(async ({ browser }) => {
-      const ctx: ToolContext = {
-        browser,
-        directories: { workingDir: process.cwd() },
-      }
-      const run =
-        (tool: typeof new_page | typeof take_snapshot | typeof click) =>
-        (args: unknown) =>
-          executeTool(tool, args, ctx, AbortSignal.timeout(30_000))
-
-      const newResult = await run(new_page)({ url: FORM_PAGE })
-      const pageId = pageIdOf(newResult)
-
-      const snap = await run(take_snapshot)({ page: pageId })
-      const btnId = findElementId(textOf(snap), 'Submit')
-
-      const beforeBlock = await run(click)({ page: pageId, element: btnId })
-      assert.ok(!beforeBlock.isError, textOf(beforeBlock))
-
-      ctx.aclRules = [
-        {
-          id: 'submit-rule',
-          sitePattern: '*',
-          textMatch: 'Submit',
-          enabled: true,
-        },
-      ]
-
-      const afterBlock = await run(click)({ page: pageId, element: btnId })
-      assert.ok(afterBlock.isError, 'Expected ACL block after updating rules')
-      assert.ok(textOf(afterBlock).includes('Action blocked by ACL rule'))
-
-      await executeTool(
-        close_page,
-        { page: pageId },
-        ctx,
-        AbortSignal.timeout(30_000),
-      )
-    })
-  }, 60_000)
-
-  it('blocks coordinate-based actions with ACL intent rules', async () => {
-    await withBrowser(async ({ browser }) => {
-      const ctx: ToolContext = {
-        browser,
-        directories: { workingDir: process.cwd() },
-        aclRules: [
-          {
-            id: 'submit-rule',
-            sitePattern: '*',
-            textMatch: 'Submit',
-            enabled: true,
-          },
-          {
-            id: 'name-rule',
-            sitePattern: '*',
-            textMatch: 'Enter name',
-            enabled: true,
-          },
-        ],
-      }
-
-      const newResult = await executeTool(
-        new_page,
-        { url: FORM_PAGE },
-        ctx,
-        AbortSignal.timeout(30_000),
-      )
-      const pageId = pageIdOf(newResult)
-
-      const buttonPoint = await pointInsideElement(ctx, pageId, 'submit-btn')
-
-      const blockedClick = await executeTool(
-        click_at,
-        { page: pageId, x: buttonPoint.x, y: buttonPoint.y },
-        ctx,
-        AbortSignal.timeout(30_000),
-      )
-      assert.ok(blockedClick.isError, 'Expected click_at to be blocked')
-
-      ctx.aclRules = [
-        {
-          id: 'site-lock',
-          sitePattern: '*',
-          enabled: true,
-        },
-      ]
-
-      const inputPoint = await pointInsideElement(ctx, pageId, 'name')
-
-      const blockedType = await executeTool(
-        type_at,
-        { page: pageId, x: inputPoint.x, y: inputPoint.y, text: 'blocked' },
-        ctx,
-        AbortSignal.timeout(30_000),
-      )
-      assert.ok(blockedType.isError, 'Expected type_at to be blocked')
-
-      await executeTool(
-        close_page,
-        { page: pageId },
-        ctx,
-        AbortSignal.timeout(30_000),
-      )
-    })
-  }, 60_000)
-
-  it('matches site ACLs after navigation with fresh page info', async () => {
-    await withBrowser(async ({ browser }) => {
-      const ctx: ToolContext = {
-        browser,
-        directories: { workingDir: process.cwd() },
-        aclRules: [
-          {
-            id: 'example-site-rule',
-            sitePattern: 'example.com',
-            enabled: true,
-          },
-        ],
-      }
-
-      const newResult = await executeTool(
-        new_page,
-        { url: 'about:blank' },
-        ctx,
-        AbortSignal.timeout(30_000),
-      )
-      const pageId = pageIdOf(newResult)
-
-      const navResult = await executeTool(
-        navigate_page,
-        { page: pageId, action: 'url', url: 'https://example.com' },
-        ctx,
-        AbortSignal.timeout(30_000),
-      )
-      assert.ok(!navResult.isError, textOf(navResult))
-
-      const snap = await executeTool(
-        take_snapshot,
-        { page: pageId },
-        ctx,
-        AbortSignal.timeout(30_000),
-      )
-      const linkMatch = textOf(snap).match(/\[(\d+)\]\s*link/)
-      assert.ok(linkMatch, `Expected a link in snapshot:\n${textOf(snap)}`)
-      const linkId = Number(linkMatch?.[1])
-
-      const blockedClick = await executeTool(
-        click,
-        { page: pageId, element: linkId },
-        ctx,
-        AbortSignal.timeout(30_000),
-      )
-      assert.ok(
-        blockedClick.isError,
-        'Expected example.com ACL to match after navigation',
-      )
-
-      await executeTool(
-        close_page,
-        { page: pageId },
-        ctx,
-        AbortSignal.timeout(30_000),
-      )
     })
   }, 60_000)
 })

@@ -1,5 +1,3 @@
-import { matchesSitePattern } from '@browseros/shared/acl/match'
-import type { AclRule, ElementProperties } from '@browseros/shared/types/acl'
 import { logger } from '../../lib/logger'
 import { editDistanceRatio } from './acl-edit-distance'
 import { computeSemanticSimilarity } from './acl-embeddings'
@@ -9,6 +7,24 @@ const EXACT_WEIGHT = 0.25
 const FUZZY_WEIGHT = 0.25
 const SEMANTIC_WEIGHT = 0.5
 const BLOCK_THRESHOLD = 0.4
+
+export interface AclRule {
+  id: string
+  sitePattern: string
+  selector?: string
+  textMatch?: string
+  description?: string
+  enabled: boolean
+}
+
+export interface ElementProperties {
+  tagName: string
+  textContent: string
+  attributes: Record<string, string>
+  labelText?: string
+  ariaLabel?: string
+  role?: string
+}
 
 export interface RuleScore {
   ruleId: string
@@ -105,6 +121,42 @@ function selectorMatchesProps(
     if (match && match[1].toLowerCase() === tag) return true
   }
   return false
+}
+
+function sitePatternToRegex(pattern: string): RegExp {
+  const slashIdx = pattern.indexOf('/')
+  const hostPart = slashIdx === -1 ? pattern : pattern.slice(0, slashIdx)
+  const pathPart = slashIdx === -1 ? '' : pattern.slice(slashIdx)
+
+  const escapeAndGlob = (s: string, slashWild: boolean) =>
+    s
+      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+      .replace(/\*\*/g, '{{GLOBSTAR}}')
+      .replace(/\*/g, slashWild ? '.*' : '[^./]*')
+      .replace(/\?/g, '.')
+      .replace(/\{\{GLOBSTAR\}\}/g, '.*')
+
+  const hostRegex = escapeAndGlob(hostPart, false)
+  const pathRegex = pathPart ? escapeAndGlob(pathPart, true) : '(?:/.*)?'
+
+  return new RegExp(`^${hostRegex}${pathRegex}$`, 'i')
+}
+
+function matchesSitePattern(url: string, pattern: string): boolean {
+  if (!pattern) return false
+  if (pattern === '*') return true
+  try {
+    const { hostname, pathname } = new URL(url)
+
+    const isSimpleDomain = !pattern.includes('*') && !pattern.includes('/')
+    if (isSimpleDomain) {
+      return hostname === pattern || hostname.endsWith(`.${pattern}`)
+    }
+
+    return sitePatternToRegex(pattern).test(hostname + pathname)
+  } catch {
+    return false
+  }
 }
 
 // --- Feature extraction ---
@@ -349,6 +401,7 @@ async function scoreRule(
   return result
 }
 
+/** Scores a rule set against a captured element for reference tests and future ACL restoration work. */
 export async function scoreFixture(
   toolName: string,
   pageUrl: string,

@@ -6,7 +6,6 @@ import type {
 import { AGENT_LIMITS } from '@browseros/shared/constants/limits'
 import type { BrowserContext } from '@browseros/shared/schemas/browser-context'
 import { LLM_PROVIDERS } from '@browseros/shared/schemas/llm'
-import type { AclRule } from '@browseros/shared/types/acl'
 import {
   type LanguageModel,
   type ModelMessage,
@@ -47,7 +46,6 @@ export interface AiSdkAgentConfig {
   klavisRef?: KlavisProxyRef
   browserosId?: string
   aiSdkDevtoolsEnabled?: boolean
-  aclRules?: AclRule[]
 }
 
 export class AiSdkAgent {
@@ -57,7 +55,6 @@ export class AiSdkAgent {
     private _mcpClients: Array<{ close(): Promise<void> }>,
     private conversationId: string,
     private _toolNames: Set<string>,
-    private toolContext: ToolContext,
   ) {}
 
   /** Tool names registered on this agent — used to sanitize messages during session rebuilds. */
@@ -99,7 +96,6 @@ export class AiSdkAgent {
         origin: config.resolvedConfig.origin,
         originPageId,
       },
-      aclRules: config.aclRules,
     }
     const allBrowserTools = buildBrowserToolSet(
       config.registry,
@@ -277,7 +273,6 @@ export class AiSdkAgent {
       clients,
       config.resolvedConfig.conversationId,
       new Set(Object.keys(tools)),
-      toolContext,
     )
   }
 
@@ -299,10 +294,6 @@ export class AiSdkAgent {
       role: 'user',
       parts: [{ type: 'text', text: content }],
     })
-  }
-
-  updateAclRules(rules?: AclRule[]): void {
-    this.toolContext.aclRules = rules
   }
 
   async dispose(): Promise<void> {

@@ -23,7 +23,6 @@ import { getDb } from '../lib/db'
 import { logger } from '../lib/logger'
 import { Sentry } from '../lib/sentry'
 import { getLimaHomeDir, resolveBundledLimactl, VM_NAME } from '../lib/vm'
-import { createAclRoutes } from './routes/acl'
 import { createAgentRoutes } from './routes/agents'
 import { createChatRoutes } from './routes/chat'
 import { createCreditsRoutes } from './routes/credits'
@@ -38,7 +37,6 @@ import { createRefinePromptRoutes } from './routes/refine-prompt'
 import { createShutdownRoute } from './routes/shutdown'
 import { createStatusRoute } from './routes/status'
 import { createTerminalRoutes } from './routes/terminal'
-import { GlobalAclPolicyService } from './services/acl/global-acl-policy'
 import {
   connectKlavisInBackground,
   type KlavisProxyRef,
@@ -90,9 +88,6 @@ export async function createHttpServer(config: HttpServerConfig) {
     : null
   if (!browserosId) shutdownOAuth()
 
-  const aclPolicyService = new GlobalAclPolicyService()
-  await aclPolicyService.load()
-
   // Connect Klavis proxy in background with retry — browser tools available immediately
   const klavisRef: KlavisProxyRef = { handle: null }
   const stopKlavisBackground = browserosId
@@ -117,10 +112,6 @@ export async function createHttpServer(config: HttpServerConfig) {
         vmName: VM_NAME,
       }),
     )
-
-  const aclRoutes = new Hono<Env>()
-    .use('/*', requireTrustedAppOrigin())
-    .route('/', createAclRoutes({ policyService: aclPolicyService }))
 
   const monitoringRoutes = new Hono<Env>()
     .use('/*', requireTrustedAppOrigin())
@@ -192,7 +183,6 @@ export async function createHttpServer(config: HttpServerConfig) {
     )
     .route('/status', createStatusRoute({ browser }))
     .route('/monitoring', monitoringRoutes)
-    .route('/acl-rules', aclRoutes)
     .route('/test-provider', createProviderRoutes({ browserosId }))
     .route('/refine-prompt', createRefinePromptRoutes({ browserosId }))
     .route(
@@ -221,7 +211,6 @@ export async function createHttpServer(config: HttpServerConfig) {
         browser,
         executionDir,
         resourcesDir,
-        policyService: aclPolicyService,
         klavisRef,
       }),
     )
