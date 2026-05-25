@@ -2,7 +2,7 @@ diff --git a/chrome/browser/extensions/updater/extension_updater.cc b/chrome/bro
 index bd09a39459441..8860719396ce8 100644
 --- a/chrome/browser/extensions/updater/extension_updater.cc
 +++ b/chrome/browser/extensions/updater/extension_updater.cc
-@@ -562,6 +562,100 @@ void ExtensionUpdater::CheckNow(CheckParams params) {
+@@ -562,6 +562,103 @@ void ExtensionUpdater::CheckNow(CheckParams params) {
    }
  }
  
@@ -17,9 +17,12 @@ index bd09a39459441..8860719396ce8 100644
 +    return;
 +  }
 +
-+  CHECK(enabled_);
-+  CHECK(alive_);
-+  CHECK(pending_extension_manager_);
++  if (!enabled_ || !alive_ || !pending_extension_manager_) {
++    if (params.callback) {
++      std::move(params.callback).Run();
++    }
++    return;
++  }
 +
 +  if (params.ids.empty()) {
 +    if (params.callback) {

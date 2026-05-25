@@ -24,7 +24,7 @@ index 77281f600f64d..ef60366c81f3a 100644
  
 +  // Don't show the dialog for BrowserOS extensions
 +  if (browseros::IsBrowserOSExtension(extension->id())) {
-+    LOG(INFO) << "browseros: Skipping settings override dialog for BrowserOS extension "
++    VLOG(2) << "browseros: Skipping settings override dialog for BrowserOS extension "
 +              << extension->id();
 +    return std::nullopt;
 +  }

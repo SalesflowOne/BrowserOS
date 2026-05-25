@@ -8,10 +8,10 @@ index 738696abf04fa..469b5cbcc0f8d 100644
  #include <algorithm>
 +#include <optional>
  #include <string>
-+#include <tuple>
  
  #include "base/check_deref.h"
  #include "base/command_line.h"
++#include "base/logging.h"
 @@ -23,11 +25,14 @@
  #include "build/build_config.h"
  #include "chrome/app/chrome_command_ids.h"
@@ -52,7 +52,7 @@ index 738696abf04fa..469b5cbcc0f8d 100644
  #include "extensions/browser/extension_registrar.h"
  #include "extensions/browser/extension_registry.h"
  #include "extensions/common/extension_urls.h"
-@@ -1089,6 +1098,71 @@ bool BrowserCommandController::ExecuteCommandWithDisposition(
+@@ -1089,6 +1098,74 @@ bool BrowserCommandController::ExecuteCommandWithDisposition(
        browser_->GetFeatures().side_panel_ui()->Show(
            SidePanelEntryId::kBookmarks, SidePanelOpenTrigger::kAppMenu);
        break;
@@ -76,11 +76,11 @@ index 738696abf04fa..469b5cbcc0f8d 100644
 +      if (base::FeatureList::IsEnabled(features::kClashOfGpts)) {
 +        ClashOfGptsCoordinator* coordinator =
 +            browser_->browser_window_features()->clash_of_gpts_coordinator();
-+        // If not showing properly, close and recreate
-+        if (!coordinator->IsShowing()) {
-+          coordinator->Close();
++        // Show() creates the window if needed and reactivates it if open.
++        // This command is open/activate, so do not close an existing panel.
++        if (coordinator) {
++          coordinator->Show();
 +        }
-+        coordinator->Show();
 +      }
 +      break;
 +    case IDC_TOGGLE_BROWSEROS_AGENT: {
@@ -114,10 +114,13 @@ index 738696abf04fa..469b5cbcc0f8d 100644
 +      extensions::SidePanelService* service =
 +          extensions::SidePanelService::Get(profile);
 +      if (service) {
-+        std::ignore = service->BrowserosToggleSidePanelForTab(
++        auto result = service->BrowserosToggleSidePanelForTab(
 +            *extension, profile, tab_id,
 +            /*include_incognito_information=*/true,
 +            /*desired_state=*/std::nullopt);
++        if (!result.has_value()) {
++          LOG(WARNING) << "browseros: Agent toggle failed: " << result.error();
++        }
 +      }
 +      break;
 +    }

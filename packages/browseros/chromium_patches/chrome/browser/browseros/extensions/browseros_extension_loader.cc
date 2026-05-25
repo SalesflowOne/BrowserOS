@@ -56,7 +56,7 @@ index 0000000000000..70ad8710a39b7
 +}
 +
 +void BrowserOSExtensionLoader::StartLoading() {
-+  LOG(INFO) << "browseros: Extension loader starting";
++  VLOG(2) << "browseros: Extension loader starting";
 +
 +  installer_ = std::make_unique<BrowserOSExtensionInstaller>(profile_);
 +  maintainer_ = std::make_unique<BrowserOSExtensionMaintainer>(profile_);
@@ -68,7 +68,7 @@ index 0000000000000..70ad8710a39b7
 +}
 +
 +void BrowserOSExtensionLoader::OnInstallComplete(InstallResult result) {
-+  LOG(INFO) << "browseros: OnInstallComplete from_bundled="
++  VLOG(2) << "browseros: OnInstallComplete from_bundled="
 +            << result.from_bundled << " prefs=" << result.prefs.size()
 +            << " ids=" << result.extension_ids.size();
 +
@@ -95,7 +95,7 @@ index 0000000000000..70ad8710a39b7
 +    LOG(WARNING) << "browseros: Install returned empty prefs, "
 +                 << "reconstructing from installed extensions";
 +    prefs_to_load = ReconstructPrefsFromInstalledExtensions();
-+    LOG(INFO) << "browseros: Reconstructed prefs for "
++    VLOG(2) << "browseros: Reconstructed prefs for "
 +              << prefs_to_load.size() << " installed extensions";
 +  }
 +
@@ -129,7 +129,7 @@ index 0000000000000..70ad8710a39b7
 +                 update_url);
 +    prefs.Set(id, std::move(ext_pref));
 +
-+    LOG(INFO) << "browseros: Reconstructed pref for installed extension "
++    VLOG(2) << "browseros: Reconstructed pref for installed extension "
 +              << id << " v" << ext->version().GetString();
 +  }
 +
@@ -141,7 +141,7 @@ index 0000000000000..70ad8710a39b7
 +}
 +
 +void BrowserOSExtensionLoader::OnStartupComplete(bool from_bundled) {
-+  LOG(INFO) << "browseros: Startup complete (from_bundled=" << from_bundled
++  VLOG(2) << "browseros: Startup complete (from_bundled=" << from_bundled
 +            << ")";
 +
 +  if (from_bundled) {
@@ -178,7 +178,7 @@ index 0000000000000..70ad8710a39b7
 +    return;
 +  }
 +
-+  LOG(INFO) << "browseros: Installing " << extension_ids_.size()
++  VLOG(2) << "browseros: Installing " << extension_ids_.size()
 +            << " remote extensions immediately";
 +
 +  for (const std::string& id : extension_ids_) {
@@ -234,7 +234,7 @@ index 0000000000000..70ad8710a39b7
 +    return;
 +  }
 +
-+  LOG(INFO) << "browseros: Installing " << extension_ids_.size()
++  VLOG(2) << "browseros: Installing " << extension_ids_.size()
 +            << " bundled extensions immediately";
 +
 +  for (const std::string& id : extension_ids_) {
@@ -250,7 +250,7 @@ index 0000000000000..70ad8710a39b7
 +    base::FilePath crx_path = bundled_crx_base_path_.Append(
 +        base::FilePath::FromUTF8Unsafe(id + ".crx"));
 +
-+    LOG(INFO) << "browseros: Installing bundled " << id << " v" << it->second;
++    VLOG(2) << "browseros: Installing bundled " << id << " v" << it->second;
 +
 +    pending->AddFromExternalFile(
 +        id, extensions::mojom::ManifestLocation::kExternalComponent,

@@ -100,7 +100,7 @@ index 8a43e7c2fcde5..95eff82226b48 100644
 +                }
 +
 +                int tab_id = extensions::ExtensionTabUtil::GetTabId(contents);
-+                LOG(INFO) << "browseros: Agent toolbar action for tab_id="
++                VLOG(2) << "browseros: Agent toolbar action for tab_id="
 +                          << tab_id;
 +
 +                extensions::SidePanelService* service =
@@ -119,7 +119,7 @@ index 8a43e7c2fcde5..95eff82226b48 100644
 +                  LOG(WARNING) << "browseros: Agent toggle failed: "
 +                               << result.error();
 +                } else {
-+                  LOG(INFO) << "browseros: Agent toggle result: "
++                  VLOG(2) << "browseros: Agent toggle result: "
 +                            << result.value();
 +                }
 +              },

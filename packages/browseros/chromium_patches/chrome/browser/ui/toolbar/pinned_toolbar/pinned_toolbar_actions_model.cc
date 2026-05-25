@@ -44,7 +44,7 @@ index 0177d0e3bda7c..a38ae2b19fbd2 100644
 +  // it
    if (!pref_service_->GetBoolean(prefs::kPinnedChromeLabsMigrationComplete)) {
 -    UpdatePinnedState(kActionShowChromeLabs, true);
-+    // UpdatePinnedState(kActionShowChromeLabs, true);  // No longer auto-pin
++    // Mark complete without pinning Chrome Labs for new profiles.
      pref_service_->SetBoolean(prefs::kPinnedChromeLabsMigrationComplete, true);
    }
    if (features::HasTabSearchToolbarButton() &&

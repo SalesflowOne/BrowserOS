@@ -38,7 +38,7 @@ index f81e396170a79..c4d7abeeac7a6 100644
 +  return base::BindRepeating(
 +      [](extensions::ExtensionId extension_id, BrowserWindowInterface* bwi,
 +         actions::ActionItem* item, actions::ActionInvocationContext context) {
-+        LOG(INFO) << "browseros: Toolbar action clicked for extension="
++        VLOG(2) << "browseros: Toolbar action clicked for extension="
 +                  << extension_id;
 +
 +        tabs::TabInterface* active_tab = bwi->GetActiveTabInterface();
@@ -54,7 +54,7 @@ index f81e396170a79..c4d7abeeac7a6 100644
 +        }
 +
 +        int tab_id = extensions::ExtensionTabUtil::GetTabId(active_contents);
-+        LOG(INFO) << "browseros: Active tab_id=" << tab_id;
++        VLOG(2) << "browseros: Active tab_id=" << tab_id;
 +
 +        Profile* profile =
 +            Profile::FromBrowserContext(active_contents->GetBrowserContext());
@@ -85,7 +85,7 @@ index f81e396170a79..c4d7abeeac7a6 100644
 +          return;
 +        }
 +
-+        LOG(INFO) << "browseros: Toggle result: " << result.value();
++        VLOG(2) << "browseros: Toggle result: " << result.value();
 +      },
 +      extension_id, bwi);
 +}

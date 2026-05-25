@@ -25,7 +25,7 @@ index 5474809d1dcd7..7e8967854ac29 100644
 +    int tab_id,
 +    bool include_incognito_information,
 +    std::optional<bool> desired_state) {
-+  LOG(INFO) << "browseros: BrowserosToggleSidePanelForTab called for tab_id="
++  VLOG(2) << "browseros: BrowserosToggleSidePanelForTab called for tab_id="
 +            << tab_id << ", extension=" << extension.id()
 +            << ", desired_state="
 +            << (desired_state.has_value()
@@ -60,7 +60,7 @@ index 5474809d1dcd7..7e8967854ac29 100644
 +    has_contextual_options = panels_iter->second.contains(tab_id);
 +  }
 +
-+  LOG(INFO) << "browseros: has_contextual_options=" << has_contextual_options
++  VLOG(2) << "browseros: has_contextual_options=" << has_contextual_options
 +            << " for tab_id=" << tab_id;
 +
 +  if (!has_contextual_options) {
@@ -75,7 +75,7 @@ index 5474809d1dcd7..7e8967854ac29 100644
 +          "setOptions() before toggling.");
 +    }
 +
-+    LOG(INFO) << "browseros: Auto-registering contextual panel for tab_id="
++    VLOG(2) << "browseros: Auto-registering contextual panel for tab_id="
 +              << tab_id << " with path=" << *default_options.path;
 +
 +    // Create contextual options for this tab.
@@ -95,12 +95,12 @@ index 5474809d1dcd7..7e8967854ac29 100644
 +  }
 +
 +  // Toggle the contextual panel.
-+  LOG(INFO) << "browseros: Calling ToggleContextualExtensionSidePanel for tab_id="
++  VLOG(2) << "browseros: Calling ToggleContextualExtensionSidePanel for tab_id="
 +            << tab_id;
 +  bool is_now_open = side_panel_util::ToggleContextualExtensionSidePanel(
 +      *browser_window, *web_contents, extension.id(), desired_state);
 +
-+  LOG(INFO) << "browseros: Toggle result: is_now_open=" << is_now_open
++  VLOG(2) << "browseros: Toggle result: is_now_open=" << is_now_open
 +            << " for tab_id=" << tab_id;
 +
 +  return is_now_open;
@@ -112,7 +112,7 @@ index 5474809d1dcd7..7e8967854ac29 100644
 +    content::BrowserContext* context,
 +    int tab_id,
 +    bool include_incognito_information) {
-+  LOG(INFO) << "browseros: BrowserosIsSidePanelOpenForTab called for tab_id="
++  VLOG(2) << "browseros: BrowserosIsSidePanelOpenForTab called for tab_id="
 +            << tab_id << ", extension=" << extension.id();
 +
 +  // Find the tab.
@@ -137,7 +137,7 @@ index 5474809d1dcd7..7e8967854ac29 100644
 +  // Check if panel is disabled - return false (not an error).
 +  api::side_panel::PanelOptions current_options = GetOptions(extension, tab_id);
 +  if (!current_options.enabled.value_or(true)) {
-+    LOG(INFO) << "browseros: Panel is disabled for tab_id=" << tab_id
++    VLOG(2) << "browseros: Panel is disabled for tab_id=" << tab_id
 +              << ", returning false";
 +    return false;
 +  }
@@ -145,7 +145,7 @@ index 5474809d1dcd7..7e8967854ac29 100644
 +  bool is_open = side_panel_util::IsContextualExtensionSidePanelOpen(
 +      browser_window, web_contents, extension.id());
 +
-+  LOG(INFO) << "browseros: IsOpen result: is_open=" << is_open
++  VLOG(2) << "browseros: IsOpen result: is_open=" << is_open
 +            << " for tab_id=" << tab_id;
 +
 +  return is_open;
