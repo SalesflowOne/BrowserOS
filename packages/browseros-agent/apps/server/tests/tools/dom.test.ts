@@ -6,7 +6,10 @@ import { dirname, join } from 'node:path'
 import { get_dom, search_dom } from '../../src/tools/dom'
 import { close_page, new_page } from '../../src/tools/navigation'
 import { evaluate_script } from '../../src/tools/snapshot'
-import { withBrowser } from '../__helpers__/with-browser'
+import {
+  type WithBrowserContext,
+  withBrowser,
+} from '../__helpers__/with-browser'
 
 function textOf(result: {
   content: { type: string; text?: string }[]
@@ -77,13 +80,35 @@ function cleanupSavedDom(domPath: string): void {
   } catch {}
 }
 
+/** Opens the shared DOM fixture after its static form controls are queryable. */
+async function openRichPage(
+  execute: WithBrowserContext['execute'],
+): Promise<number> {
+  const newResult = await execute(new_page, { url: RICH_PAGE })
+  const pageId = pageIdOf(newResult)
+
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const readyResult = await execute(evaluate_script, {
+      page: pageId,
+      expression:
+        "document.readyState !== 'loading' && Boolean(document.querySelector('#submit-btn[data-testid=\"login-submit\"]')) ? 'ready' : document.readyState",
+    })
+    if (!readyResult.isError && textOf(readyResult) === 'ready') {
+      return pageId
+    }
+    await Bun.sleep(50)
+  }
+
+  await execute(close_page, { page: pageId })
+  assert.fail('Rich DOM fixture did not become queryable')
+}
+
 // ── get_dom ──
 
 describe('get_dom', () => {
   it('returns full page HTML', async () => {
     await withBrowser(async ({ execute }) => {
-      const newResult = await execute(new_page, { url: RICH_PAGE })
-      const pageId = pageIdOf(newResult)
+      const pageId = await openRichPage(execute)
       let domPath: string | undefined
 
       try {
@@ -121,8 +146,7 @@ describe('get_dom', () => {
 
   it('scopes to a CSS selector', async () => {
     await withBrowser(async ({ execute }) => {
-      const newResult = await execute(new_page, { url: RICH_PAGE })
-      const pageId = pageIdOf(newResult)
+      const pageId = await openRichPage(execute)
       let domPath: string | undefined
 
       try {
@@ -158,8 +182,7 @@ describe('get_dom', () => {
 
   it('scopes to a nested CSS selector', async () => {
     await withBrowser(async ({ execute }) => {
-      const newResult = await execute(new_page, { url: RICH_PAGE })
-      const pageId = pageIdOf(newResult)
+      const pageId = await openRichPage(execute)
       let domPath: string | undefined
 
       try {
@@ -184,8 +207,7 @@ describe('get_dom', () => {
 
   it('returns error for non-matching selector', async () => {
     await withBrowser(async ({ execute }) => {
-      const newResult = await execute(new_page, { url: RICH_PAGE })
-      const pageId = pageIdOf(newResult)
+      const pageId = await openRichPage(execute)
 
       const result = await execute(get_dom, {
         page: pageId,
@@ -268,8 +290,7 @@ describe('get_dom', () => {
 
   it('preserves element attributes in output', async () => {
     await withBrowser(async ({ execute }) => {
-      const newResult = await execute(new_page, { url: RICH_PAGE })
-      const pageId = pageIdOf(newResult)
+      const pageId = await openRichPage(execute)
       let domPath: string | undefined
 
       try {
@@ -303,8 +324,7 @@ describe('get_dom', () => {
 describe('search_dom', () => {
   it('finds elements by plain text', async () => {
     await withBrowser(async ({ execute }) => {
-      const newResult = await execute(new_page, { url: RICH_PAGE })
-      const pageId = pageIdOf(newResult)
+      const pageId = await openRichPage(execute)
 
       const result = await execute(search_dom, {
         page: pageId,
@@ -331,8 +351,7 @@ describe('search_dom', () => {
 
   it('finds elements by CSS selector', async () => {
     await withBrowser(async ({ execute }) => {
-      const newResult = await execute(new_page, { url: RICH_PAGE })
-      const pageId = pageIdOf(newResult)
+      const pageId = await openRichPage(execute)
 
       const result = await execute(search_dom, {
         page: pageId,
@@ -353,8 +372,7 @@ describe('search_dom', () => {
 
   it('finds elements by XPath', async () => {
     await withBrowser(async ({ execute }) => {
-      const newResult = await execute(new_page, { url: RICH_PAGE })
-      const pageId = pageIdOf(newResult)
+      const pageId = await openRichPage(execute)
 
       const result = await execute(search_dom, {
         page: pageId,
@@ -371,8 +389,7 @@ describe('search_dom', () => {
 
   it('finds multiple elements with CSS class selector', async () => {
     await withBrowser(async ({ execute }) => {
-      const newResult = await execute(new_page, { url: RICH_PAGE })
-      const pageId = pageIdOf(newResult)
+      const pageId = await openRichPage(execute)
 
       const result = await execute(search_dom, {
         page: pageId,
@@ -388,8 +405,7 @@ describe('search_dom', () => {
 
   it('finds elements by ID selector', async () => {
     await withBrowser(async ({ execute }) => {
-      const newResult = await execute(new_page, { url: RICH_PAGE })
-      const pageId = pageIdOf(newResult)
+      const pageId = await openRichPage(execute)
 
       const result = await execute(search_dom, {
         page: pageId,
@@ -410,8 +426,7 @@ describe('search_dom', () => {
 
   it('returns no-match message for non-existent content', async () => {
     await withBrowser(async ({ execute }) => {
-      const newResult = await execute(new_page, { url: RICH_PAGE })
-      const pageId = pageIdOf(newResult)
+      const pageId = await openRichPage(execute)
 
       const result = await execute(search_dom, {
         page: pageId,
@@ -429,8 +444,7 @@ describe('search_dom', () => {
 
   it('respects limit parameter', async () => {
     await withBrowser(async ({ execute }) => {
-      const newResult = await execute(new_page, { url: RICH_PAGE })
-      const pageId = pageIdOf(newResult)
+      const pageId = await openRichPage(execute)
 
       const result = await execute(search_dom, {
         page: pageId,
@@ -459,8 +473,7 @@ describe('search_dom', () => {
 
   it('returns element attributes in search results', async () => {
     await withBrowser(async ({ execute }) => {
-      const newResult = await execute(new_page, { url: RICH_PAGE })
-      const pageId = pageIdOf(newResult)
+      const pageId = await openRichPage(execute)
 
       const result = await execute(search_dom, {
         page: pageId,
@@ -514,8 +527,7 @@ describe('search_dom', () => {
 
   it('finds elements using attribute selector', async () => {
     await withBrowser(async ({ execute }) => {
-      const newResult = await execute(new_page, { url: RICH_PAGE })
-      const pageId = pageIdOf(newResult)
+      const pageId = await openRichPage(execute)
 
       const result = await execute(search_dom, {
         page: pageId,
@@ -532,8 +544,7 @@ describe('search_dom', () => {
 
   it('finds text across multiple elements', async () => {
     await withBrowser(async ({ execute }) => {
-      const newResult = await execute(new_page, { url: RICH_PAGE })
-      const pageId = pageIdOf(newResult)
+      const pageId = await openRichPage(execute)
 
       const result = await execute(search_dom, {
         page: pageId,
@@ -554,8 +565,7 @@ describe('search_dom', () => {
 
   it('includes nodeId in search results for element reference', async () => {
     await withBrowser(async ({ execute }) => {
-      const newResult = await execute(new_page, { url: RICH_PAGE })
-      const pageId = pageIdOf(newResult)
+      const pageId = await openRichPage(execute)
 
       const result = await execute(search_dom, {
         page: pageId,
