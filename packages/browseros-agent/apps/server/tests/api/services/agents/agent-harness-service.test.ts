@@ -311,12 +311,16 @@ describe('AgentHarnessService', () => {
             modelId: 'anthropic/claude-haiku-4.5',
           }),
         ).rejects.toThrow('hermes start failed')
+        const homeDir = join(
+          browserosDir,
+          'vm',
+          'hermes',
+          'harness',
+          'agent-1',
+          'home',
+        )
         expect(agents).toHaveLength(0)
-        expect(
-          existsSync(
-            join(browserosDir, 'vm', 'hermes', 'harness', 'agent-1'),
-          ),
-        ).toBe(false)
+        expect(existsSync(homeDir)).toBe(false)
       },
       {
         ensureVmRuntimeReady: async () => {

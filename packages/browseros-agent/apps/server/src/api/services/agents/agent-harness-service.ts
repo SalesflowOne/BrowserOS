@@ -430,7 +430,7 @@ export class AgentHarnessService {
         await this.agentStore.delete(agent.id).catch(() => {})
         await this.deleteHermesPerAgentProvider(agent.id).catch(
           (cleanupErr) => {
-            logger.warn('Failed to clean Hermes provider config', {
+            logger.warn('Hermes provider config cleanup failed', {
               agentId: agent.id,
               error:
                 cleanupErr instanceof Error

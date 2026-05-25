@@ -255,16 +255,6 @@ export interface ConfigureHermesRuntimeOptions {
   browserosDir?: string
 }
 
-export type HermesRuntimeStartupPhase = 'configure' | 'install' | 'start'
-
-export interface StartHermesRuntimeBestEffortOptions
-  extends ConfigureHermesRuntimeOptions {
-  configureRuntime?: (
-    options: ConfigureHermesRuntimeOptions,
-  ) => HermesContainerRuntime | null
-  onError?: (phase: HermesRuntimeStartupPhase, error: unknown) => void
-}
-
 /**
  * Build a `HermesContainerRuntime` with production deps (bundled
  * limactl, BrowserOS state dirs, Lima VM runtime) and register it in
@@ -324,38 +314,6 @@ export function configureHermesRuntime(
 }
 
 /**
- * Startup wiring for the Hermes adapter. Kept beside the adapter runtime so
- * the server entry point does not need to know Hermes' install/start sequence.
- */
-export function startHermesRuntimeBestEffort(
-  options: StartHermesRuntimeBestEffortOptions = {},
-): HermesContainerRuntime | null {
-  const {
-    configureRuntime = configureHermesRuntime,
-    onError = logHermesStartupError,
-    ...configureOptions
-  } = options
-
-  let runtime: HermesContainerRuntime | null
-  try {
-    runtime = configureRuntime(configureOptions)
-  } catch (err) {
-    onError('configure', err)
-    return null
-  }
-
-  if (!runtime) return null
-
-  void runtime
-    .executeAction({ type: 'install' })
-    .catch((err) => onError('install', err))
-  void runtime
-    .executeAction({ type: 'start' })
-    .catch((err) => onError('start', err))
-  return runtime
-}
-
-/**
  * Configure and start Hermes on demand for the first Hermes agent.
  * Startup intentionally does not call this, because `start` can create
  * the shared BrowserOS VM; agent creation is the user intent boundary.
@@ -379,19 +337,4 @@ export async function ensureHermesRuntimeReady(
 export function getHermesRuntime(): HermesContainerRuntime | null {
   const r = getAgentRuntimeRegistry().get('hermes')
   return r instanceof HermesContainerRuntime ? r : null
-}
-
-function logHermesStartupError(
-  phase: HermesRuntimeStartupPhase,
-  error: unknown,
-): void {
-  const message =
-    phase === 'configure'
-      ? 'Hermes container configuration failed, continuing without it'
-      : phase === 'install'
-        ? 'Hermes prewarm failed'
-        : 'Hermes container start failed'
-  logger.warn(message, {
-    error: error instanceof Error ? error.message : String(error),
-  })
 }
