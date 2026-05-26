@@ -1,0 +1,210 @@
+name: Nightly macOS Build
+
+on:
+  schedule:
+    # About 10 PM US Pacific during daylight saving time. GitHub cron is UTC.
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump level
+        type: choice
+        default: offset-only
+        options:
+          - offset-only
+          - offset+build
+          - offset+patch
+          - none
+      commit_version:
+        description: Commit and push the version bump to the built branch
+        type: boolean
+        default: false
+      upload_to_r2:
+        description: Publish build to R2/CDN after packaging
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: [self-hosted, macOS, ARM64, browseros-builder]
+    timeout-minutes: 600
+    env:
+      BROWSEROS_REPO: ${{ vars.BROWSEROS_REPO_PATH }}
+      CHROMIUM_SRC: ${{ vars.BROWSEROS_CHROMIUM_SRC }}
+      NIGHTLY_REF: ${{ vars.BROWSEROS_NIGHTLY_REF }}
+    steps:
+      - name: Resolve build inputs
+        id: build_inputs
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          DISPATCH_BUMP: ${{ inputs.bump }}
+          DISPATCH_COMMIT_VERSION: ${{ inputs.commit_version }}
+          DISPATCH_UPLOAD_TO_R2: ${{ inputs.upload_to_r2 }}
+          DISPATCH_REF: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          repo="${BROWSEROS_REPO:-}"
+          chromium_src="${CHROMIUM_SRC:-}"
+          if [ -z "$repo" ]; then
+            echo "::error::Set repository variable BROWSEROS_REPO_PATH"
+            exit 1
+          fi
+          if [ -z "$chromium_src" ]; then
+            echo "::error::Set repository variable BROWSEROS_CHROMIUM_SRC"
+            exit 1
+          fi
+
+          repo="${repo/#\~/$HOME}"
+          chromium_src="${chromium_src/#\~/$HOME}"
+          if [ ! -d "$repo/.git" ]; then
+            echo "::error::BROWSEROS_REPO_PATH does not point to a git checkout: $repo"
+            exit 1
+          fi
+          if [ ! -d "$chromium_src" ]; then
+            echo "::error::BROWSEROS_CHROMIUM_SRC does not exist: $chromium_src"
+            exit 1
+          fi
+
+          if [ "$EVENT_NAME" = "schedule" ]; then
+            target_ref="${NIGHTLY_REF:-$DEFAULT_BRANCH}"
+            bump_mode="offset+build"
+            commit_version="true"
+            upload_to_r2="true"
+          else
+            target_ref="$DISPATCH_REF"
+            bump_mode="${DISPATCH_BUMP:-offset-only}"
+            commit_version="${DISPATCH_COMMIT_VERSION:-false}"
+            upload_to_r2="${DISPATCH_UPLOAD_TO_R2:-false}"
+          fi
+
+          {
+            echo "browseros_repo=$repo"
+            echo "chromium_src=$chromium_src"
+            echo "target_ref=$target_ref"
+            echo "bump_mode=$bump_mode"
+            echo "commit_version=$commit_version"
+            echo "upload_to_r2=$upload_to_r2"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Sync build repo to target ref
+        env:
+          BROWSEROS_REPO: ${{ steps.build_inputs.outputs.browseros_repo }}
+          TARGET_REF: ${{ steps.build_inputs.outputs.target_ref }}
+        run: |
+          set -euo pipefail
+          cd "$BROWSEROS_REPO"
+          git fetch origin --tags --prune
+          if git show-ref --verify --quiet "refs/remotes/origin/$TARGET_REF"; then
+            git checkout -B "$TARGET_REF" "origin/$TARGET_REF"
+            git reset --hard "origin/$TARGET_REF"
+          else
+            git checkout "$TARGET_REF"
+            git reset --hard "$TARGET_REF"
+          fi
+          git clean -fd
+
+      - name: Bump version
+        id: bump
+        env:
+          BROWSEROS_REPO: ${{ steps.build_inputs.outputs.browseros_repo }}
+          BUMP_MODE: ${{ steps.build_inputs.outputs.bump_mode }}
+        run: |
+          set -euo pipefail
+          cd "$BROWSEROS_REPO/packages/browseros"
+          version="$(uv run python build/scripts/bump_version.py --mode "$BUMP_MODE")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Built version: $version"
+
+      - name: Commit and push version bump
+        if: ${{ steps.build_inputs.outputs.commit_version == 'true' }}
+        env:
+          BROWSEROS_REPO: ${{ steps.build_inputs.outputs.browseros_repo }}
+          TARGET_REF: ${{ steps.build_inputs.outputs.target_ref }}
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          set -euo pipefail
+          cd "$BROWSEROS_REPO"
+          git add packages/browseros/resources/BROWSEROS_VERSION \
+            packages/browseros/build/config/BROWSEROS_BUILD_OFFSET
+          if git diff --cached --quiet; then
+            echo "No version changes to commit."
+            exit 0
+          fi
+          git -c user.name="BrowserOS CI" -c user.email="ci@browseros.com" \
+            commit -m "chore(release): build v$VERSION [skip ci]"
+          git push origin "HEAD:$TARGET_REF"
+
+      - name: Build BrowserOS (macOS arm64)
+        env:
+          BROWSEROS_REPO: ${{ steps.build_inputs.outputs.browseros_repo }}
+          CHROMIUM_SRC: ${{ steps.build_inputs.outputs.chromium_src }}
+          UPLOAD_TO_R2: ${{ steps.build_inputs.outputs.upload_to_r2 }}
+        run: |
+          set -euo pipefail
+          cd "$BROWSEROS_REPO/packages/browseros"
+          config="build/config/release.macos.arm64.yaml"
+          if [ "$UPLOAD_TO_R2" != "true" ]; then
+            config="build/config/release.macos.arm64.noupload.yaml"
+          fi
+          uv run browseros build --config "$config" --chromium-src "$CHROMIUM_SRC"
+
+      - name: Upload DMG artifact
+        if: ${{ always() && steps.bump.outputs.version != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: BrowserOS_v${{ steps.bump.outputs.version }}_arm64
+          path: ${{ steps.build_inputs.outputs.browseros_repo }}/packages/browseros/releases/${{ steps.bump.outputs.version }}/*.dmg
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Slack failure ping
+        if: ${{ failure() }}
+        env:
+          BROWSEROS_REPO: ${{ steps.build_inputs.outputs.browseros_repo }}
+          TARGET_REF: ${{ steps.build_inputs.outputs.target_ref }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          hook="$(
+            python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          env_file = Path(os.environ["BROWSEROS_REPO"]) / "packages/browseros/.env"
+          if not env_file.exists():
+              raise SystemExit(0)
+          for line in env_file.read_text().splitlines():
+              if line.startswith("SLACK_WEBHOOK_URL="):
+                  print(line.split("=", 1)[1].strip().strip("'\""))
+                  break
+          PY
+          )"
+          if [ -z "$hook" ]; then
+            exit 0
+          fi
+          python3 - <<'PY' > /tmp/browseros-nightly-slack-payload.json
+          import json
+          import os
+
+          print(
+              json.dumps(
+                  {
+                      "text": (
+                          ":x: Nightly macOS build failed on "
+                          f"`{os.environ['TARGET_REF']}` - {os.environ['RUN_URL']}"
+                      )
+                  }
+              )
+          )
+          PY
+          curl -fsS -X POST -H "Content-type: application/json" \
+            --data @/tmp/browseros-nightly-slack-payload.json "$hook" || true
