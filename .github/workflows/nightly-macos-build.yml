@@ -117,11 +117,16 @@ jobs:
           set -euo pipefail
           cd "$BROWSEROS_REPO"
           git fetch origin --tags --prune
+          # Wipe any local edits before switching refs. The builder's working
+          # tree can carry stray modifications to tracked files, which would
+          # otherwise make the checkout below abort before reset --hard runs.
+          git reset --hard
+          git clean -fd
           if git show-ref --verify --quiet "refs/remotes/origin/$TARGET_REF"; then
             git checkout -B "$TARGET_REF" "origin/$TARGET_REF"
             git reset --hard "origin/$TARGET_REF"
           else
-            git checkout "$TARGET_REF"
+            git checkout -f "$TARGET_REF"
             git reset --hard "$TARGET_REF"
           fi
           git clean -fd
