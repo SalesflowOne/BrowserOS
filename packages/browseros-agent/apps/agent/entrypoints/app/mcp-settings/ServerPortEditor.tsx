@@ -58,9 +58,13 @@ export const ServerPortEditor: FC<ServerPortEditorProps> = ({
 
   useEffect(() => {
     let cancelled = false
-    Capabilities.supports(Feature.PROXY_SUPPORT).then((ok) => {
-      if (!cancelled) setSupported(ok)
-    })
+    Capabilities.supports(Feature.PROXY_SUPPORT)
+      .then((ok) => {
+        if (!cancelled) setSupported(ok)
+      })
+      .catch(() => {
+        // API unavailable — leave supported false and render nothing
+      })
     return () => {
       cancelled = true
     }

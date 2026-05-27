@@ -30,6 +30,10 @@ describe('parseProxyPort', () => {
       expect(low.error).toContain('9000')
       expect(low.error).toContain('9999')
     }
+    if (!high.ok) {
+      expect(high.error).toContain('9000')
+      expect(high.error).toContain('9999')
+    }
   })
 
   it('rejects empty or whitespace-only input', () => {
