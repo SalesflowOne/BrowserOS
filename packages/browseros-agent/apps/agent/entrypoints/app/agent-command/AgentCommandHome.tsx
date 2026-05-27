@@ -20,6 +20,7 @@ import {
   resolveSidepanelChatTarget,
 } from '@/entrypoints/sidepanel/index/sidepanel-chat-targets'
 import { toProviderOption } from '@/entrypoints/sidepanel/index/useChatSessionRequest'
+import { isAdapterHidden } from '@/lib/chat/adapter-visibility'
 import { useLlmProviders } from '@/lib/llm-providers/useLlmProviders'
 import { AgentCardDock } from './AgentCardDock'
 import {
@@ -29,8 +30,6 @@ import {
 import { orderHomeAgents } from './home-agent-card.helpers'
 import { routeHomeSend } from './home-compose.helpers'
 import { setPendingInitialMessage } from './pending-initial-message'
-
-const MANAGE_AGENTS_PATH = '/settings/ai?section=claude'
 
 function RecentThreads({
   activeAgentId,
@@ -126,6 +125,16 @@ export const AgentCommandHome: FC = () => {
     [harnessAgents],
   )
 
+  // "Manage agents" opens the settings pane for an adapter the user actually
+  // has agents under (the most recent visible one), not a hardcoded adapter —
+  // otherwise a Codex-only user would land on an empty Claude pane.
+  const manageAgentsPath = useMemo(() => {
+    const adapter = orderedAgents.find(
+      (agent) => !isAdapterHidden(agent.adapter),
+    )?.adapter
+    return adapter ? `/settings/ai?section=${adapter}` : '/settings/ai'
+  }, [orderedAgents])
+
   const handleSend = async (input: ConversationInputSendInput) => {
     if (!selectedProvider) return
     const route = routeHomeSend(selectedProvider, input.text)
@@ -200,7 +209,7 @@ export const AgentCommandHome: FC = () => {
               activeAgentId={selectedProvider?.agentId ?? null}
               agents={orderedAgents}
               adapters={adapters}
-              onOpenAgents={() => navigate(MANAGE_AGENTS_PATH)}
+              onOpenAgents={() => navigate(manageAgentsPath)}
               onSelectAgent={(agentId) => navigate(`/home/agents/${agentId}`)}
             />
           </>

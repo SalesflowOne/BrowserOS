@@ -129,8 +129,9 @@ export const AdapterAgentsPane: FC<AdapterAgentsPaneProps> = ({
       })
     } catch (err) {
       setPageError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setDeletingAgentKey(null)
     }
-    setDeletingAgentKey(null)
   }
 
   return (

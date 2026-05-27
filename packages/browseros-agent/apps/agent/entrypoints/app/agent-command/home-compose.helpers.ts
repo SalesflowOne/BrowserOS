@@ -18,7 +18,10 @@ export function routeHomeSend(
   const query = text.trim()
   if (!query) return null
   const encoded = encodeURIComponent(query)
-  if (provider.kind === 'acp' && provider.agentId) {
+  if (provider.kind === 'acp') {
+    // A malformed acp target (missing agentId) must not silently misroute to
+    // the LLM chat with the agent id treated as a provider id — fail visibly.
+    if (!provider.agentId) return null
     return {
       kind: 'acp',
       agentId: provider.agentId,

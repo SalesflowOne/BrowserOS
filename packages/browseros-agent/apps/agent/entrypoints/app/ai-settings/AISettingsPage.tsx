@@ -1,7 +1,6 @@
 import type { FC, ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
 import { AdapterIcon, adapterLabel } from '@/entrypoints/app/agents/AdapterIcon'
-import type { HarnessAgentAdapter } from '@/entrypoints/app/agents/agent-harness-types'
 import { useAgentAdapters } from '@/entrypoints/app/agents/useAgents'
 import { visibleAdapters } from '@/lib/chat/adapter-visibility'
 import { BrowserOSIcon } from '@/lib/llm-providers/providerIcons'
@@ -33,6 +32,12 @@ export const AISettingsPage: FC = () => {
   const activeSection = resolveAiSettingsSection(
     searchParams.get('section'),
     shownAdapters.map((adapter) => adapter.id),
+  )
+  // Resolver only returns a non-browseros section that matches a visible
+  // adapter, so this is the typed descriptor for the active adapter pane
+  // (undefined ⇒ the BrowserOS AI pane).
+  const activeAdapter = shownAdapters.find(
+    (adapter) => adapter.id === activeSection,
   )
 
   const items: SectionItem[] = [
@@ -82,10 +87,15 @@ export const AISettingsPage: FC = () => {
       </nav>
 
       <div className="min-w-0">
-        {activeSection === BROWSEROS_SECTION ? (
-          <BrowserOsAiPane />
+        {activeAdapter ? (
+          // Keyed by adapter id so switching panes remounts — local create-form
+          // state (model / reasoning) can't leak across adapters.
+          <AdapterAgentsPane
+            key={activeAdapter.id}
+            adapterId={activeAdapter.id}
+          />
         ) : (
-          <AdapterAgentsPane adapterId={activeSection as HarnessAgentAdapter} />
+          <BrowserOsAiPane />
         )}
       </div>
     </div>

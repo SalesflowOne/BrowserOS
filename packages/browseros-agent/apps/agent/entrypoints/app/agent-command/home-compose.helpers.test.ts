@@ -42,4 +42,14 @@ describe('routeHomeSend', () => {
   it('returns null for an empty prompt', () => {
     expect(routeHomeSend(llm, '   ')).toBeNull()
   })
+
+  it('returns null for a malformed acp target with no agentId', () => {
+    const acpNoId: Provider = {
+      id: 'agent-x',
+      name: 'Broken',
+      type: 'acp',
+      kind: 'acp',
+    }
+    expect(routeHomeSend(acpNoId, 'hello')).toBeNull()
+  })
 })
