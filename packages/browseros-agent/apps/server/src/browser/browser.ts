@@ -190,7 +190,11 @@ export class Browser {
           info.loadProgress = tab.loadProgress
           info.isPinned = tab.isPinned
           info.isHidden = tab.isHidden
-          info.windowId = tab.windowId
+          // CDP omits windowId for hidden tabs, so preserve the
+          // value we cached when the tab was created via newPage —
+          // otherwise downstream filters (e.g. the tab picker
+          // scoped to a thread's hidden window) lose every entry.
+          info.windowId = tab.windowId ?? info.windowId
           info.index = tab.index
           info.groupId = tab.groupId
           found = true
