@@ -44,6 +44,12 @@ interface ScreencastSession {
   subscribers: Set<Subscriber>
   unsubscribeFrame: () => void
   url: string
+  // Chromium's Page.startScreencast only emits frames on compositor
+  // invalidation. A static page produces one frame on attach and then
+  // nothing — a late subscriber would see "live" status with a blank
+  // canvas forever. We cache the last frame and replay it to every new
+  // subscriber so the canvas paints something immediately.
+  lastFrame: ScreencastFrameMessage | null
 }
 
 const WS_OPEN: 1 = 1
@@ -63,6 +69,21 @@ export class ScreencastManager {
       windowId,
       url: session.url,
     })
+    if (session.lastFrame) {
+      this.send(ws, session.lastFrame)
+    } else {
+      // No cached frame yet — the page may be idle (compositor never
+      // invalidated since the screencast started). Force a one-shot
+      // screenshot so the canvas gets a starting paint. Best-effort:
+      // if it throws (target detached, etc.) the subscriber just waits
+      // for the next real frame and the status dot stays "live".
+      void this.primeWithScreenshot(session, ws).catch((err) => {
+        logger.warn('primeWithScreenshot failed', {
+          windowId: session.windowId,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      })
+    }
   }
 
   unsubscribe(windowId: number, ws: Subscriber): void {
@@ -116,11 +137,12 @@ export class ScreencastManager {
       subscribers: new Set(),
       url: active.url,
       unsubscribeFrame: () => undefined,
+      lastFrame: null,
     }
     session.unsubscribeFrame = active.session.Page.on(
       'screencastFrame',
       (params) => {
-        this.broadcast(session, {
+        const frame: ScreencastFrameMessage = {
           type: 'frame',
           data: params.data,
           metadata: {
@@ -132,7 +154,9 @@ export class ScreencastManager {
             scrollOffsetX: params.metadata.scrollOffsetX,
             scrollOffsetY: params.metadata.scrollOffsetY,
           },
-        })
+        }
+        session.lastFrame = frame
+        this.broadcast(session, frame)
         active.session.Page.screencastFrameAck({
           sessionId: params.sessionId,
         }).catch((err) => {
@@ -144,6 +168,25 @@ export class ScreencastManager {
       },
     )
     return session
+  }
+
+  private async primeWithScreenshot(
+    session: ScreencastSession,
+    ws: Subscriber,
+  ): Promise<void> {
+    const result = await session.cdpSession.Page.captureScreenshot({
+      format: 'jpeg',
+      quality: SCREENCAST_LIMITS.DEFAULT_JPEG_QUALITY,
+    })
+    if (!result?.data) return
+    const frame: ScreencastFrameMessage = {
+      type: 'frame',
+      data: result.data,
+      metadata: {},
+    }
+    // Cache for any future late joiner, and send to the requester.
+    session.lastFrame = frame
+    this.send(ws, frame)
   }
 
   private async stopSession(windowId: number): Promise<void> {
