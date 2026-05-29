@@ -125,4 +125,38 @@ describe('tab group tools', () => {
       assert.strictEqual(closeData.groupId, groupId)
     })
   }, 60_000)
+
+  it('new_page can add the tab directly to an existing group', async () => {
+    await withBrowser(async ({ execute }) => {
+      const seedResult = await execute(new_page, { url: 'about:blank' })
+      const seedPageId = structuredOf<{ pageId: number }>(seedResult).pageId
+
+      const groupResult = await execute(group_tabs, {
+        pageIds: [seedPageId],
+        title: 'Direct New Page Group',
+      })
+      assert.ok(!groupResult.isError, textOf(groupResult))
+      const groupId = structuredOf<{ group: { groupId: string } }>(groupResult)
+        .group.groupId
+
+      const newResult = await execute(new_page, {
+        url: 'about:blank',
+        groupId,
+      })
+      assert.ok(!newResult.isError, textOf(newResult))
+      const newPageId = structuredOf<{ pageId: number; groupId?: string }>(
+        newResult,
+      ).pageId
+
+      const listResult = await execute(list_tab_groups, {})
+      const group = structuredOf<{
+        groups: Array<{ groupId: string; pageIds: number[] }>
+      }>(listResult).groups.find((g) => g.groupId === groupId)
+      assert.ok(group, 'Expected group to still exist')
+      assert.ok(group.pageIds.includes(seedPageId))
+      assert.ok(group.pageIds.includes(newPageId))
+
+      await execute(close_tab_group, { groupId })
+    })
+  }, 60_000)
 })

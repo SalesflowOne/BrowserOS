@@ -31,6 +31,10 @@ export interface McpServiceDeps {
   // bind every browser tool call to a specific window without the
   // agent needing to be aware of it.
   defaultWindowId?: number
+  // Per-request default tab group from X-BrowserOS-Default-Tab-Group-Id.
+  // When set, tool handlers inject this into args.groupId for tools
+  // whose zod input schema has a `groupId` field.
+  defaultTabGroupId?: string
 }
 
 export function createMcpServer(deps: McpServiceDeps): McpServer {
@@ -56,6 +60,7 @@ export function createMcpServer(deps: McpServiceDeps): McpServer {
     },
     observer: deps.observer,
     defaultWindowId: deps.defaultWindowId,
+    defaultTabGroupId: deps.defaultTabGroupId,
   })
 
   // Register Klavis proxy tools (if connected via background init)

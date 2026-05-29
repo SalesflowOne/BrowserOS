@@ -396,7 +396,12 @@ export class Browser {
 
   async newPage(
     url: string,
-    opts?: { hidden?: boolean; background?: boolean; windowId?: number },
+    opts?: {
+      hidden?: boolean
+      background?: boolean
+      windowId?: number
+      groupId?: string
+    },
   ): Promise<number> {
     const windowId = await this.resolveWindowIdForNewPage(opts)
     const createResult = await this.cdp.Browser.createTab({
@@ -417,6 +422,13 @@ export class Browser {
       }
     }
     if (!tabInfo) throw new Error(`Tab ${tabId} not found after creation`)
+
+    if (opts?.groupId) {
+      const group = await tabGroups.groupTabs(this.cdp, [tabId], {
+        groupId: opts.groupId,
+      })
+      tabInfo = { ...tabInfo, groupId: group.groupId }
+    }
 
     const pageId = this.nextPageId++
     this.pages.set(pageId, {

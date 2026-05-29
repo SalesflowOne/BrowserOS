@@ -22,6 +22,12 @@ function inputHasWindowIdField(tool: ToolDefinition): boolean {
   return 'windowId' in (input as z.AnyZodObject).shape
 }
 
+function inputHasGroupIdField(tool: ToolDefinition): boolean {
+  const input = tool.input
+  if (!(input instanceof z.ZodObject)) return false
+  return 'groupId' in (input as z.AnyZodObject).shape
+}
+
 export function registerTools(
   mcpServer: McpServer,
   registry: ToolRegistry,
@@ -31,10 +37,12 @@ export function registerTools(
     // tool calls without an explicit args.windowId have this value
     // injected — provided the tool's schema actually accepts one.
     defaultWindowId?: number
+    defaultTabGroupId?: string
   },
 ): void {
   for (const tool of registry.all()) {
     const acceptsWindowId = inputHasWindowIdField(tool)
+    const acceptsGroupId = inputHasGroupIdField(tool)
     const handler = async (
       args: Record<string, unknown>,
       extra: { signal: AbortSignal },
@@ -50,6 +58,13 @@ export function registerTools(
         args.windowId === undefined
       ) {
         args.windowId = ctx.defaultWindowId
+      }
+      if (
+        ctx.defaultTabGroupId !== undefined &&
+        acceptsGroupId &&
+        args.groupId === undefined
+      ) {
+        args.groupId = ctx.defaultTabGroupId
       }
       const startTime = performance.now()
       const toolCallId = crypto.randomUUID()

@@ -144,6 +144,10 @@ export const new_page = defineTool({
         'Open in background without stealing focus. Set to false only when user needs to see the tab immediately.',
       ),
     windowId: z.number().optional().describe('Window ID to create tab in'),
+    groupId: z
+      .string()
+      .optional()
+      .describe('Tab group ID to add the new tab to after creation'),
   }),
   output: z.object({
     pageId: z.number(),
@@ -151,12 +155,14 @@ export const new_page = defineTool({
     hidden: z.boolean(),
     background: z.boolean(),
     windowId: z.number().optional(),
+    groupId: z.string().optional(),
   }),
   handler: async (args, ctx, response) => {
     const pageId = await ctx.browser.newPage(args.url, {
       hidden: args.hidden ? true : undefined,
       background: args.background !== false,
       windowId: args.windowId,
+      groupId: args.groupId,
     })
     response.text(`Opened new page: ${args.url}\nPage ID: ${pageId}`)
     response.data({
@@ -165,6 +171,7 @@ export const new_page = defineTool({
       hidden: args.hidden,
       background: args.background,
       windowId: args.windowId,
+      groupId: args.groupId,
     })
     response.includePages()
   },
