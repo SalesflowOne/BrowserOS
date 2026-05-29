@@ -77,6 +77,14 @@ export class ScreencastManager {
   ): Promise<SubscribeHandle> {
     const resolved = await this.resolve(windowId, pageId)
     const session = await this.getOrStartSession(resolved, windowId, pageId)
+    // The route's onClose can fire while subscribe's awaits are in
+    // flight; it sees `handle === null` and skips unsubscribe. Without
+    // this guard we'd add a dead ws to subscribers, broadcast would
+    // skip it forever, and stopSession would never run.
+    if (ws.readyState !== WS_OPEN) {
+      this.stopIfIdle(session)
+      return { targetId: session.targetId }
+    }
     session.subscribers.add(ws)
     this.send(ws, {
       type: 'status',
@@ -102,14 +110,17 @@ export class ScreencastManager {
     const session = this.sessions.get(handle.targetId)
     if (!session) return
     session.subscribers.delete(ws)
-    if (session.subscribers.size === 0) {
-      void this.stopSession(handle.targetId).catch((err) => {
-        logger.warn('Failed to stop idle screencast session', {
-          targetId: handle.targetId,
-          error: err instanceof Error ? err.message : String(err),
-        })
+    this.stopIfIdle(session)
+  }
+
+  private stopIfIdle(session: ScreencastSession): void {
+    if (session.subscribers.size > 0) return
+    void this.stopSession(session.targetId).catch((err) => {
+      logger.warn('Failed to stop idle screencast session', {
+        targetId: session.targetId,
+        error: err instanceof Error ? err.message : String(err),
       })
-    }
+    })
   }
 
   private resolve(
@@ -146,9 +157,9 @@ export class ScreencastManager {
     windowId: number,
     pageId: number | null,
   ): Promise<ScreencastSession> {
-    // Page.enable was already called inside Browser.attachTab; safe to
-    // skip here. startScreencast on a session without Page enabled is a
-    // silent no-op, hence the ordering matters.
+    // Page.enable was already called inside Browser.attachToPage;
+    // startScreencast on a session without Page enabled is a silent
+    // no-op, hence the ordering matters.
     await resolved.session.Page.startScreencast({
       format: 'jpeg',
       quality: SCREENCAST_LIMITS.DEFAULT_JPEG_QUALITY,
@@ -249,6 +260,7 @@ export class ScreencastManager {
         session.subscribers.delete(ws)
       }
     }
+    this.stopIfIdle(session)
   }
 
   private send(ws: Subscriber, message: ScreencastOutboundMessage): void {
