@@ -52,6 +52,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           NIGHTLY_REF: ${{ vars.BROWSEROS_NIGHTLY_REF }}
+          NIGHTLY_RELEASE_SERVER: ${{ vars.BROWSEROS_NIGHTLY_RELEASE_SERVER }}
           DISPATCH_BUMP: ${{ inputs.bump }}
           DISPATCH_COMMIT_VERSION: ${{ inputs.commit_version }}
           DISPATCH_UPLOAD_TO_R2: ${{ inputs.upload_to_r2 }}
@@ -65,13 +66,26 @@ jobs:
             bump_mode="offset+build"
             commit_version="true"
             upload_to_r2="true"
-            release_server="true"
+            release_server="${NIGHTLY_RELEASE_SERVER:-auto}"
           else
             target_ref="$DISPATCH_REF"
             bump_mode="${DISPATCH_BUMP:-offset+build}"
             commit_version="${DISPATCH_COMMIT_VERSION:-false}"
             upload_to_r2="${DISPATCH_UPLOAD_TO_R2:-true}"
             release_server="${DISPATCH_RELEASE_SERVER:-true}"
+          fi
+
+          if [ "$release_server" = "auto" ]; then
+            if [ "$target_ref" = "$DEFAULT_BRANCH" ]; then
+              release_server="true"
+            else
+              release_server="false"
+            fi
+          fi
+
+          if [ "$release_server" != "true" ] && [ "$release_server" != "false" ]; then
+            echo "::error::release_server must be true, false, or auto (got $release_server)"
+            exit 1
           fi
 
           if [ "$release_server" = "true" ] && [ "$target_ref" != "$DEFAULT_BRANCH" ]; then

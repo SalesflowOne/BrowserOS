@@ -19,9 +19,19 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
+  authorize_manual_dispatch:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: release-core
+    steps:
+      - run: echo "Manual dispatch approved through release-core."
+
+  release:
+    needs: authorize_manual_dispatch
+    if: |
+      always() &&
+      (github.event_name != 'workflow_dispatch' || needs.authorize_manual_dispatch.result == 'success')
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     timeout-minutes: 120
