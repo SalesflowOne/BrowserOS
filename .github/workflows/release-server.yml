@@ -83,9 +83,7 @@ jobs:
       - name: Build and upload release artifacts
         env:
           BROWSEROS_CONFIG_URL: ${{ vars.BROWSEROS_CONFIG_URL || 'https://llm.browseros.com/api/browseros-server/config' }}
-          CODEGEN_SERVICE_URL: ${{ secrets.CODEGEN_SERVICE_URL || vars.CODEGEN_SERVICE_URL }}
           POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY || vars.POSTHOG_API_KEY }}
-          SENTRY_DSN: ${{ secrets.SENTRY_DSN || vars.SENTRY_DSN }}
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}

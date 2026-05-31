@@ -97,7 +97,6 @@ export interface HttpServerConfig {
   browserosId?: string
   executionDir: string
   resourcesDir: string
-  codegenServiceUrl?: string
   aiSdkDevtoolsEnabled?: boolean
 
   onShutdown?: () => void

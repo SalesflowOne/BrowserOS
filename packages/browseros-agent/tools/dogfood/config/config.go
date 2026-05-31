@@ -199,7 +199,6 @@ func DefaultProductionEnv() ProductionEnv {
 	return ProductionEnv{
 		Server: map[string]string{
 			"BROWSEROS_CONFIG_URL": "https://llm.browseros.com/api/browseros-server/config",
-			"CODEGEN_SERVICE_URL":  "",
 			"POSTHOG_API_KEY":      "",
 			"SENTRY_DSN":           "",
 			"R2_ACCOUNT_ID":        "",

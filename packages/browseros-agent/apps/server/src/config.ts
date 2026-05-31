@@ -24,7 +24,6 @@ export const ServerConfigSchema = z.object({
   resourcesDir: z.string(),
   executionDir: z.string(),
   mcpAllowRemote: z.boolean(),
-  codegenServiceUrl: z.string().optional(),
   instanceClientId: z.string().optional(),
   instanceInstallId: z.string().optional(),
   instanceBrowserosVersion: z.string().optional(),
@@ -68,13 +67,10 @@ export function loadServerConfig(
     cli.value.overrides,
   )
 
-  // 5. Add build-time inlined values
-  merged.codegenServiceUrl = INLINED_ENV.CODEGEN_SERVICE_URL
-
-  // 6. agentPort is deprecated - always equals serverPort
+  // 5. agentPort is deprecated - always equals serverPort
   merged.agentPort = merged.serverPort
 
-  // 7. Validate with Zod
+  // 6. Validate with Zod
   const result = ServerConfigSchema.safeParse(merged)
   if (!result.success) {
     const errors = result.error.issues
@@ -86,7 +82,7 @@ export function loadServerConfig(
     }
   }
 
-  // 8. Validate required inlined env vars for production
+  // 7. Validate required inlined env vars for production
   const inlinedValidation = validateInlinedEnv()
   if (!inlinedValidation.ok) return inlinedValidation
 

@@ -118,7 +118,6 @@ Copy from `apps/server/.env.production.example` before running `build:server`.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `BROWSEROS_CONFIG_URL` | - | Remote config endpoint baked into prod binary |
-| `CODEGEN_SERVICE_URL` | - | Graph/codegen backend URL baked into prod binary |
 | `POSTHOG_API_KEY` | - | PostHog key baked into prod binary |
 | `SENTRY_DSN` | - | Sentry DSN baked into prod binary |
 | `R2_ACCOUNT_ID` | - | Cloudflare account id for production artifact downloads/uploads |
