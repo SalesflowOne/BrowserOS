@@ -21,12 +21,6 @@
 </a>
 <br /><br />
 
-Founders — [@nv_sonti](https://x.com/intent/user?screen_name=nv_sonti) and [@ThatNithin](https://x.com/intent/user?screen_name=ThatNithin):
-
-[![Twitter Follow](https://img.shields.io/twitter/follow/nv_sonti?style=social)](https://x.com/intent/user?screen_name=nv_sonti)
-&emsp;&emsp;&emsp;
-[![Twitter Follow](https://img.shields.io/twitter/follow/ThatNithin?style=social)](https://x.com/intent/user?screen_name=ThatNithin)
-
 </div>
 
 BrowserOS is an open-source Chromium fork that runs AI agents natively. **The privacy-first alternative to ChatGPT Atlas, Perplexity Comet, and Dia.**
@@ -200,7 +194,7 @@ If you use BrowserOS in your research or project, please cite:
 
 ```bibtex
 @software{browseros2025,
-  author = {Nithin Sonti and Nikhil Sonti and {BrowserOS-team}},
+  author = {{BrowserOS-team}},
   title = {BrowserOS: The open-source Agentic browser},
   url = {https://github.com/browseros-ai/BrowserOS},
   year = {2025},
