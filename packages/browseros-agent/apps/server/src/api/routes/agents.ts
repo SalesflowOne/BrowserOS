@@ -13,7 +13,7 @@ import { type Context, Hono } from 'hono'
 import { stream } from 'hono/streaming'
 import { formatUserMessage } from '../../agent/format-message'
 import type { Browser } from '../../browser/browser'
-import { createAcpUIMessageStreamResponse } from '../../lib/agents/acp-ui-message-stream'
+import { createAcpUIMessageStreamResponse } from '../../lib/agents/acp/ui-message-stream'
 import type {
   ActiveTurnInfo,
   TurnFrame,
