@@ -27,7 +27,14 @@ on:
         description: "Server build targets to publish to R2"
         required: false
         default: all
-        type: string
+        type: choice
+        options:
+          - all
+          - darwin-arm64
+          - darwin-x64
+          - linux-arm64
+          - linux-x64
+          - windows-x64
       publish_github_release:
         description: "Create or update the GitHub server release"
         required: false
