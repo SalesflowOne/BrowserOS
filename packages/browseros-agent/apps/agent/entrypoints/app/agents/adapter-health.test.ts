@@ -38,6 +38,13 @@ describe('adapter health helpers', () => {
         readiness: 'will-fetch-package',
       }),
     ).toBe('warning')
+    expect(
+      adapterHealthTone({
+        healthy: true,
+        checkedAt: 1,
+        readiness: 'diagnostic-warning',
+      }),
+    ).toBe('warning')
   })
 
   it('summarizes version and launch source when known', () => {

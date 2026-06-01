@@ -43,7 +43,11 @@ describe('adapter detection', () => {
         }
         throw new Error(`unexpected command ${cmd} ${args.join(' ')}`)
       },
-      probePackageCache: async () => true,
+      probePackageCache: async (packageName, versionRange) => {
+        expect(packageName).toBe('@agentclientprotocol/claude-agent-acp')
+        expect(versionRange).toBe('^0.31.0')
+        return true
+      },
     })
 
     expect(result).toMatchObject({
@@ -105,6 +109,29 @@ describe('adapter detection', () => {
     })
   })
 
+  it('warns when the adapter package is cached but native auth cannot be verified', async () => {
+    const result = await detectHostAdapter('codex', {
+      now: () => 1234,
+      resolveBinary: async (name) =>
+        name === 'npx' ? { path: '/bin/npx', env: { PATH: '/bin' } } : null,
+      runCommand: async () => {
+        throw new Error('should not run native probes without a native CLI')
+      },
+      probePackageCache: async () => true,
+    })
+
+    expect(result).toMatchObject({
+      healthy: true,
+      readiness: 'diagnostic-warning',
+      installState: 'installed',
+      nativeCliState: 'missing',
+      authState: 'unknown',
+      adapterLaunchSource: 'host-npx',
+      packageCacheState: 'cached',
+      reason: 'Codex can launch, but authentication could not be verified.',
+    })
+  })
+
   it('detects bundled Bun as a package runner without host npx', async () => {
     const result = await detectHostAdapter('codex', {
       now: () => 1234,
@@ -121,12 +148,80 @@ describe('adapter detection', () => {
 
     expect(result).toMatchObject({
       healthy: true,
-      readiness: 'ready',
+      readiness: 'diagnostic-warning',
       installState: 'package-runner-available',
       nativeCliState: 'missing',
       authState: 'unknown',
       adapterLaunchSource: 'bundled-bun',
       packageCacheState: 'unknown',
+      reason: 'Codex can launch, but authentication could not be verified.',
+    })
+  })
+
+  it('uses codex doctor when login status is not supported', async () => {
+    const calls: Array<{ args: string[]; timeoutMs: number | undefined }> = []
+
+    const result = await detectHostAdapter('codex', {
+      now: () => 1234,
+      timeoutMs: 3000,
+      resolveBinary: async (name) => {
+        if (name === 'codex') {
+          return { path: '/bin/codex', env: { PATH: '/bin' } }
+        }
+        if (name === 'npx') {
+          return { path: '/bin/npx', env: { PATH: '/bin' } }
+        }
+        return null
+      },
+      runCommand: async (_cmd, args, options) => {
+        calls.push({ args, timeoutMs: options.timeoutMs })
+        if (args[0] === '--version') {
+          return { exitCode: 0, stdout: 'codex-cli 0.135.0\n', stderr: '' }
+        }
+        if (args.join(' ') === 'login status') {
+          return { exitCode: 2, stdout: '', stderr: 'unrecognized command' }
+        }
+        if (args[0] === 'doctor') {
+          return { exitCode: 0, stdout: 'Auth: authenticated\n', stderr: '' }
+        }
+        throw new Error(`unexpected command ${args.join(' ')}`)
+      },
+      probePackageCache: async () => true,
+    })
+
+    expect(result).toMatchObject({
+      healthy: true,
+      readiness: 'ready',
+      authState: 'authenticated',
+      version: 'codex-cli 0.135.0',
+    })
+    expect(calls).toContainEqual({ args: ['login', 'status'], timeoutMs: 1500 })
+    expect(calls).toContainEqual({ args: ['doctor'], timeoutMs: 1500 })
+  })
+
+  it('warns when native auth probing fails', async () => {
+    const result = await detectHostAdapter('claude', {
+      now: () => 1234,
+      resolveBinary: async (name) =>
+        name === 'claude'
+          ? { path: '/bin/claude', env: { PATH: '/bin' } }
+          : { path: '/bin/npx', env: { PATH: '/bin' } },
+      runCommand: async (_cmd, args) => {
+        if (args[0] === '--version') {
+          return { exitCode: 0, stdout: 'claude 1.2.3\n', stderr: '' }
+        }
+        throw new Error('auth probe failed')
+      },
+      probePackageCache: async () => true,
+    })
+
+    expect(result).toMatchObject({
+      healthy: true,
+      readiness: 'diagnostic-warning',
+      nativeCliState: 'present',
+      authState: 'unknown',
+      reason:
+        'Claude Code can launch, but authentication could not be verified.',
     })
   })
 })
@@ -141,7 +236,7 @@ describe('probeNpxPackageCache', () => {
     tempDirs.length = 0
   })
 
-  it('finds cached scoped npx packages without matching nested dependencies', async () => {
+  it('finds cached scoped npx packages that match the requested range', async () => {
     const npmCacheDir = await mkdtemp(join(tmpdir(), 'browseros-npx-cache-'))
     tempDirs.push(npmCacheDir)
     await mkdir(
@@ -179,7 +274,7 @@ describe('probeNpxPackageCache', () => {
         'codex-acp',
         'package.json',
       ),
-      '{}',
+      '{"version":"0.12.1"}',
     )
     await writeFile(
       join(
@@ -194,13 +289,49 @@ describe('probeNpxPackageCache', () => {
         'codex-acp',
         'package.json',
       ),
-      '{}',
+      '{"version":"0.12.1"}',
     )
 
     await expect(
       probeNpxPackageCache('@zed-industries/codex-acp', {
         npxCacheDir: join(npmCacheDir, '_npx'),
+        versionRange: '^0.12.0',
       }),
     ).resolves.toBe(true)
+  })
+
+  it('ignores cached npx packages outside the requested range', async () => {
+    const npmCacheDir = await mkdtemp(join(tmpdir(), 'browseros-npx-cache-'))
+    tempDirs.push(npmCacheDir)
+    await mkdir(
+      join(
+        npmCacheDir,
+        '_npx',
+        'stale',
+        'node_modules',
+        '@zed-industries',
+        'codex-acp',
+      ),
+      { recursive: true },
+    )
+    await writeFile(
+      join(
+        npmCacheDir,
+        '_npx',
+        'stale',
+        'node_modules',
+        '@zed-industries',
+        'codex-acp',
+        'package.json',
+      ),
+      '{"version":"0.11.9"}',
+    )
+
+    await expect(
+      probeNpxPackageCache('@zed-industries/codex-acp', {
+        npxCacheDir: join(npmCacheDir, '_npx'),
+        versionRange: '^0.12.0',
+      }),
+    ).resolves.toBe(false)
   })
 })

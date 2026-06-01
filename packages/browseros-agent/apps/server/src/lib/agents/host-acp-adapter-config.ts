@@ -13,6 +13,7 @@ export const HOST_ACP_ADAPTER_CONFIG = {
     acpCommand: 'npx -y @agentclientprotocol/claude-agent-acp@^0.31.0',
     acpPackageSpec: '@agentclientprotocol/claude-agent-acp@^0.31.0',
     acpPackageName: '@agentclientprotocol/claude-agent-acp',
+    acpPackageVersionRange: '^0.31.0',
     acpBin: 'claude-agent-acp',
   },
   codex: {
@@ -21,6 +22,7 @@ export const HOST_ACP_ADAPTER_CONFIG = {
     acpCommand: 'npx -y @zed-industries/codex-acp@^0.12.0',
     acpPackageSpec: '@zed-industries/codex-acp@^0.12.0',
     acpPackageName: '@zed-industries/codex-acp',
+    acpPackageVersionRange: '^0.12.0',
     acpBin: 'codex-acp',
   },
 } as const satisfies Record<
@@ -31,6 +33,7 @@ export const HOST_ACP_ADAPTER_CONFIG = {
     acpCommand: string
     acpPackageSpec: string
     acpPackageName: string
+    acpPackageVersionRange: string
     acpBin: string
   }
 >

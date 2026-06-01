@@ -78,8 +78,8 @@ function runtimeSnapshotToHealth(runtime: AgentRuntime): AdapterHealth {
     readiness: snap.isReady ? 'ready' : 'unknown',
     installState: snap.isReady ? 'installed' : 'not-installed',
     nativeCliState: 'unknown',
-    authState: 'unknown',
-    adapterLaunchSource: 'none',
+    authState: snap.isReady ? 'not-applicable' : 'unknown',
+    adapterLaunchSource: snap.isReady ? 'runtime' : 'none',
     packageCacheState: 'unknown',
   }
 }

@@ -30,6 +30,8 @@ export function adapterHealthTone(
     case 'needs-install':
     case 'needs-auth':
       return 'danger'
+    case 'diagnostic-warning':
+      return 'warning'
     default:
       return health.healthy ? 'ready' : 'warning'
   }
@@ -51,8 +53,6 @@ function launchSourceLabel(
       return 'bundled Bun'
     case 'host-npx':
       return 'npx'
-    case 'native-binary':
-      return 'native binary'
     default:
       return null
   }

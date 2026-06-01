@@ -4,9 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import { access, readdir } from 'node:fs/promises'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
 import { resolveBundledBun } from './bundled-bun'
 import {
   HOST_ACP_ADAPTER_CONFIG,
@@ -18,6 +15,9 @@ import {
   resolveHostBinary,
   runHostCommand,
 } from './host-binary-resolver'
+import { probeNpxPackageCache } from './npx-package-cache'
+
+export { probeNpxPackageCache } from './npx-package-cache'
 
 export type AdapterReadiness =
   | 'ready'
@@ -40,9 +40,9 @@ export type AdapterAuthState =
   | 'not-applicable'
   | 'unknown'
 export type AdapterLaunchSource =
-  | 'native-binary'
   | 'bundled-bun'
   | 'host-npx'
+  | 'runtime'
   | 'none'
 export type PackageCacheState = 'cached' | 'fetch-required' | 'unknown'
 
@@ -67,7 +67,10 @@ export interface DetectHostAdapterOptions {
   now?: () => number
   resolveBinary?: (name: string) => Promise<ResolvedHostBinary | null>
   runCommand?: HostCommandRunner
-  probePackageCache?: (packageName: string) => Promise<boolean>
+  probePackageCache?: (
+    packageName: string,
+    versionRange?: string,
+  ) => Promise<boolean>
   resolveBundledBun?: typeof resolveBundledBun
 }
 
@@ -87,7 +90,10 @@ export async function detectHostAdapter(
   const resolveBinary =
     options.resolveBinary ??
     ((name: string) => resolveHostBinary(name, { env, platform, timeoutMs }))
-  const probePackageCache = options.probePackageCache ?? probeNpxPackageCache
+  const probePackageCache =
+    options.probePackageCache ??
+    ((packageName: string, versionRange?: string) =>
+      probeNpxPackageCache(packageName, { versionRange }))
   const resolveBun = options.resolveBundledBun ?? resolveBundledBun
 
   const [nativeCli, launch] = await Promise.all([
@@ -102,13 +108,17 @@ export async function detectHostAdapter(
     }),
   ])
 
-  const version = nativeCli
-    ? await probeVersion(nativeCli, runCommand, timeoutMs)
-    : undefined
-  const authState = nativeCli
-    ? await probeAuth(adapter, nativeCli, runCommand, timeoutMs)
-    : 'unknown'
   const nativeCliState: NativeCliState = nativeCli ? 'present' : 'missing'
+  let version: string | undefined
+  let authState: AdapterAuthState = 'unknown'
+  if (nativeCli) {
+    const probes = await Promise.all([
+      probeVersion(nativeCli, runCommand, timeoutMs),
+      probeAuth(adapter, nativeCli, runCommand, timeoutMs),
+    ])
+    version = probes[0]
+    authState = probes[1]
+  }
   const installState = determineInstallState({
     nativeCliState,
     adapterLaunchSource: launch.source,
@@ -135,44 +145,15 @@ export async function detectHostAdapter(
   }
 }
 
-export async function probeNpxPackageCache(
-  packageName: string,
-  options: { npxCacheDir?: string } = {},
-): Promise<boolean> {
-  const npxCacheDir = options.npxCacheDir ?? join(homedir(), '.npm', '_npx')
-  let entries: Array<{ isDirectory(): boolean; name: string }>
-  try {
-    entries = await readdir(npxCacheDir, { withFileTypes: true })
-  } catch {
-    return false
-  }
-
-  const packageParts = packageName.split('/').filter(Boolean)
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue
-    const candidate = join(
-      npxCacheDir,
-      entry.name,
-      'node_modules',
-      ...packageParts,
-      'package.json',
-    )
-    try {
-      await access(candidate)
-      return true
-    } catch {
-      // keep scanning
-    }
-  }
-  return false
-}
-
 async function detectAdapterLaunch(input: {
   adapter: HostAcpAdapter
   platform: NodeJS.Platform
   resourcesDir?: string | null
   resolveBinary: (name: string) => Promise<ResolvedHostBinary | null>
-  probePackageCache: (packageName: string) => Promise<boolean>
+  probePackageCache: (
+    packageName: string,
+    versionRange?: string,
+  ) => Promise<boolean>
   resolveBundledBun: typeof resolveBundledBun
 }): Promise<{
   source: AdapterLaunchSource
@@ -189,8 +170,10 @@ async function detectAdapterLaunch(input: {
   const npx = await input.resolveBinary('npx').catch(() => null)
   if (!npx) return { source: 'none', packageCacheState: 'unknown' }
 
-  const packageName = HOST_ACP_ADAPTER_CONFIG[input.adapter].acpPackageName
-  const cached = await input.probePackageCache(packageName).catch(() => false)
+  const config = HOST_ACP_ADAPTER_CONFIG[input.adapter]
+  const cached = await input
+    .probePackageCache(config.acpPackageName, config.acpPackageVersionRange)
+    .catch(() => false)
   return {
     source: 'host-npx',
     packageCacheState: cached ? 'cached' : 'fetch-required',
@@ -226,9 +209,10 @@ async function probeAuth(
     return result.exitCode === 0 ? 'authenticated' : 'unauthenticated'
   }
 
+  const timeoutPerCodexAuthProbe = splitTimeoutForCodexFallback(timeoutMs)
   const status = await runCommand(binary.path, ['login', 'status'], {
     env: binary.env,
-    timeoutMs,
+    timeoutMs: timeoutPerCodexAuthProbe,
   }).catch(() => null)
   if (status) {
     if (status.exitCode === 0) return 'authenticated'
@@ -237,7 +221,7 @@ async function probeAuth(
 
   const doctor = await runCommand(binary.path, ['doctor'], {
     env: binary.env,
-    timeoutMs,
+    timeoutMs: timeoutPerCodexAuthProbe,
   }).catch(() => null)
   if (!doctor) return 'unknown'
   const output = `${doctor.stdout}\n${doctor.stderr}`.toLowerCase()
@@ -249,6 +233,10 @@ async function probeAuth(
     return 'unauthenticated'
   }
   return doctor.exitCode === 0 ? 'authenticated' : 'unknown'
+}
+
+function splitTimeoutForCodexFallback(timeoutMs: number): number {
+  return Math.max(1, Math.floor(timeoutMs / 2))
 }
 
 function isUnsupportedCodexStatus(result: {
@@ -291,6 +279,7 @@ function determineReadiness(input: {
   if (input.launch.packageCacheState === 'fetch-required') {
     return 'will-fetch-package'
   }
+  if (input.authState === 'unknown') return 'diagnostic-warning'
   return 'ready'
 }
 
@@ -306,6 +295,8 @@ function reasonFor(input: {
       return `${input.displayName} adapter cannot launch because neither bundled Bun nor npx is available.`
     case 'will-fetch-package':
       return `${input.displayName} adapter package will be downloaded on first use.`
+    case 'diagnostic-warning':
+      return `${input.displayName} can launch, but authentication could not be verified.`
     case 'unknown':
       return `${input.displayName} readiness could not be checked.`
     default:
