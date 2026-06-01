@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { getAgentServerUrl } from '@/lib/browseros/helpers'
 
+const MAX_AGENT_SERVER_URL_ATTEMPTS = 3
+const AGENT_SERVER_URL_RETRY_DELAY_MS = 500
+
 type UseAgentServerUrlResult =
   | { baseUrl: string; isLoading: false; error: null }
   | { baseUrl?: never; isLoading: true; error: null }
@@ -8,7 +11,8 @@ type UseAgentServerUrlResult =
 
 /**
  * Resolves the local BrowserOS server URL used by React surfaces.
- * The host is always loopback; loading only represents waiting for the port.
+ * The host is always loopback; retries cover startup races while BrowserOS
+ * publishes the port preference.
  */
 export function useAgentServerUrl(): UseAgentServerUrlResult {
   const [state, setState] = useState<UseAgentServerUrlResult>({
@@ -18,8 +22,9 @@ export function useAgentServerUrl(): UseAgentServerUrlResult {
 
   useEffect(() => {
     let cancelled = false
+    let retryTimer: ReturnType<typeof setTimeout> | undefined
 
-    async function loadUrl() {
+    async function loadUrl(attempt: number) {
       try {
         const url = await getAgentServerUrl()
         if (!cancelled) {
@@ -27,6 +32,12 @@ export function useAgentServerUrl(): UseAgentServerUrlResult {
         }
       } catch (e) {
         if (!cancelled) {
+          if (attempt < MAX_AGENT_SERVER_URL_ATTEMPTS) {
+            retryTimer = setTimeout(() => {
+              void loadUrl(attempt + 1)
+            }, AGENT_SERVER_URL_RETRY_DELAY_MS)
+            return
+          }
           setState({
             isLoading: false,
             error: e instanceof Error ? e : new Error(String(e)),
@@ -35,10 +46,13 @@ export function useAgentServerUrl(): UseAgentServerUrlResult {
       }
     }
 
-    loadUrl()
+    void loadUrl(1)
 
     return () => {
       cancelled = true
+      if (retryTimer) {
+        clearTimeout(retryTimer)
+      }
     }
   }, [])
 

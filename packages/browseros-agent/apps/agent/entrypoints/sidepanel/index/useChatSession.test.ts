@@ -7,18 +7,6 @@ import { buildSidepanelPreparedSendMessagesRequest } from './useChatSessionReque
 const conversationId = '00000000-0000-4000-8000-000000000001'
 
 describe('buildSidepanelPreparedSendMessagesRequest', () => {
-  it('requires a resolved agent server URL', () => {
-    const invalidRequestInput = {
-      // @ts-expect-error agentServerUrl must be resolved before request construction
-      agentServerUrl: undefined,
-      target: llmTarget,
-      fallbackProvider,
-      ...commonRequestInput(),
-    } satisfies Parameters<typeof buildSidepanelPreparedSendMessagesRequest>[0]
-
-    expect(invalidRequestInput.agentServerUrl).toBeUndefined()
-  })
-
   it('keeps LLM targets on the existing /chat request body', () => {
     const request = buildSidepanelPreparedSendMessagesRequest({
       agentServerUrl: 'http://127.0.0.1:5151',

@@ -180,10 +180,15 @@ export const useChatSession = (options?: ChatSessionOptions) => {
   const conversationIdParam = searchParams.get('conversationId')
 
   const agentUrlRef = useRef(agentServerUrl)
+  const agentUrlErrorRef = useRef(agentUrlError)
 
   useEffect(() => {
     agentUrlRef.current = agentServerUrl
   }, [agentServerUrl])
+
+  useEffect(() => {
+    agentUrlErrorRef.current = agentUrlError
+  }, [agentUrlError])
 
   const canSend = !isLoadingAgentUrl && !agentUrlError && !!agentServerUrl
 
@@ -360,7 +365,10 @@ export const useChatSession = (options?: ChatSessionOptions) => {
 
         const currentAgentServerUrl = agentUrlRef.current
         if (!currentAgentServerUrl) {
-          throw agentUrlError ?? new Error('Agent server URL not configured.')
+          throw (
+            agentUrlErrorRef.current ??
+            new Error('Agent server URL not configured.')
+          )
         }
 
         const result = buildSidepanelPreparedSendMessagesRequest({
