@@ -3,8 +3,8 @@ import { getAgentServerUrl } from '@/lib/browseros/helpers'
 
 type UseAgentServerUrlResult =
   | { baseUrl: string; isLoading: false; error: null }
-  | { baseUrl: undefined; isLoading: true; error: null }
-  | { baseUrl: undefined; isLoading: false; error: Error }
+  | { baseUrl?: never; isLoading: true; error: null }
+  | { baseUrl?: never; isLoading: false; error: Error }
 
 /**
  * Resolves the local BrowserOS server URL used by React surfaces.
@@ -12,7 +12,6 @@ type UseAgentServerUrlResult =
  */
 export function useAgentServerUrl(): UseAgentServerUrlResult {
   const [state, setState] = useState<UseAgentServerUrlResult>({
-    baseUrl: undefined,
     isLoading: true,
     error: null,
   })
@@ -29,7 +28,6 @@ export function useAgentServerUrl(): UseAgentServerUrlResult {
       } catch (e) {
         if (!cancelled) {
           setState({
-            baseUrl: undefined,
             isLoading: false,
             error: e instanceof Error ? e : new Error(String(e)),
           })

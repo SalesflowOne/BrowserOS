@@ -29,7 +29,7 @@ interface ChatFooterProps {
   onSubmit: (e: FormEvent) => void
   status: 'streaming' | 'submitted' | 'ready' | 'error'
   onStop: () => void
-  disabled?: boolean
+  sendDisabled?: boolean
   attachedTabs: chrome.tabs.Tab[]
   onToggleTab: (tab: chrome.tabs.Tab) => void
   onRemoveTab: (tabId?: number) => void
@@ -44,7 +44,7 @@ export const ChatFooter: FC<ChatFooterProps> = ({
   onSubmit,
   status,
   onStop,
-  disabled,
+  sendDisabled,
   attachedTabs,
   onToggleTab,
   onRemoveTab,
@@ -228,7 +228,7 @@ export const ChatFooter: FC<ChatFooterProps> = ({
           input={input}
           status={status}
           mode={mode}
-          disabled={disabled}
+          sendDisabled={sendDisabled}
           onInputChange={onInputChange}
           onSubmit={onSubmit}
           onStop={onStop}

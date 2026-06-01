@@ -244,7 +244,7 @@ export const Chat = () => {
         onSubmit={handleSubmit}
         status={status}
         onStop={handleStop}
-        disabled={!canSend}
+        sendDisabled={!canSend}
         attachedTabs={attachedTabs}
         onToggleTab={toggleTabSelection}
         onRemoveTab={removeTab}

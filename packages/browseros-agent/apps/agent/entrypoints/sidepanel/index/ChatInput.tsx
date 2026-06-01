@@ -26,7 +26,7 @@ interface ChatInputProps {
   onInputChange: (value: string) => void
   onSubmit: (e: FormEvent) => void
   onStop: () => void
-  disabled?: boolean
+  sendDisabled?: boolean
   selectedTabs: chrome.tabs.Tab[]
   onToggleTab: (tab: chrome.tabs.Tab) => void
   onTabMentionOpenChange?: (isOpen: boolean) => void
@@ -49,7 +49,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       onInputChange,
       onSubmit: onSubmitProp,
       onStop,
-      disabled,
+      sendDisabled,
       selectedTabs,
       onToggleTab,
       onTabMentionOpenChange,
@@ -153,7 +153,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     )
 
     const isBusy = status !== 'ready' && status !== 'error'
-    const isSubmitDisabled = isBusy || disabled
+    const isSubmitDisabled = isBusy || sendDisabled
 
     const handleSubmit = (e: FormEvent) => {
       if (mentionStateRef.current.isOpen) {
