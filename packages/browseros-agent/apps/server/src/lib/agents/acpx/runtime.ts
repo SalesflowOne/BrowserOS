@@ -25,8 +25,8 @@ import type {
   AgentHistoryEntry,
   AgentHistoryToolCall,
 } from '../agent-types'
-import { resolveBundledBun } from '../bundled-bun'
-import { HOST_ACP_ADAPTER_CONFIG } from '../host-acp-adapter-config'
+import { resolveBundledBun } from '../host-acp/bundled-bun'
+import { HOST_ACP_ADAPTER_CONFIG } from '../host-acp/config'
 import { getHermesRuntime } from '../runtime'
 import type {
   AgentHistoryPage,
