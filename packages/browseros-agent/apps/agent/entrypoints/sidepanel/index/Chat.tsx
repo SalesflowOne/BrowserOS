@@ -36,6 +36,7 @@ export const Chat = () => {
     stop,
     agentUrlError,
     chatError,
+    canSend,
     selectedProvider,
     getActionForMessage,
     liked,
@@ -243,6 +244,7 @@ export const Chat = () => {
         onSubmit={handleSubmit}
         status={status}
         onStop={handleStop}
+        disabled={!canSend}
         attachedTabs={attachedTabs}
         onToggleTab={toggleTabSelection}
         onRemoveTab={removeTab}

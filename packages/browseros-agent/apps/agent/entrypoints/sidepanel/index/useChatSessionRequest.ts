@@ -15,7 +15,7 @@ type CommonSidepanelRequestInput = Omit<
 
 interface BuildSidepanelPreparedSendMessagesRequestInput
   extends CommonSidepanelRequestInput {
-  agentServerUrl: string | undefined
+  agentServerUrl: string
   target: SidepanelChatTarget | undefined
   fallbackProvider: LlmProviderConfig
   message?: string

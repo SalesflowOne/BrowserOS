@@ -11,8 +11,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { useAgentServerUrl } from '@/hooks/useAgentServerUrl'
 import { useSessionInfo } from '@/lib/auth/sessionStorage'
-import { useAgentServerUrl } from '@/lib/browseros/useBrowserOSProviders'
 import {
   CHATGPT_PRO_OAUTH_COMPLETED_EVENT,
   CHATGPT_PRO_OAUTH_DISCONNECTED_EVENT,

@@ -26,6 +26,7 @@ interface ChatInputProps {
   onInputChange: (value: string) => void
   onSubmit: (e: FormEvent) => void
   onStop: () => void
+  disabled?: boolean
   selectedTabs: chrome.tabs.Tab[]
   onToggleTab: (tab: chrome.tabs.Tab) => void
   onTabMentionOpenChange?: (isOpen: boolean) => void
@@ -48,6 +49,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       onInputChange,
       onSubmit: onSubmitProp,
       onStop,
+      disabled,
       selectedTabs,
       onToggleTab,
       onTabMentionOpenChange,
@@ -151,6 +153,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     )
 
     const isBusy = status !== 'ready' && status !== 'error'
+    const isSubmitDisabled = isBusy || disabled
 
     const handleSubmit = (e: FormEvent) => {
       if (mentionStateRef.current.isOpen) {
@@ -158,7 +161,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         closeMention()
         return
       }
-      if (isBusy) {
+      if (isSubmitDisabled) {
         e.preventDefault()
         return
       }
@@ -238,7 +241,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         !e.nativeEvent.isComposing
       ) {
         e.preventDefault()
-        if (input.trim() && !isBusy) {
+        if (input.trim() && !isSubmitDisabled) {
           e.currentTarget.form?.requestSubmit()
         }
       }
@@ -295,7 +298,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         <button
           type="button"
           onClick={voice.onStartRecording}
-          disabled={isBusy}
+          disabled={isSubmitDisabled}
           className="cursor-pointer rounded-full p-2 text-muted-foreground transition-all duration-200 hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Mic className="h-3.5 w-3.5" />
@@ -322,7 +325,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         <button
           type="submit"
           disabled={
-            !input.trim() || voice?.isRecording || voice?.isTranscribing
+            isSubmitDisabled ||
+            !input.trim() ||
+            voice?.isRecording ||
+            voice?.isTranscribing
           }
           className="cursor-pointer rounded-full bg-[var(--accent-orange)] p-2 text-white shadow-sm transition-all duration-200 hover:bg-[var(--accent-orange-bright)] disabled:cursor-not-allowed disabled:opacity-50"
         >

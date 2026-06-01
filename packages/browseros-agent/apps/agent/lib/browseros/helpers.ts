@@ -1,14 +1,6 @@
-import { env } from '@/lib/env'
 import { getBrowserOSAdapter } from './adapter'
 import { Capabilities, Feature } from './capabilities'
 import { BROWSEROS_PREFS } from './prefs'
-
-export class AgentPortError extends Error {
-  constructor() {
-    super('Agent server port not configured.')
-    this.name = 'AgentPortError'
-  }
-}
 
 export class McpPortError extends Error {
   constructor() {
@@ -18,37 +10,12 @@ export class McpPortError extends Error {
 }
 
 /**
- * @public
+ * Returns the local BrowserOS server base URL for chat and agent APIs.
+ * BrowserOS publishes this through the unified MCP/server-port preference.
  */
 export async function getAgentServerUrl(): Promise<string> {
-  const supportsUnifiedPort = await Capabilities.supports(
-    Feature.UNIFIED_PORT_SUPPORT,
-  )
-  if (supportsUnifiedPort) {
-    const port = await getMcpPort()
-    return `http://127.0.0.1:${port}`
-  }
-  const port = await getAgentPort()
+  const port = await getMcpPort()
   return `http://127.0.0.1:${port}`
-}
-
-async function getAgentPort(): Promise<number> {
-  if (env.VITE_BROWSEROS_SERVER_PORT) {
-    return env.VITE_BROWSEROS_SERVER_PORT
-  }
-
-  try {
-    const adapter = getBrowserOSAdapter()
-    const pref = await adapter.getPref(BROWSEROS_PREFS.AGENT_PORT)
-
-    if (pref?.value && typeof pref.value === 'number') {
-      return pref.value
-    }
-  } catch {
-    // BrowserOS API not available
-  }
-
-  throw new AgentPortError()
 }
 
 async function getMcpPort(): Promise<number> {

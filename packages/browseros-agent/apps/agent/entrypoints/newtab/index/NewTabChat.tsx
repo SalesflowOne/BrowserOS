@@ -38,6 +38,7 @@ export const NewTabChat: FC = () => {
     status,
     agentUrlError,
     chatError,
+    canSend,
     getActionForMessage,
     liked,
     onClickLike,
@@ -189,6 +190,7 @@ export const NewTabChat: FC = () => {
           onSubmit={handleSubmit}
           status={status}
           onStop={handleStop}
+          disabled={!canSend}
           attachedTabs={attachedTabs}
           onToggleTab={toggleTabSelection}
           onRemoveTab={removeTab}

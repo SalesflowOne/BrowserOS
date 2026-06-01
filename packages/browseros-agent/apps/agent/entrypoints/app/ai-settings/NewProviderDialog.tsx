@@ -51,8 +51,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { useAgentServerUrl } from '@/hooks/useAgentServerUrl'
 import { Feature } from '@/lib/browseros/capabilities'
-import { useAgentServerUrl } from '@/lib/browseros/useBrowserOSProviders'
 import { useCapabilities } from '@/lib/browseros/useCapabilities'
 import {
   AI_PROVIDER_ADDED_EVENT,

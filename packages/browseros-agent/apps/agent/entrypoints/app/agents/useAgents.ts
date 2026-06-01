@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAgentServerUrl } from '@/hooks/useAgentServerUrl'
 import { Feature } from '@/lib/browseros/capabilities'
 import { getAgentServerUrl } from '@/lib/browseros/helpers'
-import { useAgentServerUrl } from '@/lib/browseros/useBrowserOSProviders'
 import { useCapabilities } from '@/lib/browseros/useCapabilities'
 import { buildAgentApiUrl } from './agent-api-url'
 import {

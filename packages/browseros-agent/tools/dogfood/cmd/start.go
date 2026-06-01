@@ -307,7 +307,6 @@ func serverRuntimeEnv(base []string, cfg config.Config) []string {
 		fmt.Sprintf("BROWSEROS_CDP_PORT=%d", cfg.Ports.CDP),
 		fmt.Sprintf("BROWSEROS_SERVER_PORT=%d", cfg.Ports.Server),
 		fmt.Sprintf("BROWSEROS_EXTENSION_PORT=%d", cfg.Ports.Extension),
-		fmt.Sprintf("VITE_BROWSEROS_SERVER_PORT=%d", cfg.Ports.Server),
 	)
 }
 

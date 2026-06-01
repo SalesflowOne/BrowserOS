@@ -134,7 +134,6 @@ Copy from `apps/server/.env.production.example` before running `build:server`.
 | `BROWSEROS_SERVER_PORT` | 9100 | Passed to BrowserOS via CLI args |
 | `BROWSEROS_CDP_PORT` | 9000 | Passed to BrowserOS via CLI args |
 | `BROWSEROS_EXTENSION_PORT` | 9300 | Legacy BrowserOS CLI arg still passed for compatibility |
-| `VITE_BROWSEROS_SERVER_PORT` | 9100 | Agent UI connects to server (must match `BROWSEROS_SERVER_PORT`) |
 | `BROWSEROS_BINARY` | - | Path to BrowserOS binary |
 | `USE_BROWSEROS_BINARY` | true | Use BrowserOS instead of default Chrome |
 | `VITE_PUBLIC_POSTHOG_KEY` | - | Agent UI PostHog key |
