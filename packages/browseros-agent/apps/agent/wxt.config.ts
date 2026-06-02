@@ -39,7 +39,7 @@ export default defineConfig({
       },
     ],
     chrome_url_overrides: {
-      newtab: 'company.html',
+      newtab: 'app.html',
     },
     options_ui: {
       page: 'app.html#/settings',

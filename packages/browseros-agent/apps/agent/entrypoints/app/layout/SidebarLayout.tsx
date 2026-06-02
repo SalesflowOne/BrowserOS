@@ -97,7 +97,7 @@ export const SidebarLayout: FC = () => {
           <AppSidebar expanded={sidebarOpen} onOpenShortcuts={openShortcuts} />
         </div>
 
-        {location.pathname === '/home/chat' ? (
+        {location.pathname === '/home' || location.pathname === '/home/chat' ? (
           <main className="relative h-dvh overflow-hidden">
             <Outlet />
           </main>

@@ -1,18 +1,9 @@
 import type { FC } from 'react'
 import { HashRouter, Navigate, Route, Routes, useParams } from 'react-router'
-import { Feature } from '@/lib/browseros/capabilities'
-import { useCapabilities } from '@/lib/browseros/useCapabilities'
-import { NewTab } from '../newtab/index/NewTab'
-import { NewTabChat } from '../newtab/index/NewTabChat'
-import { NewTabLayout } from '../newtab/layout/NewTabLayout'
-import { Personalize } from '../newtab/personalize/Personalize'
 import { OnboardingDemo } from '../onboarding/demo/OnboardingDemo'
 import { FeaturesPage } from '../onboarding/features/Features'
 import { Onboarding } from '../onboarding/index/Onboarding'
 import { StepsLayout } from '../onboarding/steps/StepsLayout'
-import { AgentCommandConversation } from './agent-command/AgentCommandConversation'
-import { AgentCommandHome } from './agent-command/AgentCommandHome'
-import { AgentCommandLayout } from './agent-command/agent-command-layout'
 import { AISettingsPage } from './ai-settings/AISettingsPage'
 import { ConnectMCP } from './connect-mcp/ConnectMCP'
 import { CustomizationPage } from './customization/CustomizationPage'
@@ -37,12 +28,19 @@ function getSurveyParams(): { maxTurns?: number; experimentId?: string } {
   return { maxTurns, experimentId }
 }
 
-// Agent management moved into AI & Agents settings; conversations live under
-// /home/agents. Keep old /agents links alive.
-const LegacyAgentRedirect: FC = () => {
-  const params = useParams()
-  return <Navigate to={`/home/agents/${params.agentId ?? ''}`} replace />
-}
+// The agent-company app (ported BrowserClaw) is a self-contained SPA with its
+// own hash router, so we embed it in an iframe at /home rather than mounting
+// it directly — two HashRouters in one document would fight over location.hash.
+// The surrounding SidebarLayout keeps the BrowserOS sidebar (Home / Connect
+// Apps / Scheduled Tasks / Settings), so LLM-provider and other settings stay
+// reachable alongside the company workspace.
+const CompanyHome: FC = () => (
+  <iframe
+    src="/company.html"
+    title="Agent Company"
+    className="h-full w-full border-0"
+  />
+)
 
 const OptionsRedirect: FC = () => {
   const params = useParams()
@@ -65,8 +63,6 @@ const OptionsRedirect: FC = () => {
 
 export const App: FC = () => {
   const surveyParams = getSurveyParams()
-  const { supports } = useCapabilities()
-  const alphaEnabled = supports(Feature.ALPHA_FEATURES_SUPPORT)
 
   return (
     <HashRouter>
@@ -79,31 +75,9 @@ export const App: FC = () => {
           <Route path="auth/magic-link" element={<MagicLinkCallback />} />
         </Route>
 
-        {/* Main app with sidebar */}
+        {/* Main app with sidebar. Home is the embedded agent-company workspace. */}
         <Route element={<SidebarLayout />}>
-          {/* Home routes */}
-          <Route
-            path="home"
-            element={<NewTabLayout useChatSessionOnHome={!alphaEnabled} />}
-          >
-            {alphaEnabled ? (
-              <>
-                <Route element={<AgentCommandLayout />}>
-                  <Route index element={<AgentCommandHome />} />
-                  <Route
-                    path="agents/:agentId"
-                    element={<AgentCommandConversation />}
-                  />
-                </Route>
-                <Route path="chat" element={<NewTabChat />} />
-                <Route path="personalize" element={<Personalize />} />
-              </>
-            ) : (
-              <Route index element={<NewTab />} />
-            )}
-          </Route>
-
-          {/* Primary nav routes */}
+          <Route path="home" element={<CompanyHome />} />
           <Route path="connect-apps" element={<ConnectMCP />} />
           <Route path="scheduled" element={<ScheduledTasksPage />} />
         </Route>
@@ -136,15 +110,7 @@ export const App: FC = () => {
 
         {/* Backward compatibility redirects */}
         <Route path="/" element={<Navigate to="/home" replace />} />
-        <Route
-          path="/personalize"
-          element={
-            <Navigate
-              to={alphaEnabled ? '/home/personalize' : '/home'}
-              replace
-            />
-          }
-        />
+        <Route path="/personalize" element={<Navigate to="/home" replace />} />
         <Route
           path="/settings/connect-mcp"
           element={<Navigate to="/connect-apps" replace />}
@@ -159,7 +125,10 @@ export const App: FC = () => {
           path="/agents"
           element={<Navigate to="/settings/ai?section=claude" replace />}
         />
-        <Route path="/agents/:agentId" element={<LegacyAgentRedirect />} />
+        <Route
+          path="/agents/:agentId"
+          element={<Navigate to="/home" replace />}
+        />
         <Route path="/options/*" element={<OptionsRedirect />} />
 
         {/* Fallback to home */}
