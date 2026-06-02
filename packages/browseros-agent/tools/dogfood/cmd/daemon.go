@@ -380,14 +380,10 @@ func (d *dogfoodDaemon) scheduleRestart(pull bool, force bool) error {
 				return err
 			}
 			runner := pipeline.ExecRunner{}
-			if force {
-				if err := pipeline.Fetch(d.ctx, cfg.RepoPath, runner); err != nil {
-					return err
-				}
-				if err := pipeline.ResetHardToUpstream(d.ctx, cfg.RepoPath, runner); err != nil {
-					return err
-				}
-			} else if err := pipeline.Pull(d.ctx, cfg.RepoPath, runner); err != nil {
+			if err := updateConfiguredRepo(d.ctx, cfg, runner, repoUpdateOptions{
+				Force:           force,
+				ResetToUpstream: force,
+			}); err != nil {
 				return err
 			}
 		}

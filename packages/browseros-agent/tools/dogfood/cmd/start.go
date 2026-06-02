@@ -163,7 +163,9 @@ func buildAndStartEnvironment(ctx context.Context, cfg config.Config, opts envir
 	}
 	agentRoot := cfg.AgentRoot()
 	reportProgress(opts, "checking repo")
-	if dirty, err := pipeline.Dirty(cfg.RepoPath, opts.Runner); err == nil && dirty {
+	if dirty, err := prepareStartCheckout(ctx, cfg, opts.Runner); err != nil {
+		return nil, err
+	} else if dirty {
 		fmt.Fprintln(os.Stderr, warnStyle.Sprint("warning: checkout has uncommitted changes; start will use current files"))
 	}
 	reportProgress(opts, "preparing profile")
@@ -175,6 +177,22 @@ func buildAndStartEnvironment(ctx context.Context, cfg config.Config, opts envir
 		return nil, err
 	}
 	return startEnvironment(ctx, cfg, agentRoot, opts)
+}
+
+// prepareStartCheckout ensures start builds the configured branch without discarding local edits.
+func prepareStartCheckout(ctx context.Context, cfg config.Config, runner pipeline.Runner) (bool, error) {
+	dirty, err := pipeline.Dirty(cfg.RepoPath, runner)
+	if err != nil {
+		return false, err
+	}
+	if !dirty {
+		return false, pipeline.EnsureBranch(ctx, cfg.RepoPath, cfg.Branch, runner)
+	}
+	current := pipeline.Branch(cfg.RepoPath, runner)
+	if current != cfg.Branch {
+		return true, fmt.Errorf("checkout has uncommitted changes on %s; cannot switch to configured branch %s", current, cfg.Branch)
+	}
+	return true, nil
 }
 
 func prepareEnvironment(cfg *config.Config, agentRoot string, opts environmentOptions) error {
