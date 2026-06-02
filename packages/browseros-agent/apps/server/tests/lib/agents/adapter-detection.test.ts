@@ -227,6 +227,46 @@ describe('adapter detection', () => {
     ])
   })
 
+  it('reports missing package runner separately from bundled native CLI presence', async () => {
+    const resourcesDir = '/opt/BrowserOS/resources'
+    const bundledDir = join(resourcesDir, 'bin', 'third_party')
+    const bundledCodex = join(bundledDir, 'codex')
+
+    const result = await detectHostAdapter('codex', {
+      now: () => 1234,
+      platform: 'linux',
+      resourcesDir,
+      resolveBundledNativeBinary: () => ({
+        path: bundledCodex,
+        env: { PATH: `${bundledDir}:/usr/bin` },
+      }),
+      resolveBundledBun: () => null,
+      resolveBinary: async () => null,
+      runCommand: async (_cmd, args) => {
+        if (args[0] === '--version') {
+          return { exitCode: 0, stdout: 'codex-cli 0.136.0\n', stderr: '' }
+        }
+        if (args.join(' ') === 'login status') {
+          return { exitCode: 0, stdout: 'authenticated\n', stderr: '' }
+        }
+        throw new Error(`unexpected command ${args.join(' ')}`)
+      },
+      probePackageCache: async () => false,
+    })
+
+    expect(result).toMatchObject({
+      healthy: false,
+      readiness: 'needs-install',
+      installState: 'installed',
+      nativeCliState: 'present',
+      authState: 'authenticated',
+      adapterLaunchSource: 'none',
+      packageCacheState: 'unknown',
+      reason:
+        'Codex adapter package cannot launch because neither bundled Bun nor npx is available.',
+    })
+  })
+
   it('uses codex doctor when login status is not supported', async () => {
     const calls: Array<{ args: string[]; timeoutMs: number | undefined }> = []
 

@@ -254,6 +254,26 @@ class ExtractBunFileTest(unittest.TestCase):
                     binary_name="bun.exe",
                 )
 
+    def test_windows_exe_is_not_marked_executable(self) -> None:
+        payload = b"bun-windows-exe-" + b"b" * 100
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            zip_path = tmp_path / "bun.zip"
+            zip_path.write_bytes(
+                _build_bun_zip(
+                    payload,
+                    root_dir="bun-windows-x64-baseline",
+                    binary_name="bun.exe",
+                )
+            )
+            dest = tmp_path / "bun.exe"
+
+            storage._extract_bun_file(zip_path, dest, binary_name="bun.exe")
+
+            self.assertEqual(dest.read_bytes(), payload)
+            self.assertFalse(dest.stat().st_mode & 0o100, "should not be executable")
+
 
 class BunTargetTest(unittest.TestCase):
     def test_bun_targets_have_expected_fields(self) -> None:
@@ -363,6 +383,10 @@ class BuildManifestTest(unittest.TestCase):
         self.assertEqual(
             manifest["platforms"]["windows-x64"],
             {"platform": "win32-x64", "binary": "claude.exe"},
+        )
+        self.assertIsNot(
+            manifest["binary_shas_upstream"],
+            manifest["r2_object_shas"],
         )
         self.assertIn("uploaded_at", manifest)
         self.assertIn("uploaded_by", manifest)
@@ -887,6 +911,20 @@ class ExtractCodexFileTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "Codex entrypoint .* not found"):
                 storage._extract_codex_file(package_path, tmp_path / "codex")
 
+    def test_windows_entrypoint_is_not_marked_executable(self) -> None:
+        payload = b"codex-windows-exe-" + b"c" * 100
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            package_path = tmp_path / "codex.tar.gz"
+            package_path.write_bytes(_build_codex_package("bin/codex.exe", payload))
+            dest = tmp_path / "codex.exe"
+
+            storage._extract_codex_file(package_path, dest)
+
+            self.assertEqual(dest.read_bytes(), payload)
+            self.assertFalse(dest.stat().st_mode & 0o100, "should not be executable")
+
 
 class ProcessCodexPlatformTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -925,7 +963,6 @@ class ProcessCodexPlatformTest(unittest.TestCase):
                     platform=storage.CodexPlatform(
                         target="darwin-arm64",
                         upstream="aarch64-apple-darwin",
-                        entrypoint="bin/codex",
                     ),
                     tmp_dir=tmp_path,
                     checksums={
@@ -977,7 +1014,6 @@ class ProcessCodexPlatformTest(unittest.TestCase):
                         platform=storage.CodexPlatform(
                             target="darwin-arm64",
                             upstream="aarch64-apple-darwin",
-                            entrypoint="bin/codex",
                         ),
                         tmp_dir=tmp_path,
                         checksums={
@@ -1012,7 +1048,6 @@ class ProcessCodexPlatformTest(unittest.TestCase):
                     platform=storage.CodexPlatform(
                         target="windows-x64",
                         upstream="x86_64-pc-windows-msvc",
-                        entrypoint="bin/codex.exe",
                     ),
                     tmp_dir=tmp_path,
                     checksums={

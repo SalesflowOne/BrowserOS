@@ -104,34 +104,28 @@ class CodexPlatform:
 
     target: str
     upstream: str
-    entrypoint: str
 
 
 CODEX_PLATFORMS: Tuple[CodexPlatform, ...] = (
     CodexPlatform(
         target="darwin-arm64",
         upstream="aarch64-apple-darwin",
-        entrypoint="bin/codex",
     ),
     CodexPlatform(
         target="darwin-x64",
         upstream="x86_64-apple-darwin",
-        entrypoint="bin/codex",
     ),
     CodexPlatform(
         target="linux-arm64",
         upstream="aarch64-unknown-linux-musl",
-        entrypoint="bin/codex",
     ),
     CodexPlatform(
         target="linux-x64",
         upstream="x86_64-unknown-linux-musl",
-        entrypoint="bin/codex",
     ),
     CodexPlatform(
         target="windows-x64",
         upstream="x86_64-pc-windows-msvc",
-        entrypoint="bin/codex.exe",
     ),
 )
 
@@ -744,7 +738,8 @@ def _extract_bun_file(zip_path: Path, dest: Path, binary_name: str = "bun") -> N
             with archive.open(member) as src, open(dest, "wb") as out:
                 while chunk := src.read(1024 * 1024):
                     out.write(chunk)
-            dest.chmod(0o755)
+            if not binary_name.endswith(".exe"):
+                dest.chmod(0o755)
             return
     raise RuntimeError(f"{binary_name} not found in Bun zip")
 
@@ -766,7 +761,8 @@ def _extract_codex_file(package_path: Path, dest: Path) -> None:
             with extracted as src, open(dest, "wb") as out:
                 while chunk := src.read(1024 * 1024):
                     out.write(chunk)
-            dest.chmod(0o755)
+            if not entrypoint.endswith(".exe"):
+                dest.chmod(0o755)
             return
     raise RuntimeError(f"Codex entrypoint {entrypoint} not found in package")
 
@@ -911,9 +907,9 @@ def _build_claude_code_manifest(
 ) -> Dict[str, Any]:
     return {
         "claude_code_version": version,
-        "binary_shas_upstream": binary_shas,
-        "r2_object_shas": binary_shas,
-        "platforms": platform_info,
+        "binary_shas_upstream": dict(binary_shas),
+        "r2_object_shas": dict(binary_shas),
+        "platforms": {target: dict(info) for target, info in platform_info.items()},
         "uploaded_at": datetime.now(timezone.utc).isoformat(),
         "uploaded_by": os.environ.get("GITHUB_ACTOR") or "local",
     }
