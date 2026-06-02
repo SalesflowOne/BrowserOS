@@ -3,12 +3,7 @@ import { SidebarTrigger, useSidebar } from '@company/components/ui/sidebar'
 import type { Tint } from '@company/lib/tints'
 import type { Status } from '@company/lib/types'
 import { cn } from '@company/lib/utils'
-import {
-  useAppWindow,
-  useToggleAppWindowVisibility,
-} from '@company/modules/api/browseros.hooks'
 import { useEmployee } from '@company/modules/api/employees.hooks'
-import { toastError } from '@company/modules/api/errorToast'
 import { useThread } from '@company/modules/api/threads.hooks'
 import {
   useCanGoBack,
@@ -18,14 +13,7 @@ import {
   useRouterState,
   useSearch,
 } from '@tanstack/react-router'
-import {
-  ChevronLeft,
-  ChevronRight,
-  Eye,
-  EyeOff,
-  Info,
-  Monitor,
-} from 'lucide-react'
+import { ChevronLeft, ChevronRight, Info, Monitor } from 'lucide-react'
 import type { ButtonHTMLAttributes, FC } from 'react'
 
 // Layout (left → right):
@@ -66,46 +54,9 @@ export const InsetTopBar: FC = () => {
       </ChromeButton>
       <ThreadContext />
       <div className="flex-1" />
-      <BrowserOsVisibilityToggle />
       <BrowserPaneToggle />
       <ThreadInfoButton />
     </div>
-  )
-}
-
-// Mirror of the tray menu's hide/show item. The server gate enforces
-// the agent-busy rule; we surface a 409 as a toast rather than carry
-// a global busy-hook on the renderer.
-const BrowserOsVisibilityToggle: FC = () => {
-  const appWindow = useAppWindow()
-  const toggle = useToggleAppWindowVisibility()
-  const visibility = appWindow.data?.visibility ?? 'visible'
-  const isVisible = visibility === 'visible'
-  const Icon = isVisible ? Eye : EyeOff
-  const label = isVisible ? 'Hide BrowserOS window' : 'Show BrowserOS window'
-  return (
-    <button
-      type="button"
-      onClick={() =>
-        toggle.mutate(
-          { visibility: isVisible ? 'hidden' : 'visible' },
-          { onError: (err) => toastError(err, 'BrowserOS toggle failed') },
-        )
-      }
-      disabled={toggle.isPending || appWindow.isLoading}
-      aria-pressed={!isVisible}
-      aria-label={label}
-      title={label}
-      className={cn(
-        'app-region-no-drag inline-flex size-6 shrink-0 items-center justify-center rounded transition-colors',
-        isVisible
-          ? 'text-muted-foreground/70 hover:bg-accent hover:text-foreground'
-          : 'bg-[color:var(--accent-orange)]/10 text-[color:var(--accent-orange)]',
-        'disabled:pointer-events-none disabled:opacity-50',
-      )}
-    >
-      <Icon className="size-3.5" />
-    </button>
   )
 }
 

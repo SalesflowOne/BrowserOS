@@ -7,10 +7,6 @@ import {
 } from '../browseros/app-window.js'
 import { resolveBrowserBinding } from '../browseros/bindings.js'
 import { listTabsForWindow } from '../browseros/list-tabs.js'
-import {
-  performVisibilityToggle,
-  VisibilityToggleBusyError,
-} from '../browseros/visibility-gate.js'
 import { getDb } from '../db-singleton.js'
 import { getBrowserosMcpUrl } from '../settings/browseros.js'
 
@@ -46,25 +42,11 @@ export const browserosRoute = new Hono()
   .patch(
     '/browseros/app-window/visibility',
     zValidator('json', visibilitySchema),
-    async (c) => {
-      const { visibility } = c.req.valid('json')
-      const db = getDb()
-      const browserosMcpUrl = await getBrowserosMcpUrl(db)
-      try {
-        const result = await performVisibilityToggle(
-          db,
-          browserosMcpUrl,
-          visibility,
-        )
-        return c.json({ ...result, visibility })
-      } catch (err) {
-        if (err instanceof VisibilityToggleBusyError) {
-          return c.json({ error: err.message }, 409)
-        }
-        const message =
-          err instanceof Error ? err.message : 'browseros unreachable'
-        return c.json({ error: message }, 500)
-      }
+    (c) => {
+      // The company shares the user's existing window — it never hides,
+      // shows, or replaces it. Kept as a no-op for backward compatibility;
+      // always reports the window as visible.
+      return c.json({ visibility: 'visible' as const })
     },
   )
   .get('/browseros/tabs', zValidator('query', tabsQuerySchema), async (c) => {
