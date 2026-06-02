@@ -8,6 +8,7 @@ import { recoverInterruptedTurns } from './chat/recovery.js'
 import { setDb } from './db-singleton.js'
 import { setLocalServerUrl } from './local-server-url.js'
 import { ensureWorkspacesUpToDate } from './memory/ensure-workspaces.js'
+import { setOwnServerMcpUrl } from './settings/browseros.js'
 import { ensureBuiltInSkills } from './skills/ensure-built-ins.js'
 import { ensureUserSkillsLinked } from './skills/ensure-user-skills.js'
 import { handleIncomingTelegramMessage } from './telegram/bridge.js'
@@ -52,6 +53,12 @@ export async function bootstrapCompany({
   const apiBaseUrl = `http://127.0.0.1:${serverPort}/company`
   setLocalServerUrl(apiBaseUrl)
   getChannelOrchestrator().setApiBaseUrl(apiBaseUrl)
+
+  // The BrowserOS browser-automation MCP is this same binary's own /mcp
+  // endpoint (same host + port). No external BrowserOS discovery and no
+  // UI-configured port — the company agents drive the browser through the
+  // server they're already part of.
+  setOwnServerMcpUrl(`http://127.0.0.1:${serverPort}/mcp`)
 
   void ensureBuiltInSkills(db)
   void ensureUserSkillsLinked(db)

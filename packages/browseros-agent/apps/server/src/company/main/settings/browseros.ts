@@ -27,6 +27,22 @@ const MCP_CLIENT_INFO = {
   version: '0.0.1',
 } as const
 
+// When the company domain runs inside the BrowserOS server binary, the
+// browser-automation MCP is the server's OWN /mcp endpoint on the same port
+// — there's no external BrowserOS to discover and no port to configure in the
+// UI. bootstrapCompany() sets this once at boot from the known server port;
+// when set it overrides both the persisted setting and the default. Cleared
+// (null) only in standalone/test contexts that talk to an external BrowserOS.
+let ownServerMcpUrl: string | null = null
+
+export function setOwnServerMcpUrl(url: string): void {
+  ownServerMcpUrl = normalizeBrowserosMcpUrl(url)
+}
+
+export function getOwnServerMcpUrl(): string | null {
+  return ownServerMcpUrl
+}
+
 /**
  * Wraps client.connect with a hard deadline. StreamableHTTPClientTransport
  * uses fetch under the hood and inherits its no-default-timeout behaviour:
@@ -155,8 +171,14 @@ export async function checkBrowserosMcpUrl(
   }
 }
 
-/** Reads the BrowserOS MCP URL from persisted app settings. */
+/**
+ * Resolves the BrowserOS MCP URL. In the in-binary deployment this is the
+ * server's own /mcp (set by bootstrapCompany) and the persisted setting is
+ * ignored. Falls back to the persisted setting / default only when running
+ * standalone against an external BrowserOS.
+ */
 export async function getBrowserosMcpUrl(db: DB): Promise<string> {
+  if (ownServerMcpUrl) return ownServerMcpUrl
   const rows = await db
     .select({ value: settings.value })
     .from(settings)
