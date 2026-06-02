@@ -11,6 +11,7 @@ import {
   runHostCommand,
 } from './binary-resolver'
 import { resolveBundledBun } from './bundled-bun'
+import { resolveBundledNativeBinary } from './bundled-native-binary'
 import { HOST_ACP_ADAPTER_CONFIG, type HostAcpAdapter } from './config'
 import { probeNpxPackageCache } from './npx-package-cache'
 
@@ -69,6 +70,7 @@ export interface DetectHostAdapterOptions {
     versionRange?: string,
   ) => Promise<boolean>
   resolveBundledBun?: typeof resolveBundledBun
+  resolveBundledNativeBinary?: typeof resolveBundledNativeBinary
 }
 
 const DEFAULT_PROBE_TIMEOUT_MS = 3_000
@@ -92,9 +94,17 @@ export async function detectHostAdapter(
     ((packageName: string, versionRange?: string) =>
       probeNpxPackageCache(packageName, { versionRange }))
   const resolveBun = options.resolveBundledBun ?? resolveBundledBun
+  const resolveBundledNative =
+    options.resolveBundledNativeBinary ?? resolveBundledNativeBinary
 
   const [nativeCli, launch] = await Promise.all([
-    resolveBinary(config.nativeBinary).catch(() => null),
+    (async () =>
+      resolveBundledNative({
+        adapter,
+        resourcesDir: options.resourcesDir,
+        env,
+        platform,
+      }) ?? (await resolveBinary(config.nativeBinary)))().catch(() => null),
     detectAdapterLaunch({
       adapter,
       platform,
