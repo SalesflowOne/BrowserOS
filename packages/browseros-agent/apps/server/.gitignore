@@ -2,4 +2,7 @@ tmp-shot-*/
 tmp-upload-*/
 .devtools
 db/
+# Ported company source includes a db/ schema dir — keep it tracked despite the
+# broad runtime-db ignore above.
+!/src/company/db/
 identity/
