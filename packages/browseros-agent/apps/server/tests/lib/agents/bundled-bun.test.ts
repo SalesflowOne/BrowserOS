@@ -53,7 +53,7 @@ describe('bundled Bun helpers', () => {
     expect(resolveBundledBun({ resourcesDir, platform: 'win32' })).toBe(bunPath)
   })
 
-  it('ignores non-executable bundled Bun files', async () => {
+  it('ignores non-executable bundled Bun files on macOS', async () => {
     const resourcesDir = await mkdtemp(join(tmpdir(), 'browseros-bun-'))
     tempDirs.push(resourcesDir)
     const bunPath = join(resourcesDir, 'bin', 'third_party', 'bun')
@@ -62,6 +62,17 @@ describe('bundled Bun helpers', () => {
     await chmod(bunPath, 0o644)
 
     expect(resolveBundledBun({ resourcesDir, platform: 'darwin' })).toBeNull()
+  })
+
+  it('ignores non-executable bundled Bun files on Linux', async () => {
+    const resourcesDir = await mkdtemp(join(tmpdir(), 'browseros-bun-'))
+    tempDirs.push(resourcesDir)
+    const bunPath = join(resourcesDir, 'bin', 'third_party', 'bun')
+    await mkdir(dirname(bunPath), { recursive: true })
+    await writeFile(bunPath, '#!/bin/sh\n')
+    await chmod(bunPath, 0o644)
+
+    expect(resolveBundledBun({ resourcesDir, platform: 'linux' })).toBeNull()
   })
 
   it('ignores bundled Bun on unsupported platforms', async () => {
