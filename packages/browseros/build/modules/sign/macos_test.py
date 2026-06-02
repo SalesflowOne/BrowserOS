@@ -28,6 +28,7 @@ class MacOSSignDiscoveryTest(unittest.TestCase):
                 / "bin"
             )
             _write_exec(server_bin / "browseros_server")
+            _write_exec(server_bin / "third_party" / "rg")
             _write_exec(server_bin / "third_party" / "codex")
             _write_exec(server_bin / "third_party" / "claude")
             _write_exec(server_bin / "third_party" / "lima" / "bin" / "limactl")
@@ -35,6 +36,7 @@ class MacOSSignDiscoveryTest(unittest.TestCase):
             executables = set(find_components_to_sign(app_path)["executables"])
 
             self.assertIn(server_bin / "browseros_server", executables)
+            self.assertIn(server_bin / "third_party" / "rg", executables)
             self.assertIn(server_bin / "third_party" / "codex", executables)
             self.assertIn(server_bin / "third_party" / "claude", executables)
             self.assertNotIn(
