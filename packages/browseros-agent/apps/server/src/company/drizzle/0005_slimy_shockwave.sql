@@ -1,0 +1,1 @@
+ALTER TABLE `approvals` ADD `tool_call_id` text;

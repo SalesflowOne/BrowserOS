@@ -14,6 +14,7 @@ import { EXIT_CODES } from '@browseros/shared/constants/exit-codes'
 import { createHttpServer } from './api/server'
 import { CdpBackend } from './browser/backends/cdp'
 import { Browser } from './browser/browser'
+import { bootstrapCompany } from './company/main/bootstrap'
 import type { ServerConfig } from './config'
 import { INLINED_ENV } from './env'
 import {
@@ -112,6 +113,16 @@ export class Application {
     )
     logger.info(
       `Health endpoint: http://127.0.0.1:${this.config.serverPort}/health`,
+    )
+
+    // Boot the ported "company" domain (employees/threads/channels). Failures
+    // are non-fatal — the core browser/MCP server stays up regardless.
+    await bootstrapCompany({ serverPort: this.config.serverPort }).catch(
+      (error) => {
+        logger.error('Company domain bootstrap failed', {
+          error: error instanceof Error ? error.message : String(error),
+        })
+      },
     )
 
     this.logStartupSummary()

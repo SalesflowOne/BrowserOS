@@ -6,6 +6,7 @@
     "jsx": "react-jsx",
     "paths": {
       "@/*": ["./*"],
+      "@company/*": ["./entrypoints/company/mainview/*"],
       "@browseros/shared/*": ["../../packages/shared/src/*"]
     },
     "plugins": [

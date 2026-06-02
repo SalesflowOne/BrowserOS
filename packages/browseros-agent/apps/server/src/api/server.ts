@@ -15,6 +15,7 @@ import { websocket } from 'hono/bun'
 import { cors } from 'hono/cors'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { HttpAgentError } from '../agent/errors'
+import companyRoutes from '../company/main/server'
 import { INLINED_ENV } from '../env'
 import { ensureHermesRuntimeReady } from '../lib/agents/runtime'
 import { KlavisClient } from '../lib/clients/klavis/klavis-client'
@@ -177,6 +178,12 @@ export async function createHttpServer(config: HttpServerConfig) {
     )
     .route('/screencast', createScreencastRoute({ browser }))
     .route('/agents', agentRoutes)
+    // "Company" domain (employees-as-agents: threads, channels, skills,
+    // telegram), ported from the BrowserClaw desktop app. Mounted without
+    // the trusted-origin gate because spawned ACP agents POST to its
+    // in-process MCP endpoints (/company/mcp/*, /company/channels/:id/mcp)
+    // with no Origin header. It enforces wildcard CORS internally.
+    .route('/company', companyRoutes)
 
   // Error handler
   app.onError((err, c) => {

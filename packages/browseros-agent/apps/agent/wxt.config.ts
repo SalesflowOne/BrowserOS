@@ -1,3 +1,4 @@
+import { resolve } from 'node:path'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
 import tailwindcss from '@tailwindcss/vite'
 import { defineConfig } from 'wxt'
@@ -38,7 +39,7 @@ export default defineConfig({
       },
     ],
     chrome_url_overrides: {
-      newtab: 'app.html',
+      newtab: 'company.html',
     },
     options_ui: {
       page: 'app.html#/settings',
@@ -76,6 +77,17 @@ export default defineConfig({
   vite: () => ({
     build: {
       sourcemap: 'hidden',
+    },
+    resolve: {
+      alias: {
+        // Isolated alias for the ported BrowserClaw renderer so its
+        // shadcn-style `@/` imports (rewritten to `@company/`) don't collide
+        // with the extension's own `@` → project-root alias.
+        '@company': resolve(
+          import.meta.dirname,
+          'entrypoints/company/mainview',
+        ),
+      },
     },
     plugins: [
       tailwindcss(),

@@ -35,6 +35,10 @@
       "types": "./src/rpc.ts",
       "import": "./src/rpc.ts"
     },
+    "./company": {
+      "types": "./src/company/main/server.ts",
+      "default": "./src/company/main/server.ts"
+    },
     "./agent": {
       "types": "./src/agent/ai-sdk-agent.ts",
       "default": "./src/agent/ai-sdk-agent.ts"
@@ -85,17 +89,22 @@
     "@ai-sdk/provider": "^3.0.8",
     "@browseros/cdp-protocol": "workspace:*",
     "@browseros/shared": "workspace:*",
+    "@chat-adapter/telegram": "^4.28.1",
     "@google/gemini-cli-core": "^0.16.0",
     "@google/genai": "1.30.0",
     "@hono/mcp": "^0.2.3",
     "@hono/node-server": "^1.19.6",
     "@hono/zod-validator": "^0.4.3",
     "@huggingface/transformers": "^3.4.0",
-    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@libsql/client": "^0.17.3",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@openrouter/ai-sdk-provider": "^2.2.3",
     "@sentry/bun": "^10.31.0",
     "acpx": "0.6.1",
+    "acpx-ai-provider": "^0.0.6",
+    "agent-skills-manager": "0.0.1",
     "ai": "^6.0.94",
+    "chat": "^4.28.1",
     "chrome-devtools-frontend": "^1.0.1577886",
     "commander": "^14.0.1",
     "core-js": "3.45.1",
@@ -106,6 +115,7 @@
     "hono": "^4.12.3",
     "jimp": "^1.6.0",
     "klavis": "^2.15.0",
+    "nanoid": "^5.1.11",
     "pino": "^9.6.0",
     "posthog-node": "^4.17.0",
     "proper-lockfile": "^4.1.2",
