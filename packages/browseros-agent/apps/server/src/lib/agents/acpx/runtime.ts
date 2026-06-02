@@ -132,7 +132,23 @@ export class AcpxRuntime implements AgentRuntime {
   }): Promise<AgentRowSnapshot | null> {
     const record = await this.loadSessionRecord(input.agent, input.sessionId)
     if (!record) return null
+    return this.createRowSnapshot(record, input.sessionId)
+  }
+
+  async getLatestRowSnapshot(
+    agent: AgentPromptInput['agent'],
+  ): Promise<AgentRowSnapshot | null> {
+    const latest = await this.loadLatestAgentSessionRecord(agent)
+    if (!latest) return null
+    return this.createRowSnapshot(latest.record, latest.sessionId)
+  }
+
+  private createRowSnapshot(
+    record: AcpSessionRecord,
+    sessionId: AgentSessionId,
+  ): AgentRowSnapshot {
     return {
+      sessionId,
       cwd: record.cwd ?? null,
       lastUsedAt: parseRecordTimestamp(record) || null,
       lastUserMessage: extractLastUserMessage(record),
@@ -217,6 +233,35 @@ export class AcpxRuntime implements AgentRuntime {
       if (latestRecord) return latestRecord
     }
     return (await this.sessionStore.load(agent.sessionKey)) ?? null
+  }
+
+  private async loadLatestAgentSessionRecord(
+    agent: AgentPromptInput['agent'],
+  ): Promise<{ sessionId: AgentSessionId; record: AcpSessionRecord } | null> {
+    const paths = resolveAgentRuntimePaths({
+      browserosDir: this.browserosDir,
+      agentId: agent.id,
+    })
+    const latestForAgent = await loadLatestRuntimeState(paths.runtimeStatePath)
+    if (latestForAgent) {
+      const latestRecord = await this.sessionStore.load(
+        latestForAgent.runtimeSessionKey,
+      )
+      if (latestRecord) {
+        return {
+          sessionId: latestForAgent.sessionId,
+          record: latestRecord,
+        }
+      }
+    }
+
+    const mainRecord = await this.loadSessionRecord(
+      agent,
+      MAIN_AGENT_SESSION_ID,
+    )
+    return mainRecord
+      ? { sessionId: MAIN_AGENT_SESSION_ID, record: mainRecord }
+      : null
   }
 
   private async prepareRuntimeContext(

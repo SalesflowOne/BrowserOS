@@ -60,6 +60,7 @@ export interface AgentActivity {
 }
 
 type SessionActivity = {
+  sessionId: AgentSessionId
   status: 'working' | 'error'
   lastEventAt: number
   lastError?: string
@@ -84,6 +85,8 @@ export interface AgentDefinitionWithActivity extends AgentDefinition {
   /** Last error message when status === 'error'; null otherwise. */
   lastError: string | null
   lastErrorAt: number | null
+  /** Most recent persisted session for this agent; null until first use. */
+  latestSessionId: AgentSessionId | null
   /** When non-null, an in-flight turn this row can be resumed from. */
   activeTurnId: string | null
   /** Persistent FIFO queue of messages waiting to run for this agent. */
@@ -219,18 +222,30 @@ export class AgentHarnessService {
     ])
     const now = Date.now()
     return agents.map((agent) => {
-      const live = this.activity.get(
-        activityKey(agent.id, MAIN_AGENT_SESSION_ID),
-      )
       const snapshot = snapshots.get(agent.id) ?? null
-      const lastUsedAt = snapshot?.lastUsedAt ?? null
-      const activeTurn = this.turnRegistry.getActiveFor(agent.id, 'main')
+      const liveLatest = this.getLatestActivity(agent.id)
+      const liveWins =
+        liveLatest != null &&
+        (!snapshot?.lastUsedAt || liveLatest.lastEventAt >= snapshot.lastUsedAt)
+      const latestSessionId = liveWins
+        ? liveLatest.sessionId
+        : (snapshot?.sessionId ?? null)
+      const live = latestSessionId
+        ? this.activity.get(activityKey(agent.id, latestSessionId))
+        : liveLatest
+      const lastUsedAt = liveWins
+        ? liveLatest.lastEventAt
+        : (snapshot?.lastUsedAt ?? null)
+      const activeTurn = latestSessionId
+        ? this.turnRegistry.getActiveFor(agent.id, latestSessionId)
+        : null
       return {
         ...agent,
         pinned: agent.pinned ?? false,
         status: deriveStatus(live, lastUsedAt, now),
         lastUsedAt,
-        lastUserMessage: snapshot?.lastUserMessage ?? null,
+        lastUserMessage:
+          activeTurn?.prompt ?? snapshot?.lastUserMessage ?? null,
         cwd: snapshot?.cwd ?? null,
         tokens: snapshot?.tokens ?? null,
         turnsByDay: ZERO_BUCKETS(),
@@ -238,6 +253,7 @@ export class AgentHarnessService {
         lastError: live?.status === 'error' ? (live.lastError ?? null) : null,
         lastErrorAt:
           live?.status === 'error' ? (live.lastEventAt ?? null) : null,
+        latestSessionId,
         activeTurnId: activeTurn?.turnId ?? null,
         queue: queueSnapshot[agent.id] ?? [],
       }
@@ -270,19 +286,45 @@ export class AgentHarnessService {
   private async fetchRowSnapshot(
     agent: AgentDefinition,
   ): Promise<AgentRowSnapshot | null> {
+    if (typeof this.runtime.getLatestRowSnapshot === 'function') {
+      return this.runtime.getLatestRowSnapshot(agent)
+    }
     if (typeof this.runtime.getRowSnapshot === 'function') {
-      return this.runtime.getRowSnapshot({ agent, sessionId: 'main' })
+      const snapshot = await this.runtime.getRowSnapshot({
+        agent,
+        sessionId: MAIN_AGENT_SESSION_ID,
+      })
+      return snapshot
+        ? {
+            ...snapshot,
+            sessionId: snapshot.sessionId ?? MAIN_AGENT_SESSION_ID,
+          }
+        : null
     }
     // Legacy fallback: derive only `lastUsedAt` from the history page.
-    const page = await this.runtime.getHistory({ agent, sessionId: 'main' })
+    const page = await this.runtime.getHistory({
+      agent,
+      sessionId: MAIN_AGENT_SESSION_ID,
+    })
     const last = page.items.at(-1)?.createdAt
     if (typeof last !== 'number' || !Number.isFinite(last)) return null
     return {
+      sessionId: MAIN_AGENT_SESSION_ID,
       cwd: null,
       lastUsedAt: last,
       lastUserMessage: null,
       tokens: null,
     }
+  }
+
+  private getLatestActivity(agentId: string): SessionActivity | undefined {
+    const prefix = `${agentId}\u0000`
+    let latest: SessionActivity | undefined
+    for (const [key, entry] of this.activity.entries()) {
+      if (!key.startsWith(prefix)) continue
+      if (!latest || entry.lastEventAt > latest.lastEventAt) latest = entry
+    }
+    return latest
   }
 
   /**
@@ -324,6 +366,7 @@ export class AgentHarnessService {
     sessionId: AgentSessionId = MAIN_AGENT_SESSION_ID,
   ): void {
     this.activity.set(activityKey(agentId, sessionId), {
+      sessionId,
       status: 'working',
       lastEventAt: Date.now(),
     })
@@ -338,6 +381,7 @@ export class AgentHarnessService {
     const key = activityKey(agentId, sessionId)
     if (!outcome.ok) {
       this.activity.set(key, {
+        sessionId,
         status: 'error',
         lastEventAt: Date.now(),
         lastError: outcome.error,
@@ -347,6 +391,7 @@ export class AgentHarnessService {
       // remaining running turn.
       if (this.turnRegistry.getActiveFor(agentId, sessionId)) {
         this.activity.set(key, {
+          sessionId,
           status: 'working',
           lastEventAt: Date.now(),
         })
@@ -371,17 +416,19 @@ export class AgentHarnessService {
   private async maybeStartNextFromQueue(agentId: string): Promise<void> {
     const next = await this.messageQueue.popOldest(agentId)
     if (!next) return
+    const sessionId = next.sessionId ?? MAIN_AGENT_SESSION_ID
     // Race guard: a turn may have started between `popOldest` and now
     // (e.g. the user typed and clicked Send directly between cancel
     // and the drain). Put the message back at the head and let the
     // next turn-end retry.
-    if (this.turnRegistry.getActiveFor(agentId, 'main')) {
+    if (this.turnRegistry.getActiveFor(agentId, sessionId)) {
       await this.messageQueue.pushFront(agentId, next)
       return
     }
     try {
       await this.startTurn({
         agentId,
+        sessionId,
         message: next.message,
         attachments: next.attachments,
       })
@@ -413,11 +460,13 @@ export class AgentHarnessService {
    */
   async enqueueMessage(input: {
     agentId: string
+    sessionId?: AgentSessionId
     message: string
     attachments?: ReadonlyArray<QueuedMessageAttachment>
   }): Promise<QueuedMessage> {
     const agent = await this.requireAgent(input.agentId)
     const queued = await this.messageQueue.append(agent.id, {
+      sessionId: input.sessionId,
       message: input.message,
       attachments: input.attachments,
     })
@@ -425,7 +474,12 @@ export class AgentHarnessService {
     // time (e.g. the user enqueued during the brief window between
     // turns), pop it back off and start it directly. Avoids the
     // queue sitting idle while the agent is also idle.
-    if (!this.turnRegistry.getActiveFor(agent.id, 'main')) {
+    if (
+      !this.turnRegistry.getActiveFor(
+        agent.id,
+        input.sessionId ?? MAIN_AGENT_SESSION_ID,
+      )
+    ) {
       void this.maybeStartNextFromQueue(agent.id)
     }
     return queued

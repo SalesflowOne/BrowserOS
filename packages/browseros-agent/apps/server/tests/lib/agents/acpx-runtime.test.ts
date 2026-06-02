@@ -407,6 +407,15 @@ describe('AcpxRuntime', () => {
     })
 
     expect(snapshot?.lastUserMessage).toBe('main message')
+    expect(snapshot?.sessionId).toBe('main')
+
+    const latestSnapshot = await new AcpxRuntime({
+      browserosDir,
+      stateDir,
+    }).getLatestRowSnapshot(agent)
+
+    expect(latestSnapshot?.sessionId).toBe(sidepanelSession)
+    expect(latestSnapshot?.lastUserMessage).toBe('latest sidepanel message')
   })
 
   it('maps persisted acpx session records into rich history entries', async () => {

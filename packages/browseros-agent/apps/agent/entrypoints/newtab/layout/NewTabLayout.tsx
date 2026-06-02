@@ -26,9 +26,5 @@ export const NewTabLayout: FC<NewTabLayoutProps> = ({
 
   if (!useChatSession) return content
 
-  return (
-    <ChatSessionProvider origin="newtab" agentSessionStrategy="main">
-      {content}
-    </ChatSessionProvider>
-  )
+  return <ChatSessionProvider origin="newtab">{content}</ChatSessionProvider>
 }

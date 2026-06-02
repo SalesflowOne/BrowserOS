@@ -137,6 +137,41 @@ describe('createAgentRoutes', () => {
     expect(body).toContain('data: [DONE]')
   })
 
+  it('streams chat for a requested agent session', async () => {
+    const sessionId = '00000000-0000-4000-8000-000000000001'
+    const agent: AgentDefinition = {
+      id: 'agent-1',
+      name: 'Review bot',
+      adapter: 'codex',
+      modelId: 'gpt-5.5',
+      reasoningEffort: 'medium',
+      permissionMode: 'approve-all',
+      sessionKey: 'agent:agent-1:main',
+      createdAt: 1000,
+      updatedAt: 1000,
+    }
+    const service = createFakeService([agent])
+    const route = new Hono().route('/agents', createAgentRoutes({ service }))
+
+    const response = await route.request(
+      `/agents/agent-1/sessions/${sessionId}/chat`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'hi' }),
+      },
+    )
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('X-Session-Id')).toBe(sessionId)
+    expect(response.headers.get('X-Turn-Id')).toBeTruthy()
+    await response.text()
+    expect(service._lastStartTurnInput).toMatchObject({
+      agentId: 'agent-1',
+      sessionId,
+    })
+  })
+
   it('passes selected cwd from generic agent chat requests', async () => {
     const agent: AgentDefinition = {
       id: 'agent-1',
@@ -290,6 +325,53 @@ describe('createAgentRoutes', () => {
     expect(attachBody).toContain('"type":"text_delta"')
     expect(attachBody).toContain('data: [DONE]')
 
+    await (await first).text()
+  })
+
+  it('reports and attaches active turns for a requested session', async () => {
+    const sessionId = '00000000-0000-4000-8000-000000000001'
+    const agent: AgentDefinition = {
+      id: 'agent-1',
+      name: 'Review bot',
+      adapter: 'codex',
+      modelId: 'gpt-5.5',
+      reasoningEffort: 'medium',
+      permissionMode: 'approve-all',
+      sessionKey: 'agent:agent-1:main',
+      createdAt: 1000,
+      updatedAt: 1000,
+    }
+    const blocking = createBlockingFakeService([agent])
+    const route = new Hono().route(
+      '/agents',
+      createAgentRoutes({ service: blocking }),
+    )
+
+    const first = route.request(`/agents/agent-1/sessions/${sessionId}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'hi' }),
+    })
+    await new Promise((r) => setTimeout(r, 5))
+
+    const active = await route.request(
+      `/agents/agent-1/sessions/${sessionId}/chat/active`,
+    )
+    const activeBody = await active.json()
+    expect(activeBody.active).toMatchObject({
+      agentId: 'agent-1',
+      sessionId,
+      status: 'running',
+    })
+
+    const attachPromise = route.request(
+      `/agents/agent-1/sessions/${sessionId}/chat/stream?turnId=${activeBody.active.turnId}`,
+    )
+    blocking._unblock()
+    const attach = await attachPromise
+    expect(attach.status).toBe(200)
+    expect(attach.headers.get('X-Session-Id')).toBe(sessionId)
+    expect(await attach.text()).toContain('data: [DONE]')
     await (await first).text()
   })
 
@@ -780,6 +862,36 @@ describe('createAgentRoutes', () => {
     expect(removeMissing.status).toBe(404)
   })
 
+  it('queues messages for a requested agent session', async () => {
+    const sessionId = '00000000-0000-4000-8000-000000000001'
+    const agent: AgentDefinition = {
+      id: 'agent-1',
+      name: 'Review bot',
+      adapter: 'codex',
+      modelId: 'gpt-5.5',
+      reasoningEffort: 'medium',
+      permissionMode: 'approve-all',
+      sessionKey: 'agent:agent-1:main',
+      createdAt: 1000,
+      updatedAt: 1000,
+    }
+    const route = createMountedRoutes([agent])
+
+    const enqueue = await route.request(
+      `/agents/agent-1/sessions/${sessionId}/queue`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'follow up' }),
+      },
+    )
+
+    expect(enqueue.status).toBe(200)
+    expect(await enqueue.json()).toMatchObject({
+      queued: { sessionId, message: 'follow up' },
+    })
+  })
+
   it('rejects empty queue messages and unknown agents', async () => {
     const route = createMountedRoutes([
       {
@@ -867,6 +979,7 @@ function createFakeService(agents: AgentDefinition[]) {
     Array<{
       id: string
       createdAt: number
+      sessionId?: AgentSessionId
       message: string
       attachments?: ReadonlyArray<{ mediaType: string; data: string }>
     }>
@@ -886,6 +999,16 @@ function createFakeService(agents: AgentDefinition[]) {
         ...agent,
         status: 'idle' as const,
         lastUsedAt: null,
+        lastUserMessage: null,
+        cwd: null,
+        tokens: null,
+        turnsByDay: [],
+        failedByDay: [],
+        lastError: null,
+        lastErrorAt: null,
+        latestSessionId: null,
+        activeTurnId: null,
+        queue: queues.get(agent.id) ?? [],
       }))
     },
     async createAgent(input: {
@@ -995,6 +1118,7 @@ function createFakeService(agents: AgentDefinition[]) {
     },
     async enqueueMessage(input: {
       agentId: string
+      sessionId?: AgentSessionId
       message: string
       attachments?: ReadonlyArray<{ mediaType: string; data: string }>
     }) {
@@ -1007,6 +1131,7 @@ function createFakeService(agents: AgentDefinition[]) {
       const queued = {
         id: `q-${Math.random().toString(36).slice(2, 10)}`,
         createdAt: Date.now(),
+        sessionId: input.sessionId,
         message: input.message,
         attachments: input.attachments,
       }
@@ -1069,6 +1194,16 @@ function createBlockingFakeService(agents: AgentDefinition[]) {
         ...agent,
         status: 'idle' as const,
         lastUsedAt: null,
+        lastUserMessage: null,
+        cwd: null,
+        tokens: null,
+        turnsByDay: [],
+        failedByDay: [],
+        lastError: null,
+        lastErrorAt: null,
+        latestSessionId: null,
+        activeTurnId: null,
+        queue: [],
       }))
     },
     async createAgent() {

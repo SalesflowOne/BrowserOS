@@ -87,6 +87,8 @@ export interface AgentPromptInput {
  * user message). Returned `null` when the agent has no record yet.
  */
 export interface AgentRowSnapshot {
+  /** Session this row snapshot was read from. Omitted by legacy test fakes. */
+  sessionId?: AgentSessionId
   cwd: string | null
   lastUsedAt: number | null
   lastUserMessage: string | null
@@ -124,4 +126,7 @@ export interface AgentRuntime {
     agent: AgentDefinition
     sessionId: AgentSessionId
   }): Promise<AgentRowSnapshot | null>
+  getLatestRowSnapshot?(
+    agent: AgentDefinition,
+  ): Promise<AgentRowSnapshot | null>
 }

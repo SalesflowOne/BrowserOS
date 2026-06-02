@@ -7,7 +7,7 @@
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import type { AgentSessionId } from './agent-types'
+import type { AgentSessionId } from '../agent-types'
 
 export interface LatestRuntimeState {
   sessionId: AgentSessionId

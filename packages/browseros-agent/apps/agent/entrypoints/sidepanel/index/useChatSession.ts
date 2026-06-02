@@ -89,7 +89,7 @@ export type AgentSessionStrategy = 'conversation' | 'main'
 
 export interface ChatSessionOptions {
   origin?: ChatOrigin
-  /** ACP agent session id source. Defaults to `main` on new tab, conversation id elsewhere. */
+  /** ACP agent session id source. Defaults to the conversation id. */
   agentSessionStrategy?: AgentSessionStrategy
   /** When false, messages are queued until integrations finish syncing. */
   isIntegrationsSynced?: boolean
@@ -354,8 +354,7 @@ export const useChatSession = (options?: ChatSessionOptions) => {
           personalizationRef.current,
         )
         const agentSessionStrategy =
-          options?.agentSessionStrategy ??
-          (options?.origin === 'newtab' ? 'main' : 'conversation')
+          options?.agentSessionStrategy ?? 'conversation'
         const agentSessionId =
           agentSessionStrategy === 'main' ? 'main' : conversationIdRef.current
 
