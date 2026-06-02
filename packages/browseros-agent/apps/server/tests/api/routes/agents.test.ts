@@ -7,7 +7,11 @@ import { describe, expect, it } from 'bun:test'
 import { AGENT_HARNESS_LIMITS } from '@browseros/shared/constants/limits'
 import { Hono } from 'hono'
 import { createAgentRoutes } from '../../../src/api/routes/agents'
-import type { AgentDefinition } from '../../../src/lib/agents/agent-types'
+import {
+  type AgentDefinition,
+  type AgentSessionId,
+  MAIN_AGENT_SESSION_ID,
+} from '../../../src/lib/agents/agent-types'
 import {
   type ActiveTurnInfo,
   TurnRegistry,
@@ -158,6 +162,33 @@ describe('createAgentRoutes', () => {
     expect(service._lastStartTurnInput).toMatchObject({
       agentId: 'agent-1',
       cwd: '/tmp/workspace',
+    })
+  })
+
+  it('reads history for the requested agent session', async () => {
+    const sessionId = '00000000-0000-4000-8000-000000000001'
+    const route = createMountedRoutes([
+      {
+        id: 'agent-1',
+        name: 'Review bot',
+        adapter: 'codex',
+        modelId: 'gpt-5.5',
+        reasoningEffort: 'medium',
+        permissionMode: 'approve-all',
+        sessionKey: 'agent:agent-1:main',
+        createdAt: 1000,
+        updatedAt: 1000,
+      },
+    ])
+
+    const response = await route.request(
+      `/agents/agent-1/sessions/${sessionId}/history`,
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      agentId: 'agent-1',
+      sessionId,
     })
   })
 
@@ -345,12 +376,14 @@ describe('createAgentRoutes', () => {
         },
       }),
     )
+    const conversationId = '00000000-0000-4000-8000-000000000001'
 
     const response = await route.request('/agents/agent-1/sidepanel/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ...validCreatedAgentSidepanelBody(),
+        conversationId,
         adapter: 'codex',
         modelId: 'ignored-client-model',
         reasoningEffort: 'ignored-client-effort',
@@ -370,9 +403,11 @@ describe('createAgentRoutes', () => {
     expect(response.status).toBe(200)
     expect(response.headers.get('Content-Type')).toContain('text/event-stream')
     expect(response.headers.get('x-vercel-ai-ui-message-stream')).toBe('v1')
+    expect(response.headers.get('X-Session-Id')).toBe(conversationId)
     expect(await response.text()).toContain('"type":"text-delta"')
     expect(service._lastStartTurnInput).toMatchObject({
       agentId: 'agent-1',
+      sessionId: conversationId,
       cwd: '/tmp/work',
     })
     expect(service._lastStartTurnInput?.message).toContain('Always be concise.')
@@ -392,6 +427,39 @@ describe('createAgentRoutes', () => {
     const list = await route.request('/agents')
     expect(await list.json()).toMatchObject({
       agents: [{ id: 'agent-1', adapter: 'codex', modelId: 'gpt-5.5' }],
+    })
+  })
+
+  it('lets created-agent sidepanel chat explicitly use the main session', async () => {
+    const agent: AgentDefinition = {
+      id: 'agent-1',
+      name: 'Review bot',
+      adapter: 'codex',
+      modelId: 'gpt-5.5',
+      reasoningEffort: 'medium',
+      permissionMode: 'approve-all',
+      sessionKey: 'agent:agent-1:main',
+      createdAt: 1000,
+      updatedAt: 1000,
+    }
+    const service = createFakeService([agent])
+    const route = new Hono().route('/agents', createAgentRoutes({ service }))
+
+    const response = await route.request('/agents/agent-1/sidepanel/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...validCreatedAgentSidepanelBody(),
+        agentSessionId: MAIN_AGENT_SESSION_ID,
+      }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('X-Session-Id')).toBe(MAIN_AGENT_SESSION_ID)
+    await response.text()
+    expect(service._lastStartTurnInput).toMatchObject({
+      agentId: 'agent-1',
+      sessionId: MAIN_AGENT_SESSION_ID,
     })
   })
 
@@ -421,6 +489,10 @@ describe('createAgentRoutes', () => {
       {
         patch: { conversationId: 'not-a-uuid' },
         error: 'conversationId must be a UUID',
+      },
+      {
+        patch: { agentSessionId: 'not-a-session' },
+        error: 'agentSessionId must be "main" or a UUID',
       },
       { patch: { message: '   ' }, error: 'Message is required' },
       {
@@ -523,6 +595,65 @@ describe('createAgentRoutes', () => {
 
     blocking._unblock()
     await (await first).text()
+  })
+
+  it('allows concurrent created-agent sidepanel turns in different sessions', async () => {
+    const agent: AgentDefinition = {
+      id: 'agent-1',
+      name: 'Review bot',
+      adapter: 'codex',
+      modelId: 'gpt-5.5',
+      reasoningEffort: 'medium',
+      permissionMode: 'approve-all',
+      sessionKey: 'agent:agent-1:main',
+      createdAt: 1000,
+      updatedAt: 1000,
+    }
+    const blocking = createBlockingFakeService([agent])
+    const route = new Hono().route(
+      '/agents',
+      createAgentRoutes({ service: blocking }),
+    )
+
+    const firstSessionId = '00000000-0000-4000-8000-000000000001'
+    const secondSessionId = '00000000-0000-4000-8000-000000000002'
+    const first = route.request('/agents/agent-1/sidepanel/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...validCreatedAgentSidepanelBody(),
+        conversationId: firstSessionId,
+      }),
+    })
+    await new Promise((r) => setTimeout(r, 5))
+
+    const second = await route.request('/agents/agent-1/sidepanel/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...validCreatedAgentSidepanelBody(),
+        conversationId: secondSessionId,
+      }),
+    })
+
+    expect(second.status).toBe(200)
+    expect(second.headers.get('X-Session-Id')).toBe(secondSessionId)
+
+    const duplicate = await route.request('/agents/agent-1/sidepanel/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...validCreatedAgentSidepanelBody(),
+        conversationId: firstSessionId,
+      }),
+    })
+    expect(duplicate.status).toBe(409)
+
+    blocking._unblock()
+    const firstResponse = await first
+    expect(firstResponse.headers.get('X-Session-Id')).toBe(firstSessionId)
+    await firstResponse.text()
+    await second.text()
   })
 
   it('does not expose the legacy virtual sidepanel ACP chat route', async () => {
@@ -724,7 +855,12 @@ function createFakeService(agents: AgentDefinition[]) {
     { type: 'done', stopReason: 'end_turn' },
   ]
   let lastStartTurnInput:
-    | { agentId: string; message?: string; cwd?: string }
+    | {
+        agentId: string
+        sessionId?: AgentSessionId
+        message?: string
+        cwd?: string
+      }
     | undefined
   const queues = new Map<
     string,
@@ -796,15 +932,19 @@ function createFakeService(agents: AgentDefinition[]) {
       agents[index] = next
       return next
     },
-    async getHistory(agentId: string) {
+    async getHistory(
+      agentId: string,
+      sessionId: AgentSessionId = MAIN_AGENT_SESSION_ID,
+    ) {
       return {
         agentId,
-        sessionId: 'main' as const,
+        sessionId,
         items: [],
       }
     },
     async startTurn(input: {
       agentId: string
+      sessionId?: AgentSessionId
       message?: string
       cwd?: string
     }) {
@@ -815,7 +955,10 @@ function createFakeService(agents: AgentDefinition[]) {
         throw new UnknownAgentError(input.agentId)
       }
       lastStartTurnInput = input
-      const turn = registry.register(input.agentId, 'main')
+      const turn = registry.register(
+        input.agentId,
+        input.sessionId ?? MAIN_AGENT_SESSION_ID,
+      )
       const frames = registry.subscribe(turn.turnId, { fromSeq: -1 })
       if (!frames) throw new Error('registered turn was not subscribable')
       // Push the canned events asynchronously so subscribers actually
@@ -828,13 +971,25 @@ function createFakeService(agents: AgentDefinition[]) {
     attachTurn(input: { turnId: string; lastSeq?: number }) {
       return registry.subscribe(input.turnId, { fromSeq: input.lastSeq ?? -1 })
     },
-    getActiveTurn(agentId: string): ActiveTurnInfo | null {
-      const t = registry.getActiveFor(agentId, 'main')
+    getActiveTurn(
+      agentId: string,
+      sessionId: AgentSessionId = MAIN_AGENT_SESSION_ID,
+    ): ActiveTurnInfo | null {
+      const t = registry.getActiveFor(agentId, sessionId)
       return t ? registry.describe(t.turnId) : null
     },
-    cancelTurn(input: { agentId: string; turnId?: string; reason?: string }) {
+    cancelTurn(input: {
+      agentId: string
+      sessionId?: AgentSessionId
+      turnId?: string
+      reason?: string
+    }) {
       const turnId =
-        input.turnId ?? registry.getActiveFor(input.agentId, 'main')?.turnId
+        input.turnId ??
+        registry.getActiveFor(
+          input.agentId,
+          input.sessionId ?? MAIN_AGENT_SESSION_ID,
+        )?.turnId
       if (!turnId) return false
       return registry.cancel(turnId, input.reason)
     },
@@ -928,18 +1083,22 @@ function createBlockingFakeService(agents: AgentDefinition[]) {
     async updateAgent() {
       return null
     },
-    async getHistory(agentId: string) {
-      return { agentId, sessionId: 'main' as const, items: [] }
+    async getHistory(
+      agentId: string,
+      sessionId: AgentSessionId = MAIN_AGENT_SESSION_ID,
+    ) {
+      return { agentId, sessionId, items: [] }
     },
-    async startTurn(input: { agentId: string }) {
-      const existing = registry.getActiveFor(input.agentId, 'main')
+    async startTurn(input: { agentId: string; sessionId?: AgentSessionId }) {
+      const sessionId = input.sessionId ?? MAIN_AGENT_SESSION_ID
+      const existing = registry.getActiveFor(input.agentId, sessionId)
       if (existing) {
         const { TurnAlreadyActiveError } = await import(
           '../../../src/api/services/agents/agent-harness-service'
         )
         throw new TurnAlreadyActiveError(input.agentId, existing.turnId)
       }
-      const turn = registry.register(input.agentId, 'main')
+      const turn = registry.register(input.agentId, sessionId)
       const frames = registry.subscribe(turn.turnId, { fromSeq: -1 })
       if (!frames) throw new Error('registered turn was not subscribable')
       void (async () => {
@@ -951,14 +1110,26 @@ function createBlockingFakeService(agents: AgentDefinition[]) {
     attachTurn(input: { turnId: string; lastSeq?: number }) {
       return registry.subscribe(input.turnId, { fromSeq: input.lastSeq ?? -1 })
     },
-    getActiveTurn(agentId: string): ActiveTurnInfo | null {
-      const t = registry.getActiveFor(agentId, 'main')
+    getActiveTurn(
+      agentId: string,
+      sessionId: AgentSessionId = MAIN_AGENT_SESSION_ID,
+    ): ActiveTurnInfo | null {
+      const t = registry.getActiveFor(agentId, sessionId)
       return t ? registry.describe(t.turnId) : null
     },
-    cancelTurn(input: { agentId: string; turnId?: string; reason?: string }) {
+    cancelTurn(input: {
+      agentId: string
+      sessionId?: AgentSessionId
+      turnId?: string
+      reason?: string
+    }) {
       cancelCalls.push({ agentId: input.agentId, reason: input.reason })
       const turnId =
-        input.turnId ?? registry.getActiveFor(input.agentId, 'main')?.turnId
+        input.turnId ??
+        registry.getActiveFor(
+          input.agentId,
+          input.sessionId ?? MAIN_AGENT_SESSION_ID,
+        )?.turnId
       if (!turnId) return false
       return registry.cancel(turnId, input.reason)
     },

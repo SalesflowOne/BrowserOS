@@ -21,9 +21,11 @@ import {
   isSupportedReasoningEffort,
 } from '../../lib/agents/adapters/catalog'
 import { AdapterHealthChecker } from '../../lib/agents/adapters/health'
-import type {
-  AgentAdapter,
-  AgentDefinition,
+import {
+  type AgentAdapter,
+  type AgentDefinition,
+  type AgentSessionId,
+  MAIN_AGENT_SESSION_ID,
 } from '../../lib/agents/agent-types'
 import type {
   ActiveTurnInfo,
@@ -64,9 +66,13 @@ type AgentRouteService = {
     agentId: string,
     patch: { name?: string; pinned?: boolean },
   ): Promise<AgentDefinition | null>
-  getHistory(agentId: string): Promise<AgentHistoryPage>
+  getHistory(
+    agentId: string,
+    sessionId?: AgentSessionId,
+  ): Promise<AgentHistoryPage>
   startTurn(input: {
     agentId: string
+    sessionId?: AgentSessionId
     message: string
     attachments?: ReadonlyArray<{ mediaType: string; data: string }>
     cwd?: string
@@ -75,9 +81,13 @@ type AgentRouteService = {
     turnId: string
     lastSeq?: number
   }): ReadableStream<TurnFrame> | null
-  getActiveTurn(agentId: string, sessionId?: 'main'): ActiveTurnInfo | null
+  getActiveTurn(
+    agentId: string,
+    sessionId?: AgentSessionId,
+  ): ActiveTurnInfo | null
   cancelTurn(input: {
     agentId: string
+    sessionId?: AgentSessionId
     turnId?: string
     reason?: string
   }): boolean
@@ -107,6 +117,7 @@ type AgentRouteDeps = {
 
 type SidepanelAgentChatRequest = {
   conversationId: string
+  agentSessionId: AgentSessionId
   message: string
   browserContext?: BrowserContext
   selectedText?: string
@@ -188,6 +199,7 @@ export function createAgentRoutes(deps: AgentRouteDeps = {}) {
         try {
           started = await service.startTurn({
             agentId: agent.id,
+            sessionId: parsed.agentSessionId,
             message,
             cwd: parsed.userWorkingDir,
           })
@@ -211,6 +223,7 @@ export function createAgentRoutes(deps: AgentRouteDeps = {}) {
           didRequestCancel = true
           service.cancelTurn({
             agentId: agent.id,
+            sessionId: parsed.agentSessionId,
             turnId: started.turnId,
             reason: 'sidepanel stream cancelled',
           })
@@ -229,7 +242,7 @@ export function createAgentRoutes(deps: AgentRouteDeps = {}) {
 
         return createAcpUIMessageStreamResponse(events, {
           headers: {
-            'X-Session-Id': 'main',
+            'X-Session-Id': parsed.agentSessionId,
             'X-Turn-Id': started.turnId,
           },
         })
@@ -269,9 +282,15 @@ export function createAgentRoutes(deps: AgentRouteDeps = {}) {
         return handleAgentRouteError(c, err)
       }
     })
-    .get('/:agentId/sessions/main/history', async (c) => {
+    .get('/:agentId/sessions/:sessionId/history', async (c) => {
+      const sessionId = c.req.param('sessionId')
+      if (!isAgentSessionId(sessionId)) {
+        return c.json({ error: 'sessionId must be "main" or a UUID' }, 400)
+      }
       try {
-        return c.json(await service.getHistory(c.req.param('agentId')))
+        return c.json(
+          await service.getHistory(c.req.param('agentId'), sessionId),
+        )
       } catch (err) {
         return handleAgentRouteError(c, err)
       }
@@ -310,7 +329,7 @@ export function createAgentRoutes(deps: AgentRouteDeps = {}) {
     })
     .get('/:agentId/chat/active', (c) => {
       const agentId = c.req.param('agentId')
-      const info = service.getActiveTurn(agentId, 'main')
+      const info = service.getActiveTurn(agentId, MAIN_AGENT_SESSION_ID)
       return c.json({ active: info })
     })
     .get('/:agentId/chat/stream', (c) => {
@@ -318,7 +337,8 @@ export function createAgentRoutes(deps: AgentRouteDeps = {}) {
       const url = new URL(c.req.url)
       const queryTurnId = url.searchParams.get('turnId')?.trim() || undefined
       const turnId =
-        queryTurnId ?? service.getActiveTurn(agentId, 'main')?.turnId
+        queryTurnId ??
+        service.getActiveTurn(agentId, MAIN_AGENT_SESSION_ID)?.turnId
       if (!turnId) {
         return c.json({ error: 'No active turn for this agent' }, 404)
       }
@@ -445,7 +465,7 @@ function streamTurnFrames(
 ) {
   c.header('Content-Type', 'text/event-stream')
   c.header('Cache-Control', 'no-cache')
-  c.header('X-Session-Id', 'main')
+  c.header('X-Session-Id', MAIN_AGENT_SESSION_ID)
   c.header('X-Turn-Id', options.turnId)
 
   return stream(c, async (s) => {
@@ -673,6 +693,12 @@ async function parseSidepanelAgentChatBody(
     return { error: 'conversationId must be a UUID' }
   }
 
+  const agentSessionId =
+    readOptionalTrimmedString(record, 'agentSessionId') ?? conversationId
+  if (!isAgentSessionId(agentSessionId)) {
+    return { error: 'agentSessionId must be "main" or a UUID' }
+  }
+
   const message = readOptionalTrimmedString(record, 'message')
   if (!message) return { error: 'Message is required' }
 
@@ -685,6 +711,7 @@ async function parseSidepanelAgentChatBody(
 
   return {
     conversationId,
+    agentSessionId,
     message,
     browserContext: browserContext.value,
     selectedText,
@@ -736,6 +763,10 @@ function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     value,
   )
+}
+
+function isAgentSessionId(value: string): value is AgentSessionId {
+  return value === MAIN_AGENT_SESSION_ID || isUuid(value)
 }
 
 async function readJsonBody(
