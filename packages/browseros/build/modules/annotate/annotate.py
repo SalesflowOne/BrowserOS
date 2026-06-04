@@ -7,6 +7,7 @@ with the feature name and description.
 
 import yaml
 from pathlib import Path
+import subprocess
 from typing import List, Tuple, Optional, Dict
 
 from ..apply.utils import run_git_command
@@ -57,35 +58,40 @@ def _clear_git_index_lock(chromium_src: Path) -> bool:
     try:
         lock_path.unlink()
         return True
-    except OSError:
+    except OSError as e:
+        log_warning(f"   Failed to remove index.lock at {lock_path}: {e}")
         return False
 
 
 def _run_git_with_lock_retry(
     cmd: List[str], chromium_src: Path, max_retries: int = 1
-):
+) -> subprocess.CompletedProcess:
     """Run git command and retry once after removing an unexpected index lock."""
     result = run_git_command(cmd, cwd=chromium_src)
 
     if result.returncode == 0:
         return result
 
-    if not _is_git_index_lock_error(result.stderr or result.stdout):
+    if not _is_git_index_lock_error(result.stderr):
         return result
 
     for _ in range(max_retries):
-        if not _clear_git_index_lock(chromium_src):
-            return result
+        cleared_lock = _clear_git_index_lock(chromium_src)
+        if cleared_lock:
+            log_warning("   Git lock existed; removed stale index.lock and retrying")
 
-        log_warning("   Git lock existed; removed stale index.lock and retrying")
         result = run_git_command(cmd, cwd=chromium_src)
         if result.returncode == 0:
+            return result
+        if not _is_git_index_lock_error(result.stderr):
             return result
 
     return result
 
 
-def _format_git_error(cmd_result, action: str, target: str) -> str:
+def _format_git_error(
+    cmd_result: subprocess.CompletedProcess, action: str, target: str
+) -> str:
     """Build a compact git failure message for logging."""
     error = (cmd_result.stderr or cmd_result.stdout or "").strip()
     if not error:
