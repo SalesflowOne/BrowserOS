@@ -37,6 +37,18 @@ function defaultAcpWorkspacePath(providerId: string): string {
   return join(homedir(), 'browseros-workspaces', providerId)
 }
 
+/**
+ * Substitute a leading `$HOME` token with the actual home directory.
+ * The harness-to-providers migration writes `$HOME/browseros-workspaces/...`
+ * as a placeholder because the renderer cannot read `$HOME` directly;
+ * Node's `child_process.spawn` does NOT expand shell variables in its
+ * `cwd` option, so we have to substitute server-side before the path
+ * reaches the spawn boundary.
+ */
+function expandHomeToken(path: string): string {
+  return path.replace(/^\$HOME(?=\/|$)/, homedir())
+}
+
 function resolveAcpAgentId(config: ResolvedAgentConfig): string {
   if (config.provider === LLM_PROVIDERS.ACP_CUSTOM) {
     if (!config.acpAgentId) {
@@ -55,8 +67,9 @@ async function createAcpLanguageModel(
   config: ResolvedAgentConfig,
 ): Promise<LanguageModelWithCleanup> {
   const agentId = resolveAcpAgentId(config)
-  const workspacePath =
-    config.acpFixedWorkspacePath ?? defaultAcpWorkspacePath(config.provider)
+  const workspacePath = expandHomeToken(
+    config.acpFixedWorkspacePath ?? defaultAcpWorkspacePath(config.provider),
+  )
   const agentRegistryOverrides: Record<string, string> = {}
   if (config.provider === LLM_PROVIDERS.ACP_CUSTOM && config.acpCommand) {
     agentRegistryOverrides[agentId] = config.acpCommand

@@ -1,4 +1,4 @@
-import { getAgentServerUrl } from '@/lib/browseros/helpers'
+import { getAgentServerUrl } from '../browseros/helpers'
 import type { LlmProviderConfig } from './types'
 
 /**
@@ -24,11 +24,9 @@ const CODEX_CONTEXT_WINDOW = 400000
 
 function homeDirFromEnv(): string {
   // The renderer lives in an extension, so we cannot read $HOME directly.
-  // The server only needs to know about the path when it spawns the
-  // ACP process; on the renderer side we just stash a placeholder
-  // path that uses the literal "$HOME" token. The chat path resolves
-  // it at spawn time. If the user later edits the provider record we
-  // overwrite the path with whatever they pick.
+  // We stash a literal `$HOME` token and the server expands it inside
+  // createAcpLanguageModel via expandHomeToken() before the path reaches
+  // child_process.spawn (which does not expand shell variables in cwd).
   return '$HOME/browseros-workspaces'
 }
 
@@ -61,6 +59,14 @@ export interface ImportHarnessProvidersResult {
   skipped: number
   /** Whether the endpoint returned at least one candidate. */
   hadCandidates: boolean
+  /**
+   * Whether the migration endpoint responded at all (any HTTP status,
+   * any payload shape, parsed JSON). The caller uses this to decide
+   * whether to finalize the migration flag on a fresh install with
+   * zero harness rows: a reachable+empty response is the steady state,
+   * an unreachable boot should retry on the next mount.
+   */
+  serverReachable: boolean
 }
 
 /**
@@ -68,21 +74,60 @@ export interface ImportHarnessProvidersResult {
  * passed in. Pure function; the caller decides whether to persist.
  * Returns the original list untouched when there are zero new entries.
  */
+export interface ImportHarnessProvidersOptions {
+  now?: () => number
+  fetchImpl?: typeof fetch
+  /**
+   * Override for the agent server base URL. Defaults to
+   * `getAgentServerUrl()`; tests pass a literal string to avoid having
+   * to mock the helpers module (which leaks across test files).
+   */
+  agentServerUrl?: string | (() => Promise<string>)
+}
+
+async function resolveServerUrl(
+  override: ImportHarnessProvidersOptions['agentServerUrl'],
+): Promise<string> {
+  if (override == null) return await getAgentServerUrl()
+  if (typeof override === 'string') return override
+  return await override()
+}
+
 export async function importHarnessProviders(
   existing: ReadonlyArray<LlmProviderConfig>,
-  options?: { now?: () => number; fetchImpl?: typeof fetch },
+  options?: ImportHarnessProvidersOptions,
 ): Promise<ImportHarnessProvidersResult> {
   const now = options?.now ?? Date.now
   const fetchImpl = options?.fetchImpl ?? fetch
-  const serverUrl = await getAgentServerUrl()
-  const response = await fetchImpl(`${serverUrl}/migrations/llm-providers`)
+  const serverUrl = await resolveServerUrl(options?.agentServerUrl)
+  let response: Response
+  try {
+    response = await fetchImpl(`${serverUrl}/migrations/llm-providers`)
+  } catch {
+    return {
+      added: [],
+      skipped: 0,
+      hadCandidates: false,
+      serverReachable: false,
+    }
+  }
   if (!response.ok) {
-    return { added: [], skipped: 0, hadCandidates: false }
+    return {
+      added: [],
+      skipped: 0,
+      hadCandidates: false,
+      serverReachable: false,
+    }
   }
   const payload = (await response.json()) as MigrationResponse
   const candidates = payload?.candidates ?? []
   if (candidates.length === 0) {
-    return { added: [], skipped: 0, hadCandidates: false }
+    return {
+      added: [],
+      skipped: 0,
+      hadCandidates: false,
+      serverReachable: true,
+    }
   }
   const existingIds = new Set(existing.map((p) => p.id))
   const added: LlmProviderConfig[] = []
@@ -95,5 +140,5 @@ export async function importHarnessProviders(
     }
     added.push(candidateToProvider(candidate, nowValue))
   }
-  return { added, skipped, hadCandidates: true }
+  return { added, skipped, hadCandidates: true, serverReachable: true }
 }

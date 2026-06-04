@@ -1,12 +1,11 @@
-import { beforeEach, describe, expect, it, mock } from 'bun:test'
+import { beforeEach, describe, expect, it } from 'bun:test'
+import {
+  type ImportHarnessProvidersOptions,
+  importHarnessProviders,
+} from './harnessMigration'
 import type { LlmProviderConfig } from './types'
 
-mock.module('@/lib/browseros/helpers', () => ({
-  getAgentServerUrl: async () => 'http://127.0.0.1:9000',
-}))
-
-const mod = await import('./harnessMigration')
-const { importHarnessProviders } = mod
+const AGENT_SERVER_URL = 'http://127.0.0.1:9000'
 
 interface FetchResponse {
   ok: boolean
@@ -46,36 +45,52 @@ function fetchSpy(response: FetchResponse): typeof fetch {
   }) as typeof fetch
 }
 
+function throwingFetch(): typeof fetch {
+  return (() =>
+    Promise.reject(new Error('connection refused'))) as unknown as typeof fetch
+}
+
+function opts(extra: Partial<ImportHarnessProvidersOptions> = {}) {
+  return {
+    now: () => 1000,
+    agentServerUrl: AGENT_SERVER_URL,
+    ...extra,
+  } satisfies ImportHarnessProvidersOptions
+}
+
 describe('importHarnessProviders', () => {
   it('returns an empty result when the endpoint yields no candidates', async () => {
-    const result = await importHarnessProviders([], {
-      now: () => 1000,
-      fetchImpl: fetchSpy(jsonResponse({ candidates: [] })),
-    })
+    const result = await importHarnessProviders(
+      [],
+      opts({ fetchImpl: fetchSpy(jsonResponse({ candidates: [] })) }),
+    )
     expect(result.added).toEqual([])
     expect(result.skipped).toBe(0)
     expect(result.hadCandidates).toBe(false)
+    expect(result.serverReachable).toBe(true)
     expect(calls).toEqual(['http://127.0.0.1:9000/migrations/llm-providers'])
   })
 
   it('converts claude-code candidates into provider records', async () => {
-    const result = await importHarnessProviders([], {
-      now: () => 1000,
-      fetchImpl: fetchSpy(
-        jsonResponse({
-          candidates: [
-            {
-              id: 'harness-claude-1',
-              type: 'claude-code',
-              name: 'Claude Code',
-              modelId: 'claude-sonnet-4-6',
-              reasoningEffort: 'medium',
-              acpAgentId: 'claude',
-            },
-          ],
-        }),
-      ),
-    })
+    const result = await importHarnessProviders(
+      [],
+      opts({
+        fetchImpl: fetchSpy(
+          jsonResponse({
+            candidates: [
+              {
+                id: 'harness-claude-1',
+                type: 'claude-code',
+                name: 'Claude Code',
+                modelId: 'claude-sonnet-4-6',
+                reasoningEffort: 'medium',
+                acpAgentId: 'claude',
+              },
+            ],
+          }),
+        ),
+      }),
+    )
     expect(result.added).toHaveLength(1)
     const added = result.added[0]
     expect(added.id).toBe('harness-claude-1')
@@ -88,34 +103,38 @@ describe('importHarnessProviders', () => {
       '$HOME/browseros-workspaces/harness-claude-1',
     )
     expect(added.createdAt).toBe(1000)
+    expect(result.serverReachable).toBe(true)
   })
 
   it('sets a 400000-token context window for codex candidates', async () => {
-    const result = await importHarnessProviders([], {
-      now: () => 5000,
-      fetchImpl: fetchSpy(
-        jsonResponse({
-          candidates: [
-            {
-              id: 'harness-codex-2',
-              type: 'codex',
-              name: 'Codex',
-              modelId: 'gpt-5.5',
-              acpAgentId: 'codex',
-            },
-          ],
-        }),
-      ),
-    })
+    const result = await importHarnessProviders(
+      [],
+      opts({
+        now: () => 5000,
+        fetchImpl: fetchSpy(
+          jsonResponse({
+            candidates: [
+              {
+                id: 'harness-codex-2',
+                type: 'codex',
+                name: 'Codex',
+                modelId: 'gpt-5.5',
+                acpAgentId: 'codex',
+              },
+            ],
+          }),
+        ),
+      }),
+    )
     expect(result.added[0]?.contextWindow).toBe(400000)
     expect(result.added[0]?.type).toBe('codex')
+    expect(result.serverReachable).toBe(true)
   })
 
   it('skips candidates whose id already exists on the provider list', async () => {
     const result = await importHarnessProviders(
       [existingProvider('harness-claude-1')],
-      {
-        now: () => 1000,
+      opts({
         fetchImpl: fetchSpy(
           jsonResponse({
             candidates: [
@@ -136,19 +155,47 @@ describe('importHarnessProviders', () => {
             ],
           }),
         ),
-      },
+      }),
     )
     expect(result.added.map((p) => p.id)).toEqual(['harness-codex-2'])
     expect(result.skipped).toBe(1)
     expect(result.hadCandidates).toBe(true)
+    expect(result.serverReachable).toBe(true)
   })
 
-  it('treats a non-ok response as zero candidates without throwing', async () => {
-    const result = await importHarnessProviders([], {
-      now: () => 1000,
-      fetchImpl: fetchSpy(jsonResponse({ candidates: [] }, false)),
-    })
+  it('treats a non-ok response as unreachable so the caller retries later', async () => {
+    const result = await importHarnessProviders(
+      [],
+      opts({ fetchImpl: fetchSpy(jsonResponse({ candidates: [] }, false)) }),
+    )
     expect(result.added).toEqual([])
     expect(result.hadCandidates).toBe(false)
+    expect(result.serverReachable).toBe(false)
+  })
+
+  it('treats a thrown fetch as unreachable without surfacing the error', async () => {
+    const result = await importHarnessProviders(
+      [],
+      opts({ fetchImpl: throwingFetch() }),
+    )
+    expect(result.added).toEqual([])
+    expect(result.serverReachable).toBe(false)
+  })
+
+  it('reports reachable+empty distinctly from unreachable (fresh-install case)', async () => {
+    // Same result.added shape (empty) but different serverReachable so
+    // useLlmProviders can decide whether to set the migration flag.
+    const reachable = await importHarnessProviders(
+      [],
+      opts({ fetchImpl: fetchSpy(jsonResponse({ candidates: [] })) }),
+    )
+    const unreachable = await importHarnessProviders(
+      [],
+      opts({ fetchImpl: throwingFetch() }),
+    )
+    expect(reachable.serverReachable).toBe(true)
+    expect(unreachable.serverReachable).toBe(false)
+    expect(reachable.added).toEqual([])
+    expect(unreachable.added).toEqual([])
   })
 })

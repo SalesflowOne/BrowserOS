@@ -110,6 +110,27 @@ describe('createLanguageModel — ACP providers', () => {
       join(homedir(), 'browseros-workspaces', 'claude-code'),
     )
   })
+
+  it('expands a leading $HOME token in acpFixedWorkspacePath', async () => {
+    // The harness-to-providers migration writes the literal "$HOME" prefix
+    // because the renderer can't read $HOME; node child_process.spawn does
+    // not expand it. This verifies the server-side substitution.
+    await createLanguageModel({
+      ...baseConfig(),
+      acpFixedWorkspacePath: '$HOME/browseros-workspaces/harness-claude-1',
+    } as never)
+    expect(lastBuildArgs?.workspacePath).toBe(
+      `${homedir()}/browseros-workspaces/harness-claude-1`,
+    )
+  })
+
+  it('only expands a leading $HOME token, not interior occurrences', async () => {
+    await createLanguageModel({
+      ...baseConfig(),
+      acpFixedWorkspacePath: '/tmp/x/$HOME/y',
+    } as never)
+    expect(lastBuildArgs?.workspacePath).toBe('/tmp/x/$HOME/y')
+  })
 })
 
 describe('createLanguageModel — ACP mcpServers forwarding', () => {

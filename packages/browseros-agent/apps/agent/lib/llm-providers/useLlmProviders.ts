@@ -17,15 +17,16 @@ async function runHarnessMigrationOnce(
   if (alreadyMigrated) return loaded
   try {
     const result = await importHarnessProviders(loaded)
-    if (result.added.length === 0) {
-      if (result.hadCandidates) {
-        await harnessMigrationCompleteStorage.setValue(true)
-      }
-      return loaded
+    // Finalize the migration as soon as the server answers, even with
+    // an empty candidates list. Without this, fresh installs (no
+    // harness rows) would re-fetch /migrations/llm-providers on every
+    // mount of this hook forever.
+    if (result.serverReachable) {
+      await harnessMigrationCompleteStorage.setValue(true)
     }
+    if (result.added.length === 0) return loaded
     const merged = [...loaded, ...result.added]
     await providersStorage.setValue(merged)
-    await harnessMigrationCompleteStorage.setValue(true)
     return merged
   } catch {
     // The server may be unreachable mid-boot. Leave the flag unset so
