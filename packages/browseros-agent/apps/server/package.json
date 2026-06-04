@@ -95,6 +95,7 @@
     "@openrouter/ai-sdk-provider": "^2.2.3",
     "@sentry/bun": "^10.31.0",
     "acpx": "0.6.1",
+    "acpx-ai-provider": "^0.0.6",
     "ai": "^6.0.94",
     "chrome-devtools-frontend": "^1.0.1577886",
     "commander": "^14.0.1",
