@@ -50,4 +50,14 @@ export interface ResolvedAgentConfig {
   origin?: 'sidepanel' | 'newtab'
   /** BrowserOS installation ID for credit-based tracking. */
   browserosId?: string
+
+  /** ACP agent id (claude / codex / custom registry name). Only set
+   *  when provider is one of the ACP-backed types. */
+  acpAgentId?: string
+  /** Shell command for the spawned ACP agent. Only set when provider
+   *  is 'acp-custom'; built-in agents resolve through acpx's registry. */
+  acpCommand?: string
+  /** Fixed cwd the user picked at provider-create time. Used as-is for
+   *  ACP-backed providers; ignored for model-backed ones. */
+  acpFixedWorkspacePath?: string
 }

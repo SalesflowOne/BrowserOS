@@ -17,6 +17,9 @@ export type ProviderType =
   | 'chatgpt-pro'
   | 'github-copilot'
   | 'qwen-code'
+  | 'claude-code'
+  | 'codex'
+  | 'acp-custom'
 
 /**
  * LLM Provider configuration
@@ -63,6 +66,14 @@ export interface LlmProviderConfig {
   // ChatGPT Pro (Codex) fields
   reasoningEffort?: 'none' | 'low' | 'medium' | 'high'
   reasoningSummary?: 'auto' | 'concise' | 'detailed'
+
+  // ACP-backed providers (claude-code, codex, acp-custom). agent id
+  // resolves through acpx's registry; command is only used when
+  // type === 'acp-custom'; workspace is the fixed-path cwd the user
+  // picks at provider-create time.
+  acpAgentId?: string
+  acpCommand?: string
+  acpFixedWorkspacePath?: string
 }
 
 /**

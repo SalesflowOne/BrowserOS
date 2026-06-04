@@ -10,7 +10,7 @@ import {
   OpenRouter,
   Qwen,
 } from '@lobehub/icons'
-import { Bot, Github } from 'lucide-react'
+import { Bot, Github, Sparkles, Terminal } from 'lucide-react'
 import type { FC, SVGProps } from 'react'
 import ProductLogoSvg from '@/assets/product_logo.svg'
 import type { ProviderType } from './types'
@@ -36,6 +36,9 @@ const providerIconMap: Record<ProviderType, IconComponent | null> = {
   'chatgpt-pro': OpenAI,
   'github-copilot': Github,
   'qwen-code': Qwen,
+  'claude-code': Sparkles as IconComponent,
+  codex: Terminal as IconComponent,
+  'acp-custom': Bot as IconComponent,
 }
 
 interface ProviderIconProps {

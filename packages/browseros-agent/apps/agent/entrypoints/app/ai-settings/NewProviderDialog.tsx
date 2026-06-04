@@ -87,6 +87,9 @@ const providerTypeEnum = z.enum([
   'chatgpt-pro',
   'github-copilot',
   'qwen-code',
+  'claude-code',
+  'codex',
+  'acp-custom',
 ])
 
 /**
@@ -113,6 +116,10 @@ export const providerFormSchema = z
     // ChatGPT Pro (Codex)
     reasoningEffort: z.enum(['none', 'low', 'medium', 'high']).optional(),
     reasoningSummary: z.enum(['auto', 'concise', 'detailed']).optional(),
+    // ACP-backed providers
+    acpAgentId: z.string().optional(),
+    acpCommand: z.string().optional(),
+    acpFixedWorkspacePath: z.string().optional(),
   })
   .superRefine((data, ctx) => {
     // Azure: require either resourceName or baseUrl
@@ -162,7 +169,30 @@ export const providerFormSchema = z
       data.type === 'github-copilot' ||
       data.type === 'qwen-code'
     ) {
-      // No validation needed — OAuth tokens are on the server
+      // No validation needed, OAuth tokens are on the server.
+    }
+    // ACP-backed providers: agent owns its own auth; baseUrl is unused.
+    else if (
+      data.type === 'claude-code' ||
+      data.type === 'codex' ||
+      data.type === 'acp-custom'
+    ) {
+      if (data.type === 'acp-custom') {
+        if (!data.acpAgentId) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'Agent id is required for a custom ACP agent',
+            path: ['acpAgentId'],
+          })
+        }
+        if (!data.acpCommand) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'Command is required for a custom ACP agent',
+            path: ['acpCommand'],
+          })
+        }
+      }
     }
     // Other providers: require baseUrl
     else if (!data.baseUrl) {

@@ -1,3 +1,5 @@
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { createAmazonBedrock } from '@ai-sdk/amazon-bedrock'
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { createAzure } from '@ai-sdk/azure'
@@ -8,6 +10,7 @@ import { EXTERNAL_URLS } from '@browseros/shared/constants/urls'
 import { LLM_PROVIDERS } from '@browseros/shared/schemas/llm'
 import { createOpenRouter } from '@openrouter/ai-sdk-provider'
 import type { LanguageModel } from 'ai'
+import { buildAcpxProvider } from '../lib/agents/acpx-provider/buildAcpxProvider'
 import { createBrowserOSFetch } from '../lib/browseros-fetch'
 import {
   createMockBrowserOSLanguageModel,
@@ -18,6 +21,54 @@ import { createCopilotFetch } from '../lib/clients/oauth/copilot-fetch'
 import { logger } from '../lib/logger'
 import { createOpenRouterCompatibleFetch } from '../lib/openrouter-fetch'
 import type { ResolvedAgentConfig } from './types'
+
+const ACP_PROVIDER_TYPES = new Set<string>([
+  LLM_PROVIDERS.CLAUDE_CODE,
+  LLM_PROVIDERS.CODEX,
+  LLM_PROVIDERS.ACP_CUSTOM,
+])
+
+const BUILT_IN_ACP_AGENT_BY_PROVIDER: Record<string, string> = {
+  [LLM_PROVIDERS.CLAUDE_CODE]: 'claude',
+  [LLM_PROVIDERS.CODEX]: 'codex',
+}
+
+function defaultAcpWorkspacePath(providerId: string): string {
+  return join(homedir(), 'browseros-workspaces', providerId)
+}
+
+function resolveAcpAgentId(config: ResolvedAgentConfig): string {
+  if (config.provider === LLM_PROVIDERS.ACP_CUSTOM) {
+    if (!config.acpAgentId) {
+      throw new Error('acp-custom provider requires acpAgentId')
+    }
+    return config.acpAgentId
+  }
+  const builtIn = BUILT_IN_ACP_AGENT_BY_PROVIDER[config.provider]
+  if (!builtIn) {
+    throw new Error(`Unknown ACP provider type: ${config.provider}`)
+  }
+  return config.acpAgentId ?? builtIn
+}
+
+async function createAcpLanguageModel(
+  config: ResolvedAgentConfig,
+): Promise<LanguageModel> {
+  const agentId = resolveAcpAgentId(config)
+  const workspacePath =
+    config.acpFixedWorkspacePath ?? defaultAcpWorkspacePath(config.provider)
+  const agentRegistryOverrides: Record<string, string> = {}
+  if (config.provider === LLM_PROVIDERS.ACP_CUSTOM && config.acpCommand) {
+    agentRegistryOverrides[agentId] = config.acpCommand
+  }
+  const provider = await buildAcpxProvider({
+    conversationId: config.conversationId,
+    agentId,
+    workspacePath,
+    agentRegistryOverrides,
+  })
+  return provider.languageModel() as LanguageModel
+}
 
 type ProviderFactory = (
   config: ResolvedAgentConfig,
@@ -220,13 +271,16 @@ const PROVIDER_FACTORIES: Record<string, ProviderFactory> = {
   [LLM_PROVIDERS.QWEN_CODE]: createQwenCodeFactory,
 }
 
-export function createLanguageModel(
+export async function createLanguageModel(
   config: ResolvedAgentConfig,
-): LanguageModel {
+): Promise<LanguageModel> {
   if (shouldUseMockBrowserOSLLM(config)) {
     return createMockBrowserOSLanguageModel()
   }
   const provider = config.provider as string
+  if (ACP_PROVIDER_TYPES.has(provider)) {
+    return createAcpLanguageModel(config)
+  }
   const factory = PROVIDER_FACTORIES[provider]
   if (!factory) throw new Error(`Unknown provider: ${provider}`)
   return factory(config)(config.model) as LanguageModel

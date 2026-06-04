@@ -65,6 +65,9 @@ export class ChatService {
       origin: request.origin,
       declinedApps: request.declinedApps,
       browserosId: this.deps.browserosId,
+      acpAgentId: request.acpAgentId,
+      acpCommand: request.acpCommand,
+      acpFixedWorkspacePath: request.acpFixedWorkspacePath,
     }
 
     let session = sessionStore.get(request.conversationId)

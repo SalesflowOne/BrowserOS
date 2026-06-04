@@ -140,6 +140,32 @@ export const providerTemplates: ProviderTemplate[] = [
     setupGuideUrl:
       'https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html',
   }),
+  {
+    id: 'claude-code',
+    name: 'Claude Code',
+    defaultBaseUrl: '',
+    defaultModelId: 'claude-sonnet-4-6',
+    supportsImages: true,
+    contextWindow: 200000,
+    setupGuideUrl: 'https://docs.browseros.com/features/claude-code',
+  },
+  {
+    id: 'codex',
+    name: 'Codex',
+    defaultBaseUrl: '',
+    defaultModelId: 'gpt-5.5',
+    supportsImages: true,
+    contextWindow: 400000,
+    setupGuideUrl: 'https://docs.browseros.com/features/codex',
+  },
+  {
+    id: 'acp-custom',
+    name: 'Custom ACP agent',
+    defaultBaseUrl: '',
+    defaultModelId: '',
+    supportsImages: true,
+    contextWindow: 128000,
+  },
 ]
 
 /**
@@ -161,6 +187,9 @@ export const providerTypeOptions: { value: ProviderType; label: string }[] = [
   { value: 'lmstudio', label: 'LM Studio' },
   { value: 'bedrock', label: 'AWS Bedrock' },
   { value: 'browseros', label: 'BrowserOS' },
+  { value: 'claude-code', label: 'Claude Code' },
+  { value: 'codex', label: 'Codex' },
+  { value: 'acp-custom', label: 'Custom ACP agent' },
 ]
 
 /**
@@ -192,6 +221,10 @@ export const DEFAULT_BASE_URLS: Record<ProviderType, string> = {
   lmstudio: 'http://localhost:1234/v1',
   bedrock: '',
   browseros: '',
+  // ACP-backed providers spawn a local agent process, not a remote API.
+  'claude-code': '',
+  codex: '',
+  'acp-custom': '',
 }
 
 /**

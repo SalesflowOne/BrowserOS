@@ -67,7 +67,7 @@ export class AiSdkAgent {
       config.resolvedConfig.contextWindowSize ??
       AGENT_LIMITS.DEFAULT_CONTEXT_WINDOW
 
-    const rawModel = createLanguageModel(config.resolvedConfig)
+    const rawModel = await createLanguageModel(config.resolvedConfig)
     const isV3Model =
       typeof rawModel === 'object' &&
       rawModel !== null &&
