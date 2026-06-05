@@ -6,6 +6,9 @@
   "type": "module",
   "scripts": {
     "dev": "test -d generated/graphql || bun run codegen; mkdir -p /tmp/browseros-dev; bun --env-file=.env.development wxt",
+    "web": "bun run web:prepare; bun --env-file=.env.development vite --config web/vite.config.ts",
+    "web:build": "bun run web:prepare; vite build --config web/vite.config.ts",
+    "web:prepare": "test -d generated/graphql || bun run codegen; test -f .wxt/tsconfig.json || bun --env-file=.env.development wxt prepare",
     "build": "bun run codegen && wxt build",
     "build:dev": "bun --env-file=.env.development wxt build --mode development",
     "zip": "wxt zip",
@@ -114,10 +117,13 @@
     "@types/dagre": "^0.7.53",
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.1.2",
+    "@webext-core/fake-browser": "^1.3.4",
     "@wxt-dev/module-react": "^1.1.5",
     "lefthook": "^2.0.3",
     "tailwindcss": "^4.1.17",
     "typescript": "^5.9.2",
+    "vite": "^7.3.1",
     "wxt": "^0.20.18"
   },
   "trustedDependencies": [

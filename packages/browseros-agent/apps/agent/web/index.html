@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>BrowserOS Agent (Web Harness)</title>
+        <!-- No inline theme script here (the app's index.html has one): it would
+             run before the chrome shim is installed. ThemeProvider applies the
+             theme on mount instead. -->
+    </head>
+    <body class="bg-background h-screen w-screen">
+        <div id="root"></div>
+        <script type="module" src="./main.tsx"></script>
+    </body>
+</html>
