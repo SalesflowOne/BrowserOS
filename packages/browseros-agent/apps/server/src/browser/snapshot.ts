@@ -1,65 +1,14 @@
 import type { ProtocolApi } from '@browseros/cdp-protocol/protocol-api'
+import { findCursorHits } from './core/observer/cursor-augment'
+import type { AXNode } from './core/snapshot/ax-types'
+import {
+  INTERACTIVE_ROLES,
+  NAMED_CONTENT_ROLES,
+  ROOT_ROLES,
+  SKIP_ROLES,
+} from './core/snapshot/roles'
 
-interface AXValue {
-  type: string
-  value?: string | number | boolean
-}
-
-interface AXProperty {
-  name: string
-  value: AXValue
-}
-
-export interface AXNode {
-  nodeId: string
-  ignored?: boolean
-  role?: AXValue
-  name?: AXValue
-  description?: AXValue
-  value?: AXValue
-  properties?: AXProperty[]
-  childIds?: string[]
-  backendDOMNodeId?: number
-}
-
-const INTERACTIVE_ROLES = new Set([
-  'button',
-  'link',
-  'textbox',
-  'searchbox',
-  'textarea',
-  'checkbox',
-  'radio',
-  'combobox',
-  'menuitem',
-  'menuitemcheckbox',
-  'menuitemradio',
-  'tab',
-  'switch',
-  'slider',
-  'spinbutton',
-  'option',
-  'treeitem',
-  'listbox',
-  'DisclosureTriangle',
-])
-
-const NAMED_CONTENT_ROLES = new Set([
-  'heading',
-  'img',
-  'cell',
-  'columnheader',
-  'rowheader',
-  'dialog',
-  'alertdialog',
-])
-
-const SKIP_ROLES = new Set([
-  'none',
-  'presentation',
-  'LineBreak',
-  'InlineTextBox',
-])
+export type { AXNode } from './core/snapshot/ax-types'
 
 export function buildInteractiveTree(nodes: AXNode[]): string[] {
   const nodeMap = new Map<string, AXNode>()
@@ -100,9 +49,7 @@ export function buildInteractiveTree(nodes: AXNode[]): string[] {
     if (node.childIds) for (const childId of node.childIds) walk(childId)
   }
 
-  const roots = nodes.filter(
-    (n) => n.role?.value === 'RootWebArea' || n.role?.value === 'WebArea',
-  )
+  const roots = nodes.filter((n) => ROOT_ROLES.has(roleOf(n)))
   if (roots.length === 0 && nodes[0]?.childIds) {
     for (const childId of nodes[0].childIds) walk(childId)
   } else {
@@ -165,9 +112,7 @@ export function buildEnhancedTree(nodes: AXNode[]): string[] {
       for (const childId of node.childIds) walk(childId, depth + 1)
   }
 
-  const roots = nodes.filter(
-    (n) => n.role?.value === 'RootWebArea' || n.role?.value === 'WebArea',
-  )
+  const roots = nodes.filter((n) => ROOT_ROLES.has(roleOf(n)))
   if (roots.length === 0 && nodes[0]?.childIds) {
     for (const childId of nodes[0].childIds) walk(childId, 0)
   } else {
@@ -179,48 +124,6 @@ export function buildEnhancedTree(nodes: AXNode[]): string[] {
   return lines
 }
 
-const CURSOR_INTERACTIVE_JS = `(function() {
-	var interactiveRoles = new Set([
-		'button','link','textbox','checkbox','radio','combobox','listbox',
-		'menuitem','menuitemcheckbox','menuitemradio','option','searchbox',
-		'slider','spinbutton','switch','tab','treeitem'
-	]);
-	var interactiveTags = new Set([
-		'a','button','input','select','textarea','details','summary'
-	]);
-	var results = [];
-	var allElements = document.body.querySelectorAll('*');
-	for (var i = 0; i < allElements.length; i++) {
-		var el = allElements[i];
-		var tag = el.tagName.toLowerCase();
-		if (interactiveTags.has(tag)) continue;
-		var role = el.getAttribute('role');
-		if (role && interactiveRoles.has(role.toLowerCase())) continue;
-		var style = getComputedStyle(el);
-		var hasCursor = style.cursor === 'pointer';
-		var hasOnClick = el.hasAttribute('onclick') || el.onclick !== null;
-		var tabIdx = el.getAttribute('tabindex');
-		var hasTabIndex = tabIdx !== null && tabIdx !== '-1';
-		if (!hasCursor && !hasOnClick && !hasTabIndex) continue;
-		if (hasCursor && !hasOnClick && !hasTabIndex) {
-			var parent = el.parentElement;
-			if (parent && getComputedStyle(parent).cursor === 'pointer') continue;
-		}
-		var text = (el.textContent || '').trim().slice(0, 100);
-		if (!text) text = (el.getAttribute('aria-label') || '').trim();
-		if (!text) continue;
-		var rect = el.getBoundingClientRect();
-		if (rect.width === 0 || rect.height === 0) continue;
-		el.setAttribute('data-__cid', String(i));
-		var reasons = [];
-		if (hasCursor) reasons.push('cursor:pointer');
-		if (hasOnClick) reasons.push('onclick');
-		if (hasTabIndex) reasons.push('tabindex');
-		results.push({ marker: String(i), text: text, reasons: reasons });
-	}
-	return results;
-})()`
-
 export interface CursorInteractiveElement {
   backendNodeId: number
   text: string
@@ -230,49 +133,37 @@ export interface CursorInteractiveElement {
 export async function findCursorInteractiveElements(
   session: ProtocolApi,
 ): Promise<CursorInteractiveElement[]> {
-  const findResult = await session.Runtime.evaluate({
-    expression: CURSOR_INTERACTIVE_JS,
-    returnByValue: true,
-  })
-
-  const found = findResult.result?.value as
-    | Array<{ marker: string; text: string; reasons: string[] }>
-    | undefined
-  if (!found?.length) return []
-
+  const hits = await findCursorHits(session)
   const results: CursorInteractiveElement[] = []
 
-  for (const el of found) {
-    try {
-      const queryResult = await session.Runtime.evaluate({
-        expression: `document.querySelector('[data-__cid="${el.marker}"]')`,
-        returnByValue: false,
-      })
-
-      if (!queryResult.result?.objectId) continue
-
-      const desc = await session.DOM.describeNode({
-        objectId: queryResult.result.objectId,
-      })
-
-      if (desc.node?.backendNodeId) {
-        results.push({
-          backendNodeId: desc.node.backendNodeId,
-          text: el.text,
-          reasons: el.reasons,
-        })
-      }
-    } catch {
-      // skip unresolvable elements
-    }
+  for (const [backendNodeId, reasons] of hits) {
+    const text = await getNodeText(session, backendNodeId)
+    if (text) results.push({ backendNodeId, text, reasons })
   }
 
-  await session.Runtime.evaluate({
-    expression: `document.querySelectorAll('[data-__cid]').forEach(function(el){el.removeAttribute('data-__cid')})`,
-    returnByValue: true,
-  })
-
   return results
+}
+
+async function getNodeText(
+  session: ProtocolApi,
+  backendNodeId: number,
+): Promise<string> {
+  try {
+    const resolved = await session.DOM.resolveNode({ backendNodeId })
+    const objectId = resolved.object?.objectId
+    if (!objectId) return ''
+
+    const result = await session.Runtime.callFunctionOn({
+      objectId,
+      functionDeclaration:
+        'function(){return ((this.textContent||"").trim().slice(0,100)||(this.getAttribute("aria-label")||"").trim());}',
+      returnByValue: true,
+    })
+
+    return typeof result.result?.value === 'string' ? result.result.value : ''
+  } catch {
+    return ''
+  }
 }
 
 export interface LinkNode {
@@ -302,9 +193,7 @@ export function extractLinkNodes(nodes: AXNode[]): LinkNode[] {
     if (node.childIds) for (const childId of node.childIds) walk(childId)
   }
 
-  const roots = nodes.filter(
-    (n) => n.role?.value === 'RootWebArea' || n.role?.value === 'WebArea',
-  )
+  const roots = nodes.filter((n) => ROOT_ROLES.has(roleOf(n)))
   if (roots.length === 0 && nodes[0]?.childIds) {
     for (const childId of nodes[0].childIds) walk(childId)
   } else {
@@ -339,4 +228,8 @@ function extractProps(node: AXNode): string {
   }
 
   return parts.length > 0 ? `(${parts.join(', ')})` : ''
+}
+
+function roleOf(node: AXNode): string {
+  return typeof node.role?.value === 'string' ? node.role.value : ''
 }
