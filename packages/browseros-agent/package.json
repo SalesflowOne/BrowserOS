@@ -35,6 +35,7 @@
     "codegen:agent": "bun run --filter @browseros/agent codegen",
     "test": "bun run test:all",
     "test:all": "bun run ./scripts/run-test-suite.ts all",
+    "test:fixtures": "bun apps/server/tests/__fixtures__/browser-fixtures/serve.ts",
     "test:main": "bun run ./scripts/run-test-suite.ts main",
     "typecheck": "bun run --filter '*' typecheck",
     "lint": "bunx biome check",

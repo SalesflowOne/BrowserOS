@@ -19,6 +19,7 @@
     "test:browser": "bun run ./tests/__helpers__/run-test-group.ts browser",
     "test:cdp": "bun run test:browser",
     "test:core": "bun run ./tests/__helpers__/run-test-group.ts core",
+    "test:fixtures": "bun tests/__fixtures__/browser-fixtures/serve.ts",
     "test:integration": "bun run ./tests/__helpers__/run-test-group.ts integration",
     "test:lib": "bun run ./tests/__helpers__/run-test-group.ts lib",
     "test:root": "bun run ./tests/__helpers__/run-test-group.ts root",
