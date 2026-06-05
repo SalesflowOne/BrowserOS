@@ -6,24 +6,21 @@
  * Host-side path helpers for Hermes per-agent configuration.
  */
 
-import { mkdir, writeFile } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { copyFile, mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { getBrowserosDir } from '../../browseros-dir'
 
-/** Top-level Hermes state directory. */
+const HERMES_HOME_FILES = ['config.yaml', '.env'] as const
+
 export function getHermesHostStateDir(browserosDir?: string): string {
   return join(browserosDir ?? getBrowserosDir(), 'agents', 'hermes')
 }
 
-/** Per-agent Hermes harness root. */
 export function getHermesHarnessHostDir(browserosDir?: string): string {
   return join(getHermesHostStateDir(browserosDir), 'harness')
 }
 
-/**
- * Per-agent home directory on the host. Hermes reads `config.yaml` +
- * `.env` from here; both files are written at agent-create time.
- */
 export function getHermesAgentHomeHostDir(input: {
   browserosDir?: string
   agentId: string
@@ -35,14 +32,38 @@ export function getHermesAgentHomeHostDir(input: {
   )
 }
 
-/**
- * Write a Hermes per-agent provider config into the on-host home dir.
- *
- * Idempotent: writes always overwrite (last-write-wins). The provider
- * id, env var name, and credentials must be supplied by the caller —
- * Hermes agents always carry their own config; there is no
- * `~/.hermes/` fallback.
- */
+export function getLegacyHermesAgentHomeHostDir(input: {
+  browserosDir?: string
+  agentId: string
+}): string {
+  return join(
+    input.browserosDir ?? getBrowserosDir(),
+    'vm',
+    'hermes',
+    'harness',
+    input.agentId,
+    'home',
+  )
+}
+
+/** Ensures the host Hermes home exists and copies old per-agent config into it. */
+export async function ensureHermesAgentHomeHostDir(input: {
+  browserosDir?: string
+  agentId: string
+}): Promise<string> {
+  const home = getHermesAgentHomeHostDir(input)
+  await mkdir(home, { recursive: true })
+
+  const legacyHome = getLegacyHermesAgentHomeHostDir(input)
+  await Promise.all(
+    HERMES_HOME_FILES.map((file) =>
+      copyMissingFile(join(legacyHome, file), join(home, file)),
+    ),
+  )
+  return home
+}
+
+/** Writes Hermes per-agent provider config into the on-host home dir. */
 export async function writeHermesPerAgentProvider(input: {
   browserosDir?: string
   agentId: string
@@ -52,11 +73,10 @@ export async function writeHermesPerAgentProvider(input: {
   modelId: string
   baseUrl?: string
 }): Promise<void> {
-  const home = getHermesAgentHomeHostDir({
+  const home = await ensureHermesAgentHomeHostDir({
     browserosDir: input.browserosDir,
     agentId: input.agentId,
   })
-  await mkdir(home, { recursive: true })
 
   // Hermes' `provider: custom` requires a `base_url` — without one the
   // model loader rejects with `unknown provider 'custom'`. Callers that
@@ -82,4 +102,14 @@ export async function writeHermesPerAgentProvider(input: {
 
   const envLines: string[] = [`${input.envVarName}=${input.apiKey}`, '']
   await writeFile(join(home, '.env'), envLines.join('\n'), { mode: 0o600 })
+}
+
+async function copyMissingFile(source: string, target: string): Promise<void> {
+  try {
+    await copyFile(source, target, constants.COPYFILE_EXCL)
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code === 'ENOENT' || code === 'EEXIST') return
+    throw err
+  }
 }

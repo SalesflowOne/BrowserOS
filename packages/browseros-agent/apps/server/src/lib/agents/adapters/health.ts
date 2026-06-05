@@ -18,11 +18,7 @@ import {
   HostProcessAgentRuntime,
 } from '../runtime'
 
-/**
- * Reports adapter readiness for the `/adapters` route. Reads from the
- * `AgentRuntimeRegistry`; host-process runtimes self-cache their
- * `<binary> --version` probe.
- */
+/** Reports adapter readiness for the `/adapters` route. */
 export class AdapterHealthChecker {
   private readonly registry: AgentRuntimeRegistry
   private readonly detectHostAdapter: typeof detectHostAdapter

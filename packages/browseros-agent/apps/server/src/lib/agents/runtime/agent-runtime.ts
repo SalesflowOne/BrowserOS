@@ -19,23 +19,18 @@ import type {
 export interface AgentRuntime {
   readonly descriptor: RuntimeDescriptor
 
-  // ── Status surface (Plane B feed) ────────────────────────────────
   getStatusSnapshot(): RuntimeStatusSnapshot
   subscribe(listener: StateListener): Unsubscribe
   getCapabilities(): ReadonlyArray<RuntimeCapability>
 
-  // ── Action dispatch (Plane B control) ────────────────────────────
   executeAction(
     action: RuntimeAction,
     options?: { onLog?: (msg: string) => void },
   ): Promise<void>
 
-  // ── ACP plane integration ────────────────────────────────────────
   /** Build the shell-command string acpx-core spawns to run `spec`. */
   buildExecArgv(spec: ExecSpec): string
 
   /** Per-agent home dir on host. */
   getPerAgentHomeDir(agentId: string): string
-  toContainerPath?(hostPath: string): string
-  toHostPath?(containerPath: string): string
 }

@@ -1227,10 +1227,52 @@ Use the BrowserOS MCP server for all browser tasks, including browsing the web, 
       getCreateRuntimeOptions(calls).agentRegistry.resolve('hermes')
     expect(command).toContain('hermes acp')
     expect(command).toContain('env HERMES_HOME=')
+    if (process.platform !== 'win32') {
+      expect(command).toContain(' -lic ')
+    }
     expect(command).not.toContain('limactl')
     expect(command).not.toContain('nerdctl')
     expect(command).not.toContain('bash -c')
     expect(command).not.toContain('tee /dev/null')
+  })
+
+  it('launches bundled Hermes by absolute path when packaged resources include it', async () => {
+    const browserosDir = await mkdtemp(
+      join(tmpdir(), 'browseros-acpx-browseros-'),
+    )
+    const stateDir = await mkdtemp(join(tmpdir(), 'browseros-acpx-state-'))
+    const resourcesDir = await mkdtemp(
+      join(tmpdir(), 'browseros-acpx-resources-'),
+    )
+    tempDirs.push(browserosDir, stateDir, resourcesDir)
+    const hermesPath = await writeFakeBundledNative(resourcesDir, 'hermes')
+    const calls: Array<{ method: string; input: unknown }> = []
+    const runtime = new AcpxRuntime({
+      browserosDir,
+      resourcesDir,
+      stateDir,
+      runtimeFactory: (options) => {
+        calls.push({ method: 'createRuntime', input: options })
+        return createFakeAcpRuntime(calls)
+      },
+    })
+    const agent = makeAgent({ id: 'agent-1', adapter: 'hermes' })
+
+    await collectStream(
+      await runtime.send({
+        agent,
+        sessionId: 'main',
+        sessionKey: agent.sessionKey,
+        message: 'hi',
+        permissionMode: 'approve-all',
+      }),
+    )
+
+    const command =
+      getCreateRuntimeOptions(calls).agentRegistry.resolve('hermes')
+    expect(command).toContain(`'${hermesPath}' acp`)
+    expect(command).toContain('env HERMES_HOME=')
+    expect(command).not.toContain(' -lic ')
   })
 
   it('does not reuse an Acpx runtime across different command identities', async () => {
@@ -1471,11 +1513,18 @@ async function createLatestRuntimeStateForTest(input: {
 }
 
 async function writeFakeBundledBun(resourcesDir: string): Promise<string> {
-  const bunPath = join(resourcesDir, 'bin', 'third_party', 'bun')
-  await mkdir(dirname(bunPath), { recursive: true })
-  await writeFile(bunPath, '#!/bin/sh\n')
-  await chmod(bunPath, 0o755)
-  return bunPath
+  return writeFakeBundledNative(resourcesDir, 'bun')
+}
+
+async function writeFakeBundledNative(
+  resourcesDir: string,
+  binaryName: string,
+): Promise<string> {
+  const binaryPath = join(resourcesDir, 'bin', 'third_party', binaryName)
+  await mkdir(dirname(binaryPath), { recursive: true })
+  await writeFile(binaryPath, '#!/bin/sh\n')
+  await chmod(binaryPath, 0o755)
+  return binaryPath
 }
 
 function makeSessionRecord(input: {
