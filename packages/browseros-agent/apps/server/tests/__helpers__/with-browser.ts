@@ -5,7 +5,12 @@ import { Browser } from '../../src/browser/browser'
 import type { ToolDefinition } from '../../src/tools/framework'
 import { executeTool } from '../../src/tools/framework'
 import type { ToolResult } from '../../src/tools/response'
-import { type BrowserConfig, killBrowser, spawnBrowser } from './browser'
+import {
+  type BrowserConfig,
+  isBrowserRunning,
+  killBrowser,
+  spawnBrowser,
+} from './browser'
 import { createTestRuntimePlan, type TestRuntimePlan } from './test-runtime'
 import { killProcessOnPort } from './utils'
 
@@ -14,8 +19,19 @@ let cachedCdp: CdpBackend | null = null
 let cachedBrowser: Browser | null = null
 let runtimePlan: TestRuntimePlan | null = null
 
+async function canReuseCachedBrowser(): Promise<boolean> {
+  if (!cachedBrowser || !cachedCdp?.isConnected() || !runtimePlan) return false
+  if (!(await isBrowserRunning(runtimePlan.ports.cdp))) return false
+  try {
+    await cachedCdp.Browser.getVersion()
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function getOrCreateBrowser(): Promise<Browser> {
-  if (cachedBrowser && cachedCdp?.isConnected()) return cachedBrowser
+  if (await canReuseCachedBrowser()) return cachedBrowser as Browser
 
   if (runtimePlan && !existsSync(runtimePlan.userDataDir)) {
     runtimePlan = null
@@ -40,7 +56,10 @@ async function getOrCreateBrowser(): Promise<Browser> {
   }
   await spawnBrowser(config)
 
-  cachedCdp = new CdpBackend({ port: runtimePlan.ports.cdp })
+  cachedCdp = new CdpBackend({
+    port: runtimePlan.ports.cdp,
+    exitOnReconnectFailure: false,
+  })
   await cachedCdp.connect()
 
   cachedBrowser = new Browser(cachedCdp)

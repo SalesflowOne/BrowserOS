@@ -174,7 +174,7 @@ describe('new-tab origin navigation guards', () => {
   }, 60_000)
 
   it('navigate_page works when session is undefined (backwards compat)', async () => {
-    await withBrowser(async ({ browser, execute }) => {
+    await withBrowser(async ({ execute }) => {
       const setupResult = await execute(new_page, { url: 'about:blank' })
       const pageId = structuredOf<{ pageId: number }>(setupResult).pageId
 

@@ -65,7 +65,7 @@ for (const [alias, canonical] of Object.entries(KEY_ALIASES)) {
   KEY_NORMALIZE.set(alias.toLowerCase(), canonical)
 }
 
-function normalizeKey(key: string): string {
+export function normalizeKey(key: string): string {
   if (KEY_MAP[key]) return key
   return KEY_NORMALIZE.get(key.toLowerCase()) ?? key
 }
@@ -102,7 +102,7 @@ const MODIFIER_BIT: Record<string, number> = {
   Shift: 8,
 }
 
-function getKeyInfo(key: string): KeyInfo {
+export function getKeyInfo(key: string): KeyInfo {
   if (KEY_MAP[key]) return KEY_MAP[key]
   if (key.length === 1) {
     if (key >= 'a' && key <= 'z') {
@@ -119,7 +119,7 @@ function getKeyInfo(key: string): KeyInfo {
   return { code: key, keyCode: undefined }
 }
 
-function modifierBitmask(modifiers: string[]): number {
+export function modifierBitmask(modifiers: string[]): number {
   let mask = 0
   for (const mod of modifiers) mask |= MODIFIER_BIT[mod] ?? 0
   return mask
