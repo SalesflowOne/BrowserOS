@@ -205,9 +205,7 @@ export class PageManager {
       try {
         tab = (await this.cdp.Browser.getTabInfo({ tabId })).tab as TabInfo
         if (!tab.isLoading || tab.loadProgress >= 1) break
-      } catch {
-        await delay(100)
-      }
+      } catch {}
       await delay(100)
     }
     if (!tab) throw new Error(`Tab ${tabId} not found after creation`)

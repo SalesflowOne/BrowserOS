@@ -42,8 +42,6 @@ import {
   new_hidden_page,
   new_page,
   show_page,
-  // biome-ignore lint/correctness/noUnusedImports: temporarily disabled
-  wait_for,
 } from './browser/navigation'
 import {
   download_file,
@@ -87,7 +85,6 @@ export const registry = createRegistry([
   show_page,
   move_page,
   close_page,
-  // wait_for, // temporarily disabled
 
   // Observation (9)
   take_snapshot,

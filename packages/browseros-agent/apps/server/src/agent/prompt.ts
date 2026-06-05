@@ -409,7 +409,7 @@ function getErrorRecovery(
 ## Error Recovery
 
 ### Browser interaction errors
-- Element not found → \`scroll(page, "down")\`, \`wait_for(page, text)\`, then \`take_snapshot(page)\` to re-fetch elements
+- Element not found → \`scroll(page, "down")\`, then \`take_snapshot(page)\` to re-fetch elements
 - Click/fill failed → \`scroll(page, "down", element)\` into view, retry once
 - Page didn't load → check URL, try \`navigate_page\` with reload
 - After 2 failed attempts → describe the blocking issue, request guidance

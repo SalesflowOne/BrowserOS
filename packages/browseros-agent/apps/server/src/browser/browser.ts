@@ -181,86 +181,20 @@ export class Browser {
 
   // --- Navigation ---
 
-  private async waitForLoad(
-    session: ProtocolApi,
-    timeout = 30000,
-  ): Promise<void> {
-    const deadline = Date.now() + timeout
-    await new Promise((r) => setTimeout(r, 50))
-
-    while (Date.now() < deadline) {
-      try {
-        const result = await session.Runtime.evaluate({
-          expression: 'document.readyState',
-          returnByValue: true,
-        })
-        if ((result.result?.value as string) === 'complete') return
-      } catch {
-        // Context torn down during navigation — expected
-      }
-      await new Promise((r) => setTimeout(r, 150))
-    }
-  }
-
   async goto(page: number, url: string): Promise<void> {
-    const session = await this.resolveSession(page)
-    await session.Page.navigate({ url })
-    await this.waitForLoad(session)
+    await this.core.nav(page).goto(url)
   }
 
   async goBack(page: number): Promise<void> {
-    const session = await this.resolveSession(page)
-    await session.Runtime.evaluate({
-      expression: 'history.back()',
-      awaitPromise: true,
-    })
-    await this.waitForLoad(session)
+    await this.core.nav(page).back()
   }
 
   async goForward(page: number): Promise<void> {
-    const session = await this.resolveSession(page)
-    await session.Runtime.evaluate({
-      expression: 'history.forward()',
-      awaitPromise: true,
-    })
-    await this.waitForLoad(session)
+    await this.core.nav(page).forward()
   }
 
   async reload(page: number): Promise<void> {
-    const session = await this.resolveSession(page)
-    await session.Page.reload()
-    await this.waitForLoad(session)
-  }
-
-  async waitFor(
-    page: number,
-    opts: { text?: string; selector?: string; timeout: number },
-  ): Promise<boolean> {
-    const session = await this.resolveSession(page)
-    const deadline = Date.now() + opts.timeout
-    const interval = 500
-
-    while (Date.now() < deadline) {
-      if (opts.text) {
-        const result = await session.Runtime.evaluate({
-          expression: `document.body?.innerText?.includes(${JSON.stringify(opts.text)}) ?? false`,
-          returnByValue: true,
-        })
-        if (result.result?.value === true) return true
-      }
-
-      if (opts.selector) {
-        const result = await session.Runtime.evaluate({
-          expression: `!!document.querySelector(${JSON.stringify(opts.selector)})`,
-          returnByValue: true,
-        })
-        if (result.result?.value === true) return true
-      }
-
-      await new Promise((r) => setTimeout(r, interval))
-    }
-
-    return false
+    await this.core.nav(page).reload()
   }
 
   // --- Observation ---

@@ -17,7 +17,6 @@ import {
   list_pages,
   navigate_page,
   new_page,
-  wait_for,
 } from '../../src/tools/browser/navigation'
 import {
   evaluate_script,
@@ -90,12 +89,23 @@ async function openFixturePage(
   })
   assert.ok(!result.isError, textOf(result))
   const pageId = pageIdOf(result)
-  await execute(wait_for, {
-    page: pageId,
-    selector: 'main',
-    timeout: 5_000,
-  })
+  await waitForExpression(execute, pageId, '!!document.querySelector("main")')
   return pageId
+}
+
+async function waitForExpression(
+  execute: WithBrowserContext['execute'],
+  page: number,
+  expression: string,
+  timeout = 5_000,
+): Promise<void> {
+  const deadline = Date.now() + timeout
+  while (Date.now() < deadline) {
+    const result = await execute(evaluate_script, { page, expression })
+    if (textOf(result) === 'true') return
+    await Bun.sleep(100)
+  }
+  throw new Error(`Timed out waiting for expression: ${expression}`)
 }
 
 async function snapshotText(
@@ -177,11 +187,11 @@ describe('browser tool fixture app', () => {
           page: pageId,
           element: findElementId(before, 'Reveal ten new actions'),
         })
-        await execute(wait_for, {
-          page: pageId,
-          text: 'after mutation: added 10 removed 5',
-          timeout: 5_000,
-        })
+        await waitForExpression(
+          execute,
+          pageId,
+          'document.body.innerText.includes("after mutation: added 10 removed 5")',
+        )
 
         const after = await snapshotText(execute, pageId)
         const diff = diffSnapshots(before, after)
@@ -266,11 +276,11 @@ describe('browser tool fixture app', () => {
           page: launcherPageId,
           element: findElementId(launcherSnap, 'Open upload popup'),
         })
-        await execute(wait_for, {
-          page: launcherPageId,
-          text: 'popup:opened',
-          timeout: 5_000,
-        })
+        await waitForExpression(
+          execute,
+          launcherPageId,
+          'document.body.innerText.includes("popup:opened")',
+        )
 
         for (let attempt = 0; attempt < 20; attempt++) {
           const pagesResult = await execute(list_pages, {})

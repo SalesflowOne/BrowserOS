@@ -9,7 +9,6 @@ import {
   new_hidden_page,
   new_page,
   show_page,
-  wait_for,
 } from '../../src/tools/browser/navigation'
 import { close_window, create_window } from '../../src/tools/browser/windows'
 import { withBrowser } from '../__helpers__/with-browser'
@@ -95,43 +94,6 @@ describe('navigation tools', () => {
       const data = structuredOf<{ action: string; page: number }>(navResult)
       assert.strictEqual(data.action, 'url')
       assert.strictEqual(data.page, pageId)
-
-      await execute(close_page, { page: pageId })
-    })
-  }, 60_000)
-
-  it('wait_for finds text on page', async () => {
-    await withBrowser(async ({ execute }) => {
-      const newResult = await execute(new_page, { url: 'https://example.com' })
-      const pageId = structuredOf<{ pageId: number }>(newResult).pageId
-
-      const waitResult = await execute(wait_for, {
-        page: pageId,
-        text: 'Example Domain',
-        timeout: 10_000,
-      })
-      assert.ok(!waitResult.isError, textOf(waitResult))
-      assert.ok(textOf(waitResult).includes('Found'))
-      const data = structuredOf<{ found: boolean; page: number }>(waitResult)
-      assert.strictEqual(data.found, true)
-      assert.strictEqual(data.page, pageId)
-
-      await execute(close_page, { page: pageId })
-    })
-  }, 60_000)
-
-  it('wait_for times out for missing text', async () => {
-    await withBrowser(async ({ execute }) => {
-      const newResult = await execute(new_page, { url: 'about:blank' })
-      const pageId = structuredOf<{ pageId: number }>(newResult).pageId
-
-      const waitResult = await execute(wait_for, {
-        page: pageId,
-        text: 'this-text-does-not-exist-anywhere',
-        timeout: 2_000,
-      })
-      assert.ok(waitResult.isError, 'Expected timeout error')
-      assert.ok(textOf(waitResult).includes('Timed out'))
 
       await execute(close_page, { page: pageId })
     })
