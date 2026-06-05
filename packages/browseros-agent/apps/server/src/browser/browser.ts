@@ -12,16 +12,16 @@ import {
   buildContentMarkdownExpression,
   type ContentMarkdownOptions,
 } from './content-markdown'
+import { fetchLegacyAxTreeWithFrames } from './core/observer/ax-tree'
 import type { PageInfo } from './core/pages'
 import { BrowserSession } from './core/session'
+import * as snapshot from './core/snapshot/legacy'
 import { type DomSearchResult, parseNodeAttributes } from './dom'
 import * as elements from './elements'
 import type { HistoryEntry } from './history'
 import * as history from './history'
 import * as keyboard from './keyboard'
 import * as mouse from './mouse'
-import type { AXNode } from './snapshot'
-import * as snapshot from './snapshot'
 import type { TabGroup } from './tab-groups'
 import * as tabGroups from './tab-groups'
 
@@ -268,53 +268,9 @@ export class Browser {
 
   // --- Observation ---
 
-  private async getFrameIds(session: ProtocolApi): Promise<string[]> {
-    try {
-      const result = await session.Page.getFrameTree()
-      const ids: string[] = []
-      type Tree = { frame: { id: string }; childFrames?: Tree[] }
-      function collect(tree: Tree) {
-        ids.push(tree.frame.id)
-        if (tree.childFrames)
-          for (const child of tree.childFrames) collect(child)
-      }
-      collect(result.frameTree as Tree)
-      return ids
-    } catch {
-      return []
-    }
-  }
-
-  private async fetchAXTree(session: ProtocolApi): Promise<AXNode[]> {
-    const frameIds = await this.getFrameIds(session)
-
-    if (frameIds.length <= 1) {
-      const result = await session.Accessibility.getFullAXTree()
-      return (result.nodes as AXNode[]) ?? []
-    }
-
-    const allNodes: AXNode[] = []
-    for (const frameId of frameIds) {
-      try {
-        const result = await session.Accessibility.getFullAXTree({ frameId })
-        const nodes = (result.nodes as AXNode[]) ?? []
-        for (const node of nodes) {
-          allNodes.push({
-            ...node,
-            nodeId: `${frameId}:${node.nodeId}`,
-            childIds: node.childIds?.map((id) => `${frameId}:${id}`),
-          })
-        }
-      } catch {
-        // Cross-origin or detached frames may fail — skip
-      }
-    }
-    return allNodes
-  }
-
   async snapshot(page: number): Promise<string> {
     const session = await this.resolveSession(page)
-    const nodes = await this.fetchAXTree(session)
+    const nodes = await fetchLegacyAxTreeWithFrames(session)
     if (nodes.length === 0) return ''
 
     const lines = snapshot.buildInteractiveTree(nodes)
@@ -346,7 +302,7 @@ export class Browser {
     page: number,
   ): Promise<Array<{ text: string; href: string }>> {
     const session = await this.resolveSession(page)
-    const nodes = await this.fetchAXTree(session)
+    const nodes = await fetchLegacyAxTreeWithFrames(session)
     const linkNodes = snapshot.extractLinkNodes(nodes)
     if (linkNodes.length === 0) return []
 
@@ -381,7 +337,7 @@ export class Browser {
 
   async enhancedSnapshot(page: number): Promise<string> {
     const session = await this.resolveSession(page)
-    const nodes = await this.fetchAXTree(session)
+    const nodes = await fetchLegacyAxTreeWithFrames(session)
     if (nodes.length === 0) return ''
 
     const treeLines = snapshot.buildEnhancedTree(nodes)

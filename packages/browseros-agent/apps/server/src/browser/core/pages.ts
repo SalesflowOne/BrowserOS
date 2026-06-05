@@ -188,13 +188,14 @@ export class PageManager {
     const tabId = (created.tab as TabInfo).tabId
 
     let tab: TabInfo | undefined
-    for (let attempt = 0; attempt < 10; attempt++) {
+    for (let attempt = 0; attempt < 30; attempt++) {
       try {
         tab = (await this.cdp.Browser.getTabInfo({ tabId })).tab as TabInfo
-        break
+        if (!tab.isLoading || tab.loadProgress >= 1) break
       } catch {
         await delay(100)
       }
+      await delay(100)
     }
     if (!tab) throw new Error(`Tab ${tabId} not found after creation`)
 
