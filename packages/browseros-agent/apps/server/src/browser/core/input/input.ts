@@ -12,13 +12,14 @@ import {
 import { clearField, pressCombo, typeText } from './keyboard'
 import {
   dispatchClick,
+  dispatchDrag,
   dispatchHover,
   dispatchScroll,
   type MouseButton,
 } from './mouse'
 
 export interface ClickOptions {
-  button?: MouseButton
+  button?: MouseButton | string
   clickCount?: number
 }
 
@@ -49,6 +50,55 @@ export class Input {
 
   async click(ref: string, opts: ClickOptions = {}): Promise<void> {
     const { session, backendNodeId } = await this.observer.resolveRef(ref)
+    await this.clickNode(session, backendNodeId, opts)
+  }
+
+  async clickBackendNode(
+    backendNodeId: number,
+    opts: ClickOptions = {},
+  ): Promise<{ x: number; y: number } | undefined> {
+    return this.clickNode(await this.pageSession(), backendNodeId, opts)
+  }
+
+  async clickAt(x: number, y: number, opts: ClickOptions = {}): Promise<void> {
+    await dispatchClick(
+      await this.pageSession(),
+      x,
+      y,
+      mouseButton(opts.button),
+      opts.clickCount ?? 1,
+      0,
+    )
+  }
+
+  async hoverAt(x: number, y: number): Promise<void> {
+    await dispatchHover(await this.pageSession(), x, y)
+  }
+
+  async typeAt(
+    x: number,
+    y: number,
+    text: string,
+    clear = false,
+  ): Promise<void> {
+    const session = await this.pageSession()
+    await dispatchClick(session, x, y, 'left', 1, 0)
+    if (clear) await clearField(session)
+    await typeText(session, text)
+  }
+
+  async dragAt(
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+  ): Promise<void> {
+    await dispatchDrag(await this.pageSession(), from, to)
+  }
+
+  private async clickNode(
+    session: ProtocolApi,
+    backendNodeId: number,
+    opts: ClickOptions = {},
+  ): Promise<{ x: number; y: number } | undefined> {
     await scrollIntoView(session, backendNodeId)
     try {
       const { x, y } = await getElementCenter(session, backendNodeId)
@@ -56,21 +106,37 @@ export class Input {
         session,
         x,
         y,
-        opts.button ?? 'left',
+        mouseButton(opts.button),
         opts.clickCount ?? 1,
         0,
       )
+      return { x, y }
     } catch {
       // No geometry (hidden/zero-size) — fall back to a synthetic DOM click.
       await jsClick(session, backendNodeId)
+      return undefined
     }
   }
 
   async hover(ref: string): Promise<void> {
     const { session, backendNodeId } = await this.observer.resolveRef(ref)
+    await this.hoverNode(session, backendNodeId)
+  }
+
+  async hoverBackendNode(
+    backendNodeId: number,
+  ): Promise<{ x: number; y: number }> {
+    return this.hoverNode(await this.pageSession(), backendNodeId)
+  }
+
+  private async hoverNode(
+    session: ProtocolApi,
+    backendNodeId: number,
+  ): Promise<{ x: number; y: number }> {
     await scrollIntoView(session, backendNodeId)
     const { x, y } = await getElementCenter(session, backendNodeId)
     await dispatchHover(session, x, y)
+    return { x, y }
   }
 
   async fill(
@@ -79,6 +145,23 @@ export class Input {
     opts: { clear?: boolean } = {},
   ): Promise<void> {
     const { session, backendNodeId } = await this.observer.resolveRef(ref)
+    await this.fillNode(session, backendNodeId, value, opts)
+  }
+
+  async fillBackendNode(
+    backendNodeId: number,
+    value: string,
+    opts: { clear?: boolean } = {},
+  ): Promise<{ x: number; y: number } | undefined> {
+    return this.fillNode(await this.pageSession(), backendNodeId, value, opts)
+  }
+
+  private async fillNode(
+    session: ProtocolApi,
+    backendNodeId: number,
+    value: string,
+    opts: { clear?: boolean } = {},
+  ): Promise<{ x: number; y: number } | undefined> {
     await scrollIntoView(session, backendNodeId)
 
     // A real click is the most reliable way to focus shadow-DOM/custom inputs.
@@ -99,6 +182,7 @@ export class Input {
       }
     }
     await typeText(keys, value)
+    return coords
   }
 
   async type(text: string): Promise<void> {
@@ -111,6 +195,25 @@ export class Input {
 
   async selectOption(ref: string, value: string): Promise<string | null> {
     const { session, backendNodeId } = await this.observer.resolveRef(ref)
+    return this.selectBackendNodeWithSession(session, backendNodeId, value)
+  }
+
+  async selectBackendNode(
+    backendNodeId: number,
+    value: string,
+  ): Promise<string | null> {
+    return this.selectBackendNodeWithSession(
+      await this.pageSession(),
+      backendNodeId,
+      value,
+    )
+  }
+
+  private async selectBackendNodeWithSession(
+    session: ProtocolApi,
+    backendNodeId: number,
+    value: string,
+  ): Promise<string | null> {
     const selected = await callOnElement(
       session,
       backendNodeId,
@@ -118,6 +221,74 @@ export class Input {
       [value],
     )
     return (selected as string | null) ?? null
+  }
+
+  async focusBackendNode(backendNodeId: number): Promise<void> {
+    const session = await this.pageSession()
+    await scrollIntoView(session, backendNodeId)
+    await focusElement(session, backendNodeId)
+  }
+
+  async checkBackendNode(backendNodeId: number): Promise<boolean> {
+    const session = await this.pageSession()
+    const checked = await callOnElement(
+      session,
+      backendNodeId,
+      'function(){return this.checked}',
+    )
+    if (!checked) await this.clickBackendNode(backendNodeId)
+    return true
+  }
+
+  async uncheckBackendNode(backendNodeId: number): Promise<boolean> {
+    const session = await this.pageSession()
+    const checked = await callOnElement(
+      session,
+      backendNodeId,
+      'function(){return this.checked}',
+    )
+    if (checked) await this.clickBackendNode(backendNodeId)
+    return false
+  }
+
+  async uploadFile(backendNodeId: number, files: string[]): Promise<void> {
+    await (await this.pageSession()).DOM.setFileInputFiles({
+      files,
+      backendNodeId,
+    })
+  }
+
+  async handleDialog(accept: boolean, promptText?: string): Promise<void> {
+    await (await this.pageSession()).Page.handleJavaScriptDialog({
+      accept,
+      ...(promptText !== undefined && { promptText }),
+    })
+  }
+
+  async dragBackendNode(
+    sourceBackendNodeId: number,
+    target: { element?: number; x?: number; y?: number },
+  ): Promise<{
+    from: { x: number; y: number }
+    to: { x: number; y: number }
+  }> {
+    const session = await this.pageSession()
+    await scrollIntoView(session, sourceBackendNodeId)
+    const from = await getElementCenter(session, sourceBackendNodeId)
+
+    let to: { x: number; y: number }
+    if (target.element !== undefined) {
+      to = await getElementCenter(session, target.element)
+    } else if (target.x !== undefined && target.y !== undefined) {
+      to = { x: target.x, y: target.y }
+    } else {
+      throw new Error(
+        'Provide either target element or both targetX and targetY.',
+      )
+    }
+
+    await dispatchDrag(session, from, to)
+    return { from, to }
   }
 
   async scroll(
@@ -146,7 +317,89 @@ export class Input {
     await dispatchScroll(session, x, y, deltaX, deltaY)
   }
 
+  async scrollLegacy(
+    direction: string,
+    amount: number,
+    backendNodeId?: number,
+  ): Promise<void> {
+    const pixels = amount * 120
+    const deltaX =
+      direction === 'left' ? -pixels : direction === 'right' ? pixels : 0
+    const deltaY =
+      direction === 'up' ? -pixels : direction === 'down' ? pixels : 0
+    if (deltaX === 0 && deltaY === 0) return
+
+    const session = await this.pageSession()
+    let x: number
+    let y: number
+    if (backendNodeId !== undefined) {
+      const center = await getElementCenter(session, backendNodeId)
+      x = center.x
+      y = center.y
+    } else {
+      const metrics = await session.Page.getLayoutMetrics()
+      x = metrics.layoutViewport.clientWidth / 2
+      y = metrics.layoutViewport.clientHeight / 2
+    }
+
+    const before =
+      backendNodeId === undefined
+        ? await getWindowScrollPosition(session)
+        : undefined
+    await dispatchScroll(session, x, y, deltaX, deltaY)
+    if (before === undefined) return
+
+    const after = await getWindowScrollPosition(session)
+    if (didScrollInExpectedDirection(before, after, deltaX, deltaY)) return
+
+    await fallbackWindowScroll(session, deltaX, deltaY)
+  }
+
   private async pageSession(): Promise<ProtocolApi> {
     return (await this.pages.getSession(this.pageId)).session
   }
+}
+
+function mouseButton(button: ClickOptions['button']): MouseButton {
+  if (button === 'middle' || button === 'right') return button
+  return 'left'
+}
+
+async function getWindowScrollPosition(
+  session: ProtocolApi,
+): Promise<{ x: number; y: number }> {
+  const result = await session.Runtime.evaluate({
+    expression:
+      '({ x: window.scrollX ?? window.pageXOffset ?? 0, y: window.scrollY ?? window.pageYOffset ?? 0 })',
+    returnByValue: true,
+  })
+  const value = (result.result?.value ?? {}) as { x?: number; y?: number }
+  return {
+    x: typeof value.x === 'number' ? value.x : 0,
+    y: typeof value.y === 'number' ? value.y : 0,
+  }
+}
+
+function didScrollInExpectedDirection(
+  before: { x: number; y: number },
+  after: { x: number; y: number },
+  deltaX: number,
+  deltaY: number,
+): boolean {
+  if (deltaX > 0 && after.x > before.x) return true
+  if (deltaX < 0 && after.x < before.x) return true
+  if (deltaY > 0 && after.y > before.y) return true
+  if (deltaY < 0 && after.y < before.y) return true
+  return false
+}
+
+async function fallbackWindowScroll(
+  session: ProtocolApi,
+  deltaX: number,
+  deltaY: number,
+): Promise<void> {
+  await session.Runtime.evaluate({
+    expression: `window.scrollBy(${deltaX}, ${deltaY})`,
+    returnByValue: true,
+  })
 }

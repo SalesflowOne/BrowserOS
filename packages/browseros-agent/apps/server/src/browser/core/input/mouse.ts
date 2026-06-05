@@ -52,3 +52,34 @@ export async function dispatchScroll(
     deltaY,
   })
 }
+
+export async function dispatchDrag(
+  session: ProtocolApi,
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+): Promise<void> {
+  await session.Input.dispatchMouseEvent({
+    type: 'mouseMoved',
+    x: from.x,
+    y: from.y,
+  })
+  await session.Input.dispatchMouseEvent({
+    type: 'mousePressed',
+    x: from.x,
+    y: from.y,
+    button: 'left',
+    clickCount: 1,
+  })
+  await session.Input.dispatchMouseEvent({
+    type: 'mouseMoved',
+    x: to.x,
+    y: to.y,
+  })
+  await session.Input.dispatchMouseEvent({
+    type: 'mouseReleased',
+    x: to.x,
+    y: to.y,
+    button: 'left',
+    clickCount: 1,
+  })
+}

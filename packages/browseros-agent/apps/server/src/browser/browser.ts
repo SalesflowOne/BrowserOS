@@ -17,11 +17,8 @@ import type { PageInfo } from './core/pages'
 import { BrowserSession } from './core/session'
 import * as snapshot from './core/snapshot/legacy'
 import { type DomSearchResult, parseNodeAttributes } from './dom'
-import * as elements from './elements'
 import type { HistoryEntry } from './history'
 import * as history from './history'
-import * as keyboard from './keyboard'
-import * as mouse from './mouse'
 import type { TabGroup } from './tab-groups'
 import * as tabGroups from './tab-groups'
 
@@ -576,28 +573,7 @@ export class Browser {
     element: number,
     opts?: { button?: string; clickCount?: number },
   ): Promise<{ x: number; y: number } | undefined> {
-    const session = await this.resolveSession(page)
-
-    await elements.scrollIntoView(session, element)
-
-    try {
-      const { x, y } = await elements.getElementCenter(session, element)
-      await mouse.dispatchClick(
-        session,
-        x,
-        y,
-        opts?.button ?? 'left',
-        opts?.clickCount ?? 1,
-        0,
-      )
-      return { x, y }
-    } catch {
-      logger.debug(
-        `CDP click failed for element=${element}, falling back to JS click`,
-      )
-      await elements.jsClick(session, element)
-      return undefined
-    }
+    return this.core.input(page).clickBackendNode(element, opts)
   }
 
   async clickAt(
@@ -606,20 +582,11 @@ export class Browser {
     y: number,
     opts?: { button?: string; clickCount?: number },
   ): Promise<void> {
-    const session = await this.resolveSession(page)
-    await mouse.dispatchClick(
-      session,
-      x,
-      y,
-      opts?.button ?? 'left',
-      opts?.clickCount ?? 1,
-      0,
-    )
+    await this.core.input(page).clickAt(x, y, opts)
   }
 
   async hoverAt(page: number, x: number, y: number): Promise<void> {
-    const session = await this.resolveSession(page)
-    await mouse.dispatchHover(session, x, y)
+    await this.core.input(page).hoverAt(x, y)
   }
 
   async typeAt(
@@ -629,10 +596,7 @@ export class Browser {
     text: string,
     clear = false,
   ): Promise<void> {
-    const session = await this.resolveSession(page)
-    await mouse.dispatchClick(session, x, y, 'left', 1, 0)
-    if (clear) await keyboard.clearField(session)
-    await keyboard.typeText(session, text)
+    await this.core.input(page).typeAt(x, y, text, clear)
   }
 
   async dragAt(
@@ -640,20 +604,14 @@ export class Browser {
     from: { x: number; y: number },
     to: { x: number; y: number },
   ): Promise<void> {
-    const session = await this.resolveSession(page)
-    await mouse.dispatchDrag(session, from, to)
+    await this.core.input(page).dragAt(from, to)
   }
 
   async hover(
     page: number,
     element: number,
   ): Promise<{ x: number; y: number }> {
-    const session = await this.resolveSession(page)
-
-    await elements.scrollIntoView(session, element)
-    const { x, y } = await elements.getElementCenter(session, element)
-    await mouse.dispatchHover(session, x, y)
-    return { x, y }
+    return this.core.input(page).hoverBackendNode(element)
   }
 
   async fill(
@@ -662,47 +620,11 @@ export class Browser {
     text: string,
     clear = true,
   ): Promise<{ x: number; y: number } | undefined> {
-    const session = await this.resolveSession(page)
-
-    await elements.scrollIntoView(session, element)
-
-    // Always click to guarantee real keyboard focus.
-    // DOM.focus() is unreliable for shadow DOM, iframes, and custom components.
-    let coords: { x: number; y: number } | undefined
-    try {
-      const { x, y } = await elements.getElementCenter(session, element)
-      await mouse.dispatchClick(session, x, y, 'left', 1, 0)
-      coords = { x, y }
-    } catch {
-      // Fallback to DOM.focus() if we can't get coordinates
-      try {
-        await elements.focusElement(session, element)
-      } catch {
-        logger.warn('Could not focus element via click or DOM.focus()')
-      }
-    }
-
-    if (clear) {
-      // Primary: keyboard select-all + backspace
-      await keyboard.clearField(session)
-
-      // Fallback: if field still has content, triple-click to select all
-      // then typeText will overwrite the selection
-      if (coords) {
-        const value = await elements.getInputValue(session, element)
-        if (value) {
-          await mouse.dispatchClick(session, coords.x, coords.y, 'left', 3, 0)
-        }
-      }
-    }
-
-    await keyboard.typeText(session, text)
-    return coords
+    return this.core.input(page).fillBackendNode(element, text, { clear })
   }
 
   async pressKey(page: number, key: string): Promise<void> {
-    const session = await this.resolveSession(page)
-    await keyboard.pressCombo(session, key)
+    await this.core.input(page).press(key)
   }
 
   async drag(
@@ -713,24 +635,7 @@ export class Browser {
     from: { x: number; y: number }
     to: { x: number; y: number }
   }> {
-    const session = await this.resolveSession(page)
-
-    await elements.scrollIntoView(session, sourceElement)
-    const from = await elements.getElementCenter(session, sourceElement)
-
-    let to: { x: number; y: number }
-    if (target.element !== undefined) {
-      to = await elements.getElementCenter(session, target.element)
-    } else if (target.x !== undefined && target.y !== undefined) {
-      to = { x: target.x, y: target.y }
-    } else {
-      throw new Error(
-        'Provide either target element or both targetX and targetY.',
-      )
-    }
-
-    await mouse.dispatchDrag(session, from, to)
-    return { from, to }
+    return this.core.input(page).dragBackendNode(sourceElement, target)
   }
 
   async scroll(
@@ -739,85 +644,7 @@ export class Browser {
     amount: number,
     element?: number,
   ): Promise<void> {
-    const session = await this.resolveSession(page)
-    const pixels = amount * 120
-    const deltaX =
-      direction === 'left' ? -pixels : direction === 'right' ? pixels : 0
-    const deltaY =
-      direction === 'up' ? -pixels : direction === 'down' ? pixels : 0
-
-    if (deltaX === 0 && deltaY === 0) return
-
-    let x: number
-    let y: number
-    if (element !== undefined) {
-      const center = await elements.getElementCenter(session, element)
-      x = center.x
-      y = center.y
-    } else {
-      const metrics = await session.Page.getLayoutMetrics()
-      x = metrics.layoutViewport.clientWidth / 2
-      y = metrics.layoutViewport.clientHeight / 2
-    }
-
-    const beforeWindowPosition =
-      element === undefined
-        ? await this.getWindowScrollPosition(session)
-        : undefined
-
-    await mouse.dispatchScroll(session, x, y, deltaX, deltaY)
-
-    if (beforeWindowPosition === undefined) return
-
-    const afterWindowPosition = await this.getWindowScrollPosition(session)
-    const moved = this.didScrollInExpectedDirection(
-      beforeWindowPosition,
-      afterWindowPosition,
-      deltaX,
-      deltaY,
-    )
-    if (moved) return
-
-    await this.fallbackWindowScroll(session, deltaX, deltaY)
-  }
-
-  private async getWindowScrollPosition(
-    session: ProtocolApi,
-  ): Promise<{ x: number; y: number }> {
-    const result = await session.Runtime.evaluate({
-      expression:
-        '({ x: window.scrollX ?? window.pageXOffset ?? 0, y: window.scrollY ?? window.pageYOffset ?? 0 })',
-      returnByValue: true,
-    })
-    const value = (result.result?.value ?? {}) as { x?: number; y?: number }
-    return {
-      x: typeof value.x === 'number' ? value.x : 0,
-      y: typeof value.y === 'number' ? value.y : 0,
-    }
-  }
-
-  private didScrollInExpectedDirection(
-    before: { x: number; y: number },
-    after: { x: number; y: number },
-    deltaX: number,
-    deltaY: number,
-  ): boolean {
-    if (deltaX > 0 && after.x > before.x) return true
-    if (deltaX < 0 && after.x < before.x) return true
-    if (deltaY > 0 && after.y > before.y) return true
-    if (deltaY < 0 && after.y < before.y) return true
-    return false
-  }
-
-  private async fallbackWindowScroll(
-    session: ProtocolApi,
-    deltaX: number,
-    deltaY: number,
-  ): Promise<void> {
-    await session.Runtime.evaluate({
-      expression: `window.scrollBy(${deltaX}, ${deltaY})`,
-      returnByValue: true,
-    })
+    await this.core.input(page).scrollLegacy(direction, amount, element)
   }
 
   async handleDialog(
@@ -825,11 +652,7 @@ export class Browser {
     accept: boolean,
     promptText?: string,
   ): Promise<void> {
-    const session = await this.resolveSession(page)
-    await session.Page.handleJavaScriptDialog({
-      accept,
-      ...(promptText !== undefined && { promptText }),
-    })
+    await this.core.input(page).handleDialog(accept, promptText)
   }
 
   async selectOption(
@@ -837,55 +660,21 @@ export class Browser {
     element: number,
     value: string,
   ): Promise<string | null> {
-    const session = await this.resolveSession(page)
-
-    const selected = await elements.callOnElement(
-      session,
-      element,
-      `function(val){
-				for(var i=0;i<this.options.length;i++){
-					if(this.options[i].value===val||this.options[i].textContent.trim()===val){
-						this.selectedIndex=i;
-						this.dispatchEvent(new Event('change',{bubbles:true}));
-						return this.options[i].textContent.trim();
-					}
-				}
-				return null;
-			}`,
-      [value],
-    )
-
-    return selected as string | null
+    return this.core.input(page).selectBackendNode(element, value)
   }
 
   // --- Form helpers ---
 
   async focus(page: number, element: number): Promise<void> {
-    const session = await this.resolveSession(page)
-    await elements.scrollIntoView(session, element)
-    await elements.focusElement(session, element)
+    await this.core.input(page).focusBackendNode(element)
   }
 
   async check(page: number, element: number): Promise<boolean> {
-    const session = await this.resolveSession(page)
-    const checked = await elements.callOnElement(
-      session,
-      element,
-      'function(){return this.checked}',
-    )
-    if (!checked) await this.click(page, element)
-    return true
+    return this.core.input(page).checkBackendNode(element)
   }
 
   async uncheck(page: number, element: number): Promise<boolean> {
-    const session = await this.resolveSession(page)
-    const checked = await elements.callOnElement(
-      session,
-      element,
-      'function(){return this.checked}',
-    )
-    if (checked) await this.click(page, element)
-    return false
+    return this.core.input(page).uncheckBackendNode(element)
   }
 
   async uploadFile(
@@ -893,8 +682,7 @@ export class Browser {
     element: number,
     files: string[],
   ): Promise<void> {
-    const session = await this.resolveSession(page)
-    await session.DOM.setFileInputFiles({ files, backendNodeId: element })
+    await this.core.input(page).uploadFile(element, files)
   }
 
   // --- File operations ---
