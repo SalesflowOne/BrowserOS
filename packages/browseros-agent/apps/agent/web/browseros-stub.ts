@@ -4,8 +4,15 @@
 
 const STORAGE_KEY = 'browseros:web-harness:prefs'
 const MCP_PORT_PREF = 'browseros.server.mcp_port'
+const DEFAULT_MCP_PORT = 9100
 
 type PrefObject = { key: string; type: string; value: unknown }
+
+// Resolve the real server port from the build env, tolerating unset/empty/NaN.
+function resolveMcpPort(): number {
+  const parsed = Number(import.meta.env.VITE_BROWSEROS_MCP_PORT)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_MCP_PORT
+}
 
 function prefType(value: unknown): string {
   if (typeof value === 'number') return 'number'
@@ -29,9 +36,7 @@ class PrefStore {
     this.values = this.load()
     // seed the server port so getAgentServerUrl() resolves to the real server
     if (this.values[MCP_PORT_PREF] == null) {
-      this.values[MCP_PORT_PREF] = Number(
-        import.meta.env.VITE_BROWSEROS_MCP_PORT ?? 9100,
-      )
+      this.values[MCP_PORT_PREF] = resolveMcpPort()
       this.persist()
     }
   }
