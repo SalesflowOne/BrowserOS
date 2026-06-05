@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { defineTool } from './framework'
+import { defineTool } from '../framework'
 
 const historyItemSchema = z.object({
   id: z.string(),

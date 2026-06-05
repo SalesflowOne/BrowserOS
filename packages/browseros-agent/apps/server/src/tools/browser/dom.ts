@@ -1,7 +1,7 @@
 import { z } from 'zod'
-import { formatSearchResult } from '../browser/dom'
-import { defineTool } from './framework'
-import { writeTempToolOutputFile } from './output-file'
+import { formatSearchResult } from '../../browser/dom'
+import { defineTool } from '../framework'
+import { writeTempToolOutputFile } from '../output-file'
 
 const pageParam = z.number().describe('Page ID (from list_pages)')
 

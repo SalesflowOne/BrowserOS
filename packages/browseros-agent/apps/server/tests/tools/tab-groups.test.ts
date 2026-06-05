@@ -1,13 +1,13 @@
 import { describe, it } from 'bun:test'
 import assert from 'node:assert'
-import { close_page, new_page } from '../../src/tools/navigation'
+import { close_page, new_page } from '../../src/tools/browser/navigation'
 import {
   close_tab_group,
   group_tabs,
   list_tab_groups,
   ungroup_tabs,
   update_tab_group,
-} from '../../src/tools/tab-groups'
+} from '../../src/tools/browser/tab-groups'
 import { withBrowser } from '../__helpers__/with-browser'
 
 function textOf(result: {

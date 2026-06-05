@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { logger } from '../lib/logger'
-import { defineTool, type ToolContext } from './framework'
+import { logger } from '../../lib/logger'
+import { defineTool, type ToolContext } from '../framework'
 
 // Best-effort: attach a page to a tab group. Failure is logged but
 // never propagated — the caller already created/moved the page and

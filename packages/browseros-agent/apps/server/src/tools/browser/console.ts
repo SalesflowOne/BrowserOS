@@ -1,7 +1,7 @@
 import { CONTENT_LIMITS } from '@browseros/shared/constants/limits'
 import { z } from 'zod'
-import type { ConsoleLevel } from '../browser/console-collector'
-import { defineTool } from './framework'
+import type { ConsoleLevel } from '../../browser/console-collector'
+import { defineTool } from '../framework'
 
 const pageParam = z.number().describe('Page ID (from list_pages)')
 

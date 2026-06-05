@@ -5,8 +5,8 @@ import {
   delete_history_url,
   get_recent_history,
   search_history,
-} from '../../src/tools/history'
-import { close_page, new_page } from '../../src/tools/navigation'
+} from '../../src/tools/browser/history'
+import { close_page, new_page } from '../../src/tools/browser/navigation'
 import { withBrowser } from '../__helpers__/with-browser'
 
 function textOf(result: {

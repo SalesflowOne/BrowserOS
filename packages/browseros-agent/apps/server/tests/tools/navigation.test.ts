@@ -10,8 +10,8 @@ import {
   new_page,
   show_page,
   wait_for,
-} from '../../src/tools/navigation'
-import { close_window, create_window } from '../../src/tools/windows'
+} from '../../src/tools/browser/navigation'
+import { close_window, create_window } from '../../src/tools/browser/windows'
 import { withBrowser } from '../__helpers__/with-browser'
 
 function textOf(result: {

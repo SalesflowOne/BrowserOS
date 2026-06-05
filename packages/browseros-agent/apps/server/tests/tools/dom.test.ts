@@ -3,9 +3,9 @@ import assert from 'node:assert'
 import { existsSync, readFileSync, rmSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { get_dom, search_dom } from '../../src/tools/dom'
-import { close_page, new_page } from '../../src/tools/navigation'
-import { evaluate_script } from '../../src/tools/snapshot'
+import { get_dom, search_dom } from '../../src/tools/browser/dom'
+import { close_page, new_page } from '../../src/tools/browser/navigation'
+import { evaluate_script } from '../../src/tools/browser/snapshot'
 import {
   type WithBrowserContext,
   withBrowser,

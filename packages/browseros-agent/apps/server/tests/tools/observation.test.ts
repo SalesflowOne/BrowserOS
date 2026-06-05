@@ -3,7 +3,11 @@ import assert from 'node:assert'
 import { existsSync, readFileSync, rmSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { close_page, navigate_page, new_page } from '../../src/tools/navigation'
+import {
+  close_page,
+  navigate_page,
+  new_page,
+} from '../../src/tools/browser/navigation'
 import {
   evaluate_script,
   get_page_content,
@@ -11,7 +15,7 @@ import {
   take_enhanced_snapshot,
   take_screenshot,
   take_snapshot,
-} from '../../src/tools/snapshot'
+} from '../../src/tools/browser/snapshot'
 import { withBrowser } from '../__helpers__/with-browser'
 
 function textOf(result: {

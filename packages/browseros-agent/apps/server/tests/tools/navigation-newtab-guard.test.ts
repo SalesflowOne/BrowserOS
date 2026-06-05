@@ -9,9 +9,13 @@
 
 import { describe, it } from 'bun:test'
 import assert from 'node:assert'
+import {
+  close_page,
+  navigate_page,
+  new_page,
+} from '../../src/tools/browser/navigation'
 import type { ToolContext, ToolDefinition } from '../../src/tools/framework'
 import { executeTool } from '../../src/tools/framework'
-import { close_page, navigate_page, new_page } from '../../src/tools/navigation'
 import type { ToolResult } from '../../src/tools/response'
 import { withBrowser } from '../__helpers__/with-browser'
 

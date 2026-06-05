@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { defineTool } from './framework'
+import { defineTool } from '../framework'
 
 const pageParam = z.number().describe('Page ID (from list_pages)')
 const elementParam = z

@@ -7,7 +7,7 @@ import {
   remove_bookmark,
   search_bookmarks,
   update_bookmark,
-} from '../../src/tools/bookmarks'
+} from '../../src/tools/browser/bookmarks'
 import { withBrowser } from '../__helpers__/with-browser'
 
 function textOf(result: {

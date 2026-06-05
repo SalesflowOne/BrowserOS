@@ -1,7 +1,6 @@
 import { describe, it } from 'bun:test'
 import assert from 'node:assert'
 import type { Browser } from '../../src/browser/browser'
-import { executeTool } from '../../src/tools/framework'
 import {
   activate_window,
   close_window,
@@ -9,7 +8,8 @@ import {
   create_window,
   list_windows,
   set_window_visibility,
-} from '../../src/tools/windows'
+} from '../../src/tools/browser/windows'
+import { executeTool } from '../../src/tools/framework'
 import { withBrowser } from '../__helpers__/with-browser'
 
 function textOf(result: {

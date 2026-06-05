@@ -5,7 +5,7 @@ import {
   ScreencastManager,
   type ScreencastOutboundMessage,
 } from '../../src/api/services/screencast/screencast-manager'
-import { close_window, create_window } from '../../src/tools/windows'
+import { close_window, create_window } from '../../src/tools/browser/windows'
 import { withBrowser } from '../__helpers__/with-browser'
 
 interface FakeWs {

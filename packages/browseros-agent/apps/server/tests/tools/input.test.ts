@@ -1,7 +1,6 @@
 import { afterAll, describe, it } from 'bun:test'
 import assert from 'node:assert'
 import type { Browser } from '../../src/browser/browser'
-import { executeTool, type ToolContext } from '../../src/tools/framework'
 import {
   check,
   click,
@@ -11,9 +10,13 @@ import {
   scroll,
   select_option,
   uncheck,
-} from '../../src/tools/input'
-import { close_page, new_page } from '../../src/tools/navigation'
-import { evaluate_script, take_snapshot } from '../../src/tools/snapshot'
+} from '../../src/tools/browser/input'
+import { close_page, new_page } from '../../src/tools/browser/navigation'
+import {
+  evaluate_script,
+  take_snapshot,
+} from '../../src/tools/browser/snapshot'
+import { executeTool, type ToolContext } from '../../src/tools/framework'
 import { cleanupWithBrowser, withBrowser } from '../__helpers__/with-browser'
 
 function textOf(result: {

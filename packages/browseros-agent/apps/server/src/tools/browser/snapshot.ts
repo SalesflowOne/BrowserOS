@@ -1,7 +1,7 @@
 import { TOOL_LIMITS } from '@browseros/shared/constants/limits'
 import { z } from 'zod'
-import { defineTool } from './framework'
-import { writeTempToolOutputFile } from './output-file'
+import { defineTool } from '../framework'
+import { writeTempToolOutputFile } from '../output-file'
 
 const pageParam = z.number().describe('Page ID (from list_pages)')
 

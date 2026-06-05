@@ -5,16 +5,15 @@ import {
   remove_bookmark,
   search_bookmarks,
   update_bookmark,
-} from './bookmarks'
-import { browseros_info } from './browseros-info'
-import { get_console_logs } from './console'
-import { get_dom, search_dom } from './dom'
+} from './browser/bookmarks'
+import { get_console_logs } from './browser/console'
+import { get_dom, search_dom } from './browser/dom'
 import {
   delete_history_range,
   delete_history_url,
   get_recent_history,
   search_history,
-} from './history'
+} from './browser/history'
 import {
   check,
   clear,
@@ -33,7 +32,7 @@ import {
   type_at,
   uncheck,
   upload_file,
-} from './input'
+} from './browser/input'
 import {
   close_page,
   get_active_page,
@@ -45,9 +44,12 @@ import {
   show_page,
   // biome-ignore lint/correctness/noUnusedImports: temporarily disabled
   wait_for,
-} from './navigation'
-import { suggest_app_connection, suggest_schedule } from './nudges'
-import { download_file, save_pdf, save_screenshot } from './page-actions'
+} from './browser/navigation'
+import {
+  download_file,
+  save_pdf,
+  save_screenshot,
+} from './browser/page-actions'
 import {
   evaluate_script,
   get_page_content,
@@ -55,15 +57,14 @@ import {
   take_enhanced_snapshot,
   take_screenshot,
   take_snapshot,
-} from './snapshot'
+} from './browser/snapshot'
 import {
   close_tab_group,
   group_tabs,
   list_tab_groups,
   ungroup_tabs,
   update_tab_group,
-} from './tab-groups'
-import { createRegistry } from './tool-registry'
+} from './browser/tab-groups'
 import {
   activate_window,
   close_window,
@@ -71,7 +72,10 @@ import {
   create_window,
   list_windows,
   set_window_visibility,
-} from './windows'
+} from './browser/windows'
+import { browseros_info } from './browseros-info'
+import { suggest_app_connection, suggest_schedule } from './nudges'
+import { createRegistry } from './tool-registry'
 
 export const registry = createRegistry([
   // Navigation (8)

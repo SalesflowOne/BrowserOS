@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { defineTool } from './framework'
+import { defineTool } from '../framework'
 
 const windowInfoSchema = z.object({
   windowId: z.number(),

@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rename, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { defineTool, resolveWorkingPath } from './framework'
+import { defineTool, resolveWorkingPath } from '../framework'
 
 const pageParam = z.number().describe('Page ID (from list_pages)')
 const elementParam = z
