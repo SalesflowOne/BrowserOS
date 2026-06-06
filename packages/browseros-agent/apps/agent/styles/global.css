@@ -3,6 +3,15 @@
 @import "tailwind-scrollbar-hide/v4";
 @plugin "@tailwindcss/typography";
 
+/* Explicit Tailwind content sources. Needed so the web/ test harness — which
+   serves this CSS from a different Vite root (web/) — still detects utility
+   classes used across the app. No-op for the extension build, where these
+   dirs are already auto-detected from the app root. */
+@source "../entrypoints";
+@source "../components";
+@source "../hooks";
+@source "../lib";
+
 @custom-variant dark (&:is(.dark *));
 
 /* Geist Sans Variable Font */
