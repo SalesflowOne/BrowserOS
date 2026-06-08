@@ -1,6 +1,6 @@
 import { Globe } from 'lucide-react'
 import { type FC, useState } from 'react'
-import { useTopSites } from './useTopSites'
+import { useTopSites } from './top-sites.hooks'
 
 const TopSiteIcon: FC<{ src: string; alt: string }> = ({ src, alt }) => {
   const [failed, setFailed] = useState(false)

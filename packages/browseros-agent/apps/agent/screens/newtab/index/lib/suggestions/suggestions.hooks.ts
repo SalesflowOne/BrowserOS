@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
-import { useAITabSuggestions } from '../aiTabSuggestions/useAITabSuggestions'
-import { useBrowserOSSuggestions } from '../browserOSSuggestions/useBrowserOSSuggestions'
-import { useSearchSuggestions } from '../searchSuggestions/useSearchSuggestions'
+import { useAITabSuggestions } from '../ai-tab-suggestions/ai-tab-suggestions.hooks'
+import { useBrowserOSSuggestions } from '../browseros-suggestions/browseros-suggestions.hooks'
+import { useSearchSuggestions } from '../search-suggestions/search-suggestions.hooks'
 import type {
   AITabSuggestionItem,
   BrowserOSSuggestionItem,

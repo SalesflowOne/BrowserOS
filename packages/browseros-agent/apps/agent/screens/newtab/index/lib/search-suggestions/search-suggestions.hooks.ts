@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import useSWR from 'swr'
-import { getSearchSuggestions } from './getSearchSuggestions'
+import { getSearchSuggestions } from './search-suggestions'
 
 interface UseSearchSuggestionsArgs {
   query: string

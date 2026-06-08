@@ -62,12 +62,13 @@ import { useSyncRemoteIntegrations } from '@/modules/mcp/sync-remote-integration
 import { useGetUserMCPIntegrations } from '@/modules/mcp/user-integrations.hooks'
 import { useVoiceInput } from '@/modules/voice/voice.hooks'
 import { useWorkspace } from '@/modules/workspace/workspace.hooks'
+import { useActiveHint } from './active-hint.hooks'
 import { ImportDataHint } from './ImportDataHint'
-import type { SuggestionItem } from './lib/suggestions/types'
 import {
   getSuggestionLabel,
   useSuggestions,
-} from './lib/suggestions/useSuggestions'
+} from './lib/suggestions/suggestions.hooks'
+import type { SuggestionItem } from './lib/suggestions/types'
 import { NewTabBranding } from './NewTabBranding'
 import { NewTabTip } from './NewTabTip'
 import { ScheduleResults } from './ScheduleResults'
@@ -75,7 +76,6 @@ import { SearchSuggestions } from './SearchSuggestions'
 import { ShortcutsDialog } from './ShortcutsDialog'
 import { SignInHint } from './SignInHint'
 import { TopSites } from './TopSites'
-import { useActiveHint } from './useActiveHint'
 
 interface MentionState {
   isOpen: boolean

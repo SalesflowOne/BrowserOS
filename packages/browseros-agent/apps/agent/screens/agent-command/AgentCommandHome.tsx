@@ -14,9 +14,9 @@ import {
   resolveSidepanelChatTarget,
 } from '@/modules/chat/sidepanel-chat-targets'
 import { useLlmProviders } from '@/modules/llm-providers/llm-providers.hooks'
+import { useActiveHint } from '@/screens/newtab/index/active-hint.hooks'
 import { ImportDataHint } from '@/screens/newtab/index/ImportDataHint'
 import { SignInHint } from '@/screens/newtab/index/SignInHint'
-import { useActiveHint } from '@/screens/newtab/index/useActiveHint'
 import {
   ConversationInput,
   type ConversationInputSendInput,
