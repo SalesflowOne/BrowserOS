@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import { TOOL_LIMITS } from '@browseros/shared/constants/limits'
 import type { BrowserSession } from '../../src/browser/core/session'
 import { registerBrowserTools } from '../../src/browser-tools/register'
 import { BROWSER_TOOLS } from '../../src/browser-tools/registry'
@@ -48,13 +49,23 @@ describe('registerBrowserTools', () => {
     const fake = createFakeServer()
     const calls: Array<{
       url: string
-      opts?: { windowId?: number; tabGroupId?: string }
+      opts?: {
+        background?: boolean
+        hidden?: boolean
+        windowId?: number
+        tabGroupId?: string
+      }
     }> = []
     const session = {
       pages: {
         newPage: async (
           url: string,
-          opts?: { windowId?: number; tabGroupId?: string },
+          opts?: {
+            background?: boolean
+            hidden?: boolean
+            windowId?: number
+            tabGroupId?: string
+          },
         ) => {
           calls.push({ url, opts })
           return 42
@@ -77,8 +88,93 @@ describe('registerBrowserTools', () => {
     expect(calls).toEqual([
       {
         url: 'https://example.com',
-        opts: { windowId: 7, tabGroupId: 'group-a' },
+        opts: {
+          background: true,
+          hidden: false,
+          windowId: 7,
+          tabGroupId: 'group-a',
+        },
       },
     ])
+  })
+
+  it('runs page-context JavaScript through the page session', async () => {
+    const fake = createFakeServer()
+    const evaluateCalls: Array<Record<string, unknown>> = []
+    const session = {
+      pages: {
+        getSession: async () => ({
+          session: {
+            Runtime: {
+              evaluate: async (params: Record<string, unknown>) => {
+                evaluateCalls.push(params)
+                return { result: { value: 'page-value' } }
+              },
+            },
+          },
+        }),
+      },
+    } as unknown as BrowserSession
+
+    registerBrowserTools(fake.server as never, session)
+
+    const result = await fake.handlers.get('run')?.({
+      page: 3,
+      code: 'return document.title',
+      timeout: 1234,
+    })
+
+    expect(result?.isError).toBeFalsy()
+    expect(result?.structuredContent).toEqual({ page: 3, value: 'page-value' })
+    expect(evaluateCalls).toHaveLength(1)
+    expect(evaluateCalls[0]).toMatchObject({
+      awaitPromise: true,
+      returnByValue: true,
+      timeout: 1234,
+      userGesture: true,
+    })
+    expect(String(evaluateCalls[0]?.expression)).toContain(
+      'return document.title',
+    )
+  })
+
+  it('caps large read results and writes the full content to a file', async () => {
+    const fake = createFakeServer()
+    const largeText = 'x'.repeat(TOOL_LIMITS.INLINE_PAGE_CONTENT_MAX_CHARS + 1)
+    const session = {
+      pages: {
+        getSession: async () => ({
+          session: {
+            Runtime: {
+              evaluate: async () => ({ result: { value: largeText } }),
+            },
+          },
+        }),
+        getInfo: () => ({ url: 'https://example.com' }),
+      },
+    } as unknown as BrowserSession
+
+    registerBrowserTools(fake.server as never, session)
+
+    const result = await fake.handlers.get('read')?.({
+      page: 1,
+      format: 'text',
+    })
+
+    expect(result?.isError).toBeFalsy()
+    expect(result?.structuredContent).toMatchObject({
+      page: 1,
+      format: 'text',
+      contentLength: largeText.length,
+      writtenToFile: true,
+    })
+    expect(result?.content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining('Content truncated'),
+        }),
+      ]),
+    )
   })
 })

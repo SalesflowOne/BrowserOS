@@ -1,138 +1,62 @@
 import { z } from 'zod'
 import { defineTool, errorResult, textResult } from './framework'
 
-// Builds an async function from agent code; constructing it is also the cheap syntax pre-check.
-const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor as new (
-  ...args: string[]
-) => (...injected: unknown[]) => Promise<unknown>
-
 const DEFAULT_TIMEOUT_MS = 30_000
 
-const DESCRIPTION = `Run TypeScript/JavaScript against the \`browser\` SDK in the server runtime - for multi-step flows and data extraction that would otherwise be many tool calls. \`console.log\` is captured; \`return\` a value to read it back; exceptions come back as a result, not a thrown error.
-
-Available as \`browser\`:
-  browser.pages.list() / newPage(url) / close(pageId) / getInfo(pageId)
-  browser.observe(pageId).snapshot()  -> { text, refs }
-  browser.observe(pageId).diff()      -> { text, added, removed, changed }
-  browser.observe(pageId).resolveRef(ref)
-  browser.input(pageId).click(ref) / fill(ref,value) / type(text) / press(key) / hover(ref) / selectOption(ref,value) / scroll(dir,amount,ref?)
-  browser.nav(pageId).goto(url) / back() / forward() / reload()
-  browser.cdp(method, params?, sessionId?)   // raw CDP escape hatch
-Refs (eN) come from a snapshot's text/refs.`
-
-interface RunOutcome {
-  ok: boolean
-  value: unknown
-  logs: string[]
-  error?: Error
-}
+const DESCRIPTION = `Run JavaScript in a page context through CDP Runtime.evaluate. Use this for page-state reads or small DOM scripts that are awkward with read/grep. Return a value to read it back.`
 
 export const run = defineTool({
   name: 'run',
   description: DESCRIPTION,
   input: z.object({
+    page: z.number().int().describe('Page id from `tabs`.'),
     code: z
       .string()
       .describe(
-        'Async-capable JS/TS body. Use top-level await; `return` a value.',
+        'Async-capable JS body evaluated inside the page. Use `return` to read a value.',
       ),
     timeout: z
       .number()
       .optional()
-      .describe('Max run time in ms (default 30000).'),
+      .describe('Max evaluation time in ms (default 30000).'),
   }),
   annotations: { openWorldHint: true },
   handler: async (args, ctx) => {
-    let fn: (...injected: unknown[]) => Promise<unknown>
-    try {
-      fn = new AsyncFunction(
-        'browser',
-        'console',
-        `"use strict";\n${args.code}`,
-      )
-    } catch (err) {
+    const { session } = await ctx.session.pages.getSession(args.page)
+    const result = await session.Runtime.evaluate({
+      expression: wrapAsAsyncIife(args.code),
+      returnByValue: true,
+      awaitPromise: true,
+      timeout: args.timeout ?? DEFAULT_TIMEOUT_MS,
+      userGesture: true,
+    })
+
+    if (result.exceptionDetails) {
       return errorResult(
-        `run: syntax error - ${err instanceof Error ? err.message : String(err)}`,
+        `run: ${
+          result.exceptionDetails.exception?.description ??
+          result.exceptionDetails.text
+        }`,
       )
     }
 
-    const logs: string[] = []
-    const captured = makeConsole(logs)
-    const outcome = await execute(
-      fn,
-      ctx.session,
-      captured,
-      args.timeout ?? DEFAULT_TIMEOUT_MS,
-      logs,
+    const value = result.result?.value ?? result.result?.description
+    return textResult(
+      value === undefined ? 'undefined' : safeStringify(value),
+      {
+        page: args.page,
+        value,
+      },
     )
-    return outcome.ok
-      ? textResult(format(outcome), { ok: true })
-      : { ...errorResult(format(outcome)), structuredContent: { ok: false } }
   },
 })
 
-async function execute(
-  fn: (...injected: unknown[]) => Promise<unknown>,
-  browser: unknown,
-  console: unknown,
-  timeoutMs: number,
-  logs: string[],
-): Promise<RunOutcome> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error(`run exceeded ${timeoutMs}ms`)),
-      timeoutMs,
-    )
-  })
-  try {
-    const value = await Promise.race([fn(browser, console), timeout])
-    return { ok: true, value, logs }
-  } catch (err) {
-    return {
-      ok: false,
-      value: undefined,
-      logs,
-      error: err instanceof Error ? err : new Error(String(err)),
-    }
-  } finally {
-    if (timer) clearTimeout(timer)
-  }
-}
-
-function makeConsole(logs: string[]): Console {
-  const sink =
-    (level: string) =>
-    (...parts: unknown[]) =>
-      logs.push(
-        `${level}${parts.map((p) => (typeof p === 'string' ? p : safeStringify(p))).join(' ')}`,
-      )
-  return {
-    log: sink(''),
-    info: sink(''),
-    warn: sink('warn: '),
-    error: sink('error: '),
-    debug: sink(''),
-  } as unknown as Console
-}
-
-function format(outcome: RunOutcome): string {
-  const sections: string[] = []
-  if (outcome.error) {
-    sections.push(`error: ${outcome.error.message}`)
-  } else {
-    sections.push('ok')
-    if (outcome.value !== undefined) {
-      sections.push(`return: ${safeStringify(outcome.value)}`)
-    }
-  }
-  if (outcome.logs.length > 0)
-    sections.push(`logs:\n${outcome.logs.join('\n')}`)
-  return sections.join('\n')
+function wrapAsAsyncIife(code: string): string {
+  return `(async () => {\n${code}\n})()`
 }
 
 function safeStringify(value: unknown): string {
-  if (value === undefined) return 'undefined'
+  if (typeof value === 'string') return value
   try {
     return JSON.stringify(value, null, 2) ?? String(value)
   } catch {

@@ -11,6 +11,14 @@ export const tabs = defineTool({
       .string()
       .optional()
       .describe('URL for action="new" (defaults to about:blank).'),
+    background: z
+      .boolean()
+      .default(true)
+      .describe('Open without stealing focus for action="new".'),
+    hidden: z
+      .boolean()
+      .default(false)
+      .describe('Create in a hidden window for action="new".'),
     page: z.number().int().optional().describe('Page id for action="close".'),
   }),
   annotations: { openWorldHint: true },
@@ -33,6 +41,8 @@ export const tabs = defineTool({
         const page = await ctx.session.pages.newPage(
           args.url ?? 'about:blank',
           {
+            background: args.background,
+            hidden: args.hidden,
             windowId: ctx.defaultWindowId,
             tabGroupId: ctx.defaultTabGroupId,
           },

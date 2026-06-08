@@ -1,6 +1,8 @@
+import { TOOL_LIMITS } from '@browseros/shared/constants/limits'
 import { z } from 'zod'
 import { buildContentMarkdownExpression } from '../browser/content-markdown'
 import { defineTool, textResult } from './framework'
+import { writeTempToolOutputFile } from './output-file'
 import { wrapUntrusted } from './trust-boundary'
 
 function expressionFor(
@@ -33,9 +35,34 @@ export const read = defineTool({
     })
     const text = (result.result?.value as string) ?? ''
     const origin = ctx.session.pages.getInfo(args.page)?.url ?? 'unknown'
-    return textResult(wrapUntrusted(text || '(empty)', origin), {
-      page: args.page,
-      format: args.format,
+
+    if (text.length <= TOOL_LIMITS.INLINE_PAGE_CONTENT_MAX_CHARS) {
+      return textResult(wrapUntrusted(text || '(empty)', origin), {
+        page: args.page,
+        format: args.format,
+        contentLength: text.length,
+        writtenToFile: false,
+      })
+    }
+
+    const path = await writeTempToolOutputFile({
+      toolName: 'read',
+      extension: args.format === 'markdown' ? 'md' : 'txt',
+      content: text,
     })
+    const truncated = text.slice(0, TOOL_LIMITS.INLINE_PAGE_CONTENT_MAX_CHARS)
+    return textResult(
+      wrapUntrusted(
+        `${truncated}\n\n[Content truncated at ${TOOL_LIMITS.INLINE_PAGE_CONTENT_MAX_CHARS} chars. Full content (${text.length} chars) saved to: ${path}]`,
+        origin,
+      ),
+      {
+        page: args.page,
+        format: args.format,
+        path,
+        contentLength: text.length,
+        writtenToFile: true,
+      },
+    )
   },
 })

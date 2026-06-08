@@ -24,6 +24,11 @@ export interface PageInfo {
 
 // Shape returned by the custom Browser.* CDP domain (a PageInfo without our synthetic pageId).
 type TabInfo = Omit<PageInfo, 'pageId'>
+type WindowInfo = {
+  windowId: number
+  isVisible: boolean
+  isActive: boolean
+}
 
 export interface PageSession {
   targetId: string
@@ -191,13 +196,19 @@ export class PageManager {
 
   async newPage(
     url: string,
-    opts?: { background?: boolean; windowId?: number; tabGroupId?: string },
+    opts?: {
+      background?: boolean
+      hidden?: boolean
+      windowId?: number
+      tabGroupId?: string
+    },
   ): Promise<number> {
     await this.ensureConnected()
+    const windowId = await this.resolveWindowIdForNewPage(opts)
     const created = await this.cdp.Browser.createTab({
       url,
       ...(opts?.background !== undefined && { background: opts.background }),
-      ...(opts?.windowId !== undefined && { windowId: opts.windowId }),
+      ...(windowId !== undefined && { windowId }),
     })
     const tabId = (created.tab as TabInfo).tabId
 
@@ -230,6 +241,33 @@ export class PageManager {
     const pageId = this.nextPageId++
     this.pages.set(pageId, { pageId, ...tab, url: tab.url || url })
     return pageId
+  }
+
+  private async resolveWindowIdForNewPage(opts?: {
+    hidden?: boolean
+    windowId?: number
+  }): Promise<number | undefined> {
+    if (!opts?.hidden) {
+      if (opts?.windowId !== undefined) return opts.windowId
+      return undefined
+    }
+
+    if (opts.windowId !== undefined) {
+      const windows = await this.cdp.Browser.getWindows()
+      const targetWindow = (windows.windows as WindowInfo[]).find(
+        (window) => window.windowId === opts.windowId,
+      )
+      if (targetWindow && !targetWindow.isVisible) return targetWindow.windowId
+      if (targetWindow?.isVisible) {
+        logger.warn(
+          'Requested hidden page target window is visible, creating a new hidden window instead',
+          { requestedWindowId: opts.windowId },
+        )
+      }
+    }
+
+    const hiddenWindow = await this.cdp.Browser.createWindow({ hidden: true })
+    return (hiddenWindow.window as WindowInfo).windowId
   }
 
   async close(pageId: number): Promise<void> {
