@@ -1,5 +1,20 @@
-import { ArrowUp, Mic, MoreHorizontal, Plus, Search } from 'lucide-react'
-import { type FC, type FormEventHandler, useEffect, useState } from 'react'
+import {
+  ArrowUp,
+  Globe,
+  Mic,
+  MoreHorizontal,
+  Paperclip,
+  Plus,
+  Search,
+  X,
+} from 'lucide-react'
+import {
+  type FC,
+  type FormEventHandler,
+  type ReactNode,
+  useEffect,
+  useState,
+} from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Kbd } from '@/components/ui/kbd'
@@ -8,11 +23,15 @@ import { BrowserOSIcon } from '@/lib/llm-providers/providerIcons'
 import { openSidePanelWithSearch } from '@/lib/messaging/sidepanel/openSidepanelWithSearch'
 import { cn } from '@/lib/utils'
 import { useVoiceInput } from '@/lib/voice/useVoiceInput'
+import { AttachDropdown } from './AttachDropdown'
 
 export const NewTabTwo: FC = () => {
   const [value, setValue] = useState('')
+  const [selectedTabs, setSelectedTabs] = useState<chrome.tabs.Tab[]>([])
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const voice = useVoiceInput()
   const canSend = value.trim().length > 0
+  const attachCount = selectedTabs.length + selectedFiles.length
 
   useEffect(() => {
     if (!voice.transcript) return
@@ -22,6 +41,23 @@ export const NewTabTwo: FC = () => {
     voice.clearTranscript()
   }, [voice.transcript, voice.clearTranscript])
 
+  const onToggleTab = (tab: chrome.tabs.Tab) => {
+    setSelectedTabs((prev) =>
+      prev.some((t) => t.id === tab.id)
+        ? prev.filter((t) => t.id !== tab.id)
+        : [...prev, tab],
+    )
+  }
+  const onAddFiles = (files: File[]) => {
+    setSelectedFiles((prev) => [...prev, ...files])
+  }
+  const onRemoveTab = (tab: chrome.tabs.Tab) => {
+    setSelectedTabs((prev) => prev.filter((t) => t.id !== tab.id))
+  }
+  const onRemoveFile = (file: File) => {
+    setSelectedFiles((prev) => prev.filter((f) => f !== file))
+  }
+
   const handleSubmit: FormEventHandler<HTMLFormElement> = (e) => {
     e.preventDefault()
     const message = value.trim()
@@ -29,7 +65,7 @@ export const NewTabTwo: FC = () => {
     const action = createBrowserOSAction({
       mode: 'agent',
       message,
-      tabs: [],
+      tabs: selectedTabs,
     })
     openSidePanelWithSearch('open', {
       query: message,
@@ -37,6 +73,8 @@ export const NewTabTwo: FC = () => {
       action,
     })
     setValue('')
+    setSelectedTabs([])
+    setSelectedFiles([])
   }
 
   const handleMicToggle = () => {
@@ -81,16 +119,58 @@ export const NewTabTwo: FC = () => {
             />
           </div>
 
+          {attachCount > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-1.5">
+              {selectedTabs.map((tab) => (
+                <AttachChip
+                  key={`tab-${tab.id}`}
+                  icon={
+                    tab.favIconUrl ? (
+                      <img
+                        src={tab.favIconUrl}
+                        alt=""
+                        className="size-3 shrink-0 rounded-[2px]"
+                      />
+                    ) : (
+                      <Globe className="size-3 shrink-0" />
+                    )
+                  }
+                  label={tab.title || tab.url || 'Tab'}
+                  onRemove={() => onRemoveTab(tab)}
+                />
+              ))}
+              {selectedFiles.map((file) => (
+                <AttachChip
+                  key={`file-${file.name}-${file.size}-${file.lastModified}`}
+                  icon={<Paperclip className="size-3 shrink-0" />}
+                  label={file.name}
+                  onRemove={() => onRemoveFile(file)}
+                />
+              ))}
+            </div>
+          )}
+
           <div className="mt-3 flex items-center gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              className="h-7 gap-1.5 rounded-full bg-black/5 px-[11px] py-[5px] font-normal text-[12.5px] text-muted-foreground hover:bg-black/10"
+            <AttachDropdown
+              selectedTabs={selectedTabs}
+              onToggleTab={onToggleTab}
+              onAddFiles={onAddFiles}
             >
-              <Plus className="size-3.5" aria-hidden />
-              Add tabs or files
-            </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="h-7 gap-1.5 rounded-full bg-black/5 px-[11px] py-[5px] font-normal text-[12.5px] text-muted-foreground hover:bg-black/10"
+              >
+                <Plus className="size-3.5" aria-hidden />
+                Add tabs or files
+                {attachCount > 0 && (
+                  <span className="ml-1 rounded-full bg-black/10 px-1.5 text-[11px] leading-[18px]">
+                    {attachCount}
+                  </span>
+                )}
+              </Button>
+            </AttachDropdown>
             <Button
               type="button"
               variant="ghost"
@@ -156,3 +236,30 @@ export const NewTabTwo: FC = () => {
     </div>
   )
 }
+
+/* ---------------------------------------------------------------------------
+ * Sub-components — kept private to this module.
+ * -------------------------------------------------------------------------*/
+
+interface AttachChipProps {
+  icon: ReactNode
+  label: string
+  onRemove: () => void
+}
+
+const AttachChip: FC<AttachChipProps> = ({ icon, label, onRemove }) => (
+  <span className="inline-flex h-6 max-w-[200px] items-center gap-1.5 rounded-full border border-border bg-white px-2 text-[12px] text-foreground">
+    <span className="text-muted-foreground">{icon}</span>
+    <span className="min-w-0 truncate">{label}</span>
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      onClick={onRemove}
+      aria-label={`Remove ${label}`}
+      className="-mr-1 size-4 rounded-full text-muted-foreground hover:bg-black/5 hover:text-foreground"
+    >
+      <X className="size-3" />
+    </Button>
+  </span>
+)
