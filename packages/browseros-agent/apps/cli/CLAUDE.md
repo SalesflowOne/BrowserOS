@@ -49,7 +49,7 @@ Pattern: see `cmd/open.go` and `cmd/snap.go`; grouped commands in `cmd/window.go
 - **MCP tool names are the contract.** A command only shapes args; the server owns the tool. A flag often just switches the tool name (`open --hidden` → `new_hidden_page`, `snap -e` → `take_enhanced_snapshot`). Keep tool names and arg keys in sync with `apps/server`'s registry.
 - **Page targeting:** always resolve through `resolvePageID(c)` (`--page/-p` flag > `BROWSEROS_PAGE` env > server `get_active_page`) and pass it as the `"page"` arg. Don't reinvent it (`cmd/click.go`).
 - **Output:** branch on the global `jsonOut`. JSON path → `output.JSON(result)` (emits `structuredContent` when present). Human path → `output.Text` / `output.Confirm` / a domain formatter (`output.PageList`, `output.ActivePage`). Color comes from `fatih/color` and auto-disables off a TTY.
-- **Errors & exit codes:** route every error through `output.Error(msg, code)` / `output.Errorf(code, ...)` — red, to stderr, and they `os.Exit`. Never `fmt.Println` an error or call `os.Exit` directly. Code convention, kept consistent across `cmd/`: **1** = tool/RPC call failed, **2** = page resolution failed, **3** = invalid CLI argument.
+- **Errors & exit codes:** route every error through `output.Error(msg, code)` / `output.Errorf(code, ...)` — red, to stderr, and they `os.Exit`. Never `fmt.Println` an error or call `os.Exit` directly. Codes follow a convention across `cmd/`: **1** = tool/RPC call failed, **2** = page resolution failed (`health`/`status` reuse it for an unreachable server), **3** = invalid CLI argument.
 
 ## MCP client (`mcp/`)
 
@@ -68,7 +68,7 @@ Never hard-code the version or the key — they are build-time ldflags only. Ana
 
 ## Auto-update (`update/`)
 
-`Execute()` fires a background check (~daily, 24h TTL) and prints a cached "update available" notice on a *later* run. It is skipped for `help`/`completion`/`update`/version/`-h`, when `--json` is set, when `BROWSEROS_SKIP_UPDATE_CHECK` is set, for non-release builds, and when installed via a package manager (`BROWSEROS_INSTALL_METHOD=npm|brew`). `update` downloads from `cdn.browseros.com/cli/latest/manifest.json`, verifies the SHA-256, then atomically replaces the binary (`minio/selfupdate`).
+`Execute()` fires a background check (~daily, 24h TTL) and prints a cached "update available" notice on a *later* run. It is skipped for the `help`, `completion`, and `update`/`self-update`/`upgrade` commands, for `--version`/`-h`, when `--json` is set, when `BROWSEROS_SKIP_UPDATE_CHECK` is set, for non-release builds, and when installed via a package manager (`BROWSEROS_INSTALL_METHOD=npm|brew`). `update` downloads from `cdn.browseros.com/cli/latest/manifest.json`, verifies the SHA-256, then atomically replaces the binary (`minio/selfupdate`).
 
 ## Config (`config/`)
 
