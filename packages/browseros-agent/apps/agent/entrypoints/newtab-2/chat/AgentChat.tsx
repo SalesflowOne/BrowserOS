@@ -1,30 +1,20 @@
 import {
-  ArrowUp,
   Check,
   ChevronDown,
   ChevronUp,
-  Folder,
   Layers,
   Loader2,
   Mic,
-  Mic as MicIcon,
   Plus,
   Settings,
   Sun,
 } from 'lucide-react'
 import { motion } from 'motion/react'
-import {
-  type FC,
-  type FormEventHandler,
-  type ReactNode,
-  useEffect,
-  useRef,
-  useState,
-} from 'react'
+import { type FC, useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { BrowserOSIcon } from '@/lib/llm-providers/providerIcons'
 import { cn } from '@/lib/utils'
+import { Composer } from '../Composer'
 import { useComposer } from '../ComposerProvider'
 import { POSTS, TONE_NOTES, TRENDS } from './chat-screen.mock-data'
 import type { ChatBlock, ThoughtBlock } from './chat-screen.types'
@@ -43,16 +33,14 @@ export const AgentChat: FC<AgentChatProps> = ({
   initialMessage,
   onSwitchToVoice,
 }) => {
-  const composer = useComposer()
+  const { reset } = useComposer()
   const [blocks, setBlocks] = useState<ChatBlock[]>(() =>
     initialMessage ? [{ type: 'founder', id: id(), text: initialMessage }] : [],
   )
-  const [followupValue, setFollowupValue] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    composer.reset()
-    // Mock-drip the demo beats so the surface has visible motion.
+    reset()
     if (!initialMessage) return
     const timers: ReturnType<typeof setTimeout>[] = []
     timers.push(
@@ -90,8 +78,7 @@ export const AgentChat: FC<AgentChatProps> = ({
     return () => {
       for (const t of timers) clearTimeout(t)
     }
-    // We deliberately bind this to mount only; mock drip should not re-run on rerender.
-  }, [composer.reset, initialMessage])
+  }, [reset, initialMessage])
 
   useEffect(() => {
     if (!scrollRef.current) return
@@ -102,13 +89,15 @@ export const AgentChat: FC<AgentChatProps> = ({
     })
   }, [])
 
-  const handleFollowup: FormEventHandler<HTMLFormElement> = (e) => {
-    e.preventDefault()
-    const text = followupValue.trim()
-    if (!text) return
-    setBlocks((b) => [...b, { type: 'founder', id: id(), text }])
-    setFollowupValue('')
-  }
+  const handleSend = useCallback(
+    (text: string) => {
+      const trimmed = text.trim()
+      if (!trimmed) return
+      setBlocks((b) => [...b, { type: 'founder', id: id(), text: trimmed }])
+      reset()
+    },
+    [reset],
+  )
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
@@ -127,7 +116,7 @@ export const AgentChat: FC<AgentChatProps> = ({
             aria-label="Switch to voice"
             className="text-muted-foreground"
           >
-            <MicIcon className="size-4" />
+            <Mic className="size-4" />
           </Button>
           <Plus className="size-[15px]" aria-hidden />
           <Settings className="size-[15px]" aria-hidden />
@@ -143,54 +132,12 @@ export const AgentChat: FC<AgentChatProps> = ({
         </div>
       </div>
 
-      <div className="mx-auto w-full max-w-[720px] shrink-0 px-6 pt-2 pb-[18px]">
-        <div className="mb-2 flex items-center gap-2">
-          <ComposerPill on>
-            <span className="size-[7px] rounded-full bg-[var(--status-working,var(--accent-orange))]" />
-            Agent Mode ON
-          </ComposerPill>
-          <ComposerPill>
-            <Layers className="size-3" aria-hidden />
-          </ComposerPill>
-          <ComposerPill>
-            <Folder className="size-3" aria-hidden />
-            <span className="size-[7px] rounded-full bg-[var(--accent-orange)]" />
-          </ComposerPill>
-          <ComposerPill>+2</ComposerPill>
-        </div>
-
-        <motion.form
-          layoutId="composer-card"
-          layout="position"
-          onSubmit={handleFollowup}
-          className="flex items-center gap-3 rounded-2xl border border-border bg-card px-4 py-[13px] transition-shadow duration-200 focus-within:border-[color-mix(in_oklch,var(--accent-orange)_45%,transparent)] focus-within:shadow-[0_0_0_4px_color-mix(in_oklch,var(--accent-orange)_12%,transparent)]"
-        >
-          <Input
-            value={followupValue}
-            onChange={(e) => setFollowupValue(e.target.value)}
-            placeholder="Reply to the agent…"
-            aria-label="Reply to the agent"
-            className="h-auto w-full rounded-none border-0 bg-transparent p-0 text-[14px] shadow-none placeholder:text-muted-foreground focus-visible:border-0 focus-visible:ring-0"
-          />
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label="Voice"
-            className="size-7 rounded-full text-muted-foreground"
-          >
-            <Mic className="size-4" />
-          </Button>
-          <Button
-            type="submit"
-            size="icon"
-            disabled={!followupValue.trim()}
-            aria-label="Send"
-            className="size-7 rounded-full bg-[var(--accent-orange)] text-white hover:bg-[var(--accent-orange-bright)]"
-          >
-            <ArrowUp className="size-3.5" />
-          </Button>
-        </motion.form>
+      <div className="flex shrink-0 justify-center px-6 pt-2 pb-[18px]">
+        <Composer
+          placeholder="Reply to the agent…"
+          onSubmitOverride={handleSend}
+          onMicOverride={onSwitchToVoice}
+        />
       </div>
     </div>
   )
@@ -408,18 +355,4 @@ const PostsCard: FC = () => (
       </div>
     ))}
   </motion.div>
-)
-
-const ComposerPill: FC<{ children: ReactNode; on?: boolean }> = ({
-  children,
-  on,
-}) => (
-  <span
-    className={cn(
-      'inline-flex h-[26px] items-center gap-1.5 whitespace-nowrap rounded-full border border-[color-mix(in_oklch,var(--border)_80%,transparent)] px-2.5 text-[11.5px] text-muted-foreground',
-      on && 'text-foreground',
-    )}
-  >
-    {children}
-  </span>
 )
