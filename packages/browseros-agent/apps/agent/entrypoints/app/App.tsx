@@ -6,6 +6,7 @@ import { NewTab } from '../newtab/index/NewTab'
 import { NewTabChat } from '../newtab/index/NewTabChat'
 import { NewTabLayout } from '../newtab/layout/NewTabLayout'
 import { Personalize } from '../newtab/personalize/Personalize'
+import { NewTabTwo } from '../newtab-2/NewTabTwo'
 import { OnboardingDemo } from '../onboarding/demo/OnboardingDemo'
 import { FeaturesPage } from '../onboarding/features/Features'
 import { Onboarding } from '../onboarding/index/Onboarding'
@@ -163,6 +164,8 @@ export const App: FC = () => {
         />
         <Route path="/agents/:agentId" element={<LegacyAgentRedirect />} />
         <Route path="/options/*" element={<OptionsRedirect />} />
+
+        <Route path="/newtab-2" element={<NewTabTwo />} />
 
         {/* Fallback to home */}
         <Route path="*" element={<Navigate to="/home" replace />} />
