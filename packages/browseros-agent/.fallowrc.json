@@ -8,7 +8,8 @@
     "apps/agent/entrypoints/content.ts",
     "apps/agent/entrypoints/auth.content/index.ts",
     "apps/agent/entrypoints/glow.content/index.ts",
-    "apps/agent/entrypoints/selection.content.ts"
+    "apps/agent/entrypoints/selection.content.ts",
+    "scripts/run-bun-test.ts"
   ],
   "ignorePatterns": [
     "**/*.d.ts",
