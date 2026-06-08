@@ -1,9 +1,46 @@
-import { describe, expect, it } from 'bun:test'
+import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test'
 import {
   resolveDefaultProviderId,
   resolveSelectedProvider,
 } from './provider-selection'
 import type { LlmProviderConfig } from './types'
+
+const storageValues = new Map<string, unknown>()
+
+mock.module('@wxt-dev/storage', () => ({
+  storage: {
+    defineItem: <T>(key: string, options?: { fallback?: T }) => ({
+      getValue: async () =>
+        storageValues.has(key) ? storageValues.get(key) : options?.fallback,
+      setValue: async (value: T) => {
+        storageValues.set(key, value)
+      },
+      watch: () => () => {},
+    }),
+  },
+}))
+
+mock.module('@/lib/auth/sessionStorage', () => ({
+  sessionStorage: {
+    getValue: async () => null,
+  },
+}))
+
+mock.module('@/lib/browseros/adapter', () => ({
+  getBrowserOSAdapter: () => ({
+    setPref: async () => {},
+  }),
+}))
+
+mock.module('@/lib/browseros/prefs', () => ({
+  BROWSEROS_PREFS: {
+    PROVIDERS: 'browseros.providers',
+  },
+}))
+
+mock.module('./uploadLlmProvidersToGraphql', () => ({
+  uploadLlmProvidersToGraphql: async () => {},
+}))
 
 const timestamp = 1000
 
@@ -43,6 +80,16 @@ const providers: LlmProviderConfig[] = [
   },
 ]
 
+let persistDefaultProviderId: (providerId: string) => Promise<void>
+
+beforeAll(async () => {
+  ;({ persistDefaultProviderId } = await import('./useLlmProviders'))
+})
+
+beforeEach(() => {
+  storageValues.clear()
+})
+
 describe('resolveSelectedProvider', () => {
   it('selects a Codex provider config by the persisted default id', () => {
     expect(resolveSelectedProvider(providers, 'codex-provider')).toEqual(
@@ -53,6 +100,24 @@ describe('resolveSelectedProvider', () => {
   it('selects a Claude Code provider config by the persisted default id', () => {
     expect(resolveSelectedProvider(providers, 'claude-code-provider')).toEqual(
       providers[2],
+    )
+  })
+})
+
+describe('persistDefaultProviderId', () => {
+  it('writes a Codex provider id to default-provider storage', async () => {
+    await persistDefaultProviderId('codex-provider')
+
+    expect(storageValues.get('local:default-provider-id')).toBe(
+      'codex-provider',
+    )
+  })
+
+  it('writes a Claude Code provider id to default-provider storage', async () => {
+    await persistDefaultProviderId('claude-code-provider')
+
+    expect(storageValues.get('local:default-provider-id')).toBe(
+      'claude-code-provider',
     )
   })
 })

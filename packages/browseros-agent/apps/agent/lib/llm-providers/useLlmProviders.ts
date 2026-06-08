@@ -22,6 +22,13 @@ export interface UseLlmProvidersReturn {
   deleteProvider: (providerId: string) => Promise<void>
 }
 
+/** Persists the configured default provider id used by provider selection. */
+export async function persistDefaultProviderId(
+  providerId: string,
+): Promise<void> {
+  await defaultProviderIdStorage.setValue(providerId)
+}
+
 /** Hook for managing LLM provider configurations. */
 export function useLlmProviders(): UseLlmProvidersReturn {
   const [providers, setProviders] = useState<LlmProviderConfig[]>([])
@@ -54,7 +61,6 @@ export function useLlmProviders(): UseLlmProvidersReturn {
         setProviders(loadedProviders)
         setDefaultProviderId(resolvedDefaultId)
       } catch {
-        // TODO: Record error to error recording service
       } finally {
         setIsLoading(false)
       }
@@ -113,7 +119,7 @@ export function useLlmProviders(): UseLlmProvidersReturn {
 
   const setDefaultProviderFn = async (providerId: string) => {
     setDefaultProviderId(providerId)
-    await defaultProviderIdStorage.setValue(providerId)
+    await persistDefaultProviderId(providerId)
   }
 
   const deleteProvider = async (providerId: string) => {

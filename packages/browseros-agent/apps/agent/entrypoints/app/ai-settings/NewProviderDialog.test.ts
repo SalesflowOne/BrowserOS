@@ -3,7 +3,10 @@ import {
   getDefaultBaseUrlForProviders,
   providerTypeOptions,
 } from '../../../lib/llm-providers/providerTemplates'
-import { providerFormSchema } from './provider-form-schema'
+import {
+  normalizeProviderFormValues,
+  providerFormSchema,
+} from './provider-form-schema'
 
 const baseProviderValues = {
   name: 'Local coding provider',
@@ -39,6 +42,59 @@ describe('providerFormSchema', () => {
     })
 
     expect(result.success).toBe(false)
+  })
+})
+
+describe('normalizeProviderFormValues', () => {
+  const staleCredentialValues = {
+    ...baseProviderValues,
+    baseUrl: 'https://api.openai.com/v1',
+    apiKey: 'secret',
+    resourceName: 'resource',
+    accessKeyId: 'access-key',
+    secretAccessKey: 'secret-access-key',
+    region: 'us-east-1',
+    sessionToken: 'session-token',
+  }
+
+  it('clears stale endpoint and credential fields for Codex configs', () => {
+    const values = normalizeProviderFormValues({
+      ...staleCredentialValues,
+      type: 'codex',
+    })
+
+    expect(values.baseUrl).toBe('')
+    expect(values.apiKey).toBe('')
+    expect(values.resourceName).toBe('')
+    expect(values.accessKeyId).toBe('')
+    expect(values.secretAccessKey).toBe('')
+    expect(values.region).toBe('')
+    expect(values.sessionToken).toBe('')
+  })
+
+  it('clears stale endpoint and credential fields for Claude Code configs', () => {
+    const values = normalizeProviderFormValues({
+      ...staleCredentialValues,
+      type: 'claude-code',
+    })
+
+    expect(values.baseUrl).toBe('')
+    expect(values.apiKey).toBe('')
+    expect(values.resourceName).toBe('')
+    expect(values.accessKeyId).toBe('')
+    expect(values.secretAccessKey).toBe('')
+    expect(values.region).toBe('')
+    expect(values.sessionToken).toBe('')
+  })
+
+  it('leaves ordinary API-backed provider fields intact', () => {
+    const values = normalizeProviderFormValues({
+      ...staleCredentialValues,
+      type: 'openai',
+    })
+
+    expect(values.baseUrl).toBe('https://api.openai.com/v1')
+    expect(values.apiKey).toBe('secret')
   })
 })
 

@@ -72,6 +72,8 @@ import { cn } from '@/lib/utils'
 import { getModelContextLength, getModelsForProvider } from './models'
 import {
   isCredentiallessProviderType,
+  isLocalRuntimeProviderType,
+  normalizeProviderFormValues,
   type ProviderFormValues,
   providerFormSchema,
 } from './provider-form-schema'
@@ -83,25 +85,13 @@ function formatContextWindow(tokens: number): string {
   return `${tokens}`
 }
 
-/**
- * Props for NewProviderDialog
- * @public
- */
 export interface NewProviderDialogProps {
-  /** Whether the dialog is open */
   open: boolean
-  /** Callback when dialog should close */
   onOpenChange: (open: boolean) => void
-  /** Optional initial values for editing or template prefill */
   initialValues?: Partial<LlmProviderConfig>
-  /** Callback when provider is saved */
   onSave: (provider: LlmProviderConfig) => Promise<void>
 }
 
-/**
- * Dialog for configuring a new LLM provider
- * @public
- */
 export const NewProviderDialog: FC<NewProviderDialogProps> = ({
   open,
   onOpenChange,
@@ -197,9 +187,14 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
 
   const handleTypeChange = (newType: ProviderType) => {
     form.setValue('type', newType)
-    const defaultUrl = getDefaultBaseUrlForProviders(newType)
-    if (defaultUrl) {
-      form.setValue('baseUrl', defaultUrl)
+    form.setValue('baseUrl', getDefaultBaseUrlForProviders(newType))
+    if (isLocalRuntimeProviderType(newType)) {
+      form.setValue('apiKey', '')
+      form.setValue('resourceName', '')
+      form.setValue('accessKeyId', '')
+      form.setValue('secretAccessKey', '')
+      form.setValue('region', '')
+      form.setValue('sessionToken', '')
     }
     form.setValue('modelId', '')
   }
@@ -268,9 +263,10 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
 
   const onSubmit = async (values: ProviderFormValues) => {
     const isNewProvider = !initialValues?.id
+    const normalizedValues = normalizeProviderFormValues(values)
     const provider: LlmProviderConfig = {
       id: initialValues?.id || crypto.randomUUID(),
-      ...values,
+      ...normalizedValues,
       createdAt: initialValues?.createdAt || Date.now(),
       updatedAt: Date.now(),
     }
@@ -278,18 +274,18 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
     await onSave(provider)
     if (isNewProvider) {
       track(AI_PROVIDER_ADDED_EVENT, {
-        provider_type: values.type,
-        model: values.modelId,
+        provider_type: normalizedValues.type,
+        model: normalizedValues.modelId,
       })
     } else {
       track(AI_PROVIDER_UPDATED_EVENT, {
-        provider_type: values.type,
-        model: values.modelId,
+        provider_type: normalizedValues.type,
+        model: normalizedValues.modelId,
       })
     }
-    if (values.type === 'moonshot') {
+    if (normalizedValues.type === 'moonshot') {
       track(KIMI_API_KEY_CONFIGURED_EVENT, {
-        model: values.modelId,
+        model: normalizedValues.modelId,
         is_new: isNewProvider,
       })
     }
@@ -682,7 +678,6 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
-            {/* Row 1: Provider Type & Name */}
             <div className="grid gap-4 sm:grid-cols-2">
               <FormField
                 control={form.control}
@@ -728,7 +723,6 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
 
             {renderProviderSpecificFields()}
 
-            {/* Model field - shown for all providers */}
             <FormField
               control={form.control}
               name="modelId"
@@ -880,7 +874,6 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
               )}
             />
 
-            {/* Model Configuration */}
             <div className="space-y-4 border-border border-t pt-4">
               <h4 className="font-medium text-sm">Model Configuration</h4>
               <FormField
@@ -951,7 +944,6 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
               </div>
             </div>
 
-            {/* Test Result Banner */}
             {testResult && (
               <div
                 className={`flex items-center gap-2 rounded-lg border p-3 text-sm ${

@@ -29,6 +29,9 @@ const credentiallessProviderTypes: ReadonlySet<
   'claude-code',
 ])
 
+const localRuntimeProviderTypes: ReadonlySet<z.infer<typeof providerTypeEnum>> =
+  new Set(['codex', 'claude-code'])
+
 export const providerFormSchema = z
   .object({
     type: providerTypeEnum,
@@ -109,4 +112,29 @@ export function isCredentiallessProviderType(
   type: z.infer<typeof providerTypeEnum>,
 ): boolean {
   return credentiallessProviderTypes.has(type)
+}
+
+/** Identifies provider types backed by local CLIs instead of HTTP endpoints. */
+export function isLocalRuntimeProviderType(
+  type: z.infer<typeof providerTypeEnum>,
+): boolean {
+  return localRuntimeProviderTypes.has(type)
+}
+
+/** Removes stale endpoint and credential fields from local runtime configs. */
+export function normalizeProviderFormValues(
+  values: ProviderFormValues,
+): ProviderFormValues {
+  if (!isLocalRuntimeProviderType(values.type)) return values
+
+  return {
+    ...values,
+    baseUrl: '',
+    apiKey: '',
+    resourceName: '',
+    accessKeyId: '',
+    secretAccessKey: '',
+    region: '',
+    sessionToken: '',
+  }
 }
