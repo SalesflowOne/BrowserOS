@@ -437,10 +437,16 @@ describe('capability coverage', () => {
     const removedTools = [
       'take_snapshot',
       'get_page_content',
+      'get_page_links',
+      'get_dom',
+      'search_dom',
+      'take_screenshot',
+      'evaluate_script',
       'navigate_page',
       'new_page',
       'group_tabs',
       'create_window',
+      'get_console_logs',
     ]
     for (const tool of removedTools) {
       expect(prompt).not.toContain(tool)
@@ -772,6 +778,7 @@ describe('error recovery', () => {
     const prompt = buildRegular()
     expect(prompt).toContain('### JavaScript/console errors')
     expect(prompt).toContain('If `run` fails')
+    expect(prompt).not.toContain('get_console_logs')
   })
 
   it('includes Strata error patterns', () => {
