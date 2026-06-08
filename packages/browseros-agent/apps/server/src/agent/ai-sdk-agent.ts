@@ -85,7 +85,10 @@ export class AiSdkAgent {
       })
     }
 
-    const allBrowserTools = buildBrowserToolSet(config.browserSession)
+    const allBrowserTools = buildBrowserToolSet(config.browserSession, {
+      readOnly: config.resolvedConfig.chatMode,
+    })
+    const reservedBrowserToolNames = new Set(Object.keys(allBrowserTools))
     const browserTools = config.resolvedConfig.chatMode
       ? Object.fromEntries(
           Object.entries(allBrowserTools).filter(([name]) =>
@@ -112,15 +115,18 @@ export class AiSdkAgent {
       browserContext: config.browserContext,
     })
     const { clients, tools: customMcpTools } = await createMcpClients(specs)
-    const collidingToolNames = Object.keys(customMcpTools).filter(
+    const klavisCollidingToolNames = Object.keys(customMcpTools).filter(
       (name) => name in klavisTools,
     )
-    if (collidingToolNames.length > 0) {
+    if (klavisCollidingToolNames.length > 0) {
       logger.warn('Custom MCP tools override Klavis tools', {
-        toolNames: collidingToolNames,
+        toolNames: klavisCollidingToolNames,
       })
     }
-    const rawExternalMcpTools = { ...klavisTools, ...customMcpTools }
+    const rawExternalMcpTools = withoutReservedBrowserToolNames(
+      { ...klavisTools, ...customMcpTools },
+      reservedBrowserToolNames,
+    )
 
     // Wrap external MCP tools (Klavis, custom) with metrics
     const externalMcpTools: ToolSet = {}
@@ -287,6 +293,30 @@ export class AiSdkAgent {
     }
     logger.info('Agent disposed', { conversationId: this.conversationId })
   }
+}
+
+function withoutReservedBrowserToolNames(
+  tools: ToolSet,
+  reservedNames: Set<string>,
+): ToolSet {
+  const result: ToolSet = {}
+  const skipped: string[] = []
+  for (const [name, value] of Object.entries(tools)) {
+    if (reservedNames.has(name)) {
+      skipped.push(name)
+      continue
+    }
+    result[name] = value
+  }
+  if (skipped.length > 0) {
+    logger.warn(
+      'External MCP tools skipped due to BrowserOS tool name collision',
+      {
+        toolNames: skipped,
+      },
+    )
+  }
+  return result
 }
 
 export { formatUserMessage } from './format-message'

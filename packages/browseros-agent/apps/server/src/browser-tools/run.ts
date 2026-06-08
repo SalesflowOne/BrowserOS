@@ -1,7 +1,8 @@
 import { z } from 'zod'
-import { defineTool, errorResult, textResult } from './framework'
+import { clampTimeout, defineTool, errorResult, textResult } from './framework'
 
 const DEFAULT_TIMEOUT_MS = 30_000
+const MAX_TIMEOUT_MS = 30_000
 
 const DESCRIPTION = `Run JavaScript in a page context through CDP Runtime.evaluate. Use this for page-state reads or small DOM scripts that are awkward with read/grep. Return a value to read it back.`
 
@@ -23,11 +24,16 @@ export const run = defineTool({
   annotations: { openWorldHint: true },
   handler: async (args, ctx) => {
     const { session } = await ctx.session.pages.getSession(args.page)
+    const timeout = clampTimeout(
+      args.timeout,
+      DEFAULT_TIMEOUT_MS,
+      MAX_TIMEOUT_MS,
+    )
     const result = await session.Runtime.evaluate({
       expression: wrapAsAsyncIife(args.code),
       returnByValue: true,
       awaitPromise: true,
-      timeout: args.timeout ?? DEFAULT_TIMEOUT_MS,
+      timeout,
       userGesture: true,
     })
 

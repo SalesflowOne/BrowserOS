@@ -1,7 +1,7 @@
 import { TOOL_LIMITS } from '@browseros/shared/constants/limits'
 import { z } from 'zod'
 import { buildContentMarkdownExpression } from '../browser/content-markdown'
-import { defineTool, textResult } from './framework'
+import { defineTool, errorResult, textResult } from './framework'
 import { writeTempToolOutputFile } from './output-file'
 import { wrapUntrusted } from './trust-boundary'
 
@@ -33,6 +33,15 @@ export const read = defineTool({
       expression: expressionFor(args.format, args.selector),
       returnByValue: true,
     })
+    if (result.exceptionDetails) {
+      return errorResult(
+        `read: ${
+          result.exceptionDetails.exception?.description ??
+          result.exceptionDetails.text
+        }`,
+      )
+    }
+
     const text = (result.result?.value as string) ?? ''
     const origin = ctx.session.pages.getInfo(args.page)?.url ?? 'unknown'
 

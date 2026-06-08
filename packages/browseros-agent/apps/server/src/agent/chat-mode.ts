@@ -6,8 +6,9 @@
 
 import { BROWSER_TOOLS } from '../browser-tools/registry'
 
-export const CHAT_MODE_ALLOWED_TOOLS = new Set(
-  BROWSER_TOOLS.filter((tool) => tool.annotations?.readOnlyHint).map(
+export const CHAT_MODE_ALLOWED_TOOLS = new Set([
+  ...BROWSER_TOOLS.filter((tool) => tool.annotations?.readOnlyHint).map(
     (tool) => tool.name,
   ),
-)
+  'tabs',
+])

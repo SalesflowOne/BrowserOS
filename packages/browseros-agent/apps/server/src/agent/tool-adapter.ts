@@ -1,9 +1,24 @@
 import type { LanguageModelV2ToolResultOutput } from '@ai-sdk/provider'
 import { type ToolSet, tool } from 'ai'
 import type { BrowserSession } from '../browser/core/session'
-import { type ContentBlock, executeTool } from '../browser-tools/framework'
+import {
+  type ContentBlock,
+  errorResult,
+  executeTool,
+  type ToolDefinition,
+  type ToolResult,
+  throwIfAborted,
+} from '../browser-tools/framework'
 import { BROWSER_TOOLS } from '../browser-tools/registry'
 import { metrics } from '../lib/metrics'
+
+export interface BrowserToolSetOptions {
+  readOnly?: boolean
+}
+
+interface ToolExecuteOptions {
+  abortSignal?: AbortSignal
+}
 
 function contentToModelOutput(
   content: ContentBlock[],
@@ -27,20 +42,25 @@ function contentToModelOutput(
 }
 
 /** Wraps the browser-core tool surface as AI SDK tools for the internal agent. */
-export function buildBrowserToolSet(session: BrowserSession): ToolSet {
+export function buildBrowserToolSet(
+  session: BrowserSession,
+  options: BrowserToolSetOptions = {},
+): ToolSet {
   const toolSet: ToolSet = {}
 
   for (const def of BROWSER_TOOLS) {
     toolSet[def.name] = tool({
       description: def.description,
       inputSchema: def.input,
-      execute: async (params) => {
+      execute: async (params, executeOptions?: ToolExecuteOptions) => {
         const startTime = performance.now()
-        const result = await executeTool(
-          def,
-          params as Record<string, unknown>,
-          { session },
-        )
+        throwIfAborted(executeOptions?.abortSignal)
+        const result =
+          readOnlyGuard(def, params, options) ??
+          (await executeTool(def, params as Record<string, unknown>, {
+            session,
+            signal: executeOptions?.abortSignal,
+          }))
         metrics.log('tool_executed', {
           tool_name: def.name,
           duration_ms: Math.round(performance.now() - startTime),
@@ -69,4 +89,21 @@ export function buildBrowserToolSet(session: BrowserSession): ToolSet {
   }
 
   return toolSet
+}
+
+function readOnlyGuard(
+  def: ToolDefinition,
+  params: unknown,
+  options: BrowserToolSetOptions,
+): ToolResult | null {
+  if (!options.readOnly || def.name !== 'tabs') return null
+  const action =
+    params &&
+    typeof params === 'object' &&
+    'action' in params &&
+    typeof params.action === 'string'
+      ? params.action
+      : 'list'
+  if (action === 'list') return null
+  return errorResult('tabs: chat mode only supports action="list".')
 }

@@ -1,15 +1,11 @@
 import type { TypeOf, ZodType } from 'zod'
 import type { BrowserSession } from '../browser/core/session'
 
-// The new MCP tool surface over browser-core. One definition + one result envelope serves both
-// the external MCP server and the internal agent (replacing the legacy double-wrapping). Handlers
-// are thin: resolve args -> call the SDK -> return content. Errors never throw out of executeTool;
-// they come back as an instructive, model-readable result.
-
 export interface ToolContext {
   session: BrowserSession
   defaultWindowId?: number
   defaultTabGroupId?: string
+  signal?: AbortSignal
 }
 
 export interface TextBlock {
@@ -35,7 +31,6 @@ export interface ToolAnnotations {
   openWorldHint?: boolean
 }
 
-// Registry-facing (erased) shape, so heterogeneous tools collect into one ToolDefinition[].
 export interface ToolDefinition {
   name: string
   description: string
@@ -47,8 +42,6 @@ export interface ToolDefinition {
   ) => Promise<ToolResult>
 }
 
-// Authoring helper: handler args are typed from the schema OUTPUT (zod-defaulted fields are
-// non-optional), while the returned definition is erased for the registry.
 export function defineTool<S extends ZodType>(def: {
   name: string
   description: string
@@ -70,12 +63,60 @@ export function errorResult(message: string): ToolResult {
   return { content: [{ type: 'text', text: message }], isError: true }
 }
 
+export function clampTimeout(
+  value: number | undefined,
+  defaultMs: number,
+  maxMs: number,
+): number {
+  if (value === undefined) return defaultMs
+  if (!Number.isFinite(value) || value <= 0) return defaultMs
+  return Math.min(Math.round(value), maxMs)
+}
+
+export function abortableDelay(
+  ms: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  throwIfAborted(signal)
+  return new Promise((resolve, reject) => {
+    const cleanup = () => signal?.removeEventListener('abort', onAbort)
+    const timeout = setTimeout(() => {
+      cleanup()
+      resolve()
+    }, ms)
+    const onAbort = () => {
+      cleanup()
+      clearTimeout(timeout)
+      reject(abortError(signal?.reason))
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+export function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw abortError(signal.reason)
+}
+
+export function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError'
+}
+
+function abortError(reason?: unknown): Error {
+  if (reason instanceof Error) return reason
+  const error = new Error(
+    reason === undefined ? 'The operation was aborted.' : String(reason),
+  )
+  error.name = 'AbortError'
+  return error
+}
+
 /** Validate args, run the handler, and convert any failure into an instructive error result. */
 export async function executeTool(
   def: ToolDefinition,
   rawArgs: unknown,
   ctx: ToolContext,
 ): Promise<ToolResult> {
+  throwIfAborted(ctx.signal)
   const parsed = def.input.safeParse(rawArgs ?? {})
   if (!parsed.success) {
     const detail = parsed.error.issues
@@ -85,8 +126,14 @@ export async function executeTool(
   }
 
   try {
-    return await def.handler(parsed.data as Record<string, unknown>, ctx)
+    const result = await def.handler(
+      parsed.data as Record<string, unknown>,
+      ctx,
+    )
+    throwIfAborted(ctx.signal)
+    return result
   } catch (err) {
+    if (ctx.signal?.aborted || isAbortError(err)) throw err
     return errorResult(
       `${def.name} failed: ${err instanceof Error ? err.message : String(err)}`,
     )

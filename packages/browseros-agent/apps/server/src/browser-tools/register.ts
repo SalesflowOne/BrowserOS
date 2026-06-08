@@ -15,7 +15,10 @@ type RegisterFn = (
     inputSchema?: ZodRawShape
     annotations?: Record<string, unknown>
   },
-  handler: (args: Record<string, unknown>) => Promise<{
+  handler: (
+    args: Record<string, unknown>,
+    extra?: { signal?: AbortSignal },
+  ) => Promise<{
     content: unknown
     isError?: boolean
     structuredContent?: unknown
@@ -47,12 +50,13 @@ export function registerBrowserTools(
           annotations: tool.annotations as Record<string, unknown>,
         }),
       },
-      async (args) => {
+      async (args, extra) => {
         const startTime = performance.now()
         try {
           const result = await executeTool(tool, args, {
             session,
             ...defaults,
+            signal: extra?.signal,
           })
           metrics.log('tool_executed', {
             tool_name: tool.name,

@@ -1,8 +1,15 @@
 import { z } from 'zod'
-import { defineTool, errorResult, textResult } from './framework'
+import {
+  abortableDelay,
+  clampTimeout,
+  defineTool,
+  errorResult,
+  textResult,
+  throwIfAborted,
+} from './framework'
 
-const delay = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms))
+const DEFAULT_WAIT_TIMEOUT_MS = 10_000
+const MAX_WAIT_TIMEOUT_MS = 30_000
 
 export const wait = defineTool({
   name: 'wait',
@@ -19,10 +26,17 @@ export const wait = defineTool({
   }),
   annotations: { readOnlyHint: true },
   handler: async (args, ctx) => {
-    const timeout = args.timeout ?? 10_000
+    const timeout = clampTimeout(
+      args.timeout,
+      DEFAULT_WAIT_TIMEOUT_MS,
+      MAX_WAIT_TIMEOUT_MS,
+    )
 
     if (args.for === 'time') {
-      await delay(Number(args.value ?? timeout))
+      const waitMs = parseWaitMs(args.value, timeout)
+      if (waitMs === null)
+        return errorResult('wait: value must be milliseconds.')
+      await abortableDelay(Math.min(waitMs, timeout), ctx.signal)
       return textResult('waited', { matched: true })
     }
     if (!args.value) {
@@ -37,6 +51,7 @@ export const wait = defineTool({
 
     const deadline = Date.now() + timeout
     while (Date.now() < deadline) {
+      throwIfAborted(ctx.signal)
       const result = await session.Runtime.evaluate({
         expression,
         returnByValue: true,
@@ -44,10 +59,23 @@ export const wait = defineTool({
       if (result.result?.value === true) {
         return textResult(`matched (${args.for})`, { matched: true })
       }
-      await delay(300)
+      await abortableDelay(
+        Math.min(300, Math.max(0, deadline - Date.now())),
+        ctx.signal,
+      )
     }
     return textResult(`timed out after ${timeout}ms waiting for ${args.for}`, {
       matched: false,
     })
   },
 })
+
+function parseWaitMs(
+  value: string | undefined,
+  fallback: number,
+): number | null {
+  if (value === undefined) return fallback
+  const ms = Number(value)
+  if (!Number.isFinite(ms) || ms < 0) return null
+  return Math.round(ms)
+}
