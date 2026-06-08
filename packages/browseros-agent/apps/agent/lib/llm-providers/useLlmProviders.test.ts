@@ -44,6 +44,18 @@ const MockBrowserOSAdapter = {
   getInstance: () => browserOSAdapter,
 }
 
+const createBrowserOSProvider = () => ({
+  id: 'browseros',
+  type: 'browseros',
+  name: 'BrowserOS',
+  modelId: 'browseros-auto',
+  supportsImages: true,
+  contextWindow: 200000,
+  temperature: 0.2,
+  createdAt: 0,
+  updatedAt: 0,
+})
+
 mock.module('@/lib/browseros/adapter', () => ({
   BrowserOSAdapter: MockBrowserOSAdapter,
   getBrowserOSAdapter: () => browserOSAdapter,
@@ -58,19 +70,8 @@ mock.module('@/lib/browseros/prefs', () => ({
 
 mock.module('./storage', () => ({
   DEFAULT_PROVIDER_ID: 'browseros',
-  createDefaultProvidersConfig: () => [
-    {
-      id: 'browseros',
-      type: 'browseros',
-      name: 'BrowserOS',
-      modelId: 'browseros-auto',
-      supportsImages: true,
-      contextWindow: 200000,
-      temperature: 0.2,
-      createdAt: 0,
-      updatedAt: 0,
-    },
-  ],
+  createDefaultBrowserOSProvider: createBrowserOSProvider,
+  createDefaultProvidersConfig: () => [createBrowserOSProvider()],
   defaultProviderIdStorage: {
     getValue: async () => storageValues.get('local:default-provider-id'),
     setValue: async (value: string) => {
