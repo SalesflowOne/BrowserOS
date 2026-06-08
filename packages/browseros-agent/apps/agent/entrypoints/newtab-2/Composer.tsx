@@ -14,6 +14,7 @@ import {
   type FormEventHandler,
   type ReactNode,
   useEffect,
+  useRef,
 } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -22,17 +23,13 @@ import { AttachDropdown } from './AttachDropdown'
 import { useComposer } from './ComposerProvider'
 
 interface ComposerProps {
-  autoFocus?: boolean
+  autoFocusKey?: string | number | null
   placeholder?: string
-  onSubmitOverride?: (value: string) => void
-  onMicOverride?: () => void
 }
 
 export const Composer: FC<ComposerProps> = ({
-  autoFocus,
+  autoFocusKey,
   placeholder = 'Ask anything, or brief your marketing agent…',
-  onSubmitOverride,
-  onMicOverride,
 }) => {
   const {
     value,
@@ -44,11 +41,18 @@ export const Composer: FC<ComposerProps> = ({
     removeTab,
     removeFile,
     voice,
-    submitToChat,
+    submit,
+    triggerVoice,
   } = useComposer()
 
+  const inputRef = useRef<HTMLInputElement>(null)
   const canSend = value.trim().length > 0
   const attachCount = selectedTabs.length + selectedFiles.length
+
+  useEffect(() => {
+    if (autoFocusKey == null) return
+    inputRef.current?.focus()
+  }, [autoFocusKey])
 
   useEffect(() => {
     if (!voice.transcript) return
@@ -59,40 +63,30 @@ export const Composer: FC<ComposerProps> = ({
   const handleSubmit: FormEventHandler<HTMLFormElement> = (e) => {
     e.preventDefault()
     if (!canSend) return
-    if (onSubmitOverride) {
-      onSubmitOverride(value)
-      return
-    }
-    submitToChat('text')
+    submit()
   }
 
   const handleMicToggle = () => {
-    if (onMicOverride) {
-      onMicOverride()
-      return
-    }
     if (voice.isRecording) {
       void voice.stopRecording()
       return
     }
-    submitToChat('voice')
+    triggerVoice()
   }
 
   return (
-    <motion.form
-      layoutId="composer-card"
-      layout="position"
+    <form
       onSubmit={handleSubmit}
-      className="z-10 w-[660px] rounded-[22px] border border-transparent bg-white/90 px-5 pt-[18px] pb-3 transition-shadow duration-200 focus-within:border-[rgba(226,114,44,0.18)] focus-within:shadow-[0_16px_50px_-10px_rgba(226,114,44,0.28),0_0_0_6px_rgba(226,114,44,0.05)]"
+      className="w-[660px] rounded-[22px] border border-transparent bg-white/90 px-5 pt-[18px] pb-3 transition-shadow duration-200 focus-within:border-[rgba(226,114,44,0.18)] focus-within:shadow-[0_16px_50px_-10px_rgba(226,114,44,0.28),0_0_0_6px_rgba(226,114,44,0.05)]"
     >
       <div className="flex items-center gap-3">
         <Search className="size-[18px] text-muted-foreground" aria-hidden />
         <Input
+          ref={inputRef}
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder={placeholder}
           aria-label={placeholder}
-          autoFocus={autoFocus}
           className="h-auto w-full rounded-none border-0 bg-transparent p-0 text-[16px] shadow-none placeholder:text-[color-mix(in_oklch,var(--muted-foreground)_80%,transparent)] focus-visible:border-0 focus-visible:ring-0"
         />
       </div>
@@ -202,7 +196,7 @@ export const Composer: FC<ComposerProps> = ({
           <ArrowUp className="size-4" />
         </Button>
       </div>
-    </motion.form>
+    </form>
   )
 }
 

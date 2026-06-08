@@ -4,6 +4,7 @@ import {
   type ReactNode,
   useCallback,
   useContext,
+  useRef,
   useState,
 } from 'react'
 import { useNavigate } from 'react-router'
@@ -12,6 +13,11 @@ import {
   useVoiceInput,
 } from '@/lib/voice/useVoiceInput'
 import type { ChatMode } from './chat/chat-screen.types'
+
+interface ChatHandlers {
+  onSubmit?: (text: string) => void
+  onSwitchToVoice?: () => void
+}
 
 interface ComposerContextValue {
   value: string
@@ -27,7 +33,9 @@ interface ComposerContextValue {
   submittedAt: number | null
   transitionIntent: ChatMode | null
   setTransitionIntent: (intent: ChatMode | null) => void
-  submitToChat: (mode: ChatMode) => void
+  submit: () => void
+  triggerVoice: () => void
+  registerChatHandlers: (handlers: ChatHandlers) => () => void
 }
 
 const ComposerContext = createContext<ComposerContextValue | null>(null)
@@ -40,6 +48,7 @@ export const ComposerProvider: FC<{ children: ReactNode }> = ({ children }) => {
   const [transitionIntent, setTransitionIntent] = useState<ChatMode | null>(
     null,
   )
+  const chatHandlersRef = useRef<ChatHandlers>({})
   const voice = useVoiceInput()
   const navigate = useNavigate()
 
@@ -71,23 +80,48 @@ export const ComposerProvider: FC<{ children: ReactNode }> = ({ children }) => {
     setTransitionIntent(null)
   }, [])
 
-  const submitToChat = useCallback(
-    (mode: ChatMode) => {
-      setSubmittedAt(Date.now())
-      setTransitionIntent(mode)
-      if (mode === 'voice') {
-        void voice.startRecording()
+  const registerChatHandlers = useCallback((handlers: ChatHandlers) => {
+    chatHandlersRef.current = handlers
+    return () => {
+      if (chatHandlersRef.current === handlers) {
+        chatHandlersRef.current = {}
       }
-      navigate(`/newtab-2/chat?mode=${mode}`, {
-        state: {
-          initialMessage: value,
-          initialMode: mode,
-          initialVoice: mode === 'voice',
-        },
-      })
-    },
-    [navigate, value, voice.startRecording],
-  )
+    }
+  }, [])
+
+  const submit = useCallback(() => {
+    const text = value.trim()
+    if (!text) return
+    const handler = chatHandlersRef.current.onSubmit
+    if (handler) {
+      handler(text)
+      setValue('')
+      return
+    }
+    setSubmittedAt(Date.now())
+    setTransitionIntent('text')
+    navigate(`/newtab-2/chat?mode=text`, {
+      state: { initialMessage: text, initialMode: 'text', initialVoice: false },
+    })
+  }, [navigate, value])
+
+  const triggerVoice = useCallback(() => {
+    const handler = chatHandlersRef.current.onSwitchToVoice
+    if (handler) {
+      handler()
+      return
+    }
+    setSubmittedAt(Date.now())
+    setTransitionIntent('voice')
+    void voice.startRecording()
+    navigate(`/newtab-2/chat?mode=voice`, {
+      state: {
+        initialMessage: value,
+        initialMode: 'voice',
+        initialVoice: true,
+      },
+    })
+  }, [navigate, value, voice.startRecording])
 
   return (
     <ComposerContext.Provider
@@ -105,7 +139,9 @@ export const ComposerProvider: FC<{ children: ReactNode }> = ({ children }) => {
         submittedAt,
         transitionIntent,
         setTransitionIntent,
-        submitToChat,
+        submit,
+        triggerVoice,
+        registerChatHandlers,
       }}
     >
       {children}

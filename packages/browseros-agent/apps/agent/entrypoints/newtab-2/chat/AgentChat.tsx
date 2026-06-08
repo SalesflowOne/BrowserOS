@@ -14,7 +14,6 @@ import { type FC, useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { BrowserOSIcon } from '@/lib/llm-providers/providerIcons'
 import { cn } from '@/lib/utils'
-import { Composer } from '../Composer'
 import { useComposer } from '../ComposerProvider'
 import { POSTS, TONE_NOTES, TRENDS } from './chat-screen.mock-data'
 import type { ChatBlock, ThoughtBlock } from './chat-screen.types'
@@ -33,11 +32,24 @@ export const AgentChat: FC<AgentChatProps> = ({
   initialMessage,
   onSwitchToVoice,
 }) => {
-  const { reset } = useComposer()
+  const { reset, registerChatHandlers } = useComposer()
   const [blocks, setBlocks] = useState<ChatBlock[]>(() =>
     initialMessage ? [{ type: 'founder', id: id(), text: initialMessage }] : [],
   )
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  const handleSend = useCallback((text: string) => {
+    const trimmed = text.trim()
+    if (!trimmed) return
+    setBlocks((b) => [...b, { type: 'founder', id: id(), text: trimmed }])
+  }, [])
+
+  useEffect(() => {
+    return registerChatHandlers({
+      onSubmit: handleSend,
+      onSwitchToVoice,
+    })
+  }, [registerChatHandlers, handleSend, onSwitchToVoice])
 
   useEffect(() => {
     reset()
@@ -89,16 +101,6 @@ export const AgentChat: FC<AgentChatProps> = ({
     })
   }, [])
 
-  const handleSend = useCallback(
-    (text: string) => {
-      const trimmed = text.trim()
-      if (!trimmed) return
-      setBlocks((b) => [...b, { type: 'founder', id: id(), text: trimmed }])
-      reset()
-    },
-    [reset],
-  )
-
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       <header className="flex h-12 shrink-0 items-center justify-between px-6">
@@ -125,19 +127,11 @@ export const AgentChat: FC<AgentChatProps> = ({
       </header>
 
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex max-w-[720px] flex-col gap-[14px] px-6 pt-3 pb-7">
+        <div className="mx-auto flex max-w-[720px] flex-col gap-[14px] px-6 pt-3 pb-[150px]">
           {blocks.map((b) => (
             <BlockRenderer key={b.id} block={b} />
           ))}
         </div>
-      </div>
-
-      <div className="flex shrink-0 justify-center px-6 pt-2 pb-[18px]">
-        <Composer
-          placeholder="Reply to the agent…"
-          onSubmitOverride={handleSend}
-          onMicOverride={onSwitchToVoice}
-        />
       </div>
     </div>
   )

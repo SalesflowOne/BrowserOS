@@ -2,8 +2,12 @@ import { motion } from 'motion/react'
 import type { FC } from 'react'
 import { Kbd } from '@/components/ui/kbd'
 import { BrowserOSIcon } from '@/lib/llm-providers/providerIcons'
-import { Composer } from './Composer'
 import { useComposer } from './ComposerProvider'
+
+// Matches the natural height of <Composer /> with no chips attached.
+// The hoisted ComposerLayer overlays this invisible slot so the chrome
+// (icon above, hint below) flows around the right vertical space.
+const COMPOSER_SLOT_HEIGHT = 100
 
 export const NewTabTwo: FC = () => {
   const { voice, transitionIntent } = useComposer()
@@ -16,8 +20,8 @@ export const NewTabTwo: FC = () => {
 
   const pageExit =
     transitionIntent === 'voice'
-      ? { opacity: 0, transition: { duration: 0.08, ease: 'easeIn' as const } }
-      : { opacity: 0, transition: { duration: 0.18, ease: 'easeIn' as const } }
+      ? { opacity: 0, transition: { duration: 0.12, ease: 'easeIn' as const } }
+      : { opacity: 0, transition: { duration: 0.22, ease: 'easeIn' as const } }
 
   return (
     <motion.div
@@ -36,7 +40,11 @@ export const NewTabTwo: FC = () => {
           <BrowserOSIcon size={40} />
         </div>
 
-        <Composer autoFocus />
+        <div
+          aria-hidden
+          className="w-[660px]"
+          style={{ height: COMPOSER_SLOT_HEIGHT }}
+        />
 
         <p className="z-10 whitespace-nowrap text-[13px] text-muted-foreground">
           {hint ?? (
