@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'bun:test'
 import { TOOL_LIMITS } from '@browseros/shared/constants/limits'
-import { CHAT_MODE_ALLOWED_TOOLS } from '../../src/agent/chat-mode'
-import { buildBrowserToolSet } from '../../src/agent/tool-adapter'
-import type { BrowserSession } from '../../src/browser/core/session'
-import { registerBrowserTools } from '../../src/browser-tools/register'
-import { BROWSER_TOOLS } from '../../src/browser-tools/registry'
+import { CHAT_MODE_ALLOWED_TOOLS } from '../../../src/agent/chat-mode'
+import { buildBrowserToolSet } from '../../../src/agent/tool-adapter'
+import type { BrowserSession } from '../../../src/browser/core/session'
+import { registerBrowserTools } from '../../../src/tools/browser/register'
+import { BROWSER_TOOLS } from '../../../src/tools/browser/registry'
 
 type RegisteredHandler = (args: Record<string, unknown>) => Promise<{
   content: unknown

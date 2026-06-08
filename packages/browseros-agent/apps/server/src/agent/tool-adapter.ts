@@ -1,6 +1,7 @@
 import type { LanguageModelV2ToolResultOutput } from '@ai-sdk/provider'
 import { type ToolSet, tool } from 'ai'
 import type { BrowserSession } from '../browser/core/session'
+import { metrics } from '../lib/metrics'
 import {
   type ContentBlock,
   errorResult,
@@ -8,9 +9,8 @@ import {
   type ToolDefinition,
   type ToolResult,
   throwIfAborted,
-} from '../browser-tools/framework'
-import { BROWSER_TOOLS } from '../browser-tools/registry'
-import { metrics } from '../lib/metrics'
+} from '../tools/browser/framework'
+import { BROWSER_TOOLS } from '../tools/browser/registry'
 
 export interface BrowserToolSetOptions {
   readOnly?: boolean

@@ -3,7 +3,7 @@ import type { BrowserSession } from '../../../browser/core/session'
 import {
   type BrowserToolDefaults,
   registerBrowserTools,
-} from '../../../browser-tools/register'
+} from '../../../tools/browser/register'
 
 /** Registers the active BrowserOS browser tools for MCP requests. */
 export function registerTools(

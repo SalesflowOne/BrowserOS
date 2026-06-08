@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { BrowserSession } from '../browser/core/session'
+import type { BrowserSession } from '../../browser/core/session'
 import {
   defineTool,
   errorResult,

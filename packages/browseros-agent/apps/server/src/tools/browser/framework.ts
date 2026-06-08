@@ -1,5 +1,5 @@
 import type { TypeOf, ZodType } from 'zod'
-import type { BrowserSession } from '../browser/core/session'
+import type { BrowserSession } from '../../browser/core/session'
 
 export interface ToolContext {
   session: BrowserSession

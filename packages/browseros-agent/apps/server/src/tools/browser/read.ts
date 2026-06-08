@@ -1,6 +1,6 @@
 import { TOOL_LIMITS } from '@browseros/shared/constants/limits'
 import { z } from 'zod'
-import { buildContentMarkdownExpression } from '../browser/content-markdown'
+import { buildContentMarkdownExpression } from '../../browser/content-markdown'
 import { defineTool, errorResult, textResult } from './framework'
 import { writeTempToolOutputFile } from './output-file'
 import { wrapUntrusted } from './trust-boundary'

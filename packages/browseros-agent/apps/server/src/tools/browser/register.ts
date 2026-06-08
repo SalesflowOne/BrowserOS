@@ -1,8 +1,8 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { ZodRawShape } from 'zod'
-import type { BrowserSession } from '../browser/core/session'
-import { logger } from '../lib/logger'
-import { metrics } from '../lib/metrics'
+import type { BrowserSession } from '../../browser/core/session'
+import { logger } from '../../lib/logger'
+import { metrics } from '../../lib/metrics'
 import { executeTool } from './framework'
 import { BROWSER_TOOLS } from './registry'
 
