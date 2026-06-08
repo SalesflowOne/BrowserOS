@@ -1,4 +1,5 @@
 import { getAgentServerUrl } from '@/lib/browseros/helpers'
+import { resolveChatProvider } from '@/lib/llm-providers/provider-runtime'
 import {
   createDefaultBrowserOSProvider,
   defaultProviderIdStorage,
@@ -10,15 +11,13 @@ const resolveProvider = async (
   providerId?: string,
 ): Promise<LlmProviderConfig> => {
   const providers = await providersStorage.getValue()
-  if (providerId && providers?.length) {
-    const match = providers.find((p) => p.id === providerId)
-    if (match) return match
-  }
   if (providers?.length) {
     const defaultProviderId = await defaultProviderIdStorage.getValue()
-    const defaultProvider = providers.find((p) => p.id === defaultProviderId)
-    if (defaultProvider) return defaultProvider
-    if (providers[0]) return providers[0]
+    const provider = resolveChatProvider(
+      providers,
+      providerId ?? defaultProviderId,
+    )
+    if (provider) return provider
   }
   return createDefaultBrowserOSProvider()
 }

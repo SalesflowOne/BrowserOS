@@ -1,4 +1,5 @@
 import { z } from 'zod/v3'
+import { isLocalRuntimeProviderType } from '../../../lib/llm-providers/provider-runtime'
 
 export const providerTypeEnum = z.enum([
   'moonshot',
@@ -28,9 +29,6 @@ const credentiallessProviderTypes: ReadonlySet<
   'codex',
   'claude-code',
 ])
-
-const localRuntimeProviderTypes: ReadonlySet<z.infer<typeof providerTypeEnum>> =
-  new Set(['codex', 'claude-code'])
 
 export const providerFormSchema = z
   .object({
@@ -112,13 +110,6 @@ export function isCredentiallessProviderType(
   type: z.infer<typeof providerTypeEnum>,
 ): boolean {
   return credentiallessProviderTypes.has(type)
-}
-
-/** Identifies provider types backed by local CLIs instead of HTTP endpoints. */
-export function isLocalRuntimeProviderType(
-  type: z.infer<typeof providerTypeEnum>,
-): boolean {
-  return localRuntimeProviderTypes.has(type)
 }
 
 /** Removes stale endpoint and credential fields from local runtime configs. */

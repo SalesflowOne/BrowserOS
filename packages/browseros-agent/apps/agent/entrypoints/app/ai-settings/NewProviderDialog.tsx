@@ -60,6 +60,7 @@ import {
   KIMI_API_KEY_GUIDE_CLICKED_EVENT,
   MODEL_SELECTED_EVENT,
 } from '@/lib/constants/analyticsEvents'
+import { isLocalRuntimeProviderType } from '@/lib/llm-providers/provider-runtime'
 import {
   getDefaultBaseUrlForProviders,
   getProviderTemplate,
@@ -72,7 +73,6 @@ import { cn } from '@/lib/utils'
 import { getModelContextLength, getModelsForProvider } from './models'
 import {
   isCredentiallessProviderType,
-  isLocalRuntimeProviderType,
   normalizeProviderFormValues,
   type ProviderFormValues,
   providerFormSchema,

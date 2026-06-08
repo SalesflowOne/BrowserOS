@@ -36,6 +36,10 @@ import {
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { SCHEDULED_TASK_PROMPT_REFINED_EVENT } from '@/lib/constants/analyticsEvents'
+import {
+  isChatProviderType,
+  resolveChatProvider,
+} from '@/lib/llm-providers/provider-runtime'
 import { BrowserOSIcon, ProviderIcon } from '@/lib/llm-providers/providerIcons'
 import {
   defaultProviderIdStorage,
@@ -160,10 +164,9 @@ export const NewScheduledTaskDialog: FC<NewScheduledTaskDialogProps> = ({
     }
   }, [open, initialValues, form])
 
-  // Resolve the currently selected provider for the selector display
   const resolvedProvider: Provider | null = (() => {
     const id = selectedProviderId ?? defaultProviderId
-    const found = providers.find((p) => p.id === id)
+    const found = resolveChatProvider(providers, id)
     if (found) {
       return {
         kind: 'llm' as const,
@@ -172,22 +175,25 @@ export const NewScheduledTaskDialog: FC<NewScheduledTaskDialogProps> = ({
         type: found.type,
       }
     }
-    if (providers[0])
+    const fallback = resolveChatProvider(providers)
+    if (fallback)
       return {
         kind: 'llm' as const,
-        id: providers[0].id,
-        name: providers[0].name,
-        type: providers[0].type,
+        id: fallback.id,
+        name: fallback.name,
+        type: fallback.type,
       }
     return null
   })()
 
-  const providerOptions: Provider[] = providers.map((p) => ({
-    kind: 'llm',
-    id: p.id,
-    name: p.name,
-    type: p.type,
-  }))
+  const providerOptions: Provider[] = providers
+    .filter((provider) => isChatProviderType(provider.type))
+    .map((p) => ({
+      kind: 'llm',
+      id: p.id,
+      name: p.name,
+      type: p.type,
+    }))
 
   // Replace textarea content via execCommand so the browser's native undo
   // stack (Cmd+Z / Ctrl+Z) records the change. Falls back to form.setValue

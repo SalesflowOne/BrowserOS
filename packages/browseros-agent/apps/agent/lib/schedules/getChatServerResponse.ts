@@ -1,6 +1,7 @@
 import { createParser, type EventSourceMessage } from 'eventsource-parser'
 import type { ChatMode } from '@/entrypoints/sidepanel/index/chatTypes'
 import { getAgentServerUrl } from '@/lib/browseros/helpers'
+import { resolveChatProvider } from '@/lib/llm-providers/provider-runtime'
 import {
   createDefaultBrowserOSProvider,
   defaultProviderIdStorage,
@@ -73,17 +74,15 @@ const getDefaultProvider = async (): Promise<LlmProviderConfig | null> => {
   if (!providers?.length) return null
 
   const defaultProviderId = await defaultProviderIdStorage.getValue()
-  const defaultProvider = providers.find((p) => p.id === defaultProviderId)
-  return defaultProvider ?? providers[0] ?? null
+  return resolveChatProvider(providers, defaultProviderId)
 }
 
-// Resolve provider by ID, falling back to global default
 const resolveProvider = async (
   providerId?: string,
 ): Promise<LlmProviderConfig> => {
   if (providerId) {
     const providers = await providersStorage.getValue()
-    const match = providers?.find((p) => p.id === providerId)
+    const match = resolveChatProvider(providers ?? [], providerId)
     if (match) return match
   }
   return (await getDefaultProvider()) ?? createDefaultBrowserOSProvider()
