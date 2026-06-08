@@ -34,3 +34,4 @@ For docs-only changes, also run `git diff --check`. For release/build changes, r
 
 - For server-specific guidance, see `apps/server/CLAUDE.md`.
 - For extension/agent UI specifics, see `apps/agent/CLAUDE.md`.
+- For the eval harness (benchmarks, graders, suites, runs), see `apps/eval/CLAUDE.md`.
