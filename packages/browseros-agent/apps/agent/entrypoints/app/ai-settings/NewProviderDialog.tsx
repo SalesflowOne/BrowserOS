@@ -10,7 +10,6 @@ import {
 } from 'lucide-react'
 import { type FC, useEffect, useMemo, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
-import { z } from 'zod/v3'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -71,120 +70,11 @@ import type { LlmProviderConfig, ProviderType } from '@/lib/llm-providers/types'
 import { track } from '@/lib/metrics/track'
 import { cn } from '@/lib/utils'
 import { getModelContextLength, getModelsForProvider } from './models'
-
-const providerTypeEnum = z.enum([
-  'moonshot',
-  'anthropic',
-  'openai',
-  'openai-compatible',
-  'google',
-  'openrouter',
-  'azure',
-  'ollama',
-  'lmstudio',
-  'bedrock',
-  'browseros',
-  'chatgpt-pro',
-  'github-copilot',
-  'qwen-code',
-])
-
-/**
- * Zod schema for provider form validation
- * @public
- */
-export const providerFormSchema = z
-  .object({
-    type: providerTypeEnum,
-    name: z.string().min(1, 'Provider name is required').max(50),
-    baseUrl: z.string().optional(),
-    modelId: z.string().min(1, 'Model ID is required'),
-    apiKey: z.string().optional(),
-    supportsImages: z.boolean(),
-    contextWindow: z.number().int().min(1000).max(2000000),
-    temperature: z.number().min(0).max(2),
-    // Azure-specific
-    resourceName: z.string().optional(),
-    // Bedrock-specific
-    accessKeyId: z.string().optional(),
-    secretAccessKey: z.string().optional(),
-    region: z.string().optional(),
-    sessionToken: z.string().optional(),
-    // ChatGPT Pro (Codex)
-    reasoningEffort: z.enum(['none', 'low', 'medium', 'high']).optional(),
-    reasoningSummary: z.enum(['auto', 'concise', 'detailed']).optional(),
-  })
-  .superRefine((data, ctx) => {
-    // Azure: require either resourceName or baseUrl
-    if (data.type === 'azure') {
-      if (!data.resourceName && !data.baseUrl) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'Either Resource Name or Base URL is required',
-          path: ['resourceName'],
-        })
-      }
-      if (!data.apiKey) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'API Key is required for Azure',
-          path: ['apiKey'],
-        })
-      }
-    }
-    // Bedrock: require AWS credentials
-    else if (data.type === 'bedrock') {
-      if (!data.accessKeyId) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'Access Key ID is required',
-          path: ['accessKeyId'],
-        })
-      }
-      if (!data.secretAccessKey) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'Secret Access Key is required',
-          path: ['secretAccessKey'],
-        })
-      }
-      if (!data.region) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'Region is required',
-          path: ['region'],
-        })
-      }
-    }
-    // OAuth providers: no credentials needed (server-managed)
-    else if (
-      data.type === 'chatgpt-pro' ||
-      data.type === 'github-copilot' ||
-      data.type === 'qwen-code'
-    ) {
-      // No validation needed — OAuth tokens are on the server
-    }
-    // Other providers: require baseUrl
-    else if (!data.baseUrl) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Base URL is required',
-        path: ['baseUrl'],
-      })
-    } else if (!/^https?:\/\/.+/.test(data.baseUrl)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Must be a valid URL',
-        path: ['baseUrl'],
-      })
-    }
-  })
-
-/**
- * Type for form values
- * @public
- */
-export type ProviderFormValues = z.infer<typeof providerFormSchema>
+import {
+  isCredentiallessProviderType,
+  type ProviderFormValues,
+  providerFormSchema,
+} from './provider-form-schema'
 
 function formatContextWindow(tokens: number): string {
   if (tokens >= 1000000)
@@ -250,9 +140,7 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
       supportsImages: initialValues?.supportsImages ?? false,
       contextWindow: initialValues?.contextWindow || 128000,
       temperature: initialValues?.temperature ?? 0.2,
-      // Azure-specific
       resourceName: initialValues?.resourceName || '',
-      // Bedrock-specific
       accessKeyId: initialValues?.accessKeyId || '',
       secretAccessKey: initialValues?.secretAccessKey || '',
       region: initialValues?.region || '',
@@ -265,7 +153,6 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
   const watchedType = form.watch('type')
   const watchedModelId = form.watch('modelId')
 
-  // Watch credential fields to clear test result when they change
   const watchedApiKey = form.watch('apiKey')
   const watchedBaseUrl = form.watch('baseUrl')
   const watchedResourceName = form.watch('resourceName')
@@ -274,7 +161,6 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
   const watchedRegion = form.watch('region')
   const watchedSessionToken = form.watch('sessionToken')
 
-  // Clear test result when credential fields change
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional - clear result when any credential changes
   useEffect(() => {
     setTestResult(null)
@@ -309,7 +195,6 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
   const showCustomEntry =
     modelSearch && !filteredModels.some((m) => m.modelId === modelSearch)
 
-  // Handle provider type change (user-initiated via Select)
   const handleTypeChange = (newType: ProviderType) => {
     form.setValue('type', newType)
     const defaultUrl = getDefaultBaseUrlForProviders(newType)
@@ -319,7 +204,6 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
     form.setValue('modelId', '')
   }
 
-  // Auto-fill context window when model changes (only for new providers)
   useEffect(() => {
     if (initialValues?.id) return
 
@@ -334,7 +218,6 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
     }
   }, [watchedModelId, watchedType, form, initialValues?.id])
 
-  // Reset form when initialValues change
   useEffect(() => {
     if (initialValues) {
       form.reset({
@@ -348,9 +231,7 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
         supportsImages: initialValues.supportsImages ?? false,
         contextWindow: initialValues.contextWindow || 128000,
         temperature: initialValues.temperature ?? 0.2,
-        // Azure-specific
         resourceName: initialValues.resourceName || '',
-        // Bedrock-specific
         accessKeyId: initialValues.accessKeyId || '',
         secretAccessKey: initialValues.secretAccessKey || '',
         region: initialValues.region || '',
@@ -361,7 +242,6 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
     }
   }, [initialValues, form])
 
-  // Reset form when dialog opens fresh (no initial values)
   useEffect(() => {
     if (open && !initialValues) {
       const defaultType = 'openai'
@@ -374,9 +254,7 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
         supportsImages: false,
         contextWindow: 128000,
         temperature: 0.2,
-        // Azure-specific
         resourceName: '',
-        // Bedrock-specific
         accessKeyId: '',
         secretAccessKey: '',
         region: '',
@@ -385,7 +263,6 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
         reasoningSummary: 'auto',
       })
     }
-    // Clear test result when dialog opens/closes
     setTestResult(null)
   }, [open, initialValues, form])
 
@@ -420,11 +297,9 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
     onOpenChange(false)
   }
 
-  // Check if we have enough info to test the connection
   const canTest = (): boolean => {
     if (!watchedModelId) return false
 
-    // OAuth providers: always testable (server has the OAuth token)
     if (
       watchedType === 'chatgpt-pro' ||
       watchedType === 'github-copilot' ||
@@ -438,7 +313,6 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
     if (watchedType === 'bedrock') {
       return !!watchedAccessKeyId && !!watchedSecretAccessKey && !!watchedRegion
     }
-    // Standard providers need baseUrl, most need apiKey (except ollama/lmstudio)
     if (!watchedBaseUrl) return false
     if (!['ollama', 'lmstudio'].includes(watchedType) && !watchedApiKey) {
       return false
@@ -513,16 +387,29 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
   }
 
   const renderProviderSpecificFields = () => {
-    // OAuth-only providers (no API key needed)
-    if (watchedType === 'github-copilot' || watchedType === 'qwen-code') {
-      const name = watchedType === 'github-copilot' ? 'GitHub' : 'Qwen Code'
+    if (
+      isCredentiallessProviderType(watchedType) &&
+      watchedType !== 'chatgpt-pro'
+    ) {
+      const name =
+        watchedType === 'github-copilot'
+          ? 'GitHub'
+          : watchedType === 'qwen-code'
+            ? 'Qwen Code'
+            : watchedType === 'codex'
+              ? 'Codex'
+              : 'Claude Code'
+      const message =
+        watchedType === 'codex' || watchedType === 'claude-code'
+          ? `Credentials are managed by the local ${name} runtime. No API key needed.`
+          : `Credentials are managed via ${name} OAuth. No API key needed.`
       return (
         <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-green-700 text-sm dark:border-green-800 dark:bg-green-950 dark:text-green-300">
-          Credentials are managed via {name} OAuth. No API key needed.
+          {message}
         </div>
       )
     }
-    // ChatGPT Pro: OAuth credentials + Codex reasoning settings
+
     if (watchedType === 'chatgpt-pro') {
       return (
         <>
@@ -722,7 +609,6 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
       )
     }
 
-    // Standard providers (OpenAI, Anthropic, Google, etc.)
     return (
       <>
         <FormField
