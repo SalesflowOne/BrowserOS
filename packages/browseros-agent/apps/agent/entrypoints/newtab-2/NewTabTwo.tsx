@@ -1,18 +1,4 @@
-import {
-  ArrowLeft,
-  ArrowRight,
-  ArrowUp,
-  ChevronDown,
-  Folder,
-  Mic,
-  MoreHorizontal,
-  PanelLeft,
-  Plus,
-  RotateCw,
-  Search,
-  Sparkles,
-  User,
-} from 'lucide-react'
+import { ArrowUp, Mic, MoreHorizontal, Plus, Search } from 'lucide-react'
 import { type FC, type FormEventHandler, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -69,38 +55,6 @@ export const NewTabTwo: FC = () => {
 
   return (
     <div className="flex h-screen w-screen flex-col bg-[radial-gradient(110%_80%_at_50%_38%,#FFE9D6_0%,#FDF0E6_32%,var(--background)_70%)]">
-      <header className="flex h-11 shrink-0 items-center gap-[14px] px-4 text-[#8a8378]">
-        <div className="flex gap-3 text-[#8a8378]">
-          <span aria-hidden>
-            <PanelLeft className="size-4" />
-          </span>
-          <span aria-hidden>
-            <ArrowLeft className="size-4" />
-          </span>
-          <span aria-hidden>
-            <ArrowRight className="size-4" />
-          </span>
-          <span aria-hidden>
-            <RotateCw className="size-[15px]" />
-          </span>
-        </div>
-        <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[#8a8378] text-[12.5px]">
-          <Folder className="size-3.5" aria-hidden />
-          Imported From…
-          <ChevronDown className="size-3.5" aria-hidden />
-        </span>
-        <div className="ml-auto flex gap-2">
-          <span className="inline-flex items-center gap-1.5 rounded-md bg-white/50 px-[9px] py-1 text-[#9a9388] text-[12px]">
-            <Sparkles className="size-3.5" aria-hidden />
-            Skills
-          </span>
-          <span className="inline-flex items-center gap-1.5 rounded-md bg-white/50 px-[9px] py-1 text-[#9a9388] text-[12px]">
-            <User className="size-3.5" aria-hidden />
-            Personalization
-          </span>
-        </div>
-      </header>
-
       <main className="relative flex flex-1 flex-col items-center justify-center gap-[22px]">
         <div
           aria-hidden
