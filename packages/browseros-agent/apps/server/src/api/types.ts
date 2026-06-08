@@ -15,7 +15,7 @@ import {
 import { LLMConfigSchema } from '@browseros/shared/schemas/llm'
 import { z } from 'zod'
 import type { Browser } from '../browser/browser'
-import type { ToolRegistry } from '../tools/tool-registry'
+import type { BrowserSession } from '../browser/core/session'
 
 // Re-export browser context types for consumers
 export {
@@ -92,7 +92,7 @@ export interface HttpServerConfig {
 
   version: string
   browser: Browser
-  registry: ToolRegistry
+  browserSession: BrowserSession
 
   browserosId?: string
   executionDir: string

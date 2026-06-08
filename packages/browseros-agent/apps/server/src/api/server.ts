@@ -70,11 +70,10 @@ export async function createHttpServer(config: HttpServerConfig) {
     port,
     host = '0.0.0.0',
     browserosId,
-    executionDir,
     resourcesDir,
     version,
     browser,
-    registry,
+    browserSession,
   } = config
 
   const { onShutdown } = config
@@ -147,10 +146,7 @@ export async function createHttpServer(config: HttpServerConfig) {
       '/mcp',
       createMcpRoutes({
         version,
-        registry,
-        browser,
-        executionDir,
-        resourcesDir,
+        browserSession,
         klavisRef,
       }),
     )
@@ -158,7 +154,7 @@ export async function createHttpServer(config: HttpServerConfig) {
       '/chat',
       createChatRoutes({
         browser,
-        registry,
+        browserSession,
         browserosId,
         klavisRef,
         aiSdkDevtoolsEnabled: config.aiSdkDevtoolsEnabled,

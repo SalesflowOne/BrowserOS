@@ -66,10 +66,6 @@
     "./browser/backends/cdp": {
       "types": "./src/browser/backends/cdp.ts",
       "default": "./src/browser/backends/cdp.ts"
-    },
-    "./tools/registry": {
-      "types": "./src/tools/registry.ts",
-      "default": "./src/tools/registry.ts"
     }
   },
   "dependencies": {

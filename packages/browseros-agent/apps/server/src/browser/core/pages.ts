@@ -1,4 +1,5 @@
 import type { ProtocolApi } from '@browseros/cdp-protocol/protocol-api'
+import { logger } from '../../lib/logger'
 import {
   type CdpConnection,
   EXCLUDED_URL_PREFIXES,
@@ -190,7 +191,7 @@ export class PageManager {
 
   async newPage(
     url: string,
-    opts?: { background?: boolean; windowId?: number },
+    opts?: { background?: boolean; windowId?: number; tabGroupId?: string },
   ): Promise<number> {
     await this.ensureConnected()
     const created = await this.cdp.Browser.createTab({
@@ -209,6 +210,22 @@ export class PageManager {
       await delay(100)
     }
     if (!tab) throw new Error(`Tab ${tabId} not found after creation`)
+
+    if (opts?.tabGroupId) {
+      try {
+        await this.cdp.Browser.addTabsToGroup({
+          groupId: opts.tabGroupId,
+          tabIds: [tabId],
+        })
+        tab = (await this.cdp.Browser.getTabInfo({ tabId })).tab as TabInfo
+      } catch (error) {
+        logger.warn('Failed to add new page to default tab group', {
+          tabGroupId: opts.tabGroupId,
+          tabId,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
 
     const pageId = this.nextPageId++
     this.pages.set(pageId, { pageId, ...tab, url: tab.url || url })
