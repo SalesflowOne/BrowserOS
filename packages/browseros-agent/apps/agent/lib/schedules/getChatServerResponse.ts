@@ -1,7 +1,6 @@
 import { createParser, type EventSourceMessage } from 'eventsource-parser'
 import type { ChatMode } from '@/entrypoints/sidepanel/index/chatTypes'
 import { getAgentServerUrl } from '@/lib/browseros/helpers'
-import { resolveChatProvider } from '@/lib/llm-providers/provider-runtime'
 import {
   createDefaultBrowserOSProvider,
   defaultProviderIdStorage,
@@ -10,6 +9,10 @@ import {
 import type { LlmProviderConfig } from '@/lib/llm-providers/types'
 import { mcpServerStorage } from '@/lib/mcp/mcpServerStorage'
 import { buildChatRequestBody } from '@/lib/messaging/server/buildChatRequestBody'
+import {
+  findChatProviderById,
+  resolveChatProvider,
+} from '../llm-providers/provider-runtime'
 import { personalizationStorage } from '../personalization/personalizationStorage'
 import { scheduleSystemPrompt } from './scheduleSystemPrompt'
 import type { ToolCallExecution } from './scheduleTypes'
@@ -82,7 +85,7 @@ const resolveProvider = async (
 ): Promise<LlmProviderConfig> => {
   if (providerId) {
     const providers = await providersStorage.getValue()
-    const match = resolveChatProvider(providers ?? [], providerId)
+    const match = findChatProviderById(providers ?? [], providerId)
     if (match) return match
   }
   return (await getDefaultProvider()) ?? createDefaultBrowserOSProvider()

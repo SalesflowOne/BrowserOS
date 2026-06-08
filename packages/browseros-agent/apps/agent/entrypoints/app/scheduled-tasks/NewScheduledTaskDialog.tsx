@@ -37,6 +37,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { SCHEDULED_TASK_PROMPT_REFINED_EVENT } from '@/lib/constants/analyticsEvents'
 import {
+  findChatProviderById,
   isChatProviderType,
   resolveChatProvider,
 } from '@/lib/llm-providers/provider-runtime'
@@ -123,7 +124,6 @@ export const NewScheduledTaskDialog: FC<NewScheduledTaskDialogProps> = ({
   const refineRequestIdRef = useRef(0)
   const isProgrammaticChange = useRef(false)
 
-  // Load providers from storage
   useEffect(() => {
     if (!open) return
     Promise.all([
@@ -165,8 +165,9 @@ export const NewScheduledTaskDialog: FC<NewScheduledTaskDialogProps> = ({
   }, [open, initialValues, form])
 
   const resolvedProvider: Provider | null = (() => {
-    const id = selectedProviderId ?? defaultProviderId
-    const found = resolveChatProvider(providers, id)
+    const found =
+      findChatProviderById(providers, selectedProviderId) ??
+      resolveChatProvider(providers, defaultProviderId)
     if (found) {
       return {
         kind: 'llm' as const,
@@ -250,6 +251,7 @@ export const NewScheduledTaskDialog: FC<NewScheduledTaskDialogProps> = ({
   }
 
   const onSubmit = (values: FormValues) => {
+    const provider = findChatProviderById(providers, values.providerId)
     onSave({
       name: values.name.trim(),
       query: values.query.trim(),
@@ -258,7 +260,7 @@ export const NewScheduledTaskDialog: FC<NewScheduledTaskDialogProps> = ({
         values.scheduleType === 'daily' ? values.scheduleTime : undefined,
       scheduleInterval:
         values.scheduleType !== 'daily' ? values.scheduleInterval : undefined,
-      providerId: values.providerId,
+      providerId: provider?.id,
       enabled: values.enabled,
     })
     form.reset()

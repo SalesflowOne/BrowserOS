@@ -15,6 +15,16 @@ export function isChatProviderType(type: ProviderType): boolean {
   return !isLocalRuntimeProviderType(type)
 }
 
+/** Finds an exact provider ID only when it is compatible with chat routes. */
+export function findChatProviderById(
+  providers: LlmProviderConfig[],
+  providerId?: string | null,
+): LlmProviderConfig | null {
+  if (!providerId) return null
+  const provider = providers.find((candidate) => candidate.id === providerId)
+  return provider && isChatProviderType(provider.type) ? provider : null
+}
+
 /** Resolves a chat-compatible provider, skipping local runtime configs. */
 export function resolveChatProvider(
   providers: LlmProviderConfig[],
@@ -24,9 +34,7 @@ export function resolveChatProvider(
     isChatProviderType(provider.type),
   )
   if (preferredProviderId) {
-    const preferred = chatProviders.find(
-      (provider) => provider.id === preferredProviderId,
-    )
+    const preferred = findChatProviderById(chatProviders, preferredProviderId)
     if (preferred) return preferred
   }
   return chatProviders[0] ?? null
