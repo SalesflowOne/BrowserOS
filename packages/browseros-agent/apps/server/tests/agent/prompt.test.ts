@@ -313,7 +313,7 @@ describe('mode-aware framing', () => {
 //
 // Why: The agent processes content from 5 untrusted sources:
 //   1. Web pages (DOM, text, images)
-//   2. JavaScript execution results (evaluate_script, get_console_logs)
+//   2. JavaScript execution results (evaluate_script)
 //   3. External API responses (Strata execute_action)
 //   4. File contents (filesystem_read)
 //   5. Browser history and bookmarks
@@ -427,11 +427,11 @@ describe('capability coverage', () => {
       'search_dom',
       'take_screenshot',
       'evaluate_script',
-      'get_console_logs',
     ]
     for (const tool of observationTools) {
       expect(prompt).toContain(tool)
     }
+    expect(prompt).not.toContain('get_console_logs')
   })
 
   it('documents interaction tools', () => {
@@ -851,12 +851,10 @@ describe('error recovery', () => {
     expect(prompt).toContain("Page didn't load")
   })
 
-  it('includes JavaScript/console error patterns', () => {
-    // Why: new in v6. The agent has evaluate_script and get_console_logs
-    // but v5 had no guidance on JS error recovery.
+  it('includes JavaScript error patterns', () => {
     const prompt = buildRegular()
-    expect(prompt).toContain('### JavaScript/console errors')
-    expect(prompt).toContain('get_console_logs')
+    expect(prompt).toContain('### JavaScript errors')
+    expect(prompt).not.toContain('get_console_logs')
   })
 
   it('includes Strata error patterns', () => {

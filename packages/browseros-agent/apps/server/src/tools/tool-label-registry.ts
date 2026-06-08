@@ -44,9 +44,8 @@ const VERB_OVERRIDES: Record<string, string> = {
   press_key: 'Pressed key',
   upload_file: 'Uploaded file',
 
-  // Console / scripts
+  // Scripts
   evaluate_script: 'Ran script',
-  get_console_logs: 'Read console logs',
 
   // History / bookmarks
   search_history: 'Searched history',
