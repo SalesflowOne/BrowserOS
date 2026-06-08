@@ -67,7 +67,7 @@ export const NewTabTwo: FC = () => {
 
         <form
           onSubmit={handleSubmit}
-          className="z-10 w-[660px] rounded-[22px] border border-[rgba(226,114,44,0.18)] bg-white/90 px-5 pt-[18px] pb-3 shadow-[0_16px_50px_-10px_rgba(226,114,44,0.28),0_0_0_6px_rgba(226,114,44,0.05)]"
+          className="z-10 w-[660px] rounded-[22px] border border-transparent bg-white/90 px-5 pt-[18px] pb-3 transition-shadow duration-200 focus-within:border-[rgba(226,114,44,0.18)] focus-within:shadow-[0_16px_50px_-10px_rgba(226,114,44,0.28),0_0_0_6px_rgba(226,114,44,0.05)]"
         >
           <div className="flex items-center gap-3">
             <Search className="size-[18px] text-muted-foreground" aria-hidden />
@@ -77,7 +77,7 @@ export const NewTabTwo: FC = () => {
               placeholder="Ask anything, or brief your marketing agent…"
               aria-label="Ask anything, or brief your marketing agent"
               autoFocus
-              className="h-auto w-full border-0 bg-transparent p-0 text-[16px] shadow-none placeholder:text-[color-mix(in_oklch,var(--muted-foreground)_80%,transparent)] focus-visible:border-0 focus-visible:ring-0"
+              className="h-auto w-full rounded-none border-0 bg-transparent p-0 text-[16px] shadow-none placeholder:text-[color-mix(in_oklch,var(--muted-foreground)_80%,transparent)] focus-visible:border-0 focus-visible:ring-0"
             />
           </div>
 
