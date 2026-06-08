@@ -1,5 +1,7 @@
-import type { TypeOf, ZodType } from 'zod'
+import type { TypeOf, ZodObject, ZodRawShape } from 'zod'
 import type { BrowserSession } from '../../browser/core/session'
+
+type ToolInputSchema = ZodObject<ZodRawShape>
 
 export interface ToolContext {
   session: BrowserSession
@@ -34,7 +36,7 @@ export interface ToolAnnotations {
 export interface ToolDefinition {
   name: string
   description: string
-  input: ZodType
+  input: ToolInputSchema
   annotations?: ToolAnnotations
   handler: (
     args: Record<string, unknown>,
@@ -42,7 +44,7 @@ export interface ToolDefinition {
   ) => Promise<ToolResult>
 }
 
-export function defineTool<S extends ZodType>(def: {
+export function defineTool<S extends ToolInputSchema>(def: {
   name: string
   description: string
   input: S
@@ -97,6 +99,29 @@ export function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) throw abortError(signal.reason)
 }
 
+/** Races tool work against cancellation, including CDP calls that do not accept AbortSignal. */
+export async function abortable<T>(
+  operation: Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  throwIfAborted(signal)
+  if (!signal) return operation
+
+  let cleanup = () => {}
+  const aborted = new Promise<never>((_, reject) => {
+    const onAbort = () => reject(abortError(signal.reason))
+    signal.addEventListener('abort', onAbort, { once: true })
+    cleanup = () => signal.removeEventListener('abort', onAbort)
+  })
+
+  try {
+    return await Promise.race([operation, aborted])
+  } finally {
+    cleanup()
+    void operation.catch(() => {})
+  }
+}
+
 export function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError'
 }
@@ -126,9 +151,9 @@ export async function executeTool(
   }
 
   try {
-    const result = await def.handler(
-      parsed.data as Record<string, unknown>,
-      ctx,
+    const result = await abortable(
+      def.handler(parsed.data as Record<string, unknown>, ctx),
+      ctx.signal,
     )
     throwIfAborted(ctx.signal)
     return result

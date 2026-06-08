@@ -54,6 +54,7 @@ export class PageManager {
   private readonly sessions = new Map<string, SessionId>()
   private connectionEpoch: number
   private nextPageId = 1
+  private hiddenWindowId?: number
 
   constructor(
     private readonly cdp: CdpConnection,
@@ -252,22 +253,38 @@ export class PageManager {
       return undefined
     }
 
+    const windows = (await this.cdp.Browser.getWindows())
+      .windows as WindowInfo[]
     if (opts.windowId !== undefined) {
-      const windows = await this.cdp.Browser.getWindows()
-      const targetWindow = (windows.windows as WindowInfo[]).find(
+      const targetWindow = windows.find(
         (window) => window.windowId === opts.windowId,
       )
-      if (targetWindow && !targetWindow.isVisible) return targetWindow.windowId
+      if (targetWindow && !targetWindow.isVisible) {
+        this.hiddenWindowId = targetWindow.windowId
+        return targetWindow.windowId
+      }
       if (targetWindow?.isVisible) {
         logger.warn(
           'Requested hidden page target window is visible, creating a new hidden window instead',
           { requestedWindowId: opts.windowId },
         )
       }
+      const hiddenWindow = await this.cdp.Browser.createWindow({ hidden: true })
+      this.hiddenWindowId = (hiddenWindow.window as WindowInfo).windowId
+      return this.hiddenWindowId
+    }
+
+    if (this.hiddenWindowId !== undefined) {
+      const cachedWindow = windows.find(
+        (window) => window.windowId === this.hiddenWindowId,
+      )
+      if (cachedWindow && !cachedWindow.isVisible) return cachedWindow.windowId
+      this.hiddenWindowId = undefined
     }
 
     const hiddenWindow = await this.cdp.Browser.createWindow({ hidden: true })
-    return (hiddenWindow.window as WindowInfo).windowId
+    this.hiddenWindowId = (hiddenWindow.window as WindowInfo).windowId
+    return this.hiddenWindowId
   }
 
   async close(pageId: number): Promise<void> {
@@ -350,6 +367,7 @@ export class PageManager {
     const epoch = this.cdp.connectionEpoch()
     if (epoch !== this.connectionEpoch) {
       this.sessions.clear()
+      this.hiddenWindowId = undefined
       this.connectionEpoch = epoch
       return true
     }

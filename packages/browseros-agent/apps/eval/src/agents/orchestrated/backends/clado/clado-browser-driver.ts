@@ -160,7 +160,7 @@ export function prepareCladoToolCall(
         args: {
           page,
           for: prepared.selector ? 'selector' : 'time',
-          value: prepared.selector ?? prepared.timeout,
+          ...(prepared.selector !== undefined && { value: prepared.selector }),
           timeout: prepared.timeout,
         },
       }

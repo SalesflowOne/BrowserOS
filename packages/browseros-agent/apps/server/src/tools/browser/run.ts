@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { clampTimeout, defineTool, errorResult, textResult } from './framework'
+import { wrapUntrusted } from './trust-boundary'
 
 const DEFAULT_TIMEOUT_MS = 30_000
 const MAX_TIMEOUT_MS = 30_000
@@ -47,13 +48,12 @@ export const run = defineTool({
     }
 
     const value = result.result?.value ?? result.result?.description
-    return textResult(
-      value === undefined ? 'undefined' : safeStringify(value),
-      {
-        page: args.page,
-        value,
-      },
-    )
+    const text = value === undefined ? 'undefined' : safeStringify(value)
+    const origin = ctx.session.pages.getInfo(args.page)?.url ?? 'unknown'
+    return textResult(wrapUntrusted(text, origin), {
+      page: args.page,
+      value,
+    })
   },
 })
 

@@ -20,6 +20,28 @@ interface ToolExecuteOptions {
   abortSignal?: AbortSignal
 }
 
+const BROWSER_TOOL_TIMEOUT_MS = 120_000
+
+function withBrowserToolTimeout(signal?: AbortSignal): AbortSignal {
+  const timeoutSignal = AbortSignal.timeout(BROWSER_TOOL_TIMEOUT_MS)
+  if (!signal) return timeoutSignal
+
+  const controller = new AbortController()
+  const forwardAbort = (source: AbortSignal) => {
+    if (source.aborted) {
+      controller.abort(source.reason)
+      return
+    }
+    source.addEventListener('abort', () => controller.abort(source.reason), {
+      once: true,
+    })
+  }
+
+  forwardAbort(signal)
+  forwardAbort(timeoutSignal)
+  return controller.signal
+}
+
 function contentToModelOutput(
   content: ContentBlock[],
 ): LanguageModelV2ToolResultOutput {
@@ -54,12 +76,13 @@ export function buildBrowserToolSet(
       inputSchema: def.input,
       execute: async (params, executeOptions?: ToolExecuteOptions) => {
         const startTime = performance.now()
-        throwIfAborted(executeOptions?.abortSignal)
+        const signal = withBrowserToolTimeout(executeOptions?.abortSignal)
+        throwIfAborted(signal)
         const result =
           readOnlyGuard(def, params, options) ??
           (await executeTool(def, params as Record<string, unknown>, {
             session,
-            signal: executeOptions?.abortSignal,
+            signal,
           }))
         metrics.log('tool_executed', {
           tool_name: def.name,

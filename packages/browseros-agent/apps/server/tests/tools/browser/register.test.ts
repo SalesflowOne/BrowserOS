@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'bun:test'
 import { TOOL_LIMITS } from '@browseros/shared/constants/limits'
+import { z } from 'zod'
 import { CHAT_MODE_ALLOWED_TOOLS } from '../../../src/agent/chat-mode'
 import { buildBrowserToolSet } from '../../../src/agent/tool-adapter'
 import type { BrowserSession } from '../../../src/browser/core/session'
+import {
+  defineTool,
+  executeTool,
+  textResult,
+} from '../../../src/tools/browser/framework'
 import { registerBrowserTools } from '../../../src/tools/browser/register'
 import { BROWSER_TOOLS } from '../../../src/tools/browser/registry'
 
@@ -115,6 +121,7 @@ describe('registerBrowserTools', () => {
             },
           },
         }),
+        getInfo: () => ({ url: 'https://example.com/run' }),
       },
     } as unknown as BrowserSession
 
@@ -128,6 +135,18 @@ describe('registerBrowserTools', () => {
 
     expect(result?.isError).toBeFalsy()
     expect(result?.structuredContent).toEqual({ page: 3, value: 'page-value' })
+    expect(result?.content).toEqual([
+      expect.objectContaining({
+        type: 'text',
+        text: expect.stringContaining('[UNTRUSTED_PAGE_CONTENT'),
+      }),
+    ])
+    expect(result?.content).toEqual([
+      expect.objectContaining({
+        type: 'text',
+        text: expect.stringContaining('page-value'),
+      }),
+    ])
     expect(evaluateCalls).toHaveLength(1)
     expect(evaluateCalls[0]).toMatchObject({
       awaitPromise: true,
@@ -155,6 +174,7 @@ describe('registerBrowserTools', () => {
             },
           },
         }),
+        getInfo: () => ({ url: 'https://example.com/run' }),
       },
     } as unknown as BrowserSession
 
@@ -387,5 +407,30 @@ describe('buildBrowserToolSet', () => {
 
     expect(caught).toBeInstanceOf(Error)
     expect((caught as Error).message).toBe('cancelled')
+  })
+
+  it('stops awaiting in-flight browser tools when aborted', async () => {
+    const slowTool = defineTool({
+      name: 'slow',
+      description: 'Slow test tool.',
+      input: z.object({}),
+      handler: async () => {
+        await new Promise(() => {})
+        return textResult('done')
+      },
+    })
+    const controller = new AbortController()
+
+    const pending = executeTool(
+      slowTool,
+      {},
+      {
+        session: {} as BrowserSession,
+        signal: controller.signal,
+      },
+    )
+    controller.abort(new Error('cancelled'))
+
+    await expect(pending).rejects.toThrow('cancelled')
   })
 })

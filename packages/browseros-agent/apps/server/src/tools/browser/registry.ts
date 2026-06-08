@@ -11,7 +11,7 @@ import { tabs } from './tabs'
 import { wait } from './wait'
 
 /** The complete browser tool surface, in a sensible discovery order. */
-export const BROWSER_TOOLS: ToolDefinition[] = [
+export const BROWSER_TOOLS: readonly ToolDefinition[] = [
   tabs,
   navigate,
   snapshot,

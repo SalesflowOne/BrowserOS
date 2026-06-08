@@ -45,7 +45,7 @@ export function registerBrowserTools(
       tool.name,
       {
         description: tool.description,
-        inputSchema: (tool.input as unknown as { shape: ZodRawShape }).shape,
+        inputSchema: tool.input.shape,
         ...(tool.annotations && {
           annotations: tool.annotations as Record<string, unknown>,
         }),
