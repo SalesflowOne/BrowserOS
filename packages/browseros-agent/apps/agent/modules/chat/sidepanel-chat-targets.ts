@@ -6,11 +6,11 @@ import type {
 } from '@/modules/agents/agent-harness-types'
 // Relative (not `@/`) so this module stays loadable under `bun test`, which
 // resolves tsconfig `@/` aliases for erased type imports only, not values.
-import { visibleHarnessAgents } from '../../../lib/chat/adapter-visibility'
+import { visibleHarnessAgents } from '../../lib/chat/adapter-visibility'
 import {
   isChatProviderType,
   resolveChatProvider,
-} from '../../../lib/llm-providers/provider-runtime'
+} from '../../lib/llm-providers/provider-runtime'
 
 export type SidepanelTargetKind = 'llm' | 'acp'
 

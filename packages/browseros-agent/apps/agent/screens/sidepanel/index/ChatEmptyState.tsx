@@ -1,7 +1,11 @@
 import { Sparkles } from 'lucide-react'
 import type { FC } from 'react'
 import { cn } from '@/lib/utils'
-import { AGENT_SUGGESTIONS, CHAT_SUGGESTIONS, type ChatMode } from './chatTypes'
+import {
+  AGENT_SUGGESTIONS,
+  CHAT_SUGGESTIONS,
+  type ChatMode,
+} from '@/modules/chat/chat-types'
 
 interface ChatEmptyStateProps {
   mode: ChatMode

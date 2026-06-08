@@ -7,7 +7,7 @@ import type {
 } from '@/modules/agents/agent-harness-types'
 // Relative value import: `bun test` resolves tsconfig paths from the package
 // root, where `@/` is undefined — only erased `import type` works via `@/`.
-import { buildSidepanelChatTargets } from '../../entrypoints/sidepanel/index/sidepanel-chat-targets'
+import { buildSidepanelChatTargets } from '@/modules/chat/sidepanel-chat-targets'
 import { isAdapterHidden, visibleAdapters } from './adapter-visibility'
 
 function makeAdapter(id: HarnessAgentAdapter): HarnessAdapterDescriptor {

@@ -1,22 +1,22 @@
 import { type FC, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import type { Provider } from '@/components/chat/chatComponentTypes'
-import { ImportDataHint } from '@/entrypoints/newtab/index/ImportDataHint'
-import { SignInHint } from '@/entrypoints/newtab/index/SignInHint'
-import { useActiveHint } from '@/entrypoints/newtab/index/useActiveHint'
-import {
-  buildSidepanelChatTargets,
-  persistSidepanelChatTargetSelection,
-  resolveSidepanelChatTarget,
-} from '@/entrypoints/sidepanel/index/sidepanel-chat-targets'
-import { toProviderOption } from '@/entrypoints/sidepanel/index/useChatSessionRequest'
 import { Feature } from '@/lib/browseros/capabilities'
 import {
   useAgentAdapters,
   useHarnessAgents,
 } from '@/modules/agents/agents.hooks'
 import { useCapabilities } from '@/modules/browseros/capabilities.hooks'
+import { toProviderOption } from '@/modules/chat/chat-session-request'
+import {
+  buildSidepanelChatTargets,
+  persistSidepanelChatTargetSelection,
+  resolveSidepanelChatTarget,
+} from '@/modules/chat/sidepanel-chat-targets'
 import { useLlmProviders } from '@/modules/llm-providers/llm-providers.hooks'
+import { ImportDataHint } from '@/screens/newtab/index/ImportDataHint'
+import { SignInHint } from '@/screens/newtab/index/SignInHint'
+import { useActiveHint } from '@/screens/newtab/index/useActiveHint'
 import {
   ConversationInput,
   type ConversationInputSendInput,

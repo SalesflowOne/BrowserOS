@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import type { ChatMode } from '@/entrypoints/sidepanel/index/chatTypes'
-import { useChatSessionContext } from '@/entrypoints/sidepanel/layout/ChatSessionContext'
 import { createBrowserOSAction } from '@/lib/chat-actions/types'
 import { track } from '@/lib/metrics/track'
+import { useChatSessionContext } from '@/modules/chat/chat-session-context'
+import type { ChatMode } from '@/modules/chat/chat-types'
 import { useVoiceInput } from '@/modules/voice/voice.hooks'
 
 interface ChatActionsConfig {

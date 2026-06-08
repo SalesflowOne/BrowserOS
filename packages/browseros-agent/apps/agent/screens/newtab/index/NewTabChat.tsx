@@ -1,11 +1,6 @@
 import { Loader2 } from 'lucide-react'
 import { type FC, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router'
-import { ChatEmptyState } from '@/entrypoints/sidepanel/index/ChatEmptyState'
-import { ChatError } from '@/entrypoints/sidepanel/index/ChatError'
-import { ChatFooter } from '@/entrypoints/sidepanel/index/ChatFooter'
-import { ChatHeader } from '@/entrypoints/sidepanel/index/ChatHeader'
-import { ChatMessages } from '@/entrypoints/sidepanel/index/ChatMessages'
 import {
   createAITabAction,
   createBrowserOSAction,
@@ -25,6 +20,11 @@ import {
 } from '@/lib/constants/analyticsEvents'
 import { track } from '@/lib/metrics/track'
 import { useChatActions } from '@/modules/chat-actions/chat-actions.hooks'
+import { ChatEmptyState } from '@/screens/sidepanel/index/ChatEmptyState'
+import { ChatError } from '@/screens/sidepanel/index/ChatError'
+import { ChatFooter } from '@/screens/sidepanel/index/ChatFooter'
+import { ChatHeader } from '@/screens/sidepanel/index/ChatHeader'
+import { ChatMessages } from '@/screens/sidepanel/index/ChatMessages'
 
 export const NewTabChat: FC = () => {
   const [searchParams, setSearchParams] = useSearchParams()

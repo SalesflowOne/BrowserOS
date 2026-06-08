@@ -12,6 +12,7 @@ import {
 } from '@/lib/selected-text/selectedTextStorage'
 import { cn } from '@/lib/utils'
 import { useCapabilities } from '@/modules/browseros/capabilities.hooks'
+import type { ChatMode } from '@/modules/chat/chat-types'
 import { useGetUserMCPIntegrations } from '@/modules/mcp/user-integrations.hooks'
 import type { VoiceInputState } from '@/modules/voice/voice.hooks'
 import { useWorkspace } from '@/modules/workspace/workspace.hooks'
@@ -19,7 +20,6 @@ import { ChatAttachedTabs } from './ChatAttachedTabs'
 import { ChatInput, type ChatInputHandle } from './ChatInput'
 import { ChatModeToggle } from './ChatModeToggle'
 import { ChatSelectedText } from './ChatSelectedText'
-import type { ChatMode } from './chatTypes'
 
 interface ChatFooterProps {
   mode: ChatMode

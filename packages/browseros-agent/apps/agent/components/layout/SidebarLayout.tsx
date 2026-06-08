@@ -5,9 +5,9 @@ import { Outlet, useLocation } from 'react-router'
 import { AppSidebar } from '@/components/sidebar/AppSidebar'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
-import { ShortcutsDialog } from '@/entrypoints/newtab/index/ShortcutsDialog'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { RpcClientProvider } from '@/lib/rpc/RpcClientProvider'
+import { ShortcutsDialog } from '@/screens/newtab/index/ShortcutsDialog'
 
 const COLLAPSE_DELAY = 150
 

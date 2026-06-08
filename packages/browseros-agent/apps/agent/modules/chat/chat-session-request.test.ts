@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'bun:test'
 import type { LlmProviderConfig } from '@/lib/llm-providers/types'
-import type { ChatMode } from './chatTypes'
+import { buildSidepanelPreparedSendMessagesRequest } from './chat-session-request'
+import type { ChatMode } from './chat-types'
 import type { SidepanelChatTarget } from './sidepanel-chat-targets'
-import { buildSidepanelPreparedSendMessagesRequest } from './useChatSessionRequest'
 
 const conversationId = '00000000-0000-4000-8000-000000000001'
 

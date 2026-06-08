@@ -7,7 +7,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import type { ChatMode } from './chatTypes'
+import type { ChatMode } from '@/modules/chat/chat-types'
 
 interface ChatModeToggleProps {
   mode: ChatMode

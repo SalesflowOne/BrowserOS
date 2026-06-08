@@ -1,6 +1,6 @@
 import type { FC } from 'react'
 import { Outlet, useLocation } from 'react-router'
-import { ChatSessionProvider } from '@/entrypoints/sidepanel/layout/ChatSessionContext'
+import { ChatSessionProvider } from '@/modules/chat/chat-session-context'
 import { NewTabFocusGrid } from './NewTabFocusGrid'
 import { shouldHideFocusGrid, shouldUseChatSession } from './route-utils'
 

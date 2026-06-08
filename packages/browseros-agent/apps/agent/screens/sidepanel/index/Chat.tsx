@@ -14,14 +14,14 @@ import {
   SIDEPANEL_VOICE_TRANSCRIPTION_COMPLETED_EVENT,
 } from '@/lib/constants/analyticsEvents'
 import { track } from '@/lib/metrics/track'
+import { useChatSessionContext } from '@/modules/chat/chat-session-context'
+import type { ChatMode } from '@/modules/chat/chat-types'
 import { useJtbdPopup } from '@/modules/jtbd-popup/jtbd-popup.hooks'
 import { useVoiceInput } from '@/modules/voice/voice.hooks'
-import { useChatSessionContext } from '../layout/ChatSessionContext'
 import { ChatEmptyState } from './ChatEmptyState'
 import { ChatError } from './ChatError'
 import { ChatFooter } from './ChatFooter'
 import { ChatMessages } from './ChatMessages'
-import type { ChatMode } from './chatTypes'
 
 /**
  * @public

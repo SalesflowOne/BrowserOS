@@ -1,6 +1,6 @@
-import type { Provider } from '../../../components/chat/chatComponentTypes'
-import type { LlmProviderConfig } from '../../../lib/llm-providers/types'
-import { buildChatRequestBody } from '../../../lib/messaging/server/buildChatRequestBody'
+import type { Provider } from '../../components/chat/chatComponentTypes'
+import type { LlmProviderConfig } from '../../lib/llm-providers/types'
+import { buildChatRequestBody } from '../../lib/messaging/server/buildChatRequestBody'
 import {
   type SidepanelChatTarget,
   toLlmProviderConfig,

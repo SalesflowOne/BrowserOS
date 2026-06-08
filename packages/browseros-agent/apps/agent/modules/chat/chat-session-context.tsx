@@ -1,9 +1,6 @@
 import { createContext, type FC, type ReactNode, useContext } from 'react'
 import { useSyncRemoteIntegrations } from '@/modules/mcp/sync-remote-integrations.hooks'
-import {
-  type ChatSessionOptions,
-  useChatSession,
-} from '../index/useChatSession'
+import { type ChatSessionOptions, useChatSession } from './chat-session.hooks'
 
 type ChatSessionContextValue = ReturnType<typeof useChatSession>
 

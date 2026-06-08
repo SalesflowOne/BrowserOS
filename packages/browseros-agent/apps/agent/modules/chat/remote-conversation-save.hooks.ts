@@ -8,7 +8,7 @@ import {
   AppendConversationMessageDocument,
   CreateConversationWithMessageDocument,
   UpdateConversationLastMessagedAtDocument,
-} from './graphql/chatSessionDocument'
+} from './chat-session-document'
 
 export function useRemoteConversationSave() {
   const { sessionInfo } = useSessionInfo()

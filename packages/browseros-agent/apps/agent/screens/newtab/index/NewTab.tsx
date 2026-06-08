@@ -30,7 +30,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { useChatSessionContext } from '@/entrypoints/sidepanel/layout/ChatSessionContext'
 import { Feature } from '@/lib/browseros/capabilities'
 import {
   createAITabAction,
@@ -58,6 +57,7 @@ import { openSidePanelWithSearch } from '@/lib/messaging/sidepanel/openSidepanel
 import { track } from '@/lib/metrics/track'
 import { cn } from '@/lib/utils'
 import { useCapabilities } from '@/modules/browseros/capabilities.hooks'
+import { useChatSessionContext } from '@/modules/chat/chat-session-context'
 import { useSyncRemoteIntegrations } from '@/modules/mcp/sync-remote-integrations.hooks'
 import { useGetUserMCPIntegrations } from '@/modules/mcp/user-integrations.hooks'
 import { useVoiceInput } from '@/modules/voice/voice.hooks'

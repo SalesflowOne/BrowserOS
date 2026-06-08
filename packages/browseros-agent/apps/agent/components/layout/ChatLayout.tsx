@@ -1,10 +1,10 @@
 import type { FC } from 'react'
 import { Outlet } from 'react-router'
-import { ChatHeader } from '../index/ChatHeader'
 import {
   ChatSessionProvider,
   useChatSessionContext,
-} from './ChatSessionContext'
+} from '@/modules/chat/chat-session-context'
+import { ChatHeader } from '@/screens/sidepanel/index/ChatHeader'
 
 const ChatLayoutContent: FC = () => {
   const {

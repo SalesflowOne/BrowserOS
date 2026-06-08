@@ -33,17 +33,17 @@ import { selectedWorkspaceStorage } from '@/lib/workspace/workspace-storage'
 import { useAgentServerUrl } from '@/modules/browseros/agent-server-url.hooks'
 import { useInvalidateCredits } from '@/modules/credits/credits.hooks'
 import { useGraphqlQuery } from '@/modules/graphql/graphql-query.hooks'
-import type { ChatMode } from './chatTypes'
-import { GetConversationWithMessagesDocument } from './graphql/chatSessionDocument'
-import { toLlmProviderConfig } from './sidepanel-chat-targets'
-import { useChatRefs } from './useChatRefs'
+import { useChatRefs } from './chat-refs.hooks'
+import { GetConversationWithMessagesDocument } from './chat-session-document'
 import {
   buildSidepanelPreparedSendMessagesRequest,
   toProviderOption,
-} from './useChatSessionRequest'
-import { useExecutionHistoryTracker } from './useExecutionHistoryTracker'
-import { useNotifyActiveTab } from './useNotifyActiveTab'
-import { useRemoteConversationSave } from './useRemoteConversationSave'
+} from './chat-session-request'
+import type { ChatMode } from './chat-types'
+import { useExecutionHistoryTracker } from './execution-history-tracker.hooks'
+import { useNotifyActiveTab } from './notify-active-tab.hooks'
+import { useRemoteConversationSave } from './remote-conversation-save.hooks'
+import { toLlmProviderConfig } from './sidepanel-chat-targets'
 
 const getLastMessageText = (messages: UIMessage[]) => {
   const lastMessage = messages[messages.length - 1]
