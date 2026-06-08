@@ -1,18 +1,18 @@
 import { Loader2 } from 'lucide-react'
 import { type FC, useMemo } from 'react'
-import { AgentRowCard } from './AgentRowCard'
-import { AgentsEmptyState } from './AgentsEmptyState'
 import type {
   HarnessAdapterDescriptor,
   HarnessAgent,
   HarnessAgentAdapter,
-} from './agent-harness-types'
+} from '@/modules/agents/agent-harness-types'
+import { compareAgentsByPinThenRecency } from '@/modules/agents/agents-list-order'
+import type { AgentListItem } from '@/modules/agents/agents-page-types'
+import { AgentRowCard } from './AgentRowCard'
+import { AgentsEmptyState } from './AgentsEmptyState'
 import type {
   AgentAdapterHealth,
   AgentRowData,
 } from './agent-row/agent-row.types'
-import { compareAgentsByPinThenRecency } from './agents-list-order'
-import type { AgentListItem } from './agents-page-types'
 import type { AgentLiveness } from './LivenessDot'
 
 interface AgentListProps {

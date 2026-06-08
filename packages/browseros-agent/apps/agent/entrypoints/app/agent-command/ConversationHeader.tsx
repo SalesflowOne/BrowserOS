@@ -3,13 +3,13 @@ import type { FC, ReactNode } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { formatRelativeTime } from '@/entrypoints/app/agents/agent-display.helpers'
-import type { HarnessAgent } from '@/entrypoints/app/agents/agent-harness-types'
 import { AgentSummaryChips } from '@/entrypoints/app/agents/agent-row/AgentSummaryChips'
 import { formatTokens } from '@/entrypoints/app/agents/agent-row/agent-row.helpers'
 import type { AgentAdapterHealth } from '@/entrypoints/app/agents/agent-row/agent-row.types'
 import { PinToggle } from '@/entrypoints/app/agents/agent-row/PinToggle'
 import type { AgentLiveness } from '@/entrypoints/app/agents/LivenessDot'
 import { cn } from '@/lib/utils'
+import type { HarnessAgent } from '@/modules/agents/agent-harness-types'
 
 interface ConversationHeaderProps {
   agent: HarnessAgent | null

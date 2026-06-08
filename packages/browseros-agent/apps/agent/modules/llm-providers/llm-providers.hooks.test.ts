@@ -2,8 +2,8 @@ import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test'
 import {
   resolveDefaultProviderId,
   resolveSelectedProvider,
-} from './provider-selection'
-import type { LlmProviderConfig } from './types'
+} from '@/lib/llm-providers/provider-selection'
+import type { LlmProviderConfig } from '@/lib/llm-providers/types'
 
 const storageValues = new Map<string, unknown>()
 
@@ -68,7 +68,7 @@ mock.module('@/lib/browseros/prefs', () => ({
   },
 }))
 
-mock.module('./storage', () => ({
+mock.module('@/lib/llm-providers/storage', () => ({
   DEFAULT_PROVIDER_ID: 'browseros',
   createDefaultBrowserOSProvider: createBrowserOSProvider,
   createDefaultProvidersConfig: () => [createBrowserOSProvider()],
@@ -91,7 +91,7 @@ mock.module('./storage', () => ({
   },
 }))
 
-mock.module('./uploadLlmProvidersToGraphql', () => ({
+mock.module('@/lib/llm-providers/uploadLlmProvidersToGraphql', () => ({
   uploadLlmProvidersToGraphql: async () => {},
 }))
 
@@ -136,7 +136,9 @@ const providers: LlmProviderConfig[] = [
 let persistDefaultProviderId: (providerId: string) => Promise<void>
 
 beforeAll(async () => {
-  ;({ persistDefaultProviderId } = await import('./useLlmProviders'))
+  ;({ persistDefaultProviderId } = await import(
+    '@/modules/llm-providers/llm-providers.hooks'
+  ))
 })
 
 beforeEach(() => {

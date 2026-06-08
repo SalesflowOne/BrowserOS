@@ -10,7 +10,6 @@ import {
   createAITabAction,
   createBrowserOSAction,
 } from '@/lib/chat-actions/types'
-import { useChatActions } from '@/lib/chat-actions/useChatActions'
 import {
   NEWTAB_AI_TRIGGERED_EVENT,
   NEWTAB_CHAT_MODE_CHANGED_EVENT,
@@ -25,6 +24,7 @@ import {
   NEWTAB_VOICE_TRANSCRIPTION_COMPLETED_EVENT,
 } from '@/lib/constants/analyticsEvents'
 import { track } from '@/lib/metrics/track'
+import { useChatActions } from '@/modules/chat-actions/chat-actions.hooks'
 
 export const NewTabChat: FC = () => {
   const [searchParams, setSearchParams] = useSearchParams()

@@ -24,12 +24,12 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import type { AgentListItem } from '@/modules/agents/agents-page-types'
 import {
   canDelete as canDeleteAgent,
   canRename as canRenameAgent,
   displayName,
 } from '../agent-display.helpers'
-import type { AgentListItem } from '../agents-page-types'
 
 interface AgentActionsProps {
   agent: AgentListItem

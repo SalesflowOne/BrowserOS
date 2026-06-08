@@ -21,8 +21,11 @@ import {
 import type {
   HarnessAdapterDescriptor,
   HarnessAgentAdapter,
-} from './agent-harness-types'
-import type { CreateAgentRuntime, ProviderOption } from './agents-page-types'
+} from '@/modules/agents/agent-harness-types'
+import type {
+  CreateAgentRuntime,
+  ProviderOption,
+} from '@/modules/agents/agents-page-types'
 import { ProviderSelector } from './ProviderSelector'
 
 interface NewAgentDialogProps {

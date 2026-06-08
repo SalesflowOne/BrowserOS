@@ -8,7 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import type { PendingDeviceCode } from '@/lib/llm-providers/useOAuthProviderFlow'
+import type { PendingDeviceCode } from '@/modules/llm-providers/oauth-provider-flow.hooks'
 
 interface DeviceCodeDialogProps {
   deviceCode: PendingDeviceCode | null

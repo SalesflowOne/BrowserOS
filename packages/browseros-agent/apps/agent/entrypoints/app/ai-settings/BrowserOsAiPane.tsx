@@ -11,7 +11,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { useAgentServerUrl } from '@/hooks/useAgentServerUrl'
 import { useSessionInfo } from '@/lib/auth/sessionStorage'
 import {
   CHATGPT_PRO_OAUTH_COMPLETED_EVENT,
@@ -26,17 +25,18 @@ import {
 } from '@/lib/constants/analyticsEvents'
 import { GetProfileIdByUserIdDocument } from '@/lib/conversations/graphql/uploadConversationDocument'
 import { getQueryKeyFromDocument } from '@/lib/graphql/getQueryKeyFromDocument'
-import { useGraphqlMutation } from '@/lib/graphql/useGraphqlMutation'
-import { useGraphqlQuery } from '@/lib/graphql/useGraphqlQuery'
 import type { ProviderTemplate } from '@/lib/llm-providers/providerTemplates'
 import { testProvider } from '@/lib/llm-providers/testProvider'
 import type { LlmProviderConfig } from '@/lib/llm-providers/types'
-import { useLlmProviders } from '@/lib/llm-providers/useLlmProviders'
+import { track } from '@/lib/metrics/track'
+import { useAgentServerUrl } from '@/modules/browseros/agent-server-url.hooks'
+import { useGraphqlMutation } from '@/modules/graphql/graphql-mutation.hooks'
+import { useGraphqlQuery } from '@/modules/graphql/graphql-query.hooks'
+import { useLlmProviders } from '@/modules/llm-providers/llm-providers.hooks'
 import {
   type OAuthProviderFlowConfig,
   useOAuthProviderFlow,
-} from '@/lib/llm-providers/useOAuthProviderFlow'
-import { track } from '@/lib/metrics/track'
+} from '@/modules/llm-providers/oauth-provider-flow.hooks'
 import { CodingAgentsList } from './CodingAgentsList'
 import { CodingAgentsManager } from './CodingAgentsManager'
 import { ConfiguredProvidersList } from './ConfiguredProvidersList'

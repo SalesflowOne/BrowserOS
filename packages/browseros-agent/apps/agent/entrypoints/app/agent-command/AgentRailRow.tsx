@@ -1,12 +1,12 @@
 import type { FC } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { adapterLabel } from '@/entrypoints/app/agents/AdapterIcon'
-import type { HarnessAgent } from '@/entrypoints/app/agents/agent-harness-types'
 import { AgentSummaryChips } from '@/entrypoints/app/agents/agent-row/AgentSummaryChips'
 import { AgentTile } from '@/entrypoints/app/agents/agent-row/AgentTile'
 import type { AgentAdapterHealth } from '@/entrypoints/app/agents/agent-row/agent-row.types'
 import { PinToggle } from '@/entrypoints/app/agents/agent-row/PinToggle'
 import { cn } from '@/lib/utils'
+import type { HarnessAgent } from '@/modules/agents/agent-harness-types'
 
 interface AgentRailRowProps {
   agent: HarnessAgent

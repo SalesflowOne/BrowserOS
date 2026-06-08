@@ -4,7 +4,7 @@ import {
   useMutation,
 } from '@tanstack/react-query'
 import type { TypedDocumentString } from '@/generated/graphql/graphql'
-import { execute } from './execute'
+import { execute } from '@/lib/graphql/execute'
 
 /**
  * @public

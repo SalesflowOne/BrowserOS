@@ -4,7 +4,7 @@ import { AdapterIcon, adapterLabel } from '@/entrypoints/app/agents/AdapterIcon'
 import type {
   HarnessAdapterDescriptor,
   HarnessAgentAdapter,
-} from '@/entrypoints/app/agents/agent-harness-types'
+} from '@/modules/agents/agent-harness-types'
 
 interface CodingAgentTemplateCardProps {
   adapter: HarnessAdapterDescriptor

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'bun:test'
+import type { LlmProviderConfig } from '@/lib/llm-providers/types'
 import type {
   HarnessAdapterDescriptor,
   HarnessAgent,
-} from '@/entrypoints/app/agents/agent-harness-types'
-import type { LlmProviderConfig } from '@/lib/llm-providers/types'
+} from '@/modules/agents/agent-harness-types'
 import {
   buildSidepanelChatTargets,
   persistSidepanelChatTargetSelection,

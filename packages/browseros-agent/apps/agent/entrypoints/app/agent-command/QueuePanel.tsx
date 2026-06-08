@@ -15,11 +15,11 @@ import {
   QueueSectionLabel,
   QueueSectionTrigger,
 } from '@/components/ai-elements/queue'
+import { firstNonBlankLine } from '@/entrypoints/app/agents/agent-row/agent-row.helpers'
 import type {
   HarnessQueuedMessage,
   HarnessQueuedMessageAttachment,
-} from '@/entrypoints/app/agents/agent-harness-types'
-import { firstNonBlankLine } from '@/entrypoints/app/agents/agent-row/agent-row.helpers'
+} from '@/modules/agents/agent-harness-types'
 
 interface QueuePanelProps {
   queue: HarnessQueuedMessage[]

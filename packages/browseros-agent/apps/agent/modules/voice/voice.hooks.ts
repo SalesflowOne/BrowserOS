@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { transcribeAudio } from './transcribe-audio'
+import { transcribeAudio } from '@/lib/voice/transcribe-audio'
 
 const WAVEFORM_BAND_COUNT = 5
 

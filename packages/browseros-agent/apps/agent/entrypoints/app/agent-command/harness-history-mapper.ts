@@ -1,5 +1,5 @@
+import type { HarnessAgentHistoryPage } from '@/modules/agents/agent-harness-types'
 import { buildToolLabel } from '../../../lib/tool-labels'
-import type { HarnessAgentHistoryPage } from '../agents/agent-harness-types'
 import type {
   AgentHistoryPageResponse,
   BrowserOSChatHistoryItem,

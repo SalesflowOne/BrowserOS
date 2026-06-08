@@ -1,10 +1,6 @@
 import { type FC, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import type { Provider } from '@/components/chat/chatComponentTypes'
-import {
-  useAgentAdapters,
-  useHarnessAgents,
-} from '@/entrypoints/app/agents/useAgents'
 import { ImportDataHint } from '@/entrypoints/newtab/index/ImportDataHint'
 import { SignInHint } from '@/entrypoints/newtab/index/SignInHint'
 import { useActiveHint } from '@/entrypoints/newtab/index/useActiveHint'
@@ -15,8 +11,12 @@ import {
 } from '@/entrypoints/sidepanel/index/sidepanel-chat-targets'
 import { toProviderOption } from '@/entrypoints/sidepanel/index/useChatSessionRequest'
 import { Feature } from '@/lib/browseros/capabilities'
-import { useCapabilities } from '@/lib/browseros/useCapabilities'
-import { useLlmProviders } from '@/lib/llm-providers/useLlmProviders'
+import {
+  useAgentAdapters,
+  useHarnessAgents,
+} from '@/modules/agents/agents.hooks'
+import { useCapabilities } from '@/modules/browseros/capabilities.hooks'
+import { useLlmProviders } from '@/modules/llm-providers/llm-providers.hooks'
 import {
   ConversationInput,
   type ConversationInputSendInput,

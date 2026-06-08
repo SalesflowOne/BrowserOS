@@ -7,7 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { ProviderOption } from './agents-page-types'
+import type { ProviderOption } from '@/modules/agents/agents-page-types'
 
 interface ProviderSelectorProps {
   providers: ProviderOption[]

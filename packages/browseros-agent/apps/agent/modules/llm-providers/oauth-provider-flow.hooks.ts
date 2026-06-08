@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { track } from '@/lib/metrics/track'
 import {
   type ClientAuthConfig,
   requestDeviceCode,
   startTokenPolling,
-} from './client-oauth'
-import { getProviderTemplate } from './providerTemplates'
-import type { LlmProviderConfig, ProviderType } from './types'
-import { useOAuthStatus } from './useOAuthStatus'
+} from '@/lib/llm-providers/client-oauth'
+import { getProviderTemplate } from '@/lib/llm-providers/providerTemplates'
+import type { LlmProviderConfig, ProviderType } from '@/lib/llm-providers/types'
+import { track } from '@/lib/metrics/track'
+import { useOAuthStatus } from '@/modules/llm-providers/oauth-status.hooks'
 
 export interface OAuthProviderFlowConfig {
   providerType: ProviderType

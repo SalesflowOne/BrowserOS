@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import { fetchHarnessAgentHistory } from '@/entrypoints/app/agents/useAgents'
-import { useAgentServerUrl } from '@/hooks/useAgentServerUrl'
+import { fetchHarnessAgentHistory } from '@/modules/agents/agents.hooks'
+import { useAgentServerUrl } from '@/modules/browseros/agent-server-url.hooks'
 import type { AgentHistoryPageResponse } from './agent-chat-types'
 import { mapHarnessHistoryPage } from './harness-history-mapper'
 

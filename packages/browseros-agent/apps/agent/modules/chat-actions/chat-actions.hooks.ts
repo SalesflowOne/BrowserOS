@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import type { ChatMode } from '@/entrypoints/sidepanel/index/chatTypes'
 import { useChatSessionContext } from '@/entrypoints/sidepanel/layout/ChatSessionContext'
+import { createBrowserOSAction } from '@/lib/chat-actions/types'
 import { track } from '@/lib/metrics/track'
-import { useVoiceInput } from '@/lib/voice/useVoiceInput'
-import { createBrowserOSAction } from './types'
+import { useVoiceInput } from '@/modules/voice/voice.hooks'
 
 interface ChatActionsConfig {
   /** Analytics event names scoped to the origin */

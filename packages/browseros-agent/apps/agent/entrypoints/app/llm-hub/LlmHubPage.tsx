@@ -10,7 +10,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import type { LlmHubProvider } from '@/lib/llm-hub/storage'
-import { useLlmHubProviders } from '@/lib/llm-hub/useLlmHubProviders'
+import { useLlmHubProviders } from '@/modules/llm-hub/llm-hub.hooks'
 import { AddHubProviderDialog } from './AddHubProviderDialog'
 import { HubProvidersList } from './HubProvidersList'
 import { LlmHubHeader } from './LlmHubHeader'

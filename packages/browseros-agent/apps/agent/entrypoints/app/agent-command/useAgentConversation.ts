@@ -1,11 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import {
-  type AgentHarnessStreamEvent,
-  attachToHarnessTurn,
-  cancelHarnessTurn,
-  chatWithHarnessAgent,
-  fetchActiveHarnessTurn,
-} from '@/entrypoints/app/agents/useAgents'
 import type {
   AgentConversationTurn,
   AssistantPart,
@@ -15,6 +8,13 @@ import type {
 import type { ServerAttachmentPayload } from '@/lib/attachments'
 import { consumeSSEStream } from '@/lib/sse'
 import { buildToolLabel } from '@/lib/tool-labels'
+import {
+  type AgentHarnessStreamEvent,
+  attachToHarnessTurn,
+  cancelHarnessTurn,
+  chatWithHarnessAgent,
+  fetchActiveHarnessTurn,
+} from '@/modules/agents/agents.hooks'
 import type { AgentChatHistoryMessage } from './agent-chat-types'
 import { mapAgentHarnessToolStatus } from './agent-stream-events'
 

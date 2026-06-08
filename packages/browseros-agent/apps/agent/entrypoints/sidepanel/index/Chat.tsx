@@ -13,9 +13,9 @@ import {
   SIDEPANEL_VOICE_RECORDING_STOPPED_EVENT,
   SIDEPANEL_VOICE_TRANSCRIPTION_COMPLETED_EVENT,
 } from '@/lib/constants/analyticsEvents'
-import { useJtbdPopup } from '@/lib/jtbd-popup/useJtbdPopup'
 import { track } from '@/lib/metrics/track'
-import { useVoiceInput } from '@/lib/voice/useVoiceInput'
+import { useJtbdPopup } from '@/modules/jtbd-popup/jtbd-popup.hooks'
+import { useVoiceInput } from '@/modules/voice/voice.hooks'
 import { useChatSessionContext } from '../layout/ChatSessionContext'
 import { ChatEmptyState } from './ChatEmptyState'
 import { ChatError } from './ChatError'

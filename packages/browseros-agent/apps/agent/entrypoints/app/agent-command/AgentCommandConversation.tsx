@@ -2,12 +2,13 @@ import { ArrowLeft, Plus } from 'lucide-react'
 import { type FC, useEffect, useMemo, useRef } from 'react'
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router'
 import { Button } from '@/components/ui/button'
+import type { AgentAdapterHealth } from '@/entrypoints/app/agents/agent-row/agent-row.types'
+import { cn } from '@/lib/utils'
 import type {
   AgentEntry,
   HarnessAgent,
   HarnessAgentAdapter,
-} from '@/entrypoints/app/agents/agent-harness-types'
-import type { AgentAdapterHealth } from '@/entrypoints/app/agents/agent-row/agent-row.types'
+} from '@/modules/agents/agent-harness-types'
 import {
   cancelHarnessTurn,
   useAgentAdapters,
@@ -15,8 +16,7 @@ import {
   useHarnessAgents,
   useRemoveHarnessQueuedMessage,
   useUpdateHarnessAgent,
-} from '@/entrypoints/app/agents/useAgents'
-import { cn } from '@/lib/utils'
+} from '@/modules/agents/agents.hooks'
 import { AgentChat } from './AgentChat'
 import { AgentRail } from './AgentRail'
 import {

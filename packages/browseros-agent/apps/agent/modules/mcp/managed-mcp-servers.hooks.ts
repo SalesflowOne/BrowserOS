@@ -1,5 +1,5 @@
 import useSWR from 'swr'
-import { useAgentServerUrl } from '@/hooks/useAgentServerUrl'
+import { useAgentServerUrl } from '@/modules/browseros/agent-server-url.hooks'
 
 interface McpServerResponse {
   servers: {

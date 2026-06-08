@@ -1,6 +1,6 @@
 import { Bot, Cpu, Sparkles, Wand2 } from 'lucide-react'
 import type { FC } from 'react'
-import type { HarnessAgentAdapter } from './agent-harness-types'
+import type { HarnessAgentAdapter } from '@/modules/agents/agent-harness-types'
 
 /**
  * Single icon component for any adapter the agent rail can render.

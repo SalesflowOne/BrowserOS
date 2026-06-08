@@ -1,9 +1,9 @@
+import type { LlmProviderConfig, ProviderType } from '@/lib/llm-providers/types'
 import type {
   HarnessAdapterDescriptor,
   HarnessAgent,
   HarnessAgentAdapter,
-} from '@/entrypoints/app/agents/agent-harness-types'
-import type { LlmProviderConfig, ProviderType } from '@/lib/llm-providers/types'
+} from '@/modules/agents/agent-harness-types'
 // Relative (not `@/`) so this module stays loadable under `bun test`, which
 // resolves tsconfig `@/` aliases for erased type imports only, not values.
 import { visibleHarnessAgents } from '../../../lib/chat/adapter-visibility'

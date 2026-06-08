@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { McpServerIcon } from '@/entrypoints/app/connect-mcp/McpServerIcon'
-import { useGetUserMCPIntegrations } from '@/entrypoints/app/connect-mcp/useGetUserMCPIntegrations'
 import {
   ONBOARDING_COMPLETED_EVENT,
   ONBOARDING_DEMO_TRIGGERED_EVENT,
@@ -14,6 +13,7 @@ import {
   onboardingCompletedStorage,
   onboardingProfileStorage,
 } from '@/lib/onboarding/onboardingStorage'
+import { useGetUserMCPIntegrations } from '@/modules/mcp/user-integrations.hooks'
 
 interface DemoSuggestion {
   label: string

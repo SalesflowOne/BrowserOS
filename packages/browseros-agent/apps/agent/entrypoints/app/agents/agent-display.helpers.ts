@@ -1,4 +1,4 @@
-import type { AgentListItem } from './agents-page-types'
+import type { AgentListItem } from '@/modules/agents/agents-page-types'
 import type { AgentLiveness } from './LivenessDot'
 
 /**

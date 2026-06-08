@@ -1,11 +1,11 @@
 import { type FC, useMemo } from 'react'
+import type { AgentAdapterHealth } from '@/entrypoints/app/agents/agent-row/agent-row.types'
 import type {
   HarnessAdapterDescriptor,
   HarnessAgent,
   HarnessAgentAdapter,
-} from '@/entrypoints/app/agents/agent-harness-types'
-import type { AgentAdapterHealth } from '@/entrypoints/app/agents/agent-row/agent-row.types'
-import { orderAgentsByPinThenRecency } from '@/entrypoints/app/agents/agents-list-order'
+} from '@/modules/agents/agent-harness-types'
+import { orderAgentsByPinThenRecency } from '@/modules/agents/agents-list-order'
 import { AgentRailRow } from './AgentRailRow'
 
 interface AgentRailProps {

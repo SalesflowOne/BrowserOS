@@ -10,7 +10,7 @@ import {
 } from 'react'
 import { TabPickerPopover } from '@/components/elements/tab-picker-popover'
 import { cn } from '@/lib/utils'
-import type { VoiceInputState } from '@/lib/voice/useVoiceInput'
+import type { VoiceInputState } from '@/modules/voice/voice.hooks'
 import type { ChatMode } from './chatTypes'
 
 interface MentionState {

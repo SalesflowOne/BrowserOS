@@ -1,7 +1,7 @@
 import type { FC } from 'react'
 import { Outlet, useOutletContext } from 'react-router'
-import type { AgentEntry } from '@/entrypoints/app/agents/agent-harness-types'
-import { useHarnessAgents } from '@/entrypoints/app/agents/useAgents'
+import type { AgentEntry } from '@/modules/agents/agent-harness-types'
+import { useHarnessAgents } from '@/modules/agents/agents.hooks'
 
 interface AgentCommandContextValue {
   agents: AgentEntry[]

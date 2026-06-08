@@ -1,23 +1,23 @@
 import { useEffect, useMemo, useState } from 'react'
-import type {
-  HarnessAdapterDescriptor,
-  HarnessAgent,
-  HarnessAgentAdapter,
-} from '@/entrypoints/app/agents/agent-harness-types'
-import { useDefaultAgentName } from '@/entrypoints/app/agents/agents-page-hooks'
-import type { AgentListItem } from '@/entrypoints/app/agents/agents-page-types'
-import { toHarnessListItem } from '@/entrypoints/app/agents/agents-page-utils'
-import {
-  useAgentAdapters,
-  useCreateHarnessAgent,
-  useDeleteHarnessAgent,
-  useHarnessAgents,
-} from '@/entrypoints/app/agents/useAgents'
 import {
   AGENT_CREATED_EVENT,
   AGENT_DELETED_EVENT,
 } from '@/lib/constants/analyticsEvents'
 import { track } from '@/lib/metrics/track'
+import type {
+  HarnessAdapterDescriptor,
+  HarnessAgent,
+  HarnessAgentAdapter,
+} from '@/modules/agents/agent-harness-types'
+import {
+  useAgentAdapters,
+  useCreateHarnessAgent,
+  useDeleteHarnessAgent,
+  useHarnessAgents,
+} from '@/modules/agents/agents.hooks'
+import { useDefaultAgentName } from '@/modules/agents/agents-page.hooks'
+import type { AgentListItem } from '@/modules/agents/agents-page-types'
+import { toHarnessListItem } from '@/modules/agents/agents-page-utils'
 
 type AgentActivity = Record<
   string,

@@ -1,8 +1,8 @@
 import type { FC } from 'react'
 import { cn } from '@/lib/utils'
+import type { HarnessAgentAdapter } from '@/modules/agents/agent-harness-types'
 import { AdapterIcon } from '../AdapterIcon'
 import { livenessDetail } from '../agent-display.helpers'
-import type { HarnessAgentAdapter } from '../agent-harness-types'
 import { type AgentLiveness, LivenessDot } from '../LivenessDot'
 
 export interface AgentTileProps {

@@ -1,8 +1,8 @@
 import type {
   HarnessAdapterHealth,
   HarnessAgentAdapter,
-} from '../agent-harness-types'
-import type { AgentListItem } from '../agents-page-types'
+} from '@/modules/agents/agent-harness-types'
+import type { AgentListItem } from '@/modules/agents/agents-page-types'
 import type { AgentLiveness } from '../LivenessDot'
 
 /**

@@ -7,9 +7,12 @@ import {
   HoverCardTrigger,
 } from '@/components/ui/hover-card'
 import { cn } from '@/lib/utils'
+import {
+  adapterHealthLabel,
+  adapterHealthTone,
+} from '@/modules/agents/adapter-health'
+import type { HarnessAgentAdapter } from '@/modules/agents/agent-harness-types'
 import { adapterLabel } from '../AdapterIcon'
-import { adapterHealthLabel, adapterHealthTone } from '../adapter-health'
-import type { HarnessAgentAdapter } from '../agent-harness-types'
 import type { AgentAdapterHealth } from './agent-row.types'
 
 interface AgentSummaryChipsProps {

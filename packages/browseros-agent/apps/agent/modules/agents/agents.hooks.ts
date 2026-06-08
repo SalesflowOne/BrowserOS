@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useAgentServerUrl } from '@/hooks/useAgentServerUrl'
 import { Feature } from '@/lib/browseros/capabilities'
 import { getAgentServerUrl } from '@/lib/browseros/helpers'
-import { useCapabilities } from '@/lib/browseros/useCapabilities'
+import { useAgentServerUrl } from '@/modules/browseros/agent-server-url.hooks'
+import { useCapabilities } from '@/modules/browseros/capabilities.hooks'
 import { buildAgentApiUrl } from './agent-api-url'
 import {
   type AgentHarnessStreamEvent,

@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react'
-import { type LlmHubProvider, loadProviders, saveProviders } from './storage'
+import {
+  type LlmHubProvider,
+  loadProviders,
+  saveProviders,
+} from '@/lib/llm-hub/storage'
 
 /** @public */
 export interface UseLlmHubProvidersReturn {

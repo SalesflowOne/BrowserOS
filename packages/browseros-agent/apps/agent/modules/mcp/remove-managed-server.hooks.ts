@@ -1,5 +1,5 @@
 import useSWRMutation from 'swr/mutation'
-import { useAgentServerUrl } from '@/hooks/useAgentServerUrl'
+import { useAgentServerUrl } from '@/modules/browseros/agent-server-url.hooks'
 
 interface RemoveServerResponse {
   success: boolean

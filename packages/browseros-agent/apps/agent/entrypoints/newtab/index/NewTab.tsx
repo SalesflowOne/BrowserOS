@@ -30,10 +30,8 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { McpServerIcon } from '@/entrypoints/app/connect-mcp/McpServerIcon'
-import { useGetUserMCPIntegrations } from '@/entrypoints/app/connect-mcp/useGetUserMCPIntegrations'
 import { useChatSessionContext } from '@/entrypoints/sidepanel/layout/ChatSessionContext'
 import { Feature } from '@/lib/browseros/capabilities'
-import { useCapabilities } from '@/lib/browseros/useCapabilities'
 import {
   createAITabAction,
   createBrowserOSAction,
@@ -56,12 +54,14 @@ import {
 import { BrowserOSIcon, ProviderIcon } from '@/lib/llm-providers/providerIcons'
 import type { ProviderType } from '@/lib/llm-providers/types'
 import { useMcpServers } from '@/lib/mcp/mcpServerStorage'
-import { useSyncRemoteIntegrations } from '@/lib/mcp/useSyncRemoteIntegrations'
 import { openSidePanelWithSearch } from '@/lib/messaging/sidepanel/openSidepanelWithSearch'
 import { track } from '@/lib/metrics/track'
 import { cn } from '@/lib/utils'
-import { useVoiceInput } from '@/lib/voice/useVoiceInput'
-import { useWorkspace } from '@/lib/workspace/use-workspace'
+import { useCapabilities } from '@/modules/browseros/capabilities.hooks'
+import { useSyncRemoteIntegrations } from '@/modules/mcp/sync-remote-integrations.hooks'
+import { useGetUserMCPIntegrations } from '@/modules/mcp/user-integrations.hooks'
+import { useVoiceInput } from '@/modules/voice/voice.hooks'
+import { useWorkspace } from '@/modules/workspace/workspace.hooks'
 import { ImportDataHint } from './ImportDataHint'
 import type { SuggestionItem } from './lib/suggestions/types'
 import {

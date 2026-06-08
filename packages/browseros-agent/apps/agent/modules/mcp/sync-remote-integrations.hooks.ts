@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { useGetMCPServersList } from '@/entrypoints/app/connect-mcp/useGetMCPServersList'
-import { useGetUserMCPIntegrations } from '@/entrypoints/app/connect-mcp/useGetUserMCPIntegrations'
-import { type McpServer, mcpServerStorage } from './mcpServerStorage'
+import { type McpServer, mcpServerStorage } from '@/lib/mcp/mcpServerStorage'
+import { useGetMCPServersList } from '@/modules/mcp/managed-mcp-servers.hooks'
+import { useGetUserMCPIntegrations } from '@/modules/mcp/user-integrations.hooks'
 
 export interface SyncStatus {
   /** True while the initial sync is in progress (fetching + writing to storage) */

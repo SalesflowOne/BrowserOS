@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it, mock } from 'bun:test'
 import { type ComponentProps, createElement, type FC } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import type { AgentListItem } from '../agents/agents-page-types'
+import type { AgentListItem } from '@/modules/agents/agents-page-types'
 
 type CodingAgentCardProps = {
   agent: AgentListItem

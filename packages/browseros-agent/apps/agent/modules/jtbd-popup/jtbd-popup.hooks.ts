@@ -4,9 +4,9 @@ import {
   JTBD_POPUP_DISMISSED_EVENT,
   JTBD_POPUP_SHOWN_EVENT,
 } from '@/lib/constants/analyticsEvents'
+import { JTBD_POPUP_CONSTANTS } from '@/lib/jtbd-popup/constants'
+import { type JtbdPopupState, jtbdPopupStorage } from '@/lib/jtbd-popup/storage'
 import { track } from '@/lib/metrics/track'
-import { JTBD_POPUP_CONSTANTS } from './constants'
-import { type JtbdPopupState, jtbdPopupStorage } from './storage'
 
 // Round 2 directions for random assignment (churn excluded — manual links only)
 const R2_DIRECTIONS = [

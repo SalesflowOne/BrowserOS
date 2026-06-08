@@ -1,7 +1,7 @@
 import { type UseQueryOptions, useQuery } from '@tanstack/react-query'
 import type { TypedDocumentString } from '@/generated/graphql/graphql'
-import { execute } from './execute'
-import { getQueryKeyFromDocument } from './getQueryKeyFromDocument'
+import { execute } from '@/lib/graphql/execute'
+import { getQueryKeyFromDocument } from '@/lib/graphql/getQueryKeyFromDocument'
 
 /**
  * @public

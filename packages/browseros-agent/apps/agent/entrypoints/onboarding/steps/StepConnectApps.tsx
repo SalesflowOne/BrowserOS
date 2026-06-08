@@ -2,8 +2,6 @@ import { Check, Loader2, Plug } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { McpServerIcon } from '@/entrypoints/app/connect-mcp/McpServerIcon'
-import { useAddManagedServer } from '@/entrypoints/app/connect-mcp/useAddManagedServer'
-import { useGetUserMCPIntegrations } from '@/entrypoints/app/connect-mcp/useGetUserMCPIntegrations'
 import {
   ONBOARDING_APP_CONNECTED_EVENT,
   ONBOARDING_CONNECT_APPS_SKIPPED_EVENT,
@@ -13,6 +11,8 @@ import {
 import { useMcpServers } from '@/lib/mcp/mcpServerStorage'
 import { track } from '@/lib/metrics/track'
 import { sentry } from '@/lib/sentry/sentry'
+import { useAddManagedServer } from '@/modules/mcp/add-managed-server.hooks'
+import { useGetUserMCPIntegrations } from '@/modules/mcp/user-integrations.hooks'
 import { type StepDirection, StepTransition } from './StepTransition'
 
 interface StepConnectAppsProps {

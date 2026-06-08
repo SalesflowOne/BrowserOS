@@ -1,5 +1,5 @@
 import { createContext, type FC, type ReactNode, useContext } from 'react'
-import { useSyncRemoteIntegrations } from '@/lib/mcp/useSyncRemoteIntegrations'
+import { useSyncRemoteIntegrations } from '@/modules/mcp/sync-remote-integrations.hooks'
 import {
   type ChatSessionOptions,
   useChatSession,

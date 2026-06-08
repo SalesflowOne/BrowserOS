@@ -5,9 +5,9 @@ import {
   getCreditBarColor,
   getCreditTextColor,
 } from '@/lib/credits/credit-colors'
-import { useCredits } from '@/lib/credits/useCredits'
 import { BrowserOSIcon } from '@/lib/llm-providers/providerIcons'
 import { cn } from '@/lib/utils'
+import { useCredits } from '@/modules/credits/credits.hooks'
 
 export const UsagePage: FC = () => {
   const { data, isLoading, error } = useCredits()

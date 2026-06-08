@@ -2,13 +2,13 @@ import { Loader2, Trash2 } from 'lucide-react'
 import type { FC } from 'react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import type { HarnessAgentAdapter } from '@/modules/agents/agent-harness-types'
+import type { AgentListItem } from '@/modules/agents/agents-page-types'
 import { AdapterIcon, adapterLabel } from '../agents/AdapterIcon'
 import {
   canDelete as canDeleteAgent,
   displayName,
 } from '../agents/agent-display.helpers'
-import type { HarnessAgentAdapter } from '../agents/agent-harness-types'
-import type { AgentListItem } from '../agents/agents-page-types'
 
 interface CodingAgentCardProps {
   agent: AgentListItem

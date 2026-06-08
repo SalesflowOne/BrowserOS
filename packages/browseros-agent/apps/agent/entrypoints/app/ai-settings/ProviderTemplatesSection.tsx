@@ -5,17 +5,17 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
-import type {
-  HarnessAdapterDescriptor,
-  HarnessAgentAdapter,
-} from '@/entrypoints/app/agents/agent-harness-types'
 import { Feature } from '@/lib/browseros/capabilities'
-import { useCapabilities } from '@/lib/browseros/useCapabilities'
 import {
   type ProviderTemplate,
   providerTemplates,
 } from '@/lib/llm-providers/providerTemplates'
 import { cn } from '@/lib/utils'
+import type {
+  HarnessAdapterDescriptor,
+  HarnessAgentAdapter,
+} from '@/modules/agents/agent-harness-types'
+import { useCapabilities } from '@/modules/browseros/capabilities.hooks'
 import { CodingAgentTemplateCard } from './CodingAgentTemplateCard'
 import { ProviderTemplateCard } from './ProviderTemplateCard'
 

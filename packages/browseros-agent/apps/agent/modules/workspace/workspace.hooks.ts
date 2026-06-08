@@ -3,7 +3,7 @@ import {
   selectedWorkspaceStorage,
   type WorkspaceFolder,
   workspaceFoldersStorage,
-} from './workspace-storage'
+} from '@/lib/workspace/workspace-storage'
 
 const MAX_RECENT_FOLDERS = 10
 

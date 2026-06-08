@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import useDeepCompareEffect from 'use-deep-compare-effect'
+import { Feature } from '@/lib/browseros/capabilities'
+import type { LlmProviderConfig } from '@/lib/llm-providers/types'
+import { type McpServer, useMcpServers } from '@/lib/mcp/mcpServerStorage'
+import { usePersonalization } from '@/lib/personalization/personalizationStorage'
 import {
   useAgentAdapters,
   useHarnessAgents,
-} from '@/entrypoints/app/agents/useAgents'
-import { Feature } from '@/lib/browseros/capabilities'
-import { useCapabilities } from '@/lib/browseros/useCapabilities'
-import type { LlmProviderConfig } from '@/lib/llm-providers/types'
-import { useLlmProviders } from '@/lib/llm-providers/useLlmProviders'
-import { type McpServer, useMcpServers } from '@/lib/mcp/mcpServerStorage'
-import { usePersonalization } from '@/lib/personalization/personalizationStorage'
+} from '@/modules/agents/agents.hooks'
+import { useCapabilities } from '@/modules/browseros/capabilities.hooks'
+import { useLlmProviders } from '@/modules/llm-providers/llm-providers.hooks'
 import {
   buildSidepanelChatTargets,
   loadSidepanelChatTargetSelection,

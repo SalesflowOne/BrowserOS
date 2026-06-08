@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Capabilities, Feature } from './capabilities'
+import { Capabilities, Feature } from '@/lib/browseros/capabilities'
 
 interface CapabilitiesState {
   browserOSVersion: string | null

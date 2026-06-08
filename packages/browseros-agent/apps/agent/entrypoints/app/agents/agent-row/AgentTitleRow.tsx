@@ -1,7 +1,7 @@
 import type { FC } from 'react'
 import { Badge } from '@/components/ui/badge'
+import type { AgentListItem } from '@/modules/agents/agents-page-types'
 import { displayName } from '../agent-display.helpers'
-import type { AgentListItem } from '../agents-page-types'
 import type { AgentLiveness } from '../LivenessDot'
 import { AgentSparkline } from './AgentSparkline'
 import { PinToggle } from './PinToggle'

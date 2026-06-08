@@ -35,8 +35,8 @@ import { Input } from '@/components/ui/input'
 import { useSessionInfo } from '@/lib/auth/sessionStorage'
 import { env } from '@/lib/env'
 import { getQueryKeyFromDocument } from '@/lib/graphql/getQueryKeyFromDocument'
-import { useGraphqlMutation } from '@/lib/graphql/useGraphqlMutation'
-import { useGraphqlQuery } from '@/lib/graphql/useGraphqlQuery'
+import { useGraphqlMutation } from '@/modules/graphql/graphql-mutation.hooks'
+import { useGraphqlQuery } from '@/modules/graphql/graphql-query.hooks'
 import {
   GetProfileByUserIdDocument,
   UpdateProfileByUserIdDocument,
