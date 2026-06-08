@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
+import type { LlmProviderConfig } from '@/lib/llm-providers/types'
 import {
   resolveDefaultProviderId,
   resolveSelectedProvider,
-} from '@/lib/llm-providers/provider-selection'
+} from '../../lib/llm-providers/provider-selection'
 import {
   createDefaultProvidersConfig,
   DEFAULT_PROVIDER_ID,
   defaultProviderIdStorage,
   loadProviders,
   providersStorage,
-} from '@/lib/llm-providers/storage'
-import type { LlmProviderConfig } from '@/lib/llm-providers/types'
+} from '../../lib/llm-providers/storage'
 
 export interface UseLlmProvidersReturn {
   providers: LlmProviderConfig[]
