@@ -29,7 +29,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version (e.g. 0.0.97)"
+        description: "Release version (e.g. 0.0.97). Ignored when apply_bump is true."
         required: true
         type: string
       apply_bump:
