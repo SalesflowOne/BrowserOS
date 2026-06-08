@@ -7,6 +7,10 @@ import type { LlmProviderConfig, ProviderType } from '@/lib/llm-providers/types'
 // Relative (not `@/`) so this module stays loadable under `bun test`, which
 // resolves tsconfig `@/` aliases for erased type imports only, not values.
 import { visibleHarnessAgents } from '../../../lib/chat/adapter-visibility'
+import {
+  isChatProviderType,
+  resolveChatProvider,
+} from '../../../lib/llm-providers/provider-runtime'
 
 export type SidepanelTargetKind = 'llm' | 'acp'
 
@@ -74,7 +78,9 @@ export function buildSidepanelChatTargets({
   hermesAgentSupported = false,
 }: BuildSidepanelChatTargetsInput): SidepanelChatTarget[] {
   return [
-    ...providers.map(toLlmTarget),
+    ...providers
+      .filter((provider) => isChatProviderType(provider.type))
+      .map(toLlmTarget),
     ...visibleHarnessAgents(agents, hermesAgentSupported).map((agent) =>
       toAcpTargetForAgent(agent, adapters),
     ),
@@ -130,11 +136,14 @@ export function resolveSidepanelChatTarget({
     if (selected) return selected
   }
 
-  return (
-    targets.find(
-      (target) => target.kind === 'llm' && target.id === defaultProviderId,
-    ) ?? targets.find((target) => target.kind === 'llm')
+  const llmTargets = targets.filter((target) => target.kind === 'llm')
+  const provider = resolveChatProvider(
+    llmTargets.map((target) => target.provider),
+    defaultProviderId,
   )
+  return provider
+    ? llmTargets.find((target) => target.id === provider.id)
+    : undefined
 }
 
 export function toLlmProviderConfig(

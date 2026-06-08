@@ -24,6 +24,7 @@ import { formatConversationHistory } from '@/lib/conversations/formatConversatio
 import { useInvalidateCredits } from '@/lib/credits/useCredits'
 import { declinedAppsStorage } from '@/lib/declined-apps/storage'
 import { useGraphqlQuery } from '@/lib/graphql/useGraphqlQuery'
+import { resolveChatProvider } from '@/lib/llm-providers/provider-runtime'
 import { createDefaultBrowserOSProvider } from '@/lib/llm-providers/storage'
 import type { ChatRequestBrowserContext } from '@/lib/messaging/server/buildChatRequestBody'
 import { track } from '@/lib/metrics/track'
@@ -312,7 +313,11 @@ export const useChatSession = (options?: ChatSessionOptions) => {
       prepareSendMessagesRequest: async ({ messages }) => {
         const target = selectedChatTargetRef.current
         const fallbackProvider =
-          selectedLlmProviderRef.current ?? createDefaultBrowserOSProvider()
+          resolveChatProvider(
+            selectedLlmProviderRef.current
+              ? [selectedLlmProviderRef.current]
+              : [],
+          ) ?? createDefaultBrowserOSProvider()
         const activeTabsList = await chrome.tabs.query({
           active: true,
           currentWindow: true,

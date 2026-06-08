@@ -41,6 +41,31 @@ const providers: LlmProviderConfig[] = [
   },
 ]
 
+const localRuntimeProviders: LlmProviderConfig[] = [
+  {
+    id: 'codex-provider',
+    type: 'codex',
+    name: 'Codex',
+    modelId: 'gpt-5.3-codex',
+    supportsImages: false,
+    contextWindow: 400000,
+    temperature: 0.2,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  },
+  {
+    id: 'claude-code-provider',
+    type: 'claude-code',
+    name: 'Claude Code',
+    modelId: 'claude-sonnet-4-6',
+    supportsImages: false,
+    contextWindow: 200000,
+    temperature: 0.2,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  },
+]
+
 const adapters: HarnessAdapterDescriptor[] = [
   {
     id: 'claude',
@@ -144,6 +169,20 @@ describe('buildSidepanelChatTargets', () => {
       },
     ])
   })
+
+  it('does not emit local runtime provider configs as generic LLM targets', () => {
+    const targets = buildSidepanelChatTargets({
+      providers: [...providers, ...localRuntimeProviders],
+      adapters,
+      agents,
+    })
+
+    expect(targets.map((target) => target.id)).toEqual([
+      'browseros',
+      'anthropic-sonnet',
+      'agent-codex',
+    ])
+  })
 })
 
 describe('resolveSidepanelChatTarget', () => {
@@ -190,6 +229,24 @@ describe('resolveSidepanelChatTarget', () => {
     ).toMatchObject({
       kind: 'llm',
       id: 'anthropic-sonnet',
+    })
+  })
+
+  it('falls back to the first chat-compatible LLM when the default is local runtime', () => {
+    const targets = buildSidepanelChatTargets({
+      providers: [...localRuntimeProviders, ...providers],
+      adapters,
+      agents: [],
+    })
+
+    expect(
+      resolveSidepanelChatTarget({
+        targets,
+        defaultProviderId: 'codex-provider',
+      }),
+    ).toMatchObject({
+      kind: 'llm',
+      id: 'browseros',
     })
   })
 })

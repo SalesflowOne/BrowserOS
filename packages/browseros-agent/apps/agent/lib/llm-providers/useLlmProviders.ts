@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
+  resolveDefaultProviderId,
+  resolveSelectedProvider,
+} from './provider-selection'
+import {
   createDefaultProvidersConfig,
   DEFAULT_PROVIDER_ID,
   defaultProviderIdStorage,
@@ -8,38 +12,30 @@ import {
 } from './storage'
 import type { LlmProviderConfig } from './types'
 
-/**
- * Hook return type
- * @public
- */
 export interface UseLlmProvidersReturn {
-  /** All configured providers */
   providers: LlmProviderConfig[]
-  /** ID of the default provider */
   defaultProviderId: string
-  /** Full config of the currently selected provider */
   selectedProvider: LlmProviderConfig | null
-  /** Whether data is loading */
   isLoading: boolean
-  /** Save or update a provider */
   saveProvider: (provider: LlmProviderConfig) => Promise<void>
-  /** Set the default provider */
   setDefaultProvider: (providerId: string) => Promise<void>
-  /** Delete a provider */
   deleteProvider: (providerId: string) => Promise<void>
 }
 
-/**
- * Hook for managing LLM provider configurations
- * @public
- */
+/** Persists the configured default provider id used by provider selection. */
+export async function persistDefaultProviderId(
+  providerId: string,
+): Promise<void> {
+  await defaultProviderIdStorage.setValue(providerId)
+}
+
+/** Hook for managing LLM provider configurations. */
 export function useLlmProviders(): UseLlmProvidersReturn {
   const [providers, setProviders] = useState<LlmProviderConfig[]>([])
   const [defaultProviderId, setDefaultProviderId] =
     useState<string>(DEFAULT_PROVIDER_ID)
   const [isLoading, setIsLoading] = useState(true)
 
-  // Load initial data
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true)
@@ -49,30 +45,22 @@ export function useLlmProviders(): UseLlmProvidersReturn {
           defaultProviderIdStorage.getValue(),
         ])
 
-        // Initialize with defaults if storage is empty
         if (!loadedProviders || loadedProviders.length === 0) {
           loadedProviders = createDefaultProvidersConfig()
           await providersStorage.setValue(loadedProviders)
         }
 
-        if (!loadedDefaultId) {
-          loadedDefaultId = DEFAULT_PROVIDER_ID
-          await defaultProviderIdStorage.setValue(loadedDefaultId)
-        }
-
-        // Repair stale default ID that doesn't match any provider
-        const defaultExists = loadedProviders.some(
-          (p) => p.id === loadedDefaultId,
+        const resolvedDefaultId = resolveDefaultProviderId(
+          loadedProviders,
+          loadedDefaultId,
         )
-        if (!defaultExists && loadedProviders.length > 0) {
-          loadedDefaultId = loadedProviders[0].id
-          await defaultProviderIdStorage.setValue(loadedDefaultId)
+        if (resolvedDefaultId !== loadedDefaultId) {
+          await defaultProviderIdStorage.setValue(resolvedDefaultId)
         }
 
         setProviders(loadedProviders)
-        setDefaultProviderId(loadedDefaultId)
+        setDefaultProviderId(resolvedDefaultId)
       } catch {
-        // TODO: Record error to error recording service
       } finally {
         setIsLoading(false)
       }
@@ -81,7 +69,6 @@ export function useLlmProviders(): UseLlmProvidersReturn {
     loadData()
   }, [])
 
-  // Listen for storage changes
   useEffect(() => {
     const unsubscribeProviders = providersStorage.watch((newProviders) => {
       if (newProviders) {
@@ -111,14 +98,12 @@ export function useLlmProviders(): UseLlmProvidersReturn {
 
     let updatedProviders: LlmProviderConfig[]
     if (existingIndex >= 0) {
-      // Update existing provider
       updatedProviders = [...currentProviders]
       updatedProviders[existingIndex] = {
         ...provider,
         updatedAt: Date.now(),
       }
     } else {
-      // Add new provider
       updatedProviders = [
         ...currentProviders,
         {
@@ -134,11 +119,10 @@ export function useLlmProviders(): UseLlmProvidersReturn {
 
   const setDefaultProviderFn = async (providerId: string) => {
     setDefaultProviderId(providerId)
-    await defaultProviderIdStorage.setValue(providerId)
+    await persistDefaultProviderId(providerId)
   }
 
   const deleteProvider = async (providerId: string) => {
-    // Prevent deletion of built-in BrowserOS provider
     if (providerId === DEFAULT_PROVIDER_ID) {
       return
     }
@@ -146,7 +130,6 @@ export function useLlmProviders(): UseLlmProvidersReturn {
     const currentProviders = (await providersStorage.getValue()) || []
     const updatedProviders = currentProviders.filter((p) => p.id !== providerId)
 
-    // Handle default provider reassignment if deleted provider was default
     if (defaultProviderId === providerId) {
       const newDefaultId = updatedProviders[0]?.id || DEFAULT_PROVIDER_ID
       await defaultProviderIdStorage.setValue(newDefaultId)
@@ -155,10 +138,8 @@ export function useLlmProviders(): UseLlmProvidersReturn {
     await providersStorage.setValue(updatedProviders)
   }
 
-  // Fall back to first provider if defaultProviderId is stale/invalid
   const selectedProvider = useMemo(
-    () =>
-      providers.find((p) => p.id === defaultProviderId) ?? providers[0] ?? null,
+    () => resolveSelectedProvider(providers, defaultProviderId),
     [providers, defaultProviderId],
   )
 
