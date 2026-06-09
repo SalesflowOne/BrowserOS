@@ -63,7 +63,7 @@ const getLastUserMessageText = (messages: UIMessage[]) => {
   return ''
 }
 
-export const getResponseAndQueryFromMessageId = (
+const getResponseAndQueryFromMessageId = (
   messages: UIMessage[],
   messageId: string,
 ) => {
