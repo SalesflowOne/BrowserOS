@@ -99,7 +99,7 @@ export const Composer: FC<ComposerProps> = ({
           onChange={(e) => setValue(e.target.value)}
           placeholder={effectivePlaceholder}
           aria-label={effectivePlaceholder}
-          className="h-auto w-full min-w-0 rounded-none border-0 bg-transparent p-0 text-[15px] shadow-none placeholder:text-[color-mix(in_oklch,var(--muted-foreground)_80%,transparent)] focus-visible:border-0 focus-visible:ring-0"
+          className="h-auto w-full min-w-0 rounded-none border-0 bg-transparent p-0 text-[16px] shadow-none placeholder:text-[color-mix(in_oklch,var(--muted-foreground)_80%,transparent)] focus-visible:border-0 focus-visible:ring-0"
         />
         <Button
           type="button"
