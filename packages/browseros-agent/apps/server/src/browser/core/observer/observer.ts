@@ -133,17 +133,15 @@ export class Observer {
   }
 }
 
-/** Reads the live document URL, falling back to the tab registry during context teardown. */
+/** Reads the live main-frame URL, falling back to the tab registry during teardown. */
 async function readCurrentUrl(
   session: ProtocolApi,
   fallback: () => Promise<string | undefined>,
 ): Promise<string> {
   try {
-    const result = await session.Runtime.evaluate({
-      expression: 'location.href',
-      returnByValue: true,
-    })
-    if (typeof result.result?.value === 'string') return result.result.value
+    const result = await session.Page.getFrameTree()
+    const url = result.frameTree.frame.url
+    if (url) return url
   } catch {}
   try {
     return (await fallback()) || 'unknown'
