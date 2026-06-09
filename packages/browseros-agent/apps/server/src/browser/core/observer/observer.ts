@@ -1,7 +1,7 @@
 import type { ProtocolApi } from '@browseros/cdp-protocol/protocol-api'
 import type { FrameId } from '../connection'
 import type { PageManager } from '../pages'
-import { diffSnapshots, type SnapshotDiff } from '../snapshot/diff'
+import { diffSnapshotObservations, type SnapshotDiff } from '../snapshot/diff'
 import { RefMap } from '../snapshot/refs'
 import { renderSnapshot } from '../snapshot/render'
 import { fetchAxTree } from './ax-tree'
@@ -14,15 +14,12 @@ const MAX_FRAME_DEPTH = 5
 export interface SnapshotResult {
   text: string
   refs: RefMap
+  url: string
 }
 
-/**
- * Per-page observation. Renders the accessibility tree (stitched across iframes into one tree
- * with a single global ref namespace) and diffs successive observations against a stored
- * baseline. Holds the last RefMap so refs can be resolved through the right frame session.
- */
+/** Per-page snapshot, ref, and diff state for one BrowserOS page id. */
 export class Observer {
-  private baseline = ''
+  private baseline?: { text: string; url: string }
   private refs = new RefMap()
 
   constructor(
@@ -41,7 +38,7 @@ export class Observer {
     const before = this.baseline
     const result = await this.capture()
     this.commit(result)
-    return diffSnapshots(before, result.text)
+    return diffSnapshotObservations(before, result)
   }
 
   get lastRefs(): RefMap {
@@ -63,11 +60,11 @@ export class Observer {
   }
 
   private async capture(): Promise<SnapshotResult> {
-    // Ensure the page session is attached + registered with the frame tracker.
-    await this.pages.getSession(this.pageId)
+    const pageSession = await this.pages.getSession(this.pageId)
     const refs = new RefMap()
     const text = await this.captureFrame(undefined, refs, 0, new Set())
-    return { text, refs }
+    const url = await readCurrentUrl(pageSession.session, pageSession.url)
+    return { text, refs, url }
   }
 
   /** Render a frame, then splice each child iframe's rendered tree under its `- iframe` line. */
@@ -118,9 +115,24 @@ export class Observer {
   }
 
   private commit(result: SnapshotResult): void {
-    this.baseline = result.text
+    this.baseline = { text: result.text, url: result.url }
     this.refs = result.refs
   }
+}
+
+/** Reads the live document URL, falling back to the tab registry during context teardown. */
+async function readCurrentUrl(
+  session: ProtocolApi,
+  fallback: string,
+): Promise<string> {
+  try {
+    const result = await session.Runtime.evaluate({
+      expression: 'location.href',
+      returnByValue: true,
+    })
+    if (typeof result.result?.value === 'string') return result.result.value
+  } catch {}
+  return fallback || 'unknown'
 }
 
 /** Resolve an iframe element to the frameId of its embedded document. */
