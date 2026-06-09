@@ -29,7 +29,9 @@ export const FaLaunch: FC<FaLaunchProps> = ({
     }}
     className="fixed z-[2147483646] flex cursor-grab items-center justify-center rounded-full border-0 bg-white p-0 shadow-[0_8px_24px_-4px_rgba(40,40,60,0.28),0_0_0_1px_rgba(0,0,0,0.05)] transition-[box-shadow,transform] duration-150 hover:-translate-y-px hover:shadow-[0_10px_30px_-4px_rgba(40,40,60,0.34),0_0_0_1px_rgba(0,0,0,0.06)] active:scale-[0.96] active:cursor-grabbing"
   >
-    <BrowserOSIcon size={28} />
+    <span className="pointer-events-none select-none">
+      <BrowserOSIcon size={28} />
+    </span>
     {live && (
       <span
         aria-hidden
