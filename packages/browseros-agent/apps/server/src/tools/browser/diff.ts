@@ -15,7 +15,7 @@ export const diff = defineTool({
       d.afterUrl ?? ctx.session.pages.getInfo(args.page)?.url ?? 'unknown'
     if (d.urlChanged) {
       return textResult(
-        `URL changed from ${d.beforeUrl} to ${d.afterUrl}; returning full current snapshot instead of a diff:\n${wrapUntrusted(d.text || '(empty page)', origin)}`,
+        `URL changed; returning full current snapshot instead of a diff:\n${wrapUntrusted(d.text || '(empty page)', origin)}`,
         {
           added: d.added,
           removed: d.removed,

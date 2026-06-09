@@ -63,7 +63,10 @@ export class Observer {
     const pageSession = await this.pages.getSession(this.pageId)
     const refs = new RefMap()
     const text = await this.captureFrame(undefined, refs, 0, new Set())
-    const url = await readCurrentUrl(pageSession.session, pageSession.url)
+    const url = await readCurrentUrl(pageSession.session, async () => {
+      const refreshed = await this.pages.refresh(this.pageId)
+      return refreshed?.url
+    })
     return { text, refs, url }
   }
 
@@ -123,7 +126,7 @@ export class Observer {
 /** Reads the live document URL, falling back to the tab registry during context teardown. */
 async function readCurrentUrl(
   session: ProtocolApi,
-  fallback: string,
+  fallback: () => Promise<string | undefined>,
 ): Promise<string> {
   try {
     const result = await session.Runtime.evaluate({
@@ -132,7 +135,11 @@ async function readCurrentUrl(
     })
     if (typeof result.result?.value === 'string') return result.result.value
   } catch {}
-  return fallback || 'unknown'
+  try {
+    return (await fallback()) || 'unknown'
+  } catch {
+    return 'unknown'
+  }
 }
 
 /** Resolve an iframe element to the frameId of its embedded document. */

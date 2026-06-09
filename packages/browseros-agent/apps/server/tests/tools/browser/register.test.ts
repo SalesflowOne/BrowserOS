@@ -193,9 +193,7 @@ describe('registerBrowserTools', () => {
     expect(result?.content).toEqual([
       expect.objectContaining({
         type: 'text',
-        text: expect.stringContaining(
-          'URL changed from https://example.com/old to https://example.com/new',
-        ),
+        text: expect.stringContaining('URL changed;'),
       }),
     ])
     expect(result?.content).toEqual([
@@ -218,6 +216,74 @@ describe('registerBrowserTools', () => {
         text: expect.stringContaining('- heading "New page"'),
       }),
     ])
+  })
+
+  it('returns a full snapshot when act readback sees a URL change', async () => {
+    const fake = createFakeServer()
+    const calls: string[] = []
+    const session = {
+      input: () => ({
+        click: async () => calls.push('click'),
+      }),
+      observe: () => ({
+        diff: async () => ({
+          changed: true,
+          text: '- main\n  - heading "Destination"',
+          added: 0,
+          removed: 0,
+          urlChanged: true,
+          beforeUrl: 'https://example.com/start',
+          afterUrl: 'https://example.com/destination',
+        }),
+      }),
+      pages: {
+        getInfo: () => ({ url: 'https://example.com/destination' }),
+      },
+    } as unknown as BrowserSession
+
+    registerBrowserTools(fake.server as never, session)
+
+    const result = await fake.handlers.get('act')?.({
+      page: 1,
+      kind: 'click',
+      ref: 'e1',
+    })
+
+    expect(result?.isError).toBeFalsy()
+    expect(result?.structuredContent).toEqual({
+      kind: 'click',
+      changed: true,
+      urlChanged: true,
+      beforeUrl: 'https://example.com/start',
+      afterUrl: 'https://example.com/destination',
+    })
+    expect(result?.content).toEqual([
+      expect.objectContaining({
+        type: 'text',
+        text: expect.stringContaining('page URL changed;'),
+      }),
+    ])
+    expect(result?.content).toEqual([
+      expect.objectContaining({
+        type: 'text',
+        text: expect.stringContaining(
+          'returning full current snapshot instead of a diff',
+        ),
+      }),
+    ])
+    expect(result?.content).toEqual([
+      expect.objectContaining({
+        type: 'text',
+        text: expect.stringContaining('[UNTRUSTED_PAGE_CONTENT'),
+      }),
+    ])
+    expect(result?.content).toEqual([
+      expect.objectContaining({
+        type: 'text',
+        text: expect.stringContaining('- heading "Destination"'),
+      }),
+    ])
+    expect(calls).toEqual(['click'])
   })
 
   it('caps page-context JavaScript timeouts', async () => {
