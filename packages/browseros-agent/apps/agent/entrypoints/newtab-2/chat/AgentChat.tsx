@@ -25,6 +25,7 @@ import {
 } from './chat-screen.mock-data'
 import type {
   ChatBlock,
+  ChatMode,
   PostsBlock as PostsBlockT,
   ThoughtBlock,
   WarmupBlock as WarmupBlockT,
@@ -38,13 +39,16 @@ import {
 
 interface AgentChatProps {
   initialMessage?: string
+  mode: ChatMode
   onSwitchToVoice: () => void
 }
 
 export const AgentChat: FC<AgentChatProps> = ({
   initialMessage,
+  mode,
   onSwitchToVoice,
 }) => {
+  const isVoice = mode === 'voice'
   const { registerChatHandlers, setPlaceholder, setValue, submit, voice } =
     useComposer()
   const {
@@ -172,33 +176,64 @@ export const AgentChat: FC<AgentChatProps> = ({
     return () => clearTimeout(timer)
   }, [scrollKey])
 
+  // DOM side effect: when the mode flips, snap the thread to bottom so the
+  // last block sits above the orb (voice) or just above the composer (text).
+  useEffect(() => {
+    void mode
+    const el = scrollRef.current
+    if (!el) return
+    requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight
+    })
+  }, [mode])
+
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
+    <div
+      className={cn(
+        'relative flex h-full min-h-0 flex-col bg-background',
+        isVoice &&
+          'bg-[radial-gradient(90%_70%_at_50%_85%,#FCEFE4_0%,var(--background)_70%)]',
+      )}
+    >
       <header className="flex h-12 shrink-0 items-center justify-between px-6">
-        <span className="inline-flex items-center gap-2 whitespace-nowrap font-medium text-[13px] text-foreground">
-          <BrowserOSIcon size={16} />
-          BrowserOS Agent
-          <ChevronDown className="size-3 text-muted-foreground" aria-hidden />
-        </span>
+        {isVoice ? (
+          <span className="inline-flex items-center gap-[7px] whitespace-nowrap text-[12.5px] text-muted-foreground">
+            <span className="size-[7px] animate-[fv-pulse_1.5s_ease-in-out_infinite] rounded-full bg-[var(--accent-orange)]" />
+            Voice · BrowserOS agent
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-2 whitespace-nowrap font-medium text-[13px] text-foreground">
+            <BrowserOSIcon size={16} />
+            BrowserOS Agent
+            <ChevronDown className="size-3 text-muted-foreground" aria-hidden />
+          </span>
+        )}
         <div className="flex items-center gap-3 text-muted-foreground">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            onClick={onSwitchToVoice}
-            aria-label="Switch to voice"
-            className="text-muted-foreground"
-          >
-            <Mic className="size-4" />
-          </Button>
-          <Plus className="size-[15px]" aria-hidden />
+          {!isVoice && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={onSwitchToVoice}
+              aria-label="Switch to voice"
+              className="text-muted-foreground"
+            >
+              <Mic className="size-4" />
+            </Button>
+          )}
+          {!isVoice && <Plus className="size-[15px]" aria-hidden />}
           <Settings className="size-[15px]" aria-hidden />
-          <Sun className="size-[15px]" aria-hidden />
+          {!isVoice && <Sun className="size-[15px]" aria-hidden />}
         </div>
       </header>
 
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex max-w-[720px] flex-col gap-[14px] px-6 pt-3 pb-[150px]">
+        <div
+          className={cn(
+            'mx-auto flex max-w-[720px] flex-col gap-[14px] px-6 pt-3',
+            isVoice ? 'pb-[420px]' : 'pb-[150px]',
+          )}
+        >
           {blocks.map((b) => (
             <BlockRenderer key={b.id} block={b} />
           ))}
