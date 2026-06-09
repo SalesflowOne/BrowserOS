@@ -44,7 +44,6 @@ export const Composer: FC<ComposerProps> = ({
     submit,
     triggerVoice,
     placeholder: ctxPlaceholder,
-    chatActive,
   } = useComposer()
 
   const inputRef = useRef<HTMLInputElement>(null)
@@ -72,10 +71,6 @@ export const Composer: FC<ComposerProps> = ({
   const handleMicToggle = () => {
     if (voice.isRecording) {
       void voice.stopRecording()
-      return
-    }
-    if (chatActive) {
-      void voice.startRecording()
       return
     }
     triggerVoice()
