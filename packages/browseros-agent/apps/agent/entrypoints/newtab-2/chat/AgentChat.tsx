@@ -15,34 +15,40 @@ import { Button } from '@/components/ui/button'
 import { BrowserOSIcon } from '@/lib/llm-providers/providerIcons'
 import { cn } from '@/lib/utils'
 import { useComposer } from '../ComposerProvider'
-import { POSTS, TONE_NOTES, TRENDS } from './chat-screen.mock-data'
-import type { ChatBlock, ThoughtBlock } from './chat-screen.types'
+import {
+  POST2_EDIT,
+  POSTS,
+  TONE_NOTES,
+  TRENDS,
+  WARMUP,
+} from './chat-screen.mock-data'
+import type {
+  ChatBlock,
+  PostsBlock as PostsBlockT,
+  ThoughtBlock,
+  WarmupBlock as WarmupBlockT,
+} from './chat-screen.types'
+import { DEMO_MODE } from './demo-config'
+import { useDemoDirector } from './useDemoDirector'
 
 interface AgentChatProps {
   initialMessage?: string
   onSwitchToVoice: () => void
 }
 
-const id = (() => {
-  let n = 0
-  return () => `blk-${++n}`
-})()
-
 export const AgentChat: FC<AgentChatProps> = ({
   initialMessage,
   onSwitchToVoice,
 }) => {
   const { reset, registerChatHandlers } = useComposer()
-  const [blocks, setBlocks] = useState<ChatBlock[]>(() =>
-    initialMessage ? [{ type: 'founder', id: id(), text: initialMessage }] : [],
-  )
+  // SEAM: replace useDemoDirector with the live streaming hook when DEMO_MODE flips off.
+  const { blocks, appendFounder } = useDemoDirector(initialMessage, DEMO_MODE)
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  const handleSend = useCallback((text: string) => {
-    const trimmed = text.trim()
-    if (!trimmed) return
-    setBlocks((b) => [...b, { type: 'founder', id: id(), text: trimmed }])
-  }, [])
+  const handleSend = useCallback(
+    (text: string) => appendFounder(text),
+    [appendFounder],
+  )
 
   useEffect(() => {
     return registerChatHandlers({
@@ -53,53 +59,24 @@ export const AgentChat: FC<AgentChatProps> = ({
 
   useEffect(() => {
     reset()
-    if (!initialMessage) return
-    const timers: ReturnType<typeof setTimeout>[] = []
-    timers.push(
-      setTimeout(() => {
-        setBlocks((b) => [
-          ...b,
-          {
-            type: 'note',
-            id: id(),
-            text: "Here's my plan. Starting with research, then I'll learn your voice and draft posts.",
-          },
-        ])
-      }, 300),
-    )
-    timers.push(
-      setTimeout(() => {
-        setBlocks((b) => [
-          ...b,
-          {
-            type: 'thought',
-            id: id(),
-            status: 'running',
-            runningLabel: 'Extracting trends',
-            items: [
-              { text: 'Read the brief and pulled context from your notes' },
-              {
-                text: 'Reading the automation and AI-agents space',
-                running: true,
-              },
-            ],
-          },
-        ])
-      }, 700),
-    )
-    return () => {
-      for (const t of timers) clearTimeout(t)
-    }
-  }, [reset, initialMessage])
+  }, [reset])
+
+  const warm = blocks.find(
+    (block): block is WarmupBlockT => block.type === 'warmup',
+  )
+  const scrollKey = `${blocks.length}:${warm?.progress ?? 0}:${warm?.done ? 1 : 0}:${warm?.expanded ? 1 : 0}`
 
   useEffect(() => {
-    if (!scrollRef.current) return
-    requestAnimationFrame(() => {
-      if (scrollRef.current) {
-        scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-      }
-    })
-  }, [])
+    void scrollKey
+    const el = scrollRef.current
+    if (!el) return
+    const go = () => {
+      el.scrollTop = el.scrollHeight
+    }
+    requestAnimationFrame(go)
+    const timer = setTimeout(go, 90)
+    return () => clearTimeout(timer)
+  }, [scrollKey])
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
@@ -154,7 +131,11 @@ const BlockRenderer: FC<{ block: ChatBlock }> = ({ block }) => {
     case 'tone':
       return <ToneCard />
     case 'posts':
-      return <PostsCard />
+      return <PostsCard block={block} />
+    case 'warmup':
+      return <WarmupCard block={block} />
+    case 'success':
+      return <SuccessCard />
     default:
       return null
   }
@@ -314,7 +295,7 @@ const ToneCard: FC = () => (
   </motion.div>
 )
 
-const PostsCard: FC = () => (
+const PostsCard: FC<{ block: PostsBlockT }> = ({ block }) => (
   <motion.div
     initial={{ opacity: 0, y: 6 }}
     animate={{ opacity: 1, y: 0, transition: { duration: 0.2 } }}
@@ -323,30 +304,153 @@ const PostsCard: FC = () => (
     <div className="flex items-center gap-2 border-[color-mix(in_oklch,var(--border)_50%,transparent)] border-b px-4 py-3 font-semibold text-[13.5px]">
       {POSTS.length} drafts in your voice
     </div>
-    {POSTS.map((p, i) => (
-      <div
-        key={p.id}
-        className={cn(
-          'border-[color-mix(in_oklch,var(--border)_35%,transparent)] border-b px-4 py-[11px] last:border-0',
-          p.pinned &&
-            'bg-[color-mix(in_oklch,var(--accent-orange)_5%,transparent)]',
-        )}
-      >
-        <div className="mb-1 flex items-center gap-[9px]">
-          <span className="inline-flex size-[19px] items-center justify-center rounded-md bg-secondary font-mono font-semibold text-[11px] text-muted-foreground">
-            {i + 1}
-          </span>
-          <span className="font-semibold text-[13px]">{p.title}</span>
-          {p.pinned && (
-            <span className="font-semibold text-[10px] text-[var(--accent-orange)]">
-              ★ recommended
-            </span>
+    {POSTS.map((p, i) => {
+      const edited = block.editedId === p.id
+      const firstLine = edited ? POST2_EDIT.split('\n')[0] : p.bodyFirstLine
+      return (
+        <div
+          key={p.id}
+          className={cn(
+            'border-[color-mix(in_oklch,var(--border)_35%,transparent)] border-b px-4 py-[11px] last:border-0',
+            p.pinned &&
+              'bg-[color-mix(in_oklch,var(--accent-orange)_5%,transparent)]',
           )}
+        >
+          <div className="mb-1 flex items-center gap-[9px]">
+            <span className="inline-flex size-[19px] items-center justify-center rounded-md bg-secondary font-mono font-semibold text-[11px] text-muted-foreground">
+              {i + 1}
+            </span>
+            <span className="font-semibold text-[13px]">{p.title}</span>
+            {p.pinned && (
+              <span className="font-semibold text-[10px] text-[var(--accent-orange)]">
+                ★ recommended
+              </span>
+            )}
+            {edited && (
+              <span className="rounded-full bg-[color-mix(in_oklch,var(--accent-orange)_14%,transparent)] px-1.5 py-px font-mono text-[9px] text-[var(--accent-orange)] uppercase tracking-[0.08em]">
+                edited
+              </span>
+            )}
+          </div>
+          <div className="pl-7 text-[13px] text-muted-foreground leading-[1.5]">
+            {firstLine}
+          </div>
         </div>
-        <div className="pl-7 text-[13px] text-muted-foreground leading-[1.5]">
-          {p.bodyFirstLine}
-        </div>
+      )
+    })}
+  </motion.div>
+)
+
+const WarmupCard: FC<{ block: WarmupBlockT }> = ({ block }) => {
+  const [open, setOpen] = useState(block.expanded)
+  useEffect(() => setOpen(block.expanded), [block.expanded])
+  const shown = block.done ? WARMUP.total : block.progress
+  const pct = (shown / WARMUP.total) * 100
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0, transition: { duration: 0.2 } }}
+      className="rounded-xl border border-[color-mix(in_oklch,var(--border)_70%,transparent)] bg-card px-4 py-[14px]"
+    >
+      <div className="mb-2.5 flex items-center gap-2">
+        <span
+          className={cn(
+            'flex size-[18px] items-center justify-center rounded-full',
+            block.done
+              ? 'bg-[color-mix(in_oklch,var(--accent-orange)_18%,transparent)] text-[var(--accent-orange)]'
+              : 'text-[var(--accent-orange)]',
+          )}
+          aria-hidden
+        >
+          {block.done ? (
+            <Check className="size-[13px]" />
+          ) : (
+            <Loader2 className="size-[13px] animate-spin" />
+          )}
+        </span>
+        <span className="flex-1 font-semibold text-[13.5px]">
+          {block.done ? 'Warmed up LinkedIn' : 'Warming up LinkedIn…'}
+        </span>
+        <span className="font-mono text-[11px] text-muted-foreground">
+          {shown}/{WARMUP.total}
+        </span>
       </div>
-    ))}
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+        <motion.span
+          className="block h-full rounded-full bg-[var(--accent-orange)]"
+          animate={{ width: `${pct}%` }}
+          transition={{ duration: 0.5 }}
+        />
+      </div>
+      <div className="mt-2 text-[12.5px] text-muted-foreground leading-[1.5]">
+        Left genuine comments in your tone on {WARMUP.total} relevant posts to
+        prime reach before publishing.
+      </div>
+      {block.done && (
+        <button
+          type="button"
+          onClick={() => setOpen((open) => !open)}
+          className="mt-2.5 inline-flex items-center gap-1 text-[12px] text-[var(--accent-orange)]"
+        >
+          {open ? (
+            <ChevronUp className="size-[13px]" />
+          ) : (
+            <ChevronDown className="size-[13px]" />
+          )}
+          {open ? 'Hide' : 'Show'} sample comments
+        </button>
+      )}
+      {block.done && open && (
+        <div className="mt-2.5 flex flex-col gap-2.5">
+          {WARMUP.samples.map((sample) => (
+            <div
+              key={sample.author}
+              className="rounded-lg bg-secondary/60 px-3 py-2"
+            >
+              <div className="text-[12px] text-muted-foreground">
+                on <b className="text-foreground">{sample.author}</b>: “
+                {sample.post}”
+              </div>
+              <div className="mt-1 text-[13px] leading-[1.5]">
+                {sample.comment}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </motion.div>
+  )
+}
+
+const SuccessCard: FC = () => (
+  <motion.div
+    initial={{ opacity: 0, y: 6 }}
+    animate={{ opacity: 1, y: 0, transition: { duration: 0.2 } }}
+    className="flex flex-col items-center rounded-xl border border-[color-mix(in_oklch,var(--border)_70%,transparent)] bg-card px-4 py-6 text-center"
+  >
+    <div className="flex size-9 items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--accent-orange)_18%,transparent)] text-[var(--accent-orange)]">
+      <Check className="size-[18px]" />
+    </div>
+    <div className="mt-3 font-semibold text-[15px]">
+      Done — your post is live
+    </div>
+    <div className="mt-4 flex gap-6">
+      {[
+        { n: '5', label: 'drafts written' },
+        { n: '15', label: 'posts warmed up' },
+        { n: '1', label: 'published' },
+      ].map((stat) => (
+        <div key={stat.label} className="flex flex-col items-center">
+          <b className="text-[20px] text-[var(--accent-orange)]">{stat.n}</b>
+          <span className="text-[11.5px] text-muted-foreground">
+            {stat.label}
+          </span>
+        </div>
+      ))}
+    </div>
+    <div className="mt-4 max-w-[360px] text-[12.5px] text-muted-foreground leading-[1.5]">
+      Total founder time: one voice brief. The boring work ran in a browser tab.
+    </div>
   </motion.div>
 )

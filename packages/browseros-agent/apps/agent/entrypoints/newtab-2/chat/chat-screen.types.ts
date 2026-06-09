@@ -39,6 +39,7 @@ export interface ToneBlock {
 export interface PostsBlock {
   type: 'posts'
   id: string
+  editedId?: string
 }
 
 export interface WarmupBlock {
