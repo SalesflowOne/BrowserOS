@@ -22,6 +22,9 @@ interface ChatHandlers {
 interface ComposerContextValue {
   value: string
   setValue: (next: string) => void
+  placeholder: string | null
+  setPlaceholder: (p: string | null) => void
+  chatActive: boolean
   selectedTabs: chrome.tabs.Tab[]
   selectedFiles: File[]
   toggleTab: (tab: chrome.tabs.Tab) => void
@@ -41,7 +44,10 @@ interface ComposerContextValue {
 const ComposerContext = createContext<ComposerContextValue | null>(null)
 
 export const ComposerProvider: FC<{ children: ReactNode }> = ({ children }) => {
-  const [value, setValue] = useState('')
+  const [value, setRawValue] = useState('')
+  const valueRef = useRef('')
+  const [placeholder, setPlaceholder] = useState<string | null>(null)
+  const [chatActive, setChatActive] = useState(false)
   const [selectedTabs, setSelectedTabs] = useState<chrome.tabs.Tab[]>([])
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [submittedAt, setSubmittedAt] = useState<number | null>(null)
@@ -51,6 +57,11 @@ export const ComposerProvider: FC<{ children: ReactNode }> = ({ children }) => {
   const chatHandlersRef = useRef<ChatHandlers>({})
   const voice = useVoiceInput()
   const navigate = useNavigate()
+
+  const setValue = useCallback((next: string) => {
+    valueRef.current = next
+    setRawValue(next)
+  }, [])
 
   const toggleTab = useCallback((tab: chrome.tabs.Tab) => {
     setSelectedTabs((prev) =>
@@ -78,34 +89,37 @@ export const ComposerProvider: FC<{ children: ReactNode }> = ({ children }) => {
     setSelectedFiles([])
     setSubmittedAt(null)
     setTransitionIntent(null)
-  }, [])
+  }, [setValue])
 
   const registerChatHandlers = useCallback((handlers: ChatHandlers) => {
     chatHandlersRef.current = handlers
+    setChatActive(true)
     return () => {
       if (chatHandlersRef.current === handlers) {
         chatHandlersRef.current = {}
+        setChatActive(false)
       }
     }
   }, [])
 
   const submit = useCallback(() => {
-    const text = value.trim()
-    if (!text) return
+    const text = valueRef.current.trim()
     const handler = chatHandlersRef.current.onSubmit
     if (handler) {
       handler(text)
       setValue('')
       return
     }
+    if (!text) return
     setSubmittedAt(Date.now())
     setTransitionIntent('text')
     navigate(`/newtab-2/chat?mode=text`, {
       state: { initialMessage: text, initialMode: 'text', initialVoice: false },
     })
-  }, [navigate, value])
+  }, [navigate, setValue])
 
   const triggerVoice = useCallback(() => {
+    const text = valueRef.current
     const handler = chatHandlersRef.current.onSwitchToVoice
     if (handler) {
       handler()
@@ -116,18 +130,21 @@ export const ComposerProvider: FC<{ children: ReactNode }> = ({ children }) => {
     void voice.startRecording()
     navigate(`/newtab-2/chat?mode=voice`, {
       state: {
-        initialMessage: value,
+        initialMessage: text,
         initialMode: 'voice',
         initialVoice: true,
       },
     })
-  }, [navigate, value, voice.startRecording])
+  }, [navigate, voice.startRecording])
 
   return (
     <ComposerContext.Provider
       value={{
         value,
         setValue,
+        placeholder,
+        setPlaceholder,
+        chatActive,
         selectedTabs,
         selectedFiles,
         toggleTab,

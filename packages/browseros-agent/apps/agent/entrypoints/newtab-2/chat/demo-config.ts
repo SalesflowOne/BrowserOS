@@ -36,3 +36,38 @@ export const TREND_SEARCH_KEYWORDS = [
   'automate marketing',
   'content marketing AI',
 ]
+
+/** Global pace multiplier. 1 = designed pace. >1 = slower. */
+export const DEMO_SPEED = 1.3
+
+/** Named, tunable durations in ms at DEMO_SPEED = 1. */
+export const DEMO_TIMING = {
+  bootPause: 1200,
+  thinkBeforeThought: 2400,
+  betweenPhases: 2800,
+  thoughtRunDuration: 3400,
+  draftRunDuration: 4200,
+  cardRevealGap: 900,
+  editRunDuration: 3000,
+  beforeWarmup: 1800,
+  warmupTick: 2200,
+  beforePublish: 2000,
+  publishGap: 2400,
+  successGap: 1800,
+  beforeGate: 1400,
+  founderTypeStartDelay: 900,
+  founderTypeCharMs: 45,
+  founderSubmitDelay: 700,
+} as const
+
+export type DemoTimingKey = keyof typeof DEMO_TIMING
+
+/** Deterministic jitter fraction for each gap. Set to 0 for exact timing. */
+export const DEMO_JITTER = 0.1
+export const DEMO_JITTER_SEED = 1337
+
+/** Founder gate mode: manual operator input or scripted auto-typewriter. */
+export const DEMO_FOUNDER_INPUT: 'manual' | 'auto' = 'manual'
+
+/** Auto-submit spoken founder replies after transcription when enabled. */
+export const DEMO_VOICE_AUTOSUBMIT = false

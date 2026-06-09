@@ -10,7 +10,7 @@ import {
   Sun,
 } from 'lucide-react'
 import { motion } from 'motion/react'
-import { type FC, useCallback, useEffect, useRef, useState } from 'react'
+import { type FC, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { BrowserOSIcon } from '@/lib/llm-providers/providerIcons'
 import { cn } from '@/lib/utils'
@@ -28,7 +28,13 @@ import type {
   ThoughtBlock,
   WarmupBlock as WarmupBlockT,
 } from './chat-screen.types'
-import { DEMO_MODE } from './demo-config'
+import {
+  DEMO_FOUNDER_INPUT,
+  DEMO_MODE,
+  DEMO_SPEED,
+  DEMO_TIMING,
+  DEMO_VOICE_AUTOSUBMIT,
+} from './demo-config'
 import { useDemoDirector } from './useDemoDirector'
 
 interface AgentChatProps {
@@ -40,26 +46,97 @@ export const AgentChat: FC<AgentChatProps> = ({
   initialMessage,
   onSwitchToVoice,
 }) => {
-  const { reset, registerChatHandlers } = useComposer()
+  const {
+    reset,
+    registerChatHandlers,
+    setPlaceholder,
+    setValue,
+    submit,
+    voice,
+  } = useComposer()
   // SEAM: replace useDemoDirector with the live streaming hook when DEMO_MODE flips off.
-  const { blocks, appendFounder } = useDemoDirector(initialMessage, DEMO_MODE)
+  const { blocks, gateActive, founderPlaceholder, submitFounderReply } =
+    useDemoDirector(initialMessage, DEMO_MODE)
   const scrollRef = useRef<HTMLDivElement>(null)
-
-  const handleSend = useCallback(
-    (text: string) => appendFounder(text),
-    [appendFounder],
+  const voiceAutosubmitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
   )
 
   useEffect(() => {
     return registerChatHandlers({
-      onSubmit: handleSend,
+      onSubmit: submitFounderReply,
       onSwitchToVoice,
     })
-  }, [registerChatHandlers, handleSend, onSwitchToVoice])
+  }, [registerChatHandlers, submitFounderReply, onSwitchToVoice])
+
+  useEffect(() => {
+    setPlaceholder(gateActive ? founderPlaceholder : null)
+    return () => setPlaceholder(null)
+  }, [gateActive, founderPlaceholder, setPlaceholder])
 
   useEffect(() => {
     reset()
   }, [reset])
+
+  useEffect(() => {
+    if (!gateActive || DEMO_FOUNDER_INPUT !== 'auto' || !founderPlaceholder) {
+      return
+    }
+
+    const text = founderPlaceholder
+    const timers: ReturnType<typeof setTimeout>[] = []
+    let acc = DEMO_TIMING.founderTypeStartDelay * DEMO_SPEED
+    setValue('')
+
+    for (let i = 1; i <= text.length; i++) {
+      timers.push(
+        setTimeout(
+          () => setValue(text.slice(0, i)),
+          Math.round(acc + i * DEMO_TIMING.founderTypeCharMs * DEMO_SPEED),
+        ),
+      )
+    }
+
+    acc +=
+      text.length * DEMO_TIMING.founderTypeCharMs * DEMO_SPEED +
+      DEMO_TIMING.founderSubmitDelay * DEMO_SPEED
+    timers.push(setTimeout(() => submit(), Math.round(acc)))
+
+    return () => {
+      for (const timer of timers) clearTimeout(timer)
+    }
+  }, [gateActive, founderPlaceholder, setValue, submit])
+
+  useEffect(() => {
+    if (!DEMO_VOICE_AUTOSUBMIT || !gateActive) return
+    const transcript = voice.transcript.trim()
+    if (!transcript) return
+
+    if (voiceAutosubmitTimerRef.current) {
+      clearTimeout(voiceAutosubmitTimerRef.current)
+    }
+    voiceAutosubmitTimerRef.current = setTimeout(
+      () => {
+        voiceAutosubmitTimerRef.current = null
+        submit()
+      },
+      Math.round(DEMO_TIMING.founderSubmitDelay * DEMO_SPEED),
+    )
+  }, [gateActive, submit, voice.transcript])
+
+  useEffect(() => {
+    if (gateActive || !voiceAutosubmitTimerRef.current) return
+    clearTimeout(voiceAutosubmitTimerRef.current)
+    voiceAutosubmitTimerRef.current = null
+  }, [gateActive])
+
+  useEffect(() => {
+    return () => {
+      if (voiceAutosubmitTimerRef.current) {
+        clearTimeout(voiceAutosubmitTimerRef.current)
+      }
+    }
+  }, [])
 
   const warm = blocks.find(
     (block): block is WarmupBlockT => block.type === 'warmup',

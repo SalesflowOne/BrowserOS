@@ -43,11 +43,14 @@ export const Composer: FC<ComposerProps> = ({
     voice,
     submit,
     triggerVoice,
+    placeholder: ctxPlaceholder,
+    chatActive,
   } = useComposer()
 
   const inputRef = useRef<HTMLInputElement>(null)
   const canSend = value.trim().length > 0
   const attachCount = selectedTabs.length + selectedFiles.length
+  const effectivePlaceholder = ctxPlaceholder ?? placeholder
 
   useEffect(() => {
     if (autoFocusKey == null) return
@@ -71,6 +74,10 @@ export const Composer: FC<ComposerProps> = ({
       void voice.stopRecording()
       return
     }
+    if (chatActive) {
+      void voice.startRecording()
+      return
+    }
     triggerVoice()
   }
 
@@ -85,8 +92,8 @@ export const Composer: FC<ComposerProps> = ({
           ref={inputRef}
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder={placeholder}
-          aria-label={placeholder}
+          placeholder={effectivePlaceholder}
+          aria-label={effectivePlaceholder}
           className="h-auto w-full rounded-none border-0 bg-transparent p-0 text-[16px] shadow-none placeholder:text-[color-mix(in_oklch,var(--muted-foreground)_80%,transparent)] focus-visible:border-0 focus-visible:ring-0"
         />
       </div>
