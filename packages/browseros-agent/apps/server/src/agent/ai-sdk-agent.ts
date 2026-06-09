@@ -210,6 +210,10 @@ export class AiSdkAgent {
       connectedApps: config.browserContext?.enabledMcpServers,
       declinedApps: config.resolvedConfig.declinedApps,
       origin: config.resolvedConfig.origin,
+      enabledSkills:
+        config.resolvedConfig.origin === 'newtab'
+          ? ['linkedin-trends', 'linkedin-voice', 'linkedin-draft']
+          : undefined,
     })
 
     // Configure compaction for context window management

@@ -5,6 +5,7 @@
  */
 
 import { OAUTH_MCP_SERVERS } from '../lib/clients/klavis/oauth-mcp-servers'
+import { BUNDLED_SKILLS } from './skills'
 
 /**
  * BrowserOS Agent System Prompt v6
@@ -610,6 +611,28 @@ function getSoul(
 }
 
 // -----------------------------------------------------------------------------
+// section: skills
+// -----------------------------------------------------------------------------
+
+function getSkills(
+  _exclude: Set<string>,
+  options?: BuildSystemPromptOptions,
+): string {
+  const names = options?.enabledSkills ?? []
+  const blocks = names
+    .map((name) => BUNDLED_SKILLS[name])
+    .filter(Boolean)
+    .map((markdown) => markdown.trim())
+  if (!blocks.length) return ''
+
+  return `<skills>
+You have the step-by-step skills below for this surface. When a user request matches a skill's trigger, follow that skill's steps in order. When a request spans several skills (e.g. "grow my LinkedIn", "write posts like me"), run them in this order: linkedin-voice → linkedin-trends → linkedin-draft. Reuse outputs from earlier skills as inputs to later ones in the same conversation.
+
+${blocks.join('\n\n---\n\n')}
+</skills>`
+}
+
+// -----------------------------------------------------------------------------
 // section: security-reminder
 // -----------------------------------------------------------------------------
 
@@ -651,6 +674,7 @@ const promptSections: Record<string, PromptSectionFn> = {
   style: getStyle,
   'user-context': getUserContext,
   soul: getSoul,
+  skills: getSkills,
   'security-reminder': getSecurityReminder,
 }
 
@@ -668,6 +692,8 @@ export interface BuildSystemPromptOptions {
   declinedApps?: string[]
   /** Where the chat session originates from — determines navigation behavior. */
   origin?: 'sidepanel' | 'newtab'
+  /** Names of bundled skills (BUNDLED_SKILLS keys) to inline into the prompt. */
+  enabledSkills?: string[]
 }
 
 export function buildSystemPrompt(options?: BuildSystemPromptOptions): string {
