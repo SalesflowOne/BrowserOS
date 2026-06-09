@@ -5,22 +5,25 @@ import { cn } from '@/lib/utils'
 import { Composer } from './Composer'
 import { ComposerProvider } from './ComposerProvider'
 import { ChatScreen } from './chat/ChatScreen'
+import { ChatSessionProvider } from './chat/ChatSessionProvider'
 import { NewTabTwo } from './NewTabTwo'
 
 export const NewTabTwoShell: FC = () => {
   const location = useLocation()
   return (
     <ComposerProvider>
-      <div className="relative h-screen w-screen overflow-hidden">
-        <AnimatePresence initial={false}>
-          <Routes location={location} key={location.pathname}>
-            <Route index element={<NewTabTwo />} />
-            <Route path="chat" element={<ChatScreen />} />
-          </Routes>
-        </AnimatePresence>
+      <ChatSessionProvider>
+        <div className="relative h-screen w-screen overflow-hidden">
+          <AnimatePresence initial={false}>
+            <Routes location={location} key={location.pathname}>
+              <Route index element={<NewTabTwo />} />
+              <Route path="chat" element={<ChatScreen />} />
+            </Routes>
+          </AnimatePresence>
 
-        <ComposerLayer />
-      </div>
+          <ComposerLayer />
+        </div>
+      </ChatSessionProvider>
     </ComposerProvider>
   )
 }

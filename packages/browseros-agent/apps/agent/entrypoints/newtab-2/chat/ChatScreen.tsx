@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'motion/react'
 import { type FC, useCallback, useEffect, useState } from 'react'
-import { useLocation, useNavigate, useSearchParams } from 'react-router'
+import { useLocation, useSearchParams } from 'react-router'
 import { useComposer } from '../ComposerProvider'
 import { AgentChat } from './AgentChat'
 import type { ChatMode } from './chat-screen.types'
@@ -14,7 +14,6 @@ interface ChatLocationState {
 
 export const ChatScreen: FC = () => {
   const location = useLocation()
-  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const composer = useComposer()
   const { voice, setTransitionIntent } = composer
@@ -48,10 +47,12 @@ export const ChatScreen: FC = () => {
     [searchParams, setSearchParams, voice],
   )
 
+  // X and MessageSquare both exit voice the same way: stop recording, swap
+  // back to text mode. The composer's transcript useEffect picks up whatever
+  // Whisper produced and appends it to the value.
   const handleClose = useCallback(() => {
-    if (voice.isRecording) void voice.stopRecording()
-    navigate('/newtab-2')
-  }, [navigate, voice])
+    switchTo('text')
+  }, [switchTo])
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-background">

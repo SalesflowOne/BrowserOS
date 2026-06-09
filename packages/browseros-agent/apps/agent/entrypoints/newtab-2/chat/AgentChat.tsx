@@ -10,11 +10,12 @@ import {
   Sun,
 } from 'lucide-react'
 import { motion } from 'motion/react'
-import { type FC, useEffect, useRef, useState } from 'react'
+import { type FC, useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { BrowserOSIcon } from '@/lib/llm-providers/providerIcons'
 import { cn } from '@/lib/utils'
 import { useComposer } from '../ComposerProvider'
+import { useChatSession, useChatSessionControls } from './ChatSessionProvider'
 import {
   POST2_EDIT,
   POSTS,
@@ -30,12 +31,10 @@ import type {
 } from './chat-screen.types'
 import {
   DEMO_FOUNDER_INPUT,
-  DEMO_MODE,
   DEMO_SPEED,
   DEMO_TIMING,
   DEMO_VOICE_AUTOSUBMIT,
 } from './demo-config'
-import { useDemoDirector } from './useDemoDirector'
 
 interface AgentChatProps {
   initialMessage?: string
@@ -46,37 +45,55 @@ export const AgentChat: FC<AgentChatProps> = ({
   initialMessage,
   onSwitchToVoice,
 }) => {
+  const { registerChatHandlers, setPlaceholder, setValue, submit, voice } =
+    useComposer()
   const {
-    reset,
-    registerChatHandlers,
-    setPlaceholder,
-    setValue,
-    submit,
-    voice,
-  } = useComposer()
-  // SEAM: replace useDemoDirector with the live streaming hook when DEMO_MODE flips off.
-  const { blocks, gateActive, founderPlaceholder, submitFounderReply } =
-    useDemoDirector(initialMessage, DEMO_MODE)
+    blocks,
+    gateActive,
+    founderPlaceholder,
+    submitFounderReply,
+    hasSession,
+  } = useChatSession()
+  const { startSession } = useChatSessionControls()
   const scrollRef = useRef<HTMLDivElement>(null)
   const voiceAutosubmitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   )
 
+  // Hoist the chat thread above the route swap: seed the session on the first
+  // arrival (idempotent — same initialMessage means the existing session
+  // continues, so voice↔text remounts do NOT reset the director).
+  useEffect(() => {
+    if (!initialMessage?.trim()) return
+    startSession(initialMessage)
+  }, [initialMessage, startSession])
+
+  // Composer submits go to one of two places: if the session isn't seeded
+  // yet (e.g. user reached chat via launcher voice with an empty composer
+  // and is now sending the transcribed brief), this is the moment to start.
+  // Otherwise hand off to the director's gated reply path.
+  const handleComposerSubmit = useCallback(
+    (text: string) => {
+      if (!hasSession) {
+        startSession(text)
+        return
+      }
+      submitFounderReply(text)
+    },
+    [hasSession, startSession, submitFounderReply],
+  )
+
   useEffect(() => {
     return registerChatHandlers({
-      onSubmit: submitFounderReply,
+      onSubmit: handleComposerSubmit,
       onSwitchToVoice,
     })
-  }, [registerChatHandlers, submitFounderReply, onSwitchToVoice])
+  }, [registerChatHandlers, handleComposerSubmit, onSwitchToVoice])
 
   useEffect(() => {
     setPlaceholder(gateActive ? founderPlaceholder : null)
     return () => setPlaceholder(null)
   }, [gateActive, founderPlaceholder, setPlaceholder])
-
-  useEffect(() => {
-    reset()
-  }, [reset])
 
   useEffect(() => {
     if (!gateActive || DEMO_FOUNDER_INPUT !== 'auto' || !founderPlaceholder) {

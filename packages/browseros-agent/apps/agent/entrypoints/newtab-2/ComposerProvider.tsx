@@ -24,7 +24,6 @@ interface ComposerContextValue {
   setValue: (next: string) => void
   placeholder: string | null
   setPlaceholder: (p: string | null) => void
-  chatActive: boolean
   selectedTabs: chrome.tabs.Tab[]
   selectedFiles: File[]
   toggleTab: (tab: chrome.tabs.Tab) => void
@@ -47,7 +46,6 @@ export const ComposerProvider: FC<{ children: ReactNode }> = ({ children }) => {
   const [value, setRawValue] = useState('')
   const valueRef = useRef('')
   const [placeholder, setPlaceholder] = useState<string | null>(null)
-  const [chatActive, setChatActive] = useState(false)
   const [selectedTabs, setSelectedTabs] = useState<chrome.tabs.Tab[]>([])
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [submittedAt, setSubmittedAt] = useState<number | null>(null)
@@ -93,11 +91,9 @@ export const ComposerProvider: FC<{ children: ReactNode }> = ({ children }) => {
 
   const registerChatHandlers = useCallback((handlers: ChatHandlers) => {
     chatHandlersRef.current = handlers
-    setChatActive(true)
     return () => {
       if (chatHandlersRef.current === handlers) {
         chatHandlersRef.current = {}
-        setChatActive(false)
       }
     }
   }, [])
@@ -111,6 +107,11 @@ export const ComposerProvider: FC<{ children: ReactNode }> = ({ children }) => {
       return
     }
     if (!text) return
+    // Launcher → chat session start: clear value AND attachments so the
+    // chat surface begins with an empty composer.
+    setValue('')
+    setSelectedTabs([])
+    setSelectedFiles([])
     setSubmittedAt(Date.now())
     setTransitionIntent('text')
     navigate(`/newtab-2/chat?mode=text`, {
@@ -144,7 +145,6 @@ export const ComposerProvider: FC<{ children: ReactNode }> = ({ children }) => {
         setValue,
         placeholder,
         setPlaceholder,
-        chatActive,
         selectedTabs,
         selectedFiles,
         toggleTab,
