@@ -1,18 +1,31 @@
 import { AnimatePresence, motion } from 'motion/react'
 import type { FC } from 'react'
-import { Route, Routes, useLocation } from 'react-router'
+import { Route, Routes, useLocation, useNavigate } from 'react-router'
 import { cn } from '@/lib/utils'
 import { Composer } from './Composer'
 import { ComposerProvider } from './ComposerProvider'
 import { ChatScreen } from './chat/ChatScreen'
 import { ChatSessionProvider } from './chat/ChatSessionProvider'
+import type { ChatMode } from './chat/chat-screen.types'
 import { VoiceBottom } from './chat/VoiceBottom'
 import { NewTabTwo } from './NewTabTwo'
 
 export const NewTabTwoShell: FC = () => {
   const location = useLocation()
+  const navigate = useNavigate()
+
+  const handleTransitionToChat = (mode: ChatMode, initialMessage: string) => {
+    navigate(`/newtab-2/chat?mode=${mode}`, {
+      state: {
+        initialMessage,
+        initialMode: mode,
+        initialVoice: mode === 'voice',
+      },
+    })
+  }
+
   return (
-    <ComposerProvider>
+    <ComposerProvider onTransitionToChat={handleTransitionToChat}>
       <ChatSessionProvider>
         <div className="relative h-screen w-screen overflow-hidden">
           <AnimatePresence initial={false}>

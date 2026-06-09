@@ -1,7 +1,7 @@
 import { X } from 'lucide-react'
 import { motion, useReducedMotion } from 'motion/react'
 import type { FC } from 'react'
-import { ChatLayoutShell } from './ChatLayoutShell'
+import { ContentChat } from './ContentChat'
 import { LAUNCHER_SIZE, type LauncherPosition } from './content-script.types'
 
 interface FaPopupProps {
@@ -78,7 +78,7 @@ export const FaPopup: FC<FaPopupProps> = ({ anchor, onClose }) => {
       >
         <X className="size-4" aria-hidden />
       </button>
-      <ChatLayoutShell />
+      <ContentChat />
     </motion.div>
   )
 }

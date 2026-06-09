@@ -7,12 +7,16 @@ import {
   useRef,
   useState,
 } from 'react'
-import { useNavigate } from 'react-router'
 import {
   type UseVoiceInputReturn,
   useVoiceInput,
 } from '@/lib/voice/useVoiceInput'
 import type { ChatMode } from './chat/chat-screen.types'
+
+export type ComposerTransitionHandler = (
+  mode: ChatMode,
+  initialMessage: string,
+) => void
 
 interface ChatHandlers {
   onSubmit?: (text: string) => void
@@ -42,7 +46,21 @@ interface ComposerContextValue {
 
 const ComposerContext = createContext<ComposerContextValue | null>(null)
 
-export const ComposerProvider: FC<{ children: ReactNode }> = ({ children }) => {
+interface ComposerProviderProps {
+  children: ReactNode
+  /**
+   * Called when the launcher composer wants to transition the user to a chat
+   * surface. Optional: surfaces that already ARE the chat (the content-script
+   * popup) leave this unset; submit and triggerVoice still work via the chat
+   * handler ref so this path is never reached there.
+   */
+  onTransitionToChat?: ComposerTransitionHandler
+}
+
+export const ComposerProvider: FC<ComposerProviderProps> = ({
+  children,
+  onTransitionToChat,
+}) => {
   const [value, setRawValue] = useState('')
   const valueRef = useRef('')
   const [placeholder, setPlaceholder] = useState<string | null>(null)
@@ -54,7 +72,8 @@ export const ComposerProvider: FC<{ children: ReactNode }> = ({ children }) => {
   )
   const chatHandlersRef = useRef<ChatHandlers>({})
   const voice = useVoiceInput()
-  const navigate = useNavigate()
+  const transitionRef = useRef(onTransitionToChat)
+  transitionRef.current = onTransitionToChat
 
   const setValue = useCallback((next: string) => {
     valueRef.current = next
@@ -107,17 +126,15 @@ export const ComposerProvider: FC<{ children: ReactNode }> = ({ children }) => {
       return
     }
     if (!text) return
-    // Launcher → chat session start: clear value AND attachments so the
+    // Launcher to chat session start: clear value AND attachments so the
     // chat surface begins with an empty composer.
     setValue('')
     setSelectedTabs([])
     setSelectedFiles([])
     setSubmittedAt(Date.now())
     setTransitionIntent('text')
-    navigate(`/newtab-2/chat?mode=text`, {
-      state: { initialMessage: text, initialMode: 'text', initialVoice: false },
-    })
-  }, [navigate, setValue])
+    transitionRef.current?.('text', text)
+  }, [setValue])
 
   const triggerVoice = useCallback(() => {
     const text = valueRef.current
@@ -129,14 +146,8 @@ export const ComposerProvider: FC<{ children: ReactNode }> = ({ children }) => {
     setSubmittedAt(Date.now())
     setTransitionIntent('voice')
     void voice.startRecording()
-    navigate(`/newtab-2/chat?mode=voice`, {
-      state: {
-        initialMessage: text,
-        initialMode: 'voice',
-        initialVoice: true,
-      },
-    })
-  }, [navigate, voice.startRecording])
+    transitionRef.current?.('voice', text)
+  }, [voice.startRecording])
 
   return (
     <ComposerContext.Provider

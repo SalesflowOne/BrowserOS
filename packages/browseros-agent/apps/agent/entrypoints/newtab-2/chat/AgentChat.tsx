@@ -41,12 +41,20 @@ interface AgentChatProps {
   initialMessage?: string
   mode: ChatMode
   onSwitchToVoice: () => void
+  /**
+   * Compact mode renders the thread inside a small surface (LinkedIn popup):
+   * strips header chrome to just the label, drops max-width on the thread,
+   * and removes the bottom padding that exists to clear the hoisted
+   * composer on the launcher / chat-text surface.
+   */
+  compact?: boolean
 }
 
 export const AgentChat: FC<AgentChatProps> = ({
   initialMessage,
   mode,
   onSwitchToVoice,
+  compact = false,
 }) => {
   const isVoice = mode === 'voice'
   const { registerChatHandlers, setPlaceholder, setValue, submit, voice } =
@@ -195,7 +203,12 @@ export const AgentChat: FC<AgentChatProps> = ({
           'bg-[radial-gradient(90%_70%_at_50%_85%,#FCEFE4_0%,var(--background)_70%)]',
       )}
     >
-      <header className="flex h-12 shrink-0 items-center justify-between px-6">
+      <header
+        className={cn(
+          'flex shrink-0 items-center justify-between',
+          compact ? 'h-[46px] px-[14px]' : 'h-12 px-6',
+        )}
+      >
         {isVoice ? (
           <span className="inline-flex items-center gap-[7px] whitespace-nowrap text-[12.5px] text-muted-foreground">
             <span className="size-[7px] animate-[fv-pulse_1.5s_ease-in-out_infinite] rounded-full bg-[var(--accent-orange)]" />
@@ -208,30 +221,35 @@ export const AgentChat: FC<AgentChatProps> = ({
             <ChevronDown className="size-3 text-muted-foreground" aria-hidden />
           </span>
         )}
-        <div className="flex items-center gap-3 text-muted-foreground">
-          {!isVoice && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              onClick={onSwitchToVoice}
-              aria-label="Switch to voice"
-              className="text-muted-foreground"
-            >
-              <Mic className="size-4" />
-            </Button>
-          )}
-          {!isVoice && <Plus className="size-[15px]" aria-hidden />}
-          <Settings className="size-[15px]" aria-hidden />
-          {!isVoice && <Sun className="size-[15px]" aria-hidden />}
-        </div>
+        {!compact && (
+          <div className="flex items-center gap-3 text-muted-foreground">
+            {!isVoice && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={onSwitchToVoice}
+                aria-label="Switch to voice"
+                className="text-muted-foreground"
+              >
+                <Mic className="size-4" />
+              </Button>
+            )}
+            {!isVoice && <Plus className="size-[15px]" aria-hidden />}
+            <Settings className="size-[15px]" aria-hidden />
+            {!isVoice && <Sun className="size-[15px]" aria-hidden />}
+          </div>
+        )}
       </header>
 
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
         <div
           className={cn(
-            'mx-auto flex max-w-[720px] flex-col gap-[14px] px-6 pt-3',
-            isVoice ? 'pb-[420px]' : 'pb-[150px]',
+            'mx-auto flex flex-col',
+            compact
+              ? 'max-w-full gap-3 px-[14px] pt-3 pb-3'
+              : 'max-w-[720px] gap-[14px] px-6 pt-3',
+            !compact && (isVoice ? 'pb-[420px]' : 'pb-[150px]'),
           )}
         >
           {blocks.map((b) => (
