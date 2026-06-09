@@ -87,4 +87,21 @@ describe('diffSnapshots', () => {
     expect(d.text).toContain('-   button "Old"')
     expect(d.text).toContain('+   button "New"')
   })
+
+  test('same-url diffs preserve the current url for callers', () => {
+    const d = diffSnapshotObservations(
+      {
+        text: '- main\n  - button "Save" [ref=e1]',
+        url: 'https://example.com/form',
+      },
+      {
+        text: '- main\n  - button "Saved" [ref=e1]',
+        url: 'https://example.com/form',
+      },
+    )
+
+    expect(d.changed).toBe(true)
+    expect(d.urlChanged).toBeUndefined()
+    expect(d.afterUrl).toBe('https://example.com/form')
+  })
 })

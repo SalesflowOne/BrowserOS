@@ -78,7 +78,9 @@ export function diffSnapshotObservations(
     }
   }
 
-  return diffSnapshots(before?.text ?? '', after.text, opts)
+  const diff = diffSnapshots(before?.text ?? '', after.text, opts)
+  if (isKnownUrl(afterUrl)) return { ...diff, afterUrl }
+  return diff
 }
 
 function isKnownUrl(url: string | undefined): url is string {

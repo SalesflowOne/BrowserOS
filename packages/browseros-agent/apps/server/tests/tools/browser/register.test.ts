@@ -218,6 +218,43 @@ describe('registerBrowserTools', () => {
     ])
   })
 
+  it('wraps same-url diffs with the observed current URL', async () => {
+    const fake = createFakeServer()
+    const session = {
+      observe: () => ({
+        diff: async () => ({
+          changed: true,
+          text: '+   button "Saved" [ref=e1]\n1 added, 0 removed',
+          added: 1,
+          removed: 0,
+          afterUrl: 'https://example.com/current',
+        }),
+      }),
+      pages: {
+        getInfo: () => ({ url: 'https://example.com/stale' }),
+      },
+    } as unknown as BrowserSession
+
+    registerBrowserTools(fake.server as never, session)
+
+    const result = await fake.handlers.get('diff')?.({ page: 1 })
+
+    expect(result?.isError).toBeFalsy()
+    expect(result?.structuredContent).toEqual({ added: 1, removed: 0 })
+    expect(result?.content).toEqual([
+      expect.objectContaining({
+        type: 'text',
+        text: expect.stringContaining('origin=https://example.com/current'),
+      }),
+    ])
+    expect(result?.content).toEqual([
+      expect.objectContaining({
+        type: 'text',
+        text: expect.not.stringContaining('origin=https://example.com/stale'),
+      }),
+    ])
+  })
+
   it('returns a full snapshot when act readback sees a URL change', async () => {
     const fake = createFakeServer()
     const calls: string[] = []

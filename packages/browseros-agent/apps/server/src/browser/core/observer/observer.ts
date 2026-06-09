@@ -10,6 +10,7 @@ import type { FrameRegistry } from './frames'
 import { type ResolvedElement, resolveRefEntry } from './resolve'
 
 const MAX_FRAME_DEPTH = 5
+const MAX_STABLE_CAPTURE_ATTEMPTS = 3
 
 export interface SnapshotResult {
   text: string
@@ -61,13 +62,17 @@ export class Observer {
 
   private async capture(): Promise<SnapshotResult> {
     const pageSession = await this.pages.getSession(this.pageId)
-    const refs = new RefMap()
-    const text = await this.captureFrame(undefined, refs, 0, new Set())
-    const url = await readCurrentUrl(pageSession.session, async () => {
-      const refreshed = await this.pages.refresh(this.pageId)
-      return refreshed?.url
-    })
-    return { text, refs, url }
+    let latest: SnapshotResult | undefined
+    for (let attempt = 0; attempt < MAX_STABLE_CAPTURE_ATTEMPTS; attempt++) {
+      const beforeUrl = await this.readCurrentUrl(pageSession.session)
+      const refs = new RefMap()
+      const text = await this.captureFrame(undefined, refs, 0, new Set())
+      const afterUrl = await this.readCurrentUrl(pageSession.session)
+      latest = { text, refs, url: afterUrl }
+      if (!knownUrlsDiffer(beforeUrl, afterUrl)) return latest
+    }
+    if (!latest) throw new Error('Unable to capture page snapshot.')
+    return latest
   }
 
   /** Render a frame, then splice each child iframe's rendered tree under its `- iframe` line. */
@@ -121,6 +126,13 @@ export class Observer {
     this.baseline = { text: result.text, url: result.url }
     this.refs = result.refs
   }
+
+  private async readCurrentUrl(session: ProtocolApi): Promise<string> {
+    return readCurrentUrl(session, async () => {
+      const refreshed = await this.pages.refresh(this.pageId)
+      return refreshed?.url
+    })
+  }
 }
 
 /** Reads the live document URL, falling back to the tab registry during context teardown. */
@@ -140,6 +152,12 @@ async function readCurrentUrl(
   } catch {
     return 'unknown'
   }
+}
+
+function knownUrlsDiffer(beforeUrl: string, afterUrl: string): boolean {
+  return (
+    beforeUrl !== 'unknown' && afterUrl !== 'unknown' && beforeUrl !== afterUrl
+  )
 }
 
 /** Resolve an iframe element to the frameId of its embedded document. */
