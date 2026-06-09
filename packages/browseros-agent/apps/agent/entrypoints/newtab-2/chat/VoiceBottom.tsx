@@ -1,18 +1,33 @@
 import { Mic, X } from 'lucide-react'
 import { motion } from 'motion/react'
 import type { FC } from 'react'
-import { useSearchParams } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useComposer } from '../ComposerProvider'
 import { useChatSession } from './ChatSessionProvider'
-import type { ChatBlock, ChatMode } from './chat-screen.types'
+import type { ChatBlock } from './chat-screen.types'
 import { VoiceOrb, type VoiceOrbState } from './VoiceOrb'
 
 const ORANGE_LISTEN_CAPTION = 'Listening…'
 
-export const VoiceBottom: FC = () => {
-  const [searchParams, setSearchParams] = useSearchParams()
+interface VoiceBottomProps {
+  /**
+   * Called when the user dismisses the voice surface (X or mic-off path).
+   * Caller is responsible for moving the surface back to text mode.
+   * VoiceBottom stops the active recording locally before invoking this.
+   */
+  onSwitchToText: () => void
+  /**
+   * Compact mode renders a smaller orb and tighter controls for small
+   * surfaces (LinkedIn popup).
+   */
+  compact?: boolean
+}
+
+export const VoiceBottom: FC<VoiceBottomProps> = ({
+  onSwitchToText,
+  compact = false,
+}) => {
   const { voice } = useComposer()
   const { blocks } = useChatSession()
 
@@ -30,15 +45,10 @@ export const VoiceBottom: FC = () => {
 
   const captionIsListening = caption === ORANGE_LISTEN_CAPTION
 
-  const switchTo = (next: ChatMode) => {
-    if (next === 'voice' && !voice.isRecording) void voice.startRecording()
-    if (next === 'text' && voice.isRecording) void voice.stopRecording()
-    const params = new URLSearchParams(searchParams)
-    params.set('mode', next)
-    setSearchParams(params, { replace: true })
+  const handleClose = () => {
+    if (voice.isRecording) void voice.stopRecording()
+    onSwitchToText()
   }
-
-  const handleClose = () => switchTo('text')
   const handleMicToggle = () => {
     if (voice.isRecording) {
       void voice.stopRecording()
@@ -46,6 +56,11 @@ export const VoiceBottom: FC = () => {
     }
     void voice.startRecording()
   }
+
+  const orbSize = compact ? 168 : 232
+  const controlSize = compact ? 'size-12' : 'size-14'
+  const controlIconSize = compact ? 'size-5' : 'size-[22px]'
+  const closeIconSize = compact ? 'size-[18px]' : 'size-5'
 
   return (
     <div className="flex flex-col items-center">
@@ -58,28 +73,34 @@ export const VoiceBottom: FC = () => {
         }}
         className="shrink-0"
       >
-        <VoiceOrb size={232} state={orbState} accent="#E8722E" />
+        <VoiceOrb size={orbSize} state={orbState} accent="#E8722E" />
       </motion.div>
 
       <p
         className={cn(
-          'mt-1.5 min-h-[26px] max-w-[560px] px-5 text-center font-medium text-[17px] text-[var(--accent-orange)] leading-[1.45]',
+          'min-h-[24px] max-w-[560px] text-center font-medium text-[var(--accent-orange)]',
+          compact
+            ? 'mt-1 px-3 text-[14.5px] leading-[1.4]'
+            : 'mt-1.5 px-5 text-[17px] leading-[1.45]',
           captionIsListening && 'font-normal text-muted-foreground italic',
         )}
       >
         {caption}
       </p>
 
-      <div className="mt-5 flex gap-[26px]">
+      <div className={cn('flex', compact ? 'mt-3 gap-5' : 'mt-5 gap-[26px]')}>
         <Button
           type="button"
           variant="ghost"
           size="icon"
           onClick={handleClose}
           aria-label="Close voice"
-          className="size-14 rounded-full bg-white text-[#6b6b6b] shadow-[0_2px_10px_rgba(0,0,0,0.08)] hover:bg-white"
+          className={cn(
+            'rounded-full bg-white text-[#6b6b6b] shadow-[0_2px_10px_rgba(0,0,0,0.08)] hover:bg-white',
+            controlSize,
+          )}
         >
-          <X className="size-5" />
+          <X className={closeIconSize} />
         </Button>
         <Button
           type="button"
@@ -89,12 +110,13 @@ export const VoiceBottom: FC = () => {
           aria-label={voice.isRecording ? 'Stop listening' : 'Start listening'}
           aria-pressed={voice.isRecording}
           className={cn(
-            'size-14 rounded-full bg-white text-[#6b6b6b] shadow-[0_2px_10px_rgba(0,0,0,0.08)] hover:bg-white',
+            'rounded-full bg-white text-[#6b6b6b] shadow-[0_2px_10px_rgba(0,0,0,0.08)] hover:bg-white',
+            controlSize,
             voice.isRecording &&
               'bg-[var(--accent-orange)] text-white shadow-[0_0_0_6px_rgba(226,114,44,0.18)] hover:bg-[var(--accent-orange-bright)]',
           )}
         >
-          <Mic className="size-[22px]" />
+          <Mic className={controlIconSize} />
         </Button>
       </div>
     </div>

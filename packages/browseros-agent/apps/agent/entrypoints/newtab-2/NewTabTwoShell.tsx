@@ -1,6 +1,12 @@
 import { AnimatePresence, motion } from 'motion/react'
 import type { FC } from 'react'
-import { Route, Routes, useLocation, useNavigate } from 'react-router'
+import {
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+  useSearchParams,
+} from 'react-router'
 import { cn } from '@/lib/utils'
 import { Composer } from './Composer'
 import { ComposerProvider } from './ComposerProvider'
@@ -44,11 +50,18 @@ export const NewTabTwoShell: FC = () => {
 
 const BottomLayer: FC = () => {
   const location = useLocation()
+  const [searchParams, setSearchParams] = useSearchParams()
   const isChat = location.pathname.endsWith('/chat')
   const isVoice =
     isChat && new URLSearchParams(location.search).get('mode') === 'voice'
 
   const autoFocusKey = isChat ? null : location.pathname
+
+  const handleSwitchToText = () => {
+    const params = new URLSearchParams(searchParams)
+    params.set('mode', 'text')
+    setSearchParams(params, { replace: true })
+  }
 
   return (
     <>
@@ -56,7 +69,7 @@ const BottomLayer: FC = () => {
         layout
         aria-hidden={isVoice}
         className={cn(
-          'pointer-events-none absolute left-1/2 z-20 -translate-x-1/2',
+          'pointer-events-none absolute left-1/2 z-20 w-[660px] -translate-x-1/2',
           isChat ? 'bottom-[18px]' : 'top-1/2 -translate-y-1/2',
         )}
         animate={{ opacity: isVoice ? 0 : 1 }}
@@ -81,7 +94,7 @@ const BottomLayer: FC = () => {
             exit={{ opacity: 0, transition: { duration: 0.14 } }}
             className="pointer-events-auto absolute right-0 bottom-0 left-0 z-20 flex flex-col items-center pb-[26px]"
           >
-            <VoiceBottom />
+            <VoiceBottom onSwitchToText={handleSwitchToText} />
           </motion.div>
         )}
       </AnimatePresence>

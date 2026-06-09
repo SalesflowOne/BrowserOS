@@ -25,17 +25,11 @@ import { useComposer } from './ComposerProvider'
 interface ComposerProps {
   autoFocusKey?: string | number | null
   placeholder?: string
-  /**
-   * Compact mode shrinks the composer to fit small surfaces (LinkedIn popup).
-   * Drops attach dropdown, chips strip, more-options, mic. Just input + send.
-   */
-  compact?: boolean
 }
 
 export const Composer: FC<ComposerProps> = ({
   autoFocusKey,
   placeholder = 'Ask anything, or brief your marketing agent…',
-  compact = false,
 }) => {
   const {
     value,
@@ -82,41 +76,10 @@ export const Composer: FC<ComposerProps> = ({
     triggerVoice()
   }
 
-  if (compact) {
-    return (
-      <form
-        onSubmit={handleSubmit}
-        className="flex w-full items-center gap-3 rounded-[18px] border border-transparent bg-white/90 px-4 py-3 transition-shadow duration-200 focus-within:border-[rgba(226,114,44,0.18)] focus-within:shadow-[0_8px_24px_-8px_rgba(226,114,44,0.28),0_0_0_4px_rgba(226,114,44,0.05)]"
-      >
-        <Search
-          className="size-[18px] shrink-0 text-muted-foreground"
-          aria-hidden
-        />
-        <Input
-          ref={inputRef}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder={effectivePlaceholder}
-          aria-label={effectivePlaceholder}
-          className="h-auto w-full min-w-0 rounded-none border-0 bg-transparent p-0 text-[15px] shadow-none placeholder:text-[color-mix(in_oklch,var(--muted-foreground)_80%,transparent)] focus-visible:border-0 focus-visible:ring-0"
-        />
-        <Button
-          type="submit"
-          size="icon"
-          disabled={!canSend}
-          aria-label="Send"
-          className="size-[32px] shrink-0 rounded-full bg-[var(--accent-orange)] text-white hover:bg-[var(--accent-orange-bright)]"
-        >
-          <ArrowUp className="size-4" />
-        </Button>
-      </form>
-    )
-  }
-
   return (
     <form
       onSubmit={handleSubmit}
-      className="w-[660px] rounded-[22px] border border-transparent bg-white/90 px-5 pt-[18px] pb-3 transition-shadow duration-200 focus-within:border-[rgba(226,114,44,0.18)] focus-within:shadow-[0_16px_50px_-10px_rgba(226,114,44,0.28),0_0_0_6px_rgba(226,114,44,0.05)]"
+      className="w-full max-w-[660px] rounded-[22px] border border-transparent bg-white/90 px-5 pt-[18px] pb-3 transition-shadow duration-200 focus-within:border-[rgba(226,114,44,0.18)] focus-within:shadow-[0_16px_50px_-10px_rgba(226,114,44,0.28),0_0_0_6px_rgba(226,114,44,0.05)]"
     >
       <div className="flex items-center gap-3">
         <Search className="size-[18px] text-muted-foreground" aria-hidden />
