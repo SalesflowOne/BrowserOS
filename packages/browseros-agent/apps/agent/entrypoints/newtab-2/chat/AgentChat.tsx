@@ -206,7 +206,7 @@ export const AgentChat: FC<AgentChatProps> = ({
       <header
         className={cn(
           'flex shrink-0 items-center justify-between',
-          compact ? 'h-[46px] px-[14px]' : 'h-12 px-6',
+          compact ? 'h-[52px] px-5' : 'h-12 px-6',
         )}
       >
         {isVoice ? (
@@ -247,7 +247,7 @@ export const AgentChat: FC<AgentChatProps> = ({
           className={cn(
             'mx-auto flex flex-col',
             compact
-              ? 'max-w-full gap-3 px-[14px] pt-3 pb-3'
+              ? 'max-w-full gap-[14px] px-5 pt-4 pb-4'
               : 'max-w-[720px] gap-[14px] px-6 pt-3',
             !compact && (isVoice ? 'pb-[420px]' : 'pb-[150px]'),
           )}

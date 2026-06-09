@@ -9,8 +9,8 @@ interface FaPopupProps {
   onClose: () => void
 }
 
-const POPUP_WIDTH = 380
-const POPUP_HEIGHT = 520
+const POPUP_WIDTH = 460
+const POPUP_HEIGHT = 660
 const POPUP_GAP = 12
 const EASE = [0.32, 0.72, 0, 1] as const
 

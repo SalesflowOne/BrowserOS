@@ -22,7 +22,7 @@ const PopupChat: FC = () => (
     <div className="min-h-0 flex-1">
       <AgentChat compact mode="text" onSwitchToVoice={NO_OP} />
     </div>
-    <div className="shrink-0 border-border border-t bg-background px-3 py-2">
+    <div className="shrink-0 border-border border-t bg-background px-4 pt-3 pb-4">
       <Composer compact placeholder="Reply to the agent…" />
     </div>
   </div>

@@ -86,10 +86,10 @@ export const Composer: FC<ComposerProps> = ({
     return (
       <form
         onSubmit={handleSubmit}
-        className="flex w-full items-center gap-2 rounded-[18px] border border-transparent bg-white/90 px-3 py-2 transition-shadow duration-200 focus-within:border-[rgba(226,114,44,0.18)] focus-within:shadow-[0_8px_24px_-8px_rgba(226,114,44,0.28),0_0_0_4px_rgba(226,114,44,0.05)]"
+        className="flex w-full items-center gap-3 rounded-[18px] border border-transparent bg-white/90 px-4 py-3 transition-shadow duration-200 focus-within:border-[rgba(226,114,44,0.18)] focus-within:shadow-[0_8px_24px_-8px_rgba(226,114,44,0.28),0_0_0_4px_rgba(226,114,44,0.05)]"
       >
         <Search
-          className="size-[16px] shrink-0 text-muted-foreground"
+          className="size-[18px] shrink-0 text-muted-foreground"
           aria-hidden
         />
         <Input
@@ -98,16 +98,16 @@ export const Composer: FC<ComposerProps> = ({
           onChange={(e) => setValue(e.target.value)}
           placeholder={effectivePlaceholder}
           aria-label={effectivePlaceholder}
-          className="h-auto w-full min-w-0 rounded-none border-0 bg-transparent p-0 text-[14px] shadow-none placeholder:text-[color-mix(in_oklch,var(--muted-foreground)_80%,transparent)] focus-visible:border-0 focus-visible:ring-0"
+          className="h-auto w-full min-w-0 rounded-none border-0 bg-transparent p-0 text-[15px] shadow-none placeholder:text-[color-mix(in_oklch,var(--muted-foreground)_80%,transparent)] focus-visible:border-0 focus-visible:ring-0"
         />
         <Button
           type="submit"
           size="icon"
           disabled={!canSend}
           aria-label="Send"
-          className="size-[28px] shrink-0 rounded-full bg-[var(--accent-orange)] text-white hover:bg-[var(--accent-orange-bright)]"
+          className="size-[32px] shrink-0 rounded-full bg-[var(--accent-orange)] text-white hover:bg-[var(--accent-orange-bright)]"
         >
-          <ArrowUp className="size-3.5" />
+          <ArrowUp className="size-4" />
         </Button>
       </form>
     )
