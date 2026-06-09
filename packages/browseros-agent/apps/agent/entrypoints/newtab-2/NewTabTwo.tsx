@@ -30,15 +30,13 @@ export const NewTabTwo: FC = () => {
       exit={pageExit}
       className="flex h-screen w-screen flex-col bg-[radial-gradient(110%_80%_at_50%_38%,#FFE9D6_0%,#FDF0E6_32%,var(--background)_70%)]"
     >
-      <main className="relative flex flex-1 flex-col items-center justify-center gap-[22px]">
+      <main className="relative flex flex-1 flex-col items-center justify-center gap-[44px]">
         <div
           aria-hidden
           className="pointer-events-none absolute top-[30%] left-1/2 h-[360px] w-[720px] -translate-x-1/2 -translate-y-[30%] rounded-full blur-[8px] [background:radial-gradient(closest-side,rgba(226,114,44,0.16),transparent)]"
         />
 
-        <div className="z-10 flex size-[60px] items-center justify-center rounded-[18px] bg-white shadow-[0_8px_30px_rgba(226,114,44,0.20)]">
-          <BrowserOSIcon size={40} />
-        </div>
+        <BrowserOSIcon size={56} className="z-10" />
 
         <div
           aria-hidden
