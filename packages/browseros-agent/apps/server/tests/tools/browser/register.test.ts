@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'bun:test'
+import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 import { TOOL_LIMITS } from '@browseros/shared/constants/limits'
 import { z } from 'zod'
 import { CHAT_MODE_ALLOWED_TOOLS } from '../../../src/agent/chat-mode'
@@ -228,6 +231,106 @@ describe('registerBrowserTools', () => {
         }),
       ]),
     )
+  })
+
+  it('keeps small snapshots inline with the existing structured content', async () => {
+    const fake = createFakeServer()
+    const session = {
+      observe: () => ({
+        snapshot: async () => ({ text: '- button "Save" [ref=e1]' }),
+      }),
+      pages: {
+        getInfo: () => ({ url: 'https://example.com/small' }),
+      },
+    } as unknown as BrowserSession
+
+    registerBrowserTools(fake.server as never, session)
+
+    const result = await fake.handlers.get('snapshot')?.({ page: 2 })
+
+    expect(result?.isError).toBeFalsy()
+    expect(result?.structuredContent).toEqual({ page: 2 })
+    expect(result?.content).toEqual([
+      expect.objectContaining({
+        type: 'text',
+        text: expect.stringContaining('[UNTRUSTED_PAGE_CONTENT'),
+      }),
+    ])
+    expect(result?.content).toEqual([
+      expect.objectContaining({
+        type: 'text',
+        text: expect.stringContaining('- button "Save" [ref=e1]'),
+      }),
+    ])
+    expect(JSON.stringify(result?.structuredContent)).not.toContain('path')
+  })
+
+  it('writes very large snapshots to a markdown temp file', async () => {
+    const fake = createFakeServer()
+    const largeSnapshot = Array.from(
+      { length: 5001 },
+      (_, i) => `node-${i}`,
+    ).join(' ')
+    const session = {
+      observe: () => ({
+        snapshot: async () => ({ text: largeSnapshot }),
+      }),
+      pages: {
+        getInfo: () => ({ url: 'https://example.com/large' }),
+      },
+    } as unknown as BrowserSession
+    let savedPath: string | undefined
+
+    registerBrowserTools(fake.server as never, session)
+
+    try {
+      const result = await fake.handlers.get('snapshot')?.({ page: 4 })
+
+      expect(result?.isError).toBeFalsy()
+      const data = result?.structuredContent as
+        | {
+            page: number
+            path: string
+            contentLength: number
+            wordCount: number
+            writtenToFile: boolean
+          }
+        | undefined
+      expect(data).toMatchObject({
+        page: 4,
+        wordCount: 5001,
+        writtenToFile: true,
+      })
+      savedPath = data?.path
+      expect(savedPath).toBeTruthy()
+      expect(savedPath?.endsWith('.md')).toBe(true)
+      expect(dirname(savedPath ?? '')).toStartWith(
+        join(tmpdir(), 'browseros-browser-tool-'),
+      )
+      expect(result?.content).toEqual([
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining('Large snapshot'),
+        }),
+      ])
+      expect(result?.content).toEqual([
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining(savedPath ?? ''),
+        }),
+      ])
+      expect(existsSync(savedPath ?? '')).toBe(true)
+
+      const savedContent = readFileSync(savedPath ?? '', 'utf8')
+      expect(savedContent).toContain('[UNTRUSTED_PAGE_CONTENT')
+      expect(savedContent).toContain('[END_UNTRUSTED_PAGE_CONTENT')
+      expect(savedContent).toContain('node-0')
+      expect(savedContent).toContain('node-5000')
+      expect(data?.contentLength).toBe(savedContent.length)
+    } finally {
+      if (savedPath)
+        rmSync(dirname(savedPath), { recursive: true, force: true })
+    }
   })
 
   it('returns read errors for page-side exceptions', async () => {
