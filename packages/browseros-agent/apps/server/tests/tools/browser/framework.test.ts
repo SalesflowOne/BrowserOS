@@ -120,6 +120,7 @@ describe('browser tool framework post-actions', () => {
   it('attaches navigate snapshots through the shared post-action path', async () => {
     const fake = createFakeServer()
     const calls: string[] = []
+    let currentUrl = 'https://example.com/before'
     const session = {
       nav: () => ({
         goto: async (url: string) => calls.push(`goto:${url}`),
@@ -133,7 +134,12 @@ describe('browser tool framework post-actions', () => {
       pages: {
         getInfo: () => {
           calls.push('getInfo')
-          return { url: 'https://example.com/after' }
+          return { url: currentUrl }
+        },
+        refresh: async () => {
+          calls.push('refresh')
+          currentUrl = 'https://example.com/after'
+          return { url: currentUrl }
         },
         getTabId: () => undefined,
       },
@@ -155,11 +161,12 @@ describe('browser tool framework post-actions', () => {
     })
     expect(calls).toEqual([
       'goto:https://example.com/before',
-      'getInfo',
+      'refresh',
       'snapshot:9',
       'getInfo',
     ])
     expect(text).toContain('navigated (url) -> https://example.com/after')
+    expect(text).toContain('origin=https://example.com/after')
     expect(text.indexOf('navigated (url)')).toBeLessThan(
       text.indexOf('--- Additional context'),
     )

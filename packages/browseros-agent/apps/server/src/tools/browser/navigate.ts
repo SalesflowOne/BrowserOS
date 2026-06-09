@@ -29,7 +29,9 @@ export const navigate = defineTool({
         break
     }
 
-    const origin = ctx.session.pages.getInfo(args.page)?.url ?? 'unknown'
+    const refreshed = await ctx.session.pages.refresh(args.page)
+    const origin =
+      refreshed?.url ?? ctx.session.pages.getInfo(args.page)?.url ?? 'unknown'
     response.text(`navigated (${args.action}) -> ${origin}`)
     response.data({ page: args.page, url: origin })
     response.includeSnapshot(args.page)

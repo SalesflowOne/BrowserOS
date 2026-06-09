@@ -296,6 +296,7 @@ describe('registerBrowserTools', () => {
       input: () => input,
       pages: {
         getInfo: () => ({ url: 'https://example.com' }),
+        refresh: async () => ({ url: 'https://example.com' }),
         getSession: async () => ({
           session: {
             Runtime: {
