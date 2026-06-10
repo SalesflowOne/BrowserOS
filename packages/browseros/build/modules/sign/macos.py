@@ -40,6 +40,8 @@ SERVER_RESOURCES_SOURCE_REL = Path("chrome/browser/browseros/server/resources")
 SERVER_RESOURCES_BUNDLE_REL = Path(
     "Contents/Resources/BrowserOSServer/default/resources"
 )
+# Finder droppings in the staged tree must not fail the nightly sign.
+SERVER_RESOURCES_JUNK_FILES = {".DS_Store"}
 
 
 def verify_server_resources_bundle(app_path: Path, chromium_src: Path) -> List[str]:
@@ -64,7 +66,7 @@ def verify_server_resources_bundle(app_path: Path, chromium_src: Path) -> List[s
     problems: List[str] = []
     source_rels = []
     for source_file in sorted(source_root.rglob("*")):
-        if not source_file.is_file():
+        if not source_file.is_file() or source_file.name in SERVER_RESOURCES_JUNK_FILES:
             continue
         rel = source_file.relative_to(source_root)
         source_rels.append(rel)
@@ -78,7 +80,10 @@ def verify_server_resources_bundle(app_path: Path, chromium_src: Path) -> List[s
     if bundle_root.is_dir():
         staged = set(source_rels)
         for bundle_file in sorted(bundle_root.rglob("*")):
-            if not bundle_file.is_file():
+            if (
+                not bundle_file.is_file()
+                or bundle_file.name in SERVER_RESOURCES_JUNK_FILES
+            ):
                 continue
             rel = bundle_file.relative_to(bundle_root)
             if rel not in staged:
