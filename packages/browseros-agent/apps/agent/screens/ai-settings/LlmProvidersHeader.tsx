@@ -5,26 +5,37 @@ import { Button } from '@/components/ui/button'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
 import type { LlmProviderConfig } from '@/lib/llm-providers/types'
+import type { HarnessAgent } from '@/modules/agents/agent-harness-types'
+import type { SidepanelChatTargetSelection } from '@/modules/chat/sidepanel-chat-targets'
+import {
+  decodeTargetValue,
+  encodeTargetValue,
+} from './default-chat-target.helpers'
 
 interface LlmProvidersHeaderProps {
   providers: LlmProviderConfig[]
-  defaultProviderId: string
-  onDefaultProviderChange: (providerId: string) => void
+  agents: HarnessAgent[]
+  selectedTarget: SidepanelChatTargetSelection
+  onSelectTarget: (selection: SidepanelChatTargetSelection) => void
   onAddProvider: () => void
 }
 
 /**
- * Header section for LLM providers with default provider selector and add button
+ * Header section for LLM providers with the default-target selector (LLM
+ * providers and coding agents) and add button.
  */
 export const LlmProvidersHeader: FC<LlmProvidersHeaderProps> = ({
   providers,
-  defaultProviderId,
-  onDefaultProviderChange,
+  agents,
+  selectedTarget,
+  onSelectTarget,
   onAddProvider,
 }) => {
   return (
@@ -47,8 +58,11 @@ export const LlmProvidersHeader: FC<LlmProvidersHeaderProps> = ({
               Default Provider:
             </label>
             <Select
-              value={defaultProviderId}
-              onValueChange={onDefaultProviderChange}
+              value={encodeTargetValue(selectedTarget)}
+              onValueChange={(value) => {
+                const selection = decodeTargetValue(value)
+                if (selection) onSelectTarget(selection)
+              }}
             >
               <SelectTrigger
                 id="provider-picker"
@@ -57,11 +71,33 @@ export const LlmProvidersHeader: FC<LlmProvidersHeaderProps> = ({
                 <SelectValue placeholder="Select a provider" />
               </SelectTrigger>
               <SelectContent>
-                {providers.map((provider) => (
-                  <SelectItem key={provider.id} value={provider.id}>
-                    {provider.name}
-                  </SelectItem>
-                ))}
+                <SelectGroup>
+                  <SelectLabel>LLM providers</SelectLabel>
+                  {providers.map((provider) => (
+                    <SelectItem
+                      key={provider.id}
+                      value={encodeTargetValue({
+                        kind: 'llm',
+                        id: provider.id,
+                      })}
+                    >
+                      {provider.name}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+                {agents.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel>Coding agents</SelectLabel>
+                    {agents.map((agent) => (
+                      <SelectItem
+                        key={agent.id}
+                        value={encodeTargetValue({ kind: 'acp', id: agent.id })}
+                      >
+                        {agent.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
               </SelectContent>
             </Select>
             <Button
