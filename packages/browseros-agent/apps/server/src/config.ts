@@ -303,7 +303,7 @@ function getDefaults(cwd: string): PartialConfig {
     executionDir: cwd,
     mcpAllowRemote: false,
     aiSdkDevtoolsEnabled: false,
-    browserUseNewTools: true,
+    browserUseNewTools: false,
   }
 }
 
