@@ -108,6 +108,7 @@ describe('CodingAgentCard', () => {
     expect(html).toContain('id="agent-codex-1"')
     expect(html).not.toContain('checked')
     expect(html).not.toContain('DEFAULT')
+    expect(html).not.toContain('shadow-md')
   })
 
   it('renders the checked radio, DEFAULT badge, and selected styling when selected', () => {
@@ -115,6 +116,6 @@ describe('CodingAgentCard', () => {
 
     expect(html).toContain('checked')
     expect(html).toContain('DEFAULT')
-    expect(html).toContain('border-[var(--accent-orange)]')
+    expect(html).toContain('bg-[var(--accent-orange)]/5 shadow-md')
   })
 })

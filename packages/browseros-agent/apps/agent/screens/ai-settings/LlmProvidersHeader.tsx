@@ -47,7 +47,7 @@ export const LlmProvidersHeader: FC<LlmProvidersHeaderProps> = ({
         <div className="flex-1">
           <h2 className="mb-1 font-semibold text-xl">LLM Providers</h2>
           <p className="mb-6 text-muted-foreground text-sm">
-            Add your provider and choose the default LLM
+            Add your provider and choose the default for new chats
           </p>
 
           <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">

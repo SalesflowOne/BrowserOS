@@ -202,10 +202,15 @@ export function watchSidepanelChatTargetSelection(
 
   let cancelled = false
   let unwatch: (() => void) | undefined
-  getSidepanelChatTargetSelectionStorage().then((targetStore) => {
-    if (cancelled) return
-    unwatch = targetStore.watch(callback)
-  })
+  getSidepanelChatTargetSelectionStorage()
+    .then((targetStore) => {
+      if (cancelled) return
+      unwatch = targetStore.watch(callback)
+    })
+    // Failed storage import leaves the watch inert; this module stays
+    // sentry-free for bun-test loadability, and the load path surfaces the
+    // same failure to callers, who report it.
+    .catch(() => undefined)
   return () => {
     cancelled = true
     unwatch?.()

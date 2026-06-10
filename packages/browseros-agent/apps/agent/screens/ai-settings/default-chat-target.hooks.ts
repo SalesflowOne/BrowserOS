@@ -41,9 +41,15 @@ export function useDefaultChatTarget({
 
   useEffect(() => {
     let cancelled = false
-    loadSidepanelChatTargetSelection().then((stored) => {
-      if (!cancelled) setSelection(stored)
-    })
+    loadSidepanelChatTargetSelection()
+      .then((stored) => {
+        if (!cancelled) setSelection(stored)
+      })
+      .catch((error) => {
+        sentry.captureException(error, {
+          extra: { message: 'Failed to load default chat-target selection' },
+        })
+      })
     const unwatch = watchSidepanelChatTargetSelection((stored) => {
       setSelection(stored)
     })
