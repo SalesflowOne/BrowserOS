@@ -76,12 +76,14 @@ export const MCPToolsSection: FC<MCPToolsSectionProps> = ({
                   key={tool.name}
                   className="rounded-lg border border-border bg-background p-4 transition-all hover:border-[var(--accent-orange)]/50 hover:shadow-sm"
                 >
-                  <div className="mb-2 flex items-center gap-2">
-                    <Wrench className="h-4 w-4 text-[var(--accent-orange)]" />
-                    <span className="font-medium text-sm">{tool.name}</span>
+                  <div className="mb-2 flex items-start gap-2">
+                    <Wrench className="mt-0.5 h-4 w-4 shrink-0 text-[var(--accent-orange)]" />
+                    <span className="min-w-0 break-words font-medium text-sm">
+                      {tool.name}
+                    </span>
                   </div>
                   {tool.description && (
-                    <p className="line-clamp-2 text-muted-foreground text-xs">
+                    <p className="line-clamp-2 break-words text-muted-foreground text-xs">
                       {tool.description}
                     </p>
                   )}
