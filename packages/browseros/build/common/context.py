@@ -439,26 +439,15 @@ class Context:
     def get_app_path(self) -> Path:
         """Get built app path
 
-        For universal builds, checks if out/Default_universal/BrowserOS.app exists
-        and returns that instead of the architecture-specific path.
-
-        This allows downstream modules (sign, package) to work on the universal
-        binary after UniversalBuildModule has run.
-
-        Note: If _fixed_app_path is set, returns that directly (used by
-        UniversalBuildModule to prevent auto-detection during arch-specific ops).
+        Resolves strictly from this context's own out_dir (or _fixed_app_path
+        when set, as UniversalBuildModule does). Never probes other out dirs:
+        a stale out/Default_universal app must not hijack arch-specific
+        builds' sign/package stages. Universal flows resolve here too, since
+        architecture="universal" already derives out_dir=out/Default_universal.
         """
         # If fixed path is set (for arch-specific operations), use it directly
         if self._fixed_app_path:
             return self._fixed_app_path
-
-        # Check for universal binary first (macOS only)
-        if IS_MACOS():
-            universal_app = join_paths(
-                self.chromium_src, "out/Default_universal", self.BROWSEROS_APP_NAME
-            )
-            if universal_app.exists():
-                return universal_app
 
         # For debug builds, check if the app has a different name
         if self.build_type == "debug" and IS_MACOS():
