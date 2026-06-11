@@ -611,6 +611,66 @@ func TestContinueRestoresPendingStashAfterLastConflict(t *testing.T) {
 	}
 }
 
+func TestInspectWorkspaceReportsPendingStash(t *testing.T) {
+	ctx := context.Background()
+	workspacePath := initGitRepo(t)
+	writeFile(t, filepath.Join(workspacePath, "chrome", "browser.cc"), "base\n")
+	runGit(t, workspacePath, "add", "chrome/browser.cc")
+	runGit(t, workspacePath, "commit", "-m", "workspace base")
+	baseCommit := gitOutput(t, workspacePath, "rev-parse", "HEAD")
+	repoInfo := newPatchRepo(t, baseCommit)
+
+	if err := workspace.SaveState(workspacePath, &workspace.State{
+		Version:      1,
+		Workspace:    workspacePath,
+		BaseCommit:   baseCommit,
+		PendingStash: "stash@{0}",
+	}); err != nil {
+		t.Fatalf("SaveState: %v", err)
+	}
+
+	status, err := InspectWorkspace(ctx, InspectWorkspaceOptions{
+		Workspace: workspace.Entry{Name: "ws", Path: workspacePath},
+		Repo:      repoInfo,
+	})
+	if err != nil {
+		t.Fatalf("InspectWorkspace: %v", err)
+	}
+	if status.PendingStash != "stash@{0}" {
+		t.Fatalf("pending stash = %q, want stash@{0}", status.PendingStash)
+	}
+}
+
+func TestOrphanSummaryGroupsByTopLevelDir(t *testing.T) {
+	groups := OrphanSummary([]string{
+		"chrome/app/one.cc",
+		"chrome/browser/two.cc",
+		"third_party/sparkle/bin",
+		"BUILD.gn",
+	})
+	if len(groups) != 3 {
+		t.Fatalf("expected 3 groups, got %v", groups)
+	}
+	if groups[0].Dir != "chrome" || groups[0].Count != 2 {
+		t.Fatalf("expected chrome first with count 2, got %v", groups)
+	}
+	rest := map[string]int{groups[1].Dir: groups[1].Count, groups[2].Dir: groups[2].Count}
+	if rest["third_party"] != 1 || rest["(root)"] != 1 {
+		t.Fatalf("unexpected groups: %v", groups)
+	}
+}
+
+func TestInSyncButUnreproducible(t *testing.T) {
+	status := &WorkspaceStatus{Orphaned: []string{"chrome/x"}}
+	if !status.InSyncButUnreproducible() {
+		t.Fatalf("expected hint condition with only orphans present")
+	}
+	status.NeedsApply = []string{"chrome/y"}
+	if status.InSyncButUnreproducible() {
+		t.Fatalf("hint must not fire when applies are pending")
+	}
+}
+
 func TestSyncClearsPendingStashAfterSuccessfulNonRebaseRun(t *testing.T) {
 	ctx := context.Background()
 	workspacePath := initGitRepo(t)
