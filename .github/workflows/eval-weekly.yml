@@ -21,8 +21,10 @@ permissions:
 
 jobs:
   eval:
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
+    # WarpBuild runners register as self-hosted: no GitHub 6h hosted-job cap,
+    # so the timeout can exceed 360 as eval suites grow.
+    runs-on: warp-ubuntu-2404-x64-4x
+    timeout-minutes: 420
 
     steps:
       - name: Checkout
