@@ -97,6 +97,8 @@ def autoninja_command(
     jobs = compute_ninja_jobs(env)
     if jobs is not None:
         cmd += ["-j", str(jobs)]
+    else:
+        log_info("Ninja parallelism: autoninja default")
     return cmd + list(targets)
 
 
