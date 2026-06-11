@@ -312,6 +312,21 @@ func TestLLMTxtGuideContent(t *testing.T) {
 		"browseros-patch extract ch1",
 		"list reads only registered Chromium checkouts",
 		"does not inspect sync state",
+		// agent playbook
+		"Exit codes",
+		"0 = success",
+		"1 = error",
+		"2 = paused on a conflict",
+		"browseros-patch continue",
+		"browseros-patch skip",
+		"browseros-patch abort",
+		"browseros-patch extract ch1 --dry-run",
+		".browseros-patchignore",
+		"BASE_COMMIT",
+		"browseros-patch publish",
+		"pull",
+		"Chromium upgrade loop",
+		"--json",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("expected llm txt to contain %q, got:\n%s", want, text)
