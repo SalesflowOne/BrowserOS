@@ -54,7 +54,7 @@ func init() {
 					for _, file := range result.StashConflictFiles {
 						fmt.Printf("  %s\n", file)
 					}
-					fmt.Println(ui.Hint(`Resolve the conflict markers, then run "git stash drop" in the checkout.`))
+					fmt.Println(ui.Hint(`Resolve the conflicted files (markers, or restored content for delete conflicts), then "git stash drop" in the checkout.`))
 				case result.StashRef != "":
 					fmt.Printf("%s  %s\n", ui.Muted("stash:"), result.StashRef)
 					fmt.Println(ui.Hint("Local changes are parked in the stash (--no-rebase)."))

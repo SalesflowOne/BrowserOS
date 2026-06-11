@@ -134,12 +134,20 @@ func extractResult(workspaceName string, mode string, base string, plan *patch.W
 		Mode:       mode,
 		BaseCommit: base,
 		DryRun:     dryRun,
-		Written:    plan.Written(),
-		Created:    plan.Creates,
-		Updated:    plan.Updates,
-		Unchanged:  plan.Unchanged,
-		Deleted:    plan.Deletes,
+		Written:    orEmpty(plan.Written()),
+		Created:    orEmpty(plan.Creates),
+		Updated:    orEmpty(plan.Updates),
+		Unchanged:  orEmpty(plan.Unchanged),
+		Deleted:    orEmpty(plan.Deletes),
 	}
+}
+
+// orEmpty keeps agent-facing JSON arrays as [] instead of null.
+func orEmpty(list []string) []string {
+	if list == nil {
+		return []string{}
+	}
+	return list
 }
 
 func changedScope(changes []git.FileChange) []string {

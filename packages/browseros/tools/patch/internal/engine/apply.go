@@ -196,6 +196,10 @@ func restorePendingStash(ctx context.Context, workspacePath string, result *Appl
 	}
 	reportProgress(progress, "Rebasing stashed local changes")
 	if err := git.StashRebase(ctx, workspacePath, state.PendingStash); err != nil {
+		if errors.Is(err, git.ErrStashNotFound) {
+			state.PendingStash = ""
+			return workspace.SaveState(workspacePath, state)
+		}
 		var conflict *git.StashConflictError
 		if !errors.As(err, &conflict) {
 			return err

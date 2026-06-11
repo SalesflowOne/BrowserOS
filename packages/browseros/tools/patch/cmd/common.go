@@ -123,7 +123,7 @@ func printStashOutcome(result *engine.ApplyResult) {
 		for _, file := range result.StashConflictFiles {
 			fmt.Printf("  %s\n", file)
 		}
-		fmt.Println(ui.Hint(`Resolve the conflict markers, then run "git stash drop" in the checkout.`))
+		fmt.Println(ui.Hint(`Resolve the conflicted files (markers, or restored content for delete conflicts), then "git stash drop" in the checkout.`))
 	}
 }
 

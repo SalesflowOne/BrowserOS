@@ -159,6 +159,7 @@ func conflictPauseError(paused bool) error {
 
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
+		activeProgress.Finish()
 		var exitErr *exitCodeError
 		if errors.As(err, &exitErr) {
 			os.Exit(exitErr.code)

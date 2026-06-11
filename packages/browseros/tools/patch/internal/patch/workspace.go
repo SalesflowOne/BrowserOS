@@ -175,7 +175,7 @@ func buildBaseScopedSet(ctx context.Context, workspacePath string, ref string, b
 			}
 			mode, err := git.FileModeAtCommit(ctx, workspacePath, ref, rel)
 			if err != nil {
-				mode = "100644"
+				return nil, err
 			}
 			set[rel] = syntheticAddPatch(rel, content, mode)
 		}
@@ -212,7 +212,12 @@ func RejectPath(workspacePath string, rel string) string {
 // exactly so the same logical patch is identical no matter which extraction
 // path produced it.
 func syntheticAddPatch(rel string, content []byte, mode string) FilePatch {
-	if bytes.IndexByte(content, 0) != -1 {
+	// Match git's binary heuristic: a NUL within the first 8000 bytes.
+	probe := content
+	if len(probe) > 8000 {
+		probe = probe[:8000]
+	}
+	if bytes.IndexByte(probe, 0) != -1 {
 		return FilePatch{Path: rel, Op: OpBinary, IsBinary: true}
 	}
 	if mode == "" {
@@ -227,7 +232,11 @@ func syntheticAddPatch(rel string, content []byte, mode string) FilePatch {
 		missingEOFNewline := !strings.HasSuffix(body, "\n")
 		lines := strings.Split(strings.TrimSuffix(body, "\n"), "\n")
 		fmt.Fprintf(&b, "--- /dev/null\n+++ b/%s\n", rel)
-		fmt.Fprintf(&b, "@@ -0,0 +1,%d @@\n", len(lines))
+		if len(lines) == 1 {
+			b.WriteString("@@ -0,0 +1 @@\n")
+		} else {
+			fmt.Fprintf(&b, "@@ -0,0 +1,%d @@\n", len(lines))
+		}
 		for _, line := range lines {
 			b.WriteString("+")
 			b.WriteString(line)

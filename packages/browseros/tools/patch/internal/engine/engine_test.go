@@ -491,6 +491,41 @@ func TestSyncNoRebaseKeepsStashRecorded(t *testing.T) {
 	}
 }
 
+func TestSyncRestoresPreviouslyParkedStash(t *testing.T) {
+	ctx := context.Background()
+	ws, repoInfo := syncFixture(t, "PATCHED", "local change")
+
+	// First sync parks the local change (--no-rebase).
+	first, err := Sync(ctx, SyncOptions{Workspace: ws, Repo: repoInfo, Rebase: false})
+	if err != nil {
+		t.Fatalf("first Sync: %v", err)
+	}
+	if first.StashRef == "" {
+		t.Fatalf("expected a parked stash")
+	}
+	assertFile(t, filepath.Join(ws.Path, "local.txt"), "local base\n")
+
+	// Second sync (rebase default) must bring the parked change back.
+	second, err := Sync(ctx, SyncOptions{Workspace: ws, Repo: repoInfo, Rebase: true})
+	if err != nil {
+		t.Fatalf("second Sync: %v", err)
+	}
+	if len(second.Conflicts) != 0 || second.StashConflict {
+		t.Fatalf("unexpected conflicts: %+v", second)
+	}
+	assertFile(t, filepath.Join(ws.Path, "local.txt"), "local change\n")
+	state, err := workspace.LoadState(ws.Path)
+	if err != nil {
+		t.Fatalf("LoadState: %v", err)
+	}
+	if state.PendingStash != "" {
+		t.Fatalf("pending stash should be cleared after restore, got %q", state.PendingStash)
+	}
+	if stashList := gitOutput(t, ws.Path, "stash", "list"); stashList != "" {
+		t.Fatalf("stash should be dropped after restore, got %q", stashList)
+	}
+}
+
 func TestSyncReportsStashPopConflict(t *testing.T) {
 	ctx := context.Background()
 	workspacePath := initGitRepo(t)

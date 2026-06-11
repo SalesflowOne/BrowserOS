@@ -258,6 +258,8 @@ func TestSyntheticAddPatchMatchesGitByteForByte(t *testing.T) {
 		mode os.FileMode
 	}{
 		{name: "multi line", rel: "chrome/notes.txt", body: "alpha\nbeta\ngamma\n", mode: 0o644},
+		{name: "single line", rel: "chrome/one.txt", body: "single\n", mode: 0o644},
+		{name: "single line no newline", rel: "chrome/one_nonl.txt", body: "single", mode: 0o644},
 		{name: "no trailing newline", rel: "chrome/nonl.txt", body: "alpha\nbeta", mode: 0o644},
 		{name: "empty file", rel: "chrome/empty.txt", body: "", mode: 0o644},
 		{name: "executable", rel: "chrome/tool.sh", body: "#!/bin/sh\necho hi\n", mode: 0o755},

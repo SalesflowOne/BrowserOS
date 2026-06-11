@@ -67,6 +67,40 @@ func Sync(ctx context.Context, opts SyncOptions) (*SyncResult, error) {
 		RepoHead:  head,
 		Rebased:   opts.Rebase,
 	}
+	// A previous run may have parked local changes (--no-rebase or a crash).
+	// Bring them back before measuring divergence so they ride this sync like
+	// any other local change; stale records are cleared.
+	if state.PendingStash != "" {
+		if opts.Rebase {
+			reportProgress(opts.Progress, "Restoring previously parked local changes")
+			switch err := git.StashRebase(ctx, opts.Workspace.Path, state.PendingStash); {
+			case err == nil, errors.Is(err, git.ErrStashNotFound):
+				state.PendingStash = ""
+				if err := workspace.SaveState(opts.Workspace.Path, state); err != nil {
+					return nil, err
+				}
+			default:
+				var conflict *git.StashConflictError
+				if !errors.As(err, &conflict) {
+					return nil, err
+				}
+				result.StashConflict = true
+				result.StashConflictFiles = conflict.Files
+				return result, nil
+			}
+		} else {
+			live, err := git.StashEntryExists(ctx, opts.Workspace.Path, state.PendingStash)
+			if err != nil {
+				return nil, err
+			}
+			if !live {
+				state.PendingStash = ""
+				if err := workspace.SaveState(opts.Workspace.Path, state); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
 	status, err := InspectWorkspace(ctx, InspectWorkspaceOptions{
 		Workspace: opts.Workspace,
 		Repo:      opts.Repo,
@@ -144,11 +178,13 @@ func Sync(ctx context.Context, opts SyncOptions) (*SyncResult, error) {
 	switch {
 	case result.StashConflict:
 		// Keep PendingStash: git preserved the stash entry and the user
-		// still has to resolve the pop conflict.
+		// still has to resolve the rebase conflict.
 	case !opts.Rebase && result.StashRef != "":
 		// Local changes stay parked; remember where they are instead of
 		// silently forgetting the stash.
 		state.PendingStash = result.StashRef
+	case !opts.Rebase:
+		// Keep any live pre-existing record (validated above).
 	default:
 		state.PendingStash = ""
 	}
