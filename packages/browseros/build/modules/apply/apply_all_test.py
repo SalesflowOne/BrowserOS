@@ -53,7 +53,7 @@ class ApplyAllPatchesTest(unittest.TestCase):
         applied, failed = apply_all_patches(self.ctx)
 
         self.assertEqual(applied, 1)
-        self.assertEqual([str(f) for f in failed], ["chrome/broken.txt.patch"])
+        self.assertEqual(failed, [Path("chrome/broken.txt.patch")])
 
     def test_dry_run_does_not_modify_files(self):
         self.chromium.add_file("chrome/feature.txt", ORIGINAL)
