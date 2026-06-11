@@ -8,6 +8,7 @@ import (
 
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/buildctx"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/modules/extensions"
+	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/modules/patchmod"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/modules/resources"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/modules/setup"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/pipeline"
@@ -42,8 +43,8 @@ func Available() pipeline.Registry {
 		"sparkle_setup": func() pipeline.Module { return setup.NewSparkleSetup() },
 		"configure":     func() pipeline.Module { return setup.NewConfigure() },
 		// Patches & Resources
-		"patches":            placeholder("patches", "Apply BrowserOS patches"),
-		"series_patches":     placeholder("series_patches", "Apply series patches (GNU Quilt format)"),
+		"patches":            func() pipeline.Module { return patchmod.NewPatches() },
+		"series_patches":     func() pipeline.Module { return patchmod.NewSeriesPatches() },
 		"chromium_replace":   func() pipeline.Module { return resources.NewChromiumReplace() },
 		"string_replaces":    func() pipeline.Module { return resources.NewStringReplaces() },
 		"download_resources": func() pipeline.Module { return resources.NewDownload() },
