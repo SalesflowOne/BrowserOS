@@ -6,7 +6,7 @@ import sys
 import tempfile
 import shutil
 from pathlib import Path
-from typing import Mapping, Optional
+from typing import List, Mapping, Optional
 from ...common.module import CommandModule, ValidationError
 from ...common.context import Context
 from ...common.utils import (
@@ -89,6 +89,17 @@ def compute_ninja_jobs(env: Optional[Mapping[str, str]] = None) -> Optional[int]
     return jobs
 
 
+def autoninja_command(
+    out_dir: str, targets: List[str], env: Optional[Mapping[str, str]] = None
+) -> List[str]:
+    """Assemble the autoninja argv with the resolved -j parallelism applied."""
+    cmd = ["autoninja.bat" if IS_WINDOWS() else "autoninja", "-C", out_dir]
+    jobs = compute_ninja_jobs(env)
+    if jobs is not None:
+        cmd += ["-j", str(jobs)]
+    return cmd + list(targets)
+
+
 class CompileModule(CommandModule):
     produces = ["built_app"]
     requires = []
@@ -110,10 +121,10 @@ class CompileModule(CommandModule):
 
         self._create_version_file(ctx)
 
-        autoninja_cmd = "autoninja.bat" if IS_WINDOWS() else "autoninja"
-        log_info("Using default autoninja parallelism")
-
-        run_command([autoninja_cmd, "-C", ctx.out_dir, "chrome", "chromedriver"], cwd=ctx.chromium_src)
+        run_command(
+            autoninja_command(ctx.out_dir, ["chrome", "chromedriver"]),
+            cwd=ctx.chromium_src,
+        )
 
         app_path = ctx.get_chromium_app_path()
         new_path = ctx.get_app_path()
@@ -148,8 +159,7 @@ def build_target(ctx: Context, target: str) -> bool:
     """Build a specific target (e.g., mini_installer)"""
     log_info(f"\n🔨 Building target: {target}")
 
-    autoninja_cmd = "autoninja.bat" if IS_WINDOWS() else "autoninja"
-    run_command([autoninja_cmd, "-C", ctx.out_dir, target], cwd=ctx.chromium_src)
+    run_command(autoninja_command(ctx.out_dir, [target]), cwd=ctx.chromium_src)
 
     log_success(f"Target {target} built successfully")
     return True

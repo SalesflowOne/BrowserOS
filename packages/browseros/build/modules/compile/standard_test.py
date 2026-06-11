@@ -2,9 +2,13 @@
 """Tests for memory-aware ninja parallelism in the compile module."""
 
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 from unittest import mock
 
 from . import standard
+from ...common.context import Context
 
 
 class ComputeNinjaJobsTest(unittest.TestCase):
@@ -68,6 +72,89 @@ class ComputeNinjaJobsTest(unittest.TestCase):
             mock.patch("os.cpu_count", return_value=None),
         ):
             self.assertEqual(standard.compute_ninja_jobs({}), 16)
+
+
+class AutoninjaCommandTest(unittest.TestCase):
+    def test_override_inserts_jobs_flag_before_targets(self):
+        with mock.patch.object(standard, "IS_WINDOWS", return_value=False):
+            cmd = standard.autoninja_command(
+                "out/Default_x64",
+                ["chrome", "chromedriver"],
+                {"BROWSEROS_NINJA_JOBS": "24"},
+            )
+        self.assertEqual(
+            cmd,
+            [
+                "autoninja",
+                "-C",
+                "out/Default_x64",
+                "-j",
+                "24",
+                "chrome",
+                "chromedriver",
+            ],
+        )
+
+    def test_default_parallelism_has_no_jobs_flag(self):
+        with mock.patch.object(standard, "IS_WINDOWS", return_value=False):
+            cmd = standard.autoninja_command("out/Default_arm64", ["chrome"], {})
+        self.assertEqual(cmd, ["autoninja", "-C", "out/Default_arm64", "chrome"])
+
+    def test_windows_uses_bat_and_memory_capped_jobs(self):
+        with (
+            mock.patch.object(standard, "IS_WINDOWS", return_value=True),
+            mock.patch.object(
+                standard, "_windows_total_memory_gb", return_value=64.0
+            ),
+            mock.patch("os.cpu_count", return_value=32),
+        ):
+            cmd = standard.autoninja_command("out/Default_x64", ["chrome"], {})
+        self.assertEqual(
+            cmd,
+            ["autoninja.bat", "-C", "out/Default_x64", "-j", "16", "chrome"],
+        )
+
+
+class BuildTargetTest(unittest.TestCase):
+    def test_build_target_uses_shared_argv_builder(self):
+        ctx = cast(
+            Context,
+            SimpleNamespace(
+                out_dir="out/Default_x64", chromium_src=Path("/tmp/chromium-src")
+            ),
+        )
+        with (
+            mock.patch.object(standard, "run_command") as run_cmd,
+            mock.patch.object(standard, "IS_WINDOWS", return_value=False),
+            mock.patch.dict("os.environ", {}, clear=True),
+        ):
+            standard.build_target(ctx, "mini_installer")
+        run_cmd.assert_called_once()
+        self.assertEqual(
+            run_cmd.call_args.args[0],
+            ["autoninja", "-C", "out/Default_x64", "mini_installer"],
+        )
+        self.assertEqual(run_cmd.call_args.kwargs["cwd"], ctx.chromium_src)
+
+    def test_build_target_respects_jobs_override(self):
+        ctx = cast(
+            Context,
+            SimpleNamespace(
+                out_dir="out/Default_x64", chromium_src=Path("/tmp/chromium-src")
+            ),
+        )
+        with (
+            mock.patch.object(standard, "run_command") as run_cmd,
+            mock.patch.object(standard, "IS_WINDOWS", return_value=False),
+            mock.patch.dict(
+                "os.environ", {"BROWSEROS_NINJA_JOBS": "8"}, clear=True
+            ),
+        ):
+            standard.build_target(ctx, "mini_installer")
+        self.assertEqual(
+            run_cmd.call_args.args[0],
+            ["autoninja", "-C", "out/Default_x64", "-j", "8", "mini_installer"],
+        )
 
 
 if __name__ == "__main__":
