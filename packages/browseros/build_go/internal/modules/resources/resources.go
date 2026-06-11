@@ -345,8 +345,11 @@ func (StringReplaces) Execute(ctx *buildctx.Context) error {
 	return ApplyStringReplacements(ctx)
 }
 
-// ApplyStringReplacements ports apply_string_replacements_impl.
+// ApplyStringReplacements ports apply_string_replacements_impl: every target
+// file is attempted; failures are collected and reported at the end (Python
+// continues past a failed file rather than failing fast).
 func ApplyStringReplacements(ctx *buildctx.Context) error {
+	var failed error
 	for _, target := range stringReplaceTargets {
 		fullPath := filepath.Join(ctx.ChromiumSrc, filepath.FromSlash(target))
 		raw, err := os.ReadFile(fullPath)
@@ -380,12 +383,17 @@ func ApplyStringReplacements(ctx *buildctx.Context) error {
 		if content != original {
 			if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
 				logx.Error(fmt.Sprintf("    Error processing %s: %v", target, err))
-				return fmt.Errorf("string replacements failed: %w", err)
+				failed = fmt.Errorf("string replacements failed: %w", err)
+				continue
 			}
 			logx.Success(fmt.Sprintf("    Updated with %d total replacements", total))
 		} else {
 			logx.Info("    No replacements needed")
 		}
+	}
+	if failed != nil {
+		logx.Error("String replacements failed")
+		return failed
 	}
 	logx.Success("String replacements completed")
 	return nil

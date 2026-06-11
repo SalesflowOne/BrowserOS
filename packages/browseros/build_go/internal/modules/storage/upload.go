@@ -145,8 +145,9 @@ func GenerateReleaseJSON(ctx *buildctx.Context, artifacts []map[string]any, plat
 		"version":                    ctx.SemanticVersion,
 		"chromium_version":           ctx.ChromiumVersion,
 		"browseros_chromium_version": ctx.BrowserOSChromiumVersion,
-		"build_date":                 time.Now().UTC().Format(time.RFC3339),
-		"artifacts":                  map[string]any{},
+		// Python writes datetime.isoformat(): microseconds + "+00:00".
+		"build_date": time.Now().UTC().Format("2006-01-02T15:04:05.000000-07:00"),
+		"artifacts":  map[string]any{},
 	}
 	if platform == "macos" {
 		if sparkleVersion, err := ctx.SparkleBuildVersion(); err == nil {

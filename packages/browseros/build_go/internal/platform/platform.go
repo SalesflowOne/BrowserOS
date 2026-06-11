@@ -30,9 +30,14 @@ func currentOS() string {
 
 func currentArch() string {
 	// Python's get_platform_arch hardcodes x64 on Windows and maps machine
-	// names elsewhere; unknown machines fall back to x64.
+	// names elsewhere; unknown machines fall back to x64. Prefer the probed
+	// machine arch (platform.machine() equivalent) over runtime.GOARCH so an
+	// emulated binary (e.g. amd64 under Rosetta) still reports the host.
 	if runtime.GOOS == "windows" {
 		return "x64"
+	}
+	if native := nativeArch(); native != "" {
+		return native
 	}
 	switch runtime.GOARCH {
 	case "arm64":

@@ -13,6 +13,7 @@ import (
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/buildctx"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/execx"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/fetch"
+	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/fsx"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/logx"
 )
 
@@ -48,7 +49,7 @@ func (Clean) Execute(ctx *buildctx.Context) error {
 	logx.Info("🧹 Cleaning build artifacts...")
 	outPath := ctx.OutDirAbs()
 	if _, err := os.Stat(outPath); err == nil {
-		if err := os.RemoveAll(outPath); err != nil {
+		if err := fsx.RemoveAll(outPath); err != nil {
 			return err
 		}
 		logx.Success("Cleaned build directory")
@@ -75,7 +76,7 @@ func (Clean) Execute(ctx *buildctx.Context) error {
 	logx.Success("Git reset and clean complete")
 
 	logx.Info("\n🧹 Cleaning Sparkle build artifacts...")
-	if err := os.RemoveAll(ctx.SparkleDir()); err != nil {
+	if err := fsx.RemoveAll(ctx.SparkleDir()); err != nil {
 		return err
 	}
 	logx.Success("Cleaned Sparkle build directory")
@@ -275,7 +276,7 @@ func (m SparkleSetup) Execute(ctx *buildctx.Context) error {
 	}
 
 	sparkleDir := ctx.SparkleDir()
-	if err := os.RemoveAll(sparkleDir); err != nil {
+	if err := fsx.RemoveAll(sparkleDir); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(sparkleDir, 0o755); err != nil {

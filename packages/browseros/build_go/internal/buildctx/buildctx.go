@@ -317,17 +317,11 @@ func (c *Context) SparkleBuildVersion() (string, error) {
 	return parts[2] + "." + parts[3], nil
 }
 
-// EffectiveVersion is ReleaseVersion when set, else SemanticVersion.
-func (c *Context) EffectiveVersion() string {
-	if c.ReleaseVersion != "" {
-		return c.ReleaseVersion
-	}
-	return c.SemanticVersion
-}
-
-// ReleasePath is the R2 prefix for release artifacts, e.g. releases/0.31.0/macos/.
+// ReleasePath is the R2 prefix for release artifacts, e.g.
+// releases/0.31.0/macos/. Like context.py get_release_path it always uses
+// the semantic version (release ops pass versions explicitly instead).
 func (c *Context) ReleasePath(plat string) string {
-	return fmt.Sprintf("releases/%s/%s/", c.EffectiveVersion(), plat)
+	return fmt.Sprintf("releases/%s/%s/", c.SemanticVersion, plat)
 }
 
 // DistDir is <root>/releases/<semantic_version>.

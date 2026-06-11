@@ -171,9 +171,10 @@ func TestReleasePathAndDistDir(t *testing.T) {
 	if got := ctx.ReleasePath("macos"); got != "releases/0.46.17/macos/" {
 		t.Errorf("ReleasePath = %q", got)
 	}
+	// Python's get_release_path ignores release_version — parity.
 	ctx.ReleaseVersion = "0.50.0"
-	if got := ctx.ReleasePath("win"); got != "releases/0.50.0/win/" {
-		t.Errorf("ReleasePath with ReleaseVersion = %q", got)
+	if got := ctx.ReleasePath("win"); got != "releases/0.46.17/win/" {
+		t.Errorf("ReleasePath must ignore ReleaseVersion (parity): %q", got)
 	}
 	if got := ctx.DistDir(); !strings.HasSuffix(got, filepath.Join("releases", "0.46.17")) {
 		t.Errorf("DistDir = %q", got)

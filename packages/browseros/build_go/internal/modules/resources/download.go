@@ -15,6 +15,7 @@ import (
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/buildctx"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/config"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/envx"
+	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/fsx"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/logx"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/r2"
 )
@@ -100,7 +101,7 @@ func (m Download) Execute(ctx *buildctx.Context) error {
 
 		// Always clear and re-download (ensures latest).
 		if _, err := os.Stat(destPath); err == nil {
-			if err := os.RemoveAll(destPath); err != nil {
+			if err := fsx.RemoveAll(destPath); err != nil {
 				return err
 			}
 			logx.Info(fmt.Sprintf("    Cleared existing: %s", filepath.Base(destPath)))

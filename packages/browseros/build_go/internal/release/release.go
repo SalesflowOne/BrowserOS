@@ -449,6 +449,16 @@ func GenerateReleaseNotes(version string, metadata map[string]map[string]any) st
 	return notes
 }
 
+// NormalizeVersion strips a version to MAJOR.MINOR.BUILD
+// (release/github.py normalize_version).
+func NormalizeVersion(version string) string {
+	parts := strings.Split(version, ".")
+	if len(parts) >= 3 {
+		return strings.Join(parts[:3], ".")
+	}
+	return version
+}
+
 // GithubOptions configures GithubCreate.
 type GithubOptions struct {
 	Version    string
@@ -472,9 +482,12 @@ func (d *Deps) GithubCreate(opts GithubOptions) error {
 	if repo == "" {
 		return fmt.Errorf("could not determine GitHub repo; pass --repo owner/name")
 	}
+	// Tag/title/notes use the 3-part version; the R2 metadata fetch keeps the
+	// raw version (github.py execute()).
+	tagVersion := NormalizeVersion(opts.Version)
 	title := opts.Title
 	if title == "" {
-		title = "v" + opts.Version
+		title = "v" + tagVersion
 	}
 
 	client, err := d.client()
@@ -485,9 +498,9 @@ func (d *Deps) GithubCreate(opts GithubOptions) error {
 	if len(metadata) == 0 {
 		return fmt.Errorf("no release metadata found for version %s", opts.Version)
 	}
-	notes := GenerateReleaseNotes(opts.Version, metadata)
+	notes := GenerateReleaseNotes(tagVersion, metadata)
 
-	createArgs := []string{"gh", "release", "create", "v" + opts.Version,
+	createArgs := []string{"gh", "release", "create", "v" + tagVersion,
 		"--repo", repo, "--title", title, "--notes", notes}
 	if opts.Draft {
 		createArgs = append(createArgs, "--draft")
@@ -532,7 +545,7 @@ func (d *Deps) GithubCreate(opts GithubOptions) error {
 			}
 			logx.Info("  Uploading " + filename + " to GitHub...")
 			res, err := runner.Run(execx.Cmd{Args: []string{
-				"gh", "release", "upload", "v" + opts.Version, localPath, "--repo", repo}})
+				"gh", "release", "upload", "v" + tagVersion, localPath, "--repo", repo}})
 			if err != nil || res.Code != 0 {
 				return fmt.Errorf("failed to upload %s to GitHub release", filename)
 			}
