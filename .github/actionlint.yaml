@@ -1,0 +1,7 @@
+self-hosted-runner:
+  labels:
+    # WarpBuild cloud runners (register as self-hosted), e.g.
+    # warp-ubuntu-2404-x64-4x, warp-windows-2025-x64-32x, warp-macos-15-arm64-12x
+    - warp-*
+    # Signed macOS nightly builder (nightly-macos-build.yml)
+    - browseros-builder
