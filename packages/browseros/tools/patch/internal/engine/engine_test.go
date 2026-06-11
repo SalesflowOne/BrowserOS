@@ -193,6 +193,194 @@ func TestInspectWorkspaceSkipsIgnoredUntrackedFiles(t *testing.T) {
 	}
 }
 
+// newPatchRepo builds a minimal committed patch repo pointing at baseCommit.
+func newPatchRepo(t *testing.T, baseCommit string) *repo.Info {
+	t.Helper()
+	repoRoot := initGitRepo(t)
+	if err := os.MkdirAll(filepath.Join(repoRoot, "chromium_patches"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	writeFile(t, filepath.Join(repoRoot, "BASE_COMMIT"), baseCommit+"\n")
+	runGit(t, repoRoot, "add", "BASE_COMMIT")
+	runGit(t, repoRoot, "commit", "-m", "patch repo init")
+	repoInfo, err := repo.Load(repoRoot)
+	if err != nil {
+		t.Fatalf("repo.Load: %v", err)
+	}
+	return repoInfo
+}
+
+func TestExtractRoundTripIsChurnFree(t *testing.T) {
+	ctx := context.Background()
+	workspacePath := initGitRepo(t)
+	writeFile(t, filepath.Join(workspacePath, "chrome", "browser.cc"), "base\nline\n")
+	runGit(t, workspacePath, "add", "chrome/browser.cc")
+	runGit(t, workspacePath, "commit", "-m", "workspace base")
+	baseCommit := gitOutput(t, workspacePath, "rev-parse", "HEAD")
+
+	writeFile(t, filepath.Join(workspacePath, "chrome", "browser.cc"), "patched\nline\n")
+	writeFile(t, filepath.Join(workspacePath, "chrome", "feature.cc"), "new feature\n")
+
+	repoInfo := newPatchRepo(t, baseCommit)
+	ws := workspace.Entry{Name: "ws", Path: workspacePath}
+
+	first, err := Extract(ctx, ExtractOptions{Workspace: ws, Repo: repoInfo})
+	if err != nil {
+		t.Fatalf("first Extract: %v", err)
+	}
+	if len(first.Written) != 2 {
+		t.Fatalf("expected 2 files written, got %v", first.Written)
+	}
+
+	// After extract, status must agree the workspace is fully captured.
+	status, err := InspectWorkspace(ctx, InspectWorkspaceOptions{Workspace: ws, Repo: repoInfo})
+	if err != nil {
+		t.Fatalf("InspectWorkspace: %v", err)
+	}
+	if len(status.NeedsUpdate) != 0 || len(status.NeedsApply) != 0 || len(status.Orphaned) != 0 {
+		t.Fatalf("expected clean status after extract, got needs_update=%v needs_apply=%v orphaned=%v",
+			status.NeedsUpdate, status.NeedsApply, status.Orphaned)
+	}
+
+	beforeBytes := map[string]string{}
+	for _, rel := range first.Written {
+		data, err := os.ReadFile(filepath.Join(repoInfo.PatchesDir, filepath.FromSlash(rel)))
+		if err != nil {
+			t.Fatalf("read patch %s: %v", rel, err)
+		}
+		beforeBytes[rel] = string(data)
+	}
+
+	second, err := Extract(ctx, ExtractOptions{Workspace: ws, Repo: repoInfo})
+	if err != nil {
+		t.Fatalf("second Extract: %v", err)
+	}
+	if len(second.Written) != 0 || len(second.Deleted) != 0 {
+		t.Fatalf("second extract must be a no-op, wrote %v deleted %v", second.Written, second.Deleted)
+	}
+	if len(second.Unchanged) != 2 {
+		t.Fatalf("expected both files unchanged, got %v", second.Unchanged)
+	}
+	for rel, before := range beforeBytes {
+		data, err := os.ReadFile(filepath.Join(repoInfo.PatchesDir, filepath.FromSlash(rel)))
+		if err != nil {
+			t.Fatalf("read patch %s: %v", rel, err)
+		}
+		if string(data) != before {
+			t.Fatalf("patch %s churned between identical extracts", rel)
+		}
+	}
+}
+
+func TestExtractFromTwoCheckoutsIsByteIdentical(t *testing.T) {
+	ctx := context.Background()
+	checkout1 := initGitRepo(t)
+	writeFile(t, filepath.Join(checkout1, "chrome", "browser.cc"), "base\nline\n")
+	runGit(t, checkout1, "add", "chrome/browser.cc")
+	runGit(t, checkout1, "commit", "-m", "workspace base")
+	baseCommit := gitOutput(t, checkout1, "rev-parse", "HEAD")
+
+	checkout2Parent := t.TempDir()
+	runGit(t, checkout2Parent, "clone", checkout1, "clone")
+	checkout2 := filepath.Join(checkout2Parent, "clone")
+	// Hostile per-checkout config must not leak into extracted patches.
+	runGit(t, checkout2, "config", "core.abbrev", "9")
+	runGit(t, checkout2, "config", "diff.algorithm", "histogram")
+	runGit(t, checkout2, "config", "diff.mnemonicPrefix", "true")
+
+	edit := "patched\nline\n"
+	addition := "new feature\n"
+	for _, checkout := range []string{checkout1, checkout2} {
+		writeFile(t, filepath.Join(checkout, "chrome", "browser.cc"), edit)
+		writeFile(t, filepath.Join(checkout, "chrome", "feature.cc"), addition)
+	}
+
+	repo1 := newPatchRepo(t, baseCommit)
+	repo2 := newPatchRepo(t, baseCommit)
+	if _, err := Extract(ctx, ExtractOptions{Workspace: workspace.Entry{Name: "c1", Path: checkout1}, Repo: repo1}); err != nil {
+		t.Fatalf("extract checkout1: %v", err)
+	}
+	if _, err := Extract(ctx, ExtractOptions{Workspace: workspace.Entry{Name: "c2", Path: checkout2}, Repo: repo2}); err != nil {
+		t.Fatalf("extract checkout2: %v", err)
+	}
+
+	for _, rel := range []string{"chrome/browser.cc", "chrome/feature.cc"} {
+		data1, err := os.ReadFile(filepath.Join(repo1.PatchesDir, filepath.FromSlash(rel)))
+		if err != nil {
+			t.Fatalf("read repo1 %s: %v", rel, err)
+		}
+		data2, err := os.ReadFile(filepath.Join(repo2.PatchesDir, filepath.FromSlash(rel)))
+		if err != nil {
+			t.Fatalf("read repo2 %s: %v", rel, err)
+		}
+		if string(data1) != string(data2) {
+			t.Fatalf("patch %s differs across checkouts\n--- c1 ---\n%s\n--- c2 ---\n%s", rel, data1, data2)
+		}
+	}
+}
+
+func TestExtractDryRunWritesNothing(t *testing.T) {
+	ctx := context.Background()
+	workspacePath := initGitRepo(t)
+	writeFile(t, filepath.Join(workspacePath, "chrome", "browser.cc"), "base\n")
+	runGit(t, workspacePath, "add", "chrome/browser.cc")
+	runGit(t, workspacePath, "commit", "-m", "workspace base")
+	baseCommit := gitOutput(t, workspacePath, "rev-parse", "HEAD")
+	writeFile(t, filepath.Join(workspacePath, "chrome", "browser.cc"), "patched\n")
+
+	repoInfo := newPatchRepo(t, baseCommit)
+	ws := workspace.Entry{Name: "ws", Path: workspacePath}
+
+	result, err := Extract(ctx, ExtractOptions{Workspace: ws, Repo: repoInfo, DryRun: true})
+	if err != nil {
+		t.Fatalf("Extract dry-run: %v", err)
+	}
+	if !result.DryRun {
+		t.Fatalf("expected dry_run result flag")
+	}
+	if len(result.Created) != 1 || result.Created[0] != "chrome/browser.cc" {
+		t.Fatalf("expected planned create, got %+v", result)
+	}
+	if _, err := os.Stat(filepath.Join(repoInfo.PatchesDir, "chrome", "browser.cc")); !os.IsNotExist(err) {
+		t.Fatalf("dry-run must not write patch files")
+	}
+	state, err := workspace.LoadState(workspacePath)
+	if err != nil {
+		t.Fatalf("LoadState: %v", err)
+	}
+	if state.LastExtractRev != "" {
+		t.Fatalf("dry-run must not record extract state, got %q", state.LastExtractRev)
+	}
+}
+
+func TestExtractExcludesFilterUntracked(t *testing.T) {
+	ctx := context.Background()
+	workspacePath := initGitRepo(t)
+	writeFile(t, filepath.Join(workspacePath, "chrome", "browser.cc"), "base\n")
+	runGit(t, workspacePath, "add", "chrome/browser.cc")
+	runGit(t, workspacePath, "commit", "-m", "workspace base")
+	baseCommit := gitOutput(t, workspacePath, "rev-parse", "HEAD")
+
+	writeFile(t, filepath.Join(workspacePath, "scratch", "notes.md"), "junk\n")
+	writeFile(t, filepath.Join(workspacePath, "chrome", "feature.cc"), "real\n")
+
+	repoInfo := newPatchRepo(t, baseCommit)
+	result, err := Extract(ctx, ExtractOptions{
+		Workspace: workspace.Entry{Name: "ws", Path: workspacePath},
+		Repo:      repoInfo,
+		Excludes:  []string{"scratch/"},
+	})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	if slices.Contains(result.Written, "scratch/notes.md") {
+		t.Fatalf("excluded path extracted anyway: %v", result.Written)
+	}
+	if !slices.Contains(result.Written, "chrome/feature.cc") {
+		t.Fatalf("expected real file extracted, got %v", result.Written)
+	}
+}
+
 func TestSyncClearsPendingStashAfterSuccessfulNonRebaseRun(t *testing.T) {
 	ctx := context.Background()
 	workspacePath := initGitRepo(t)

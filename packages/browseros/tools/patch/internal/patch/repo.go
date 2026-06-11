@@ -103,35 +103,40 @@ func sameWriteTarget(patchesDir string, a FilePatch, b FilePatch) bool {
 	return targetA == targetB
 }
 
-func WriteRepoPatchSet(patchesDir string, set PatchSet, scope []string) (written []string, deleted []string, unchanged []string, err error) {
+// Written returns every path the plan actually rewrites.
+func (p *WritePlan) Written() []string {
+	written := append(append([]string{}, p.Creates...), p.Updates...)
+	slices.Sort(written)
+	return written
+}
+
+func WriteRepoPatchSet(patchesDir string, set PatchSet, scope []string) (*WritePlan, error) {
 	existing, err := LoadRepoPatchSet(patchesDir, nil)
 	if err != nil && !os.IsNotExist(err) {
-		return nil, nil, nil, err
+		return nil, err
 	}
 	plan := planRepoPatchSet(patchesDir, existing, set, scope)
 	for _, rel := range plan.Deletes {
 		if err := removePatchVariants(patchesDir, rel); err != nil {
-			return nil, nil, nil, err
+			return nil, err
 		}
 	}
-	for _, rel := range append(append([]string{}, plan.Creates...), plan.Updates...) {
+	for _, rel := range plan.Written() {
 		if err := removePatchVariants(patchesDir, rel); err != nil {
-			return nil, nil, nil, err
+			return nil, err
 		}
 		target, body := patchWriteTarget(patchesDir, set[rel])
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return nil, nil, nil, err
+			return nil, err
 		}
 		if len(body) == 0 || body[len(body)-1] != '\n' {
 			body = append(body, '\n')
 		}
 		if err := os.WriteFile(target, body, 0o644); err != nil {
-			return nil, nil, nil, err
+			return nil, err
 		}
-		written = append(written, rel)
 	}
-	slices.Sort(written)
-	return written, plan.Deletes, plan.Unchanged, nil
+	return plan, nil
 }
 
 func loadPatchFile(fullPath string, relPath string) (FilePatch, error) {

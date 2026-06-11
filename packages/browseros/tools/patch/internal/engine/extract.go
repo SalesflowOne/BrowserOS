@@ -19,6 +19,8 @@ type ExtractOptions struct {
 	Squash     bool
 	Base       string
 	Filters    []string
+	Excludes   []string
+	DryRun     bool
 	Progress   Progress
 }
 
@@ -26,7 +28,11 @@ type ExtractResult struct {
 	Workspace  string   `json:"workspace"`
 	Mode       string   `json:"mode"`
 	BaseCommit string   `json:"base_commit"`
+	DryRun     bool     `json:"dry_run,omitempty"`
 	Written    []string `json:"written"`
+	Created    []string `json:"created"`
+	Updated    []string `json:"updated"`
+	Unchanged  []string `json:"unchanged"`
 	Deleted    []string `json:"deleted"`
 }
 
@@ -75,7 +81,7 @@ func Extract(ctx context.Context, opts ExtractOptions) (*ExtractResult, error) {
 	default:
 		mode = "working-tree"
 		reportProgress(opts.Progress, "Extracting workspace changes")
-		ignore, ignoreErr := patch.LoadIgnoreSet(opts.Repo.Root, nil)
+		ignore, ignoreErr := patch.LoadIgnoreSet(opts.Repo.Root, opts.Excludes)
 		if ignoreErr != nil {
 			return nil, ignoreErr
 		}
@@ -92,8 +98,16 @@ func Extract(ctx context.Context, opts ExtractOptions) (*ExtractResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	if opts.DryRun {
+		reportProgress(opts.Progress, "Planning %d patch %s (dry run)", len(set), plural(len(set), "file", "files"))
+		plan, err := patch.PlanRepoPatchSet(opts.Repo.PatchesDir, set, scope)
+		if err != nil {
+			return nil, err
+		}
+		return extractResult(opts.Workspace.Name, mode, base, plan, true), nil
+	}
 	reportProgress(opts.Progress, "Writing %d patch %s", len(set), plural(len(set), "file", "files"))
-	written, deleted, _, err := patch.WriteRepoPatchSet(opts.Repo.PatchesDir, set, scope)
+	plan, err := patch.WriteRepoPatchSet(opts.Repo.PatchesDir, set, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -111,13 +125,21 @@ func Extract(ctx context.Context, opts ExtractOptions) (*ExtractResult, error) {
 	if err := workspace.SaveState(opts.Workspace.Path, state); err != nil {
 		return nil, err
 	}
+	return extractResult(opts.Workspace.Name, mode, base, plan, false), nil
+}
+
+func extractResult(workspaceName string, mode string, base string, plan *patch.WritePlan, dryRun bool) *ExtractResult {
 	return &ExtractResult{
-		Workspace:  opts.Workspace.Name,
+		Workspace:  workspaceName,
 		Mode:       mode,
 		BaseCommit: base,
-		Written:    written,
-		Deleted:    deleted,
-	}, nil
+		DryRun:     dryRun,
+		Written:    plan.Written(),
+		Created:    plan.Creates,
+		Updated:    plan.Updates,
+		Unchanged:  plan.Unchanged,
+		Deleted:    plan.Deletes,
+	}
 }
 
 func changedScope(changes []git.FileChange) []string {

@@ -62,7 +62,7 @@ rename to chrome/new.cc
 `),
 		},
 	}
-	if _, _, _, err := WriteRepoPatchSet(patchesDir, set, nil); err != nil {
+	if _, err := WriteRepoPatchSet(patchesDir, set, nil); err != nil {
 		t.Fatalf("WriteRepoPatchSet: %v", err)
 	}
 	if _, err := filepath.Abs(filepath.Join(patchesDir, "chrome", "dead.cc.deleted")); err != nil {
@@ -136,12 +136,12 @@ func TestWriteRepoPatchSetSkipsUnchangedFiles(t *testing.T) {
 	rel := "chrome/foo.cc"
 	set := PatchSet{rel: modifyPatch(rel, fullIndex, "new")}
 
-	written, _, _, err := WriteRepoPatchSet(patchesDir, set, nil)
+	plan, err := WriteRepoPatchSet(patchesDir, set, nil)
 	if err != nil {
 		t.Fatalf("first write: %v", err)
 	}
-	if len(written) != 1 {
-		t.Fatalf("first write should create the file, wrote %v", written)
+	if len(plan.Written()) != 1 {
+		t.Fatalf("first write should create the file, wrote %v", plan.Written())
 	}
 
 	// Simulate a legacy on-disk patch: same hunks, abbreviated index line.
@@ -151,15 +151,15 @@ func TestWriteRepoPatchSetSkipsUnchangedFiles(t *testing.T) {
 		t.Fatalf("write legacy: %v", err)
 	}
 
-	written, deleted, unchanged, err := WriteRepoPatchSet(patchesDir, set, nil)
+	plan, err = WriteRepoPatchSet(patchesDir, set, nil)
 	if err != nil {
 		t.Fatalf("second write: %v", err)
 	}
-	if len(written) != 0 || len(deleted) != 0 {
-		t.Fatalf("expected no-op write, got written=%v deleted=%v", written, deleted)
+	if len(plan.Written()) != 0 || len(plan.Deletes) != 0 {
+		t.Fatalf("expected no-op write, got written=%v deleted=%v", plan.Written(), plan.Deletes)
 	}
-	if len(unchanged) != 1 || unchanged[0] != rel {
-		t.Fatalf("expected %s unchanged, got %v", rel, unchanged)
+	if len(plan.Unchanged) != 1 || plan.Unchanged[0] != rel {
+		t.Fatalf("expected %s unchanged, got %v", rel, plan.Unchanged)
 	}
 	after, err := os.ReadFile(target)
 	if err != nil {
@@ -173,17 +173,17 @@ func TestWriteRepoPatchSetSkipsUnchangedFiles(t *testing.T) {
 func TestWriteRepoPatchSetRewritesChangedContent(t *testing.T) {
 	patchesDir := t.TempDir()
 	rel := "chrome/foo.cc"
-	if _, _, _, err := WriteRepoPatchSet(patchesDir, PatchSet{rel: modifyPatch(rel, fullIndex, "new")}, nil); err != nil {
+	if _, err := WriteRepoPatchSet(patchesDir, PatchSet{rel: modifyPatch(rel, fullIndex, "new")}, nil); err != nil {
 		t.Fatalf("first write: %v", err)
 	}
 
 	next := modifyPatch(rel, fullIndex, "different")
-	written, _, unchanged, err := WriteRepoPatchSet(patchesDir, PatchSet{rel: next}, nil)
+	plan, err := WriteRepoPatchSet(patchesDir, PatchSet{rel: next}, nil)
 	if err != nil {
 		t.Fatalf("second write: %v", err)
 	}
-	if len(written) != 1 || written[0] != rel {
-		t.Fatalf("expected rewrite of %s, got written=%v unchanged=%v", rel, written, unchanged)
+	if len(plan.Written()) != 1 || plan.Written()[0] != rel {
+		t.Fatalf("expected rewrite of %s, got written=%v unchanged=%v", rel, plan.Written(), plan.Unchanged)
 	}
 	after, err := os.ReadFile(filepath.Join(patchesDir, "chrome", "foo.cc"))
 	if err != nil {
@@ -197,15 +197,15 @@ func TestWriteRepoPatchSetRewritesChangedContent(t *testing.T) {
 func TestWriteRepoPatchSetSkipsUnchangedMarkers(t *testing.T) {
 	patchesDir := t.TempDir()
 	set := PatchSet{"chrome/dead.cc": {Path: "chrome/dead.cc", Op: OpDelete}}
-	if _, _, _, err := WriteRepoPatchSet(patchesDir, set, nil); err != nil {
+	if _, err := WriteRepoPatchSet(patchesDir, set, nil); err != nil {
 		t.Fatalf("first write: %v", err)
 	}
-	written, _, unchanged, err := WriteRepoPatchSet(patchesDir, set, nil)
+	plan, err := WriteRepoPatchSet(patchesDir, set, nil)
 	if err != nil {
 		t.Fatalf("second write: %v", err)
 	}
-	if len(written) != 0 || len(unchanged) != 1 {
-		t.Fatalf("expected marker to be skip-stable, written=%v unchanged=%v", written, unchanged)
+	if len(plan.Written()) != 0 || len(plan.Unchanged) != 1 {
+		t.Fatalf("expected marker to be skip-stable, written=%v unchanged=%v", plan.Written(), plan.Unchanged)
 	}
 }
 
@@ -219,7 +219,7 @@ func TestPlanRepoPatchSetClassifies(t *testing.T) {
 		"chrome/diff.cc": existingDiff,
 		"chrome/gone.cc": existingGone,
 	}
-	if _, _, _, err := WriteRepoPatchSet(patchesDir, seed, nil); err != nil {
+	if _, err := WriteRepoPatchSet(patchesDir, seed, nil); err != nil {
 		t.Fatalf("seed write: %v", err)
 	}
 
