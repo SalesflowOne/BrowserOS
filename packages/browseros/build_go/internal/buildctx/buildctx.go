@@ -44,7 +44,18 @@ type Context struct {
 	// UniversalBuildModule pins per-arch and universal app paths through it.
 	FixedAppPath string
 
+	// SparkleSignatures maps artifact filename → Ed25519 signature, set by
+	// the sparkle_sign module and consumed by upload/appcast generation
+	// (Python kept this in ctx.artifacts["sparkle_signatures"]).
+	SparkleSignatures map[string]SparkleSig
+
 	artifacts map[string]string
+}
+
+// SparkleSig pairs a base64 Ed25519 signature with the signed file's length.
+type SparkleSig struct {
+	Signature string
+	Length    int64
 }
 
 // Options configures New; zero values resolve like the Python defaults.
@@ -94,6 +105,7 @@ func New(opts Options) (*Context, error) {
 		Platform:             plat,
 		Runner:               runner,
 		StartTime:            time.Now(),
+		SparkleSignatures:    map[string]SparkleSig{},
 		artifacts:            map[string]string{},
 	}
 

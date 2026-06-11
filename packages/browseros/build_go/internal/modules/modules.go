@@ -12,6 +12,7 @@ import (
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/modules/patchmod"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/modules/resources"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/modules/setup"
+	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/modules/sign"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/pipeline"
 )
 
@@ -55,10 +56,10 @@ func Available() pipeline.Registry {
 		"compile":         func() pipeline.Module { return compile.NewCompile() },
 		"universal_build": placeholder("universal_build", "Build macOS universal binary (arm64 + x64)"),
 		// Sign (platform-specific, validated at runtime)
-		"sign_macos":   placeholder("sign_macos", "Sign and notarize macOS app"),
-		"sign_windows": placeholder("sign_windows", "Sign Windows binaries with eSigner"),
-		"sign_linux":   placeholder("sign_linux", "Sign Linux binaries (no-op)"),
-		"sparkle_sign": placeholder("sparkle_sign", "Sign update archive for Sparkle auto-update (macOS)"),
+		"sign_macos":   func() pipeline.Module { return sign.NewMacOSSign() },
+		"sign_windows": func() pipeline.Module { return sign.NewWindowsSign() },
+		"sign_linux":   func() pipeline.Module { return sign.NewLinuxSign() },
+		"sparkle_sign": func() pipeline.Module { return sign.NewSparkleSign() },
 		// Package (platform-specific, validated at runtime)
 		"package_macos":   placeholder("package_macos", "Create macOS DMG package"),
 		"package_windows": placeholder("package_windows", "Create Windows installer package"),
