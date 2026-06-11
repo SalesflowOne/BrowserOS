@@ -15,6 +15,11 @@ on:
 permissions:
   contents: read
 
+# Superseded pushes stop billing warp minutes for 10 matrix jobs each.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   BROWSEROS_APPIMAGE_URL: https://files.browseros.com/download/BrowserOS.AppImage
 

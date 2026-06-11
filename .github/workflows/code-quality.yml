@@ -7,13 +7,18 @@ on:
       - dev
     paths:
       - "packages/browseros-agent/**"
-      - .github/workflows/code-quality.yml
+      - ".github/workflows/code-quality.yml"
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   biome:
     name: runner / Biome
     runs-on: warp-ubuntu-2404-x64-4x
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: packages/browseros-agent
@@ -36,6 +41,7 @@ jobs:
   typecheck:
     name: runner / Typecheck
     runs-on: warp-ubuntu-2404-x64-4x
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: packages/browseros-agent
