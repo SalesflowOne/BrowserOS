@@ -86,7 +86,7 @@ async function postTurnWithRetry(
   }
 
   // Cold VM. Poll /vm/status with the boot pill updating until the worker
-  // reports `running`, then retry the turn. Budget capped at 90s.
+  // reports `running`, then retry the turn. Budget capped at COLD_START_BUDGET_MS.
   log(`cold response ${first.status} — entering boot poll`)
   writeBootStatus(writer, 'booting')
   const ready = await pollUntilRunning(deps, writer, input.abortSignal, log)
@@ -94,8 +94,7 @@ async function postTurnWithRetry(
     writeBootStatus(writer, 'error')
     writer.write({
       type: 'error',
-      errorText:
-        'Remote Hermes VM did not become ready within 90 seconds. Try sending again.',
+      errorText: `Remote Hermes VM did not become ready within ${COLD_START_BUDGET_MS / 1000} seconds. Try sending again.`,
     })
     return null
   }

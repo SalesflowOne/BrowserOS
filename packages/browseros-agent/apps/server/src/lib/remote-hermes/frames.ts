@@ -5,7 +5,6 @@
  */
 
 export const PING_FRAME = '{"type":"ping"}'
-export const PONG_FRAME = '{"type":"pong"}'
 
 export type RpcServer = 'browseros' | 'browserclaw' | 'nudge'
 

@@ -96,6 +96,19 @@ export class RemoteHermesBridge {
   }
 
   private async doOpen(): Promise<void> {
+    // If a previous doOpen call timed out at OPEN_DEADLINE_MS but the
+    // underlying socket is still attempting to connect (partysocket's
+    // connectionTimeout is longer than ours), close it now. Otherwise the
+    // stale socket can fire 'open' later, flip state on the new socket's
+    // behalf, and start a parallel set of pings + idle sweep.
+    if (this.socket) {
+      try {
+        this.socket.close()
+      } catch {
+        // already closed
+      }
+      this.socket = null
+    }
     this.state = 'connecting'
     const sock = new ReconnectingWebSocket(
       this.deps.env.wsUrl,
@@ -121,7 +134,11 @@ export class RemoteHermesBridge {
     // Default 'blob' fights node-style WS impls. arraybuffer is safe everywhere.
     sock.binaryType = 'arraybuffer'
 
+    // Every handler checks `this.socket === sock` so an event from an
+    // orphaned previous socket (one we closed above) can never mutate
+    // shared bridge state.
     sock.addEventListener('open', () => {
+      if (this.socket !== sock) return
       this.state = 'open'
       this.touch()
       this.startPings()
@@ -129,6 +146,7 @@ export class RemoteHermesBridge {
       this.log(`ws open ${this.deps.env.wsUrl}`)
     })
     sock.addEventListener('close', (ev) => {
+      if (this.socket !== sock) return
       this.stopPings()
       const replaced = (ev as CloseEvent).code === CLOSE_CODE_REPLACED
       if (replaced) {
@@ -138,20 +156,20 @@ export class RemoteHermesBridge {
         } catch {
           // already closed
         }
-        if (this.socket === sock) {
-          this.socket = null
-          this.state = 'closed'
-        }
+        this.socket = null
+        this.state = 'closed'
         return
       }
       this.state = 'connecting'
     })
     sock.addEventListener('error', () => {
+      if (this.socket !== sock) return
       // partysocket fires reconnect on its own; just record activity so
       // idle sweep doesn't fire mid-reconnect.
       this.touch()
     })
     sock.addEventListener('message', (ev) => {
+      if (this.socket !== sock) return
       this.touch()
       void this.onMessage(ev as MessageEvent).catch((err) =>
         this.log(`onMessage error: ${String(err)}`),

@@ -27,7 +27,7 @@ export function createRemoteHermesRoutes() {
     .post('/start', async (c) => {
       const env = ensureConfiguredOrSoftFail(c, 'start')
       if (!env) return c.json({ ok: false, reason: 'not_configured' }, 200)
-      void fireVmLifecycle('start', env, 'POST').catch((err) => {
+      void fireVmLifecycle('start', env).catch((err) => {
         logger.warn('Remote Hermes warm /vm/start failed', {
           err: err instanceof Error ? err.message : String(err),
         })
@@ -39,7 +39,7 @@ export function createRemoteHermesRoutes() {
       if (!env) return c.json({ ok: false, reason: 'not_configured' }, 200)
       // Fire-and-forget; the UI removed the provider locally already and
       // we don't want to block the user on a Fly destroy round-trip.
-      void fireVmLifecycle('destroy', env, 'POST').catch((err) => {
+      void fireVmLifecycle('destroy', env).catch((err) => {
         logger.warn('Remote Hermes /vm/destroy failed', {
           err: err instanceof Error ? err.message : String(err),
         })
@@ -104,7 +104,6 @@ function ensureConfiguredOrSoftFail(
 async function fireVmLifecycle(
   action: 'start' | 'destroy',
   env: RemoteHermesEnv & { jwtSecret: string },
-  method: 'POST',
 ): Promise<void> {
   const browserosId = identity.getBrowserOSId()
   const jwt = await mintLaptopJwt({
@@ -112,7 +111,7 @@ async function fireVmLifecycle(
     secret: env.jwtSecret,
   })
   const res = await fetch(`${env.baseUrl}/v1/laptop/vm/${action}`, {
-    method,
+    method: 'POST',
     headers: { authorization: `Bearer ${jwt}` },
   })
   logger.info(`Remote Hermes /vm/${action} dispatched`, { status: res.status })
