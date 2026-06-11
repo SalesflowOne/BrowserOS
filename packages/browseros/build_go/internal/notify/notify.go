@@ -150,6 +150,12 @@ func ModuleStart(moduleName string) {
 		nil, nil, colorBlue)
 }
 
+// PackageCreated announces a package artifact (package modules send this
+// directly in Python, e.g. "📀 Package Created").
+func PackageCreated(event, message string, details map[string]string, order []string) {
+	send(event, message, details, order, colorGreen)
+}
+
 // ModuleCompletion announces a key module finishing.
 func ModuleCompletion(moduleName string, duration time.Duration) {
 	send("✅ Module Completed", fmt.Sprintf("%sModule '%s' completed", contextPrefix(), moduleName),

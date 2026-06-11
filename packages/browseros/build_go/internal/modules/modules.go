@@ -10,6 +10,7 @@ import (
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/modules/compile"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/modules/extensions"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/modules/patchmod"
+	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/modules/pkg"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/modules/resources"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/modules/setup"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/modules/sign"
@@ -61,9 +62,9 @@ func Available() pipeline.Registry {
 		"sign_linux":   func() pipeline.Module { return sign.NewLinuxSign() },
 		"sparkle_sign": func() pipeline.Module { return sign.NewSparkleSign() },
 		// Package (platform-specific, validated at runtime)
-		"package_macos":   placeholder("package_macos", "Create macOS DMG package"),
-		"package_windows": placeholder("package_windows", "Create Windows installer package"),
-		"package_linux":   placeholder("package_linux", "Create Linux AppImage and .deb packages"),
+		"package_macos":   func() pipeline.Module { return pkg.NewMacOSPackage() },
+		"package_windows": func() pipeline.Module { return pkg.NewWindowsPackage() },
+		"package_linux":   func() pipeline.Module { return pkg.NewLinuxPackage() },
 		// Storage
 		"upload": placeholder("upload", "Upload artifacts to R2"),
 	}
