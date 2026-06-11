@@ -172,24 +172,35 @@ function readString(v: unknown): string | undefined {
  * Examples:
  *   "browserclaw-remote__browseros.suggest_schedule"  → "suggest_schedule"
  *   "browseros__browseros.click_at"                   → "click_at"
+ *   "browseros_browseros_suggest_app_connection"      → "suggest_app_connection"
  *   "browseros.take_snapshot"                         → "take_snapshot"
  *   "click_at"                                        → "click_at"
  */
 export function stripToolNamespace(toolName: string): string {
-  // Strip acpx's MCP-server prefix ("<server>__"). We only strip ONCE; if
-  // the underlying tool name happens to contain "__" we leave it alone.
   let result = toolName
+
+  // Strip acpx's "<mcpServerName>__" prefix (double underscore separator).
   const acpxIdx = result.indexOf('__')
   if (acpxIdx > 0) result = result.slice(acpxIdx + 2)
-  // Strip the VM catalog's "<server>." prefix.
+
+  // Strip a duplicated "<server>_<server>_" prefix. acpx normalizes the
+  // VM catalog's "<server>.<tool>" dot into an underscore when emitting
+  // tool names, which collides with our MCP server name (also
+  // "browseros") to produce e.g. "browseros_browseros_suggest_schedule".
+  // Only strip when the two server segments match exactly so we never
+  // chew the head off an unrelated tool that happens to start
+  // "browseros_".
+  const doubled = result.match(/^([a-z][\w-]*)_\1_/i)
+  if (doubled) result = result.slice(doubled[0].length)
+
+  // Strip a residual "<server>." catalog prefix (older format, kept for
+  // back-compat with VMs running an earlier image).
   const dotIdx = result.indexOf('.')
   if (dotIdx > 0) {
     const head = result.slice(0, dotIdx)
-    // Conservative: only strip if the head looks like a server name (no
-    // spaces, only word characters / dashes) so we don't accidentally
-    // chew the front off a real tool that happens to contain a dot.
     if (/^[\w-]+$/.test(head)) result = result.slice(dotIdx + 1)
   }
+
   return result
 }
 
