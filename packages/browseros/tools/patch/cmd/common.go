@@ -74,6 +74,21 @@ func ensureRepoConfigured(override string) error {
 	return nil
 }
 
+// printStashOutcome reports what happened to a pending sync stash once the
+// conflict loop completes.
+func printStashOutcome(result *engine.ApplyResult) {
+	switch {
+	case result.StashRestored:
+		fmt.Println(ui.Success("Local changes rebased on top of the new patches."))
+	case result.StashConflict:
+		fmt.Println(ui.Warning("Local changes conflict with the new patches"))
+		for _, file := range result.StashConflictFiles {
+			fmt.Printf("  %s\n", file)
+		}
+		fmt.Println(ui.Hint(`Resolve the conflict markers, then run "git stash drop" in the checkout.`))
+	}
+}
+
 // commandProgress routes long-running engine updates to stderr in human mode only.
 func commandProgress(cmd *cobra.Command) engine.Progress {
 	if jsonOut {

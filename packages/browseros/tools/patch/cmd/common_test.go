@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -44,6 +45,23 @@ func TestCommandProgressDisabledForJSON(t *testing.T) {
 
 	if progress := commandProgress(&cobra.Command{}); progress != nil {
 		t.Fatalf("expected nil progress reporter in JSON mode")
+	}
+}
+
+func TestConflictPauseErrorClassification(t *testing.T) {
+	if err := conflictPauseError(false); err != nil {
+		t.Fatalf("clean result must exit 0, got %v", err)
+	}
+	err := conflictPauseError(true)
+	if err == nil {
+		t.Fatalf("paused result must return the exit sentinel")
+	}
+	var exitErr *exitCodeError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected exitCodeError, got %T", err)
+	}
+	if exitErr.code != 2 {
+		t.Fatalf("conflict pause exit code = %d, want 2", exitErr.code)
 	}
 }
 
