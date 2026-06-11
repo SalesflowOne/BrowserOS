@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -27,14 +28,17 @@ type ApplyOptions struct {
 }
 
 type ApplyResult struct {
-	Workspace  string              `json:"workspace"`
-	Mode       string              `json:"mode"`
-	BaseCommit string              `json:"base_commit"`
-	RepoRev    string              `json:"repo_rev"`
-	Applied    []string            `json:"applied"`
-	ResetPaths []string            `json:"reset_paths"`
-	Orphaned   []string            `json:"orphaned,omitempty"`
-	Conflicts  []resolve.Operation `json:"conflicts,omitempty"`
+	Workspace          string              `json:"workspace"`
+	Mode               string              `json:"mode"`
+	BaseCommit         string              `json:"base_commit"`
+	RepoRev            string              `json:"repo_rev"`
+	Applied            []string            `json:"applied"`
+	ResetPaths         []string            `json:"reset_paths"`
+	Orphaned           []string            `json:"orphaned,omitempty"`
+	StashRestored      bool                `json:"stash_restored,omitempty"`
+	StashConflict      bool                `json:"stash_conflict,omitempty"`
+	StashConflictFiles []string            `json:"stash_conflict_files,omitempty"`
+	Conflicts          []resolve.Operation `json:"conflicts,omitempty"`
 }
 
 func Apply(ctx context.Context, opts ApplyOptions) (*ApplyResult, error) {
@@ -124,6 +128,9 @@ func Continue(ctx context.Context, opts ContinueOptions) (*ApplyResult, error) {
 		if err := resolve.Delete(ws.Path); err != nil {
 			return nil, err
 		}
+		if err := restorePendingStash(ctx, ws.Path, result, opts.Progress); err != nil {
+			return nil, err
+		}
 	}
 	return result, nil
 }
@@ -168,8 +175,38 @@ func Skip(ctx context.Context, opts SkipOptions) (*ApplyResult, error) {
 		if err := resolve.Delete(ws.Path); err != nil {
 			return nil, err
 		}
+		if err := restorePendingStash(ctx, ws.Path, result, opts.Progress); err != nil {
+			return nil, err
+		}
 	}
 	return result, nil
+}
+
+// restorePendingStash pops a stash a conflicted sync left behind once the
+// last operation completes, so the rebase loop ends with local changes back
+// in the tree. A pop conflict keeps the stash pending and is reported on the
+// result instead of failing.
+func restorePendingStash(ctx context.Context, workspacePath string, result *ApplyResult, progress Progress) error {
+	state, err := workspace.LoadState(workspacePath)
+	if err != nil {
+		return err
+	}
+	if state.PendingStash == "" {
+		return nil
+	}
+	reportProgress(progress, "Rebasing stashed local changes")
+	if err := git.StashRebase(ctx, workspacePath, state.PendingStash); err != nil {
+		var conflict *git.StashConflictError
+		if !errors.As(err, &conflict) {
+			return err
+		}
+		result.StashConflict = true
+		result.StashConflictFiles = conflict.Files
+		return nil
+	}
+	result.StashRestored = true
+	state.PendingStash = ""
+	return workspace.SaveState(workspacePath, state)
 }
 
 func Abort(ctx context.Context, ws workspace.Entry) error {

@@ -381,6 +381,211 @@ func TestExtractExcludesFilterUntracked(t *testing.T) {
 	}
 }
 
+// syncFixture builds a workspace with one patched file and one local-only
+// change, plus a patch repo (with bare remote) whose patch rewrites a.txt.
+func syncFixture(t *testing.T, patchedLine string, localLine string) (workspace.Entry, *repo.Info) {
+	t.Helper()
+	ctx := context.Background()
+	workspacePath := initGitRepo(t)
+	writeFile(t, filepath.Join(workspacePath, "a.txt"), "line1\nline2\nline3\n")
+	writeFile(t, filepath.Join(workspacePath, "local.txt"), "local base\n")
+	runGit(t, workspacePath, "add", "a.txt", "local.txt")
+	runGit(t, workspacePath, "commit", "-m", "workspace base")
+	baseCommit := gitOutput(t, workspacePath, "rev-parse", "HEAD")
+
+	// Build the repo patch for a.txt from a temporary edit.
+	writeFile(t, filepath.Join(workspacePath, "a.txt"), "line1\n"+patchedLine+"\nline3\n")
+	diff, err := git.DiffText(ctx, workspacePath, baseCommit, "--", "a.txt")
+	if err != nil {
+		t.Fatalf("DiffText: %v", err)
+	}
+	runGit(t, workspacePath, "checkout", "--", "a.txt")
+
+	repoInfo := newPatchRepo(t, baseCommit)
+	writeFile(t, filepath.Join(repoInfo.PatchesDir, "a.txt"), diff)
+	runGit(t, repoInfo.Root, "add", "chromium_patches/a.txt")
+	runGit(t, repoInfo.Root, "commit", "-m", "add a.txt patch")
+	remoteRepo := t.TempDir()
+	runGit(t, remoteRepo, "init", "--bare")
+	runGit(t, repoInfo.Root, "remote", "add", "origin", remoteRepo)
+	runGit(t, repoInfo.Root, "push", "-u", "origin", "HEAD")
+
+	// Local divergence in the workspace.
+	writeFile(t, filepath.Join(workspacePath, "local.txt"), localLine+"\n")
+	return workspace.Entry{Name: "ws", Path: workspacePath}, repoInfo
+}
+
+func TestSyncRebaseRestoresLocalChanges(t *testing.T) {
+	ctx := context.Background()
+	ws, repoInfo := syncFixture(t, "PATCHED", "local change")
+
+	result, err := Sync(ctx, SyncOptions{Workspace: ws, Repo: repoInfo, Rebase: true})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if len(result.Conflicts) != 0 {
+		t.Fatalf("unexpected conflicts: %v", result.Conflicts)
+	}
+	if !result.StashRestored {
+		t.Fatalf("expected stash restored, got %+v", result)
+	}
+	assertFile(t, filepath.Join(ws.Path, "a.txt"), "line1\nPATCHED\nline3\n")
+	assertFile(t, filepath.Join(ws.Path, "local.txt"), "local change\n")
+	state, err := workspace.LoadState(ws.Path)
+	if err != nil {
+		t.Fatalf("LoadState: %v", err)
+	}
+	if state.PendingStash != "" {
+		t.Fatalf("expected no pending stash, got %q", state.PendingStash)
+	}
+}
+
+func TestSyncNoRebaseKeepsStashRecorded(t *testing.T) {
+	ctx := context.Background()
+	ws, repoInfo := syncFixture(t, "PATCHED", "local change")
+
+	result, err := Sync(ctx, SyncOptions{Workspace: ws, Repo: repoInfo, Rebase: false})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if result.StashRef == "" {
+		t.Fatalf("expected stash to be created")
+	}
+	if result.StashRestored {
+		t.Fatalf("no-rebase must not pop the stash")
+	}
+	state, err := workspace.LoadState(ws.Path)
+	if err != nil {
+		t.Fatalf("LoadState: %v", err)
+	}
+	if state.PendingStash != result.StashRef {
+		t.Fatalf("pending stash = %q, want %q (must stay recorded)", state.PendingStash, result.StashRef)
+	}
+	if stashList := gitOutput(t, ws.Path, "stash", "list"); stashList == "" {
+		t.Fatalf("stash entry should still exist")
+	}
+}
+
+func TestSyncReportsStashPopConflict(t *testing.T) {
+	ctx := context.Background()
+	workspacePath := initGitRepo(t)
+	writeFile(t, filepath.Join(workspacePath, "a.txt"), "line1\nline2\nline3\n")
+	runGit(t, workspacePath, "add", "a.txt")
+	runGit(t, workspacePath, "commit", "-m", "workspace base")
+	baseCommit := gitOutput(t, workspacePath, "rev-parse", "HEAD")
+
+	writeFile(t, filepath.Join(workspacePath, "a.txt"), "line1\nPATCHED\nline3\n")
+	diff, err := git.DiffText(ctx, workspacePath, baseCommit, "--", "a.txt")
+	if err != nil {
+		t.Fatalf("DiffText: %v", err)
+	}
+	runGit(t, workspacePath, "checkout", "--", "a.txt")
+
+	repoInfo := newPatchRepo(t, baseCommit)
+	writeFile(t, filepath.Join(repoInfo.PatchesDir, "a.txt"), diff)
+	runGit(t, repoInfo.Root, "add", "chromium_patches/a.txt")
+	runGit(t, repoInfo.Root, "commit", "-m", "add a.txt patch")
+	remoteRepo := t.TempDir()
+	runGit(t, remoteRepo, "init", "--bare")
+	runGit(t, repoInfo.Root, "remote", "add", "origin", remoteRepo)
+	runGit(t, repoInfo.Root, "push", "-u", "origin", "HEAD")
+
+	// Local edit to the same line the patch rewrites -> stash pop conflict.
+	writeFile(t, filepath.Join(workspacePath, "a.txt"), "line1\nLOCAL\nline3\n")
+
+	ws := workspace.Entry{Name: "ws", Path: workspacePath}
+	result, err := Sync(ctx, SyncOptions{Workspace: ws, Repo: repoInfo, Rebase: true})
+	if err != nil {
+		t.Fatalf("Sync should report stash conflicts, not fail: %v", err)
+	}
+	if !result.StashConflict {
+		t.Fatalf("expected stash conflict, got %+v", result)
+	}
+	if !slices.Contains(result.StashConflictFiles, "a.txt") {
+		t.Fatalf("expected a.txt in conflict files, got %v", result.StashConflictFiles)
+	}
+	state, err := workspace.LoadState(ws.Path)
+	if err != nil {
+		t.Fatalf("LoadState: %v", err)
+	}
+	if state.PendingStash == "" {
+		t.Fatalf("pending stash must stay recorded after pop conflict")
+	}
+	if stashList := gitOutput(t, ws.Path, "stash", "list"); stashList == "" {
+		t.Fatalf("stash entry must survive a pop conflict")
+	}
+	merged, err := os.ReadFile(filepath.Join(ws.Path, "a.txt"))
+	if err != nil {
+		t.Fatalf("read merged file: %v", err)
+	}
+	for _, marker := range []string{"<<<<<<<", "PATCHED", "LOCAL", ">>>>>>>"} {
+		if !strings.Contains(string(merged), marker) {
+			t.Fatalf("expected 3-way conflict markers with both sides, got:\n%s", merged)
+		}
+	}
+}
+
+func TestContinueRestoresPendingStashAfterLastConflict(t *testing.T) {
+	ctx := context.Background()
+	workspacePath := initGitRepo(t)
+	writeFile(t, filepath.Join(workspacePath, "b.txt"), "base\n")
+	writeFile(t, filepath.Join(workspacePath, "local.txt"), "local base\n")
+	runGit(t, workspacePath, "add", "b.txt", "local.txt")
+	runGit(t, workspacePath, "commit", "-m", "base")
+	baseCommit := gitOutput(t, workspacePath, "rev-parse", "HEAD")
+
+	writeFile(t, filepath.Join(workspacePath, "b.txt"), "patched\n")
+	diff, err := git.DiffText(ctx, workspacePath, baseCommit, "--", "b.txt")
+	if err != nil {
+		t.Fatalf("DiffText: %v", err)
+	}
+
+	repoInfo := newPatchRepo(t, baseCommit)
+	writeFile(t, filepath.Join(repoInfo.PatchesDir, "b.txt"), diff)
+	runGit(t, repoInfo.Root, "add", "chromium_patches/b.txt")
+	runGit(t, repoInfo.Root, "commit", "-m", "add b.txt patch")
+
+	// Park a local change in a stash, recorded as pending (as sync does).
+	writeFile(t, filepath.Join(workspacePath, "local.txt"), "local changed\n")
+	runGit(t, workspacePath, "stash", "push", "-m", "sync stash", "-u", "--", "local.txt")
+	stashRef := gitOutput(t, workspacePath, "stash", "list", "-1", "--format=%gd")
+	if err := workspace.SaveState(workspacePath, &workspace.State{
+		Version:      1,
+		Workspace:    workspacePath,
+		BaseCommit:   baseCommit,
+		PendingStash: stashRef,
+	}); err != nil {
+		t.Fatalf("SaveState: %v", err)
+	}
+
+	// The conflicted operation is already resolved in the working tree.
+	if err := resolve.Save(workspacePath, &resolve.State{
+		Workspace:  workspacePath,
+		RepoRoot:   repoInfo.Root,
+		BaseCommit: baseCommit,
+		Current:    0,
+		Operations: []resolve.Operation{{ChromiumPath: "b.txt", PatchRel: "b.txt", Op: patch.OpModify}},
+	}); err != nil {
+		t.Fatalf("resolve.Save: %v", err)
+	}
+
+	result, err := Continue(ctx, ContinueOptions{Workspace: workspace.Entry{Name: "ws", Path: workspacePath}})
+	if err != nil {
+		t.Fatalf("Continue: %v", err)
+	}
+	if !result.StashRestored {
+		t.Fatalf("expected pending stash restored on completion, got %+v", result)
+	}
+	assertFile(t, filepath.Join(workspacePath, "local.txt"), "local changed\n")
+	state, err := workspace.LoadState(workspacePath)
+	if err != nil {
+		t.Fatalf("LoadState: %v", err)
+	}
+	if state.PendingStash != "" {
+		t.Fatalf("pending stash should be cleared, got %q", state.PendingStash)
+	}
+}
+
 func TestSyncClearsPendingStashAfterSuccessfulNonRebaseRun(t *testing.T) {
 	ctx := context.Background()
 	workspacePath := initGitRepo(t)

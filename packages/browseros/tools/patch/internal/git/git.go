@@ -305,6 +305,16 @@ func StashPush(ctx context.Context, dir string, message string, includeUntracked
 	return strings.TrimSpace(list.Stdout), nil
 }
 
+// StashConflictError reports a stash pop that left merge conflicts in the
+// working tree; git keeps the stash entry in that case.
+type StashConflictError struct {
+	Files []string
+}
+
+func (e *StashConflictError) Error() string {
+	return fmt.Sprintf("stash pop conflicted in %s", strings.Join(e.Files, ", "))
+}
+
 func StashPop(ctx context.Context, dir string, stashRef string) error {
 	args := []string{"stash", "pop"}
 	if stashRef != "" {
@@ -314,10 +324,178 @@ func StashPop(ctx context.Context, dir string, stashRef string) error {
 	if err != nil {
 		return err
 	}
+	if result.Code == 0 {
+		return nil
+	}
+	unmerged, unmergedErr := UnmergedFiles(ctx, dir)
+	if unmergedErr == nil && len(unmerged) > 0 {
+		return &StashConflictError{Files: unmerged}
+	}
+	return errors.New(strings.TrimSpace(result.Stderr))
+}
+
+func UnmergedFiles(ctx context.Context, dir string) ([]string, error) {
+	result, err := Run(ctx, dir, nil, "diff", "--name-only", "--diff-filter=U")
+	if err != nil {
+		return nil, err
+	}
+	if result.Code != 0 {
+		return nil, errors.New(strings.TrimSpace(result.Stderr))
+	}
+	return splitLines(result.Stdout), nil
+}
+
+// StashRebase replays a stash on top of the current working tree with a
+// per-file 3-way merge (stash parent as base). Unlike `git stash pop`, it
+// works when the files were modified after the stash was taken — exactly the
+// state a patch apply leaves behind. On success the stash entry is dropped;
+// conflicts leave markers in the files, keep the stash entry, and surface as
+// a StashConflictError.
+func StashRebase(ctx context.Context, dir string, stashRef string) error {
+	if stashRef == "" {
+		stashRef = "stash@{0}"
+	}
+	var conflicts []string
+
+	tracked, err := stashTrackedFiles(ctx, dir, stashRef)
+	if err != nil {
+		return err
+	}
+	for _, rel := range tracked {
+		conflicted, err := rebaseStashedFile(ctx, dir, stashRef, rel)
+		if err != nil {
+			return err
+		}
+		if conflicted {
+			conflicts = append(conflicts, rel)
+		}
+	}
+
+	untracked, err := stashUntrackedFiles(ctx, dir, stashRef)
+	if err != nil {
+		return err
+	}
+	for _, rel := range untracked {
+		theirs, err := ShowFile(ctx, dir, stashRef+"^3", rel)
+		if err != nil {
+			return err
+		}
+		conflicted, err := mergeIntoWorkingFile(ctx, dir, rel, nil, theirs)
+		if err != nil {
+			return err
+		}
+		if conflicted {
+			conflicts = append(conflicts, rel)
+		}
+	}
+
+	if len(conflicts) > 0 {
+		return &StashConflictError{Files: conflicts}
+	}
+	result, err := Run(ctx, dir, nil, "stash", "drop", stashRef)
+	if err != nil {
+		return err
+	}
 	if result.Code != 0 {
 		return errors.New(strings.TrimSpace(result.Stderr))
 	}
 	return nil
+}
+
+func stashTrackedFiles(ctx context.Context, dir string, stashRef string) ([]string, error) {
+	result, err := Run(ctx, dir, nil, "diff", "--name-only", stashRef+"^1", stashRef)
+	if err != nil {
+		return nil, err
+	}
+	if result.Code != 0 {
+		return nil, errors.New(strings.TrimSpace(result.Stderr))
+	}
+	return splitLines(result.Stdout), nil
+}
+
+func stashUntrackedFiles(ctx context.Context, dir string, stashRef string) ([]string, error) {
+	exists, err := CommitExists(ctx, dir, stashRef+"^3")
+	if err != nil || !exists {
+		return nil, err
+	}
+	result, err := Run(ctx, dir, nil, "ls-tree", "-r", "--name-only", stashRef+"^3")
+	if err != nil {
+		return nil, err
+	}
+	if result.Code != 0 {
+		return nil, errors.New(strings.TrimSpace(result.Stderr))
+	}
+	return splitLines(result.Stdout), nil
+}
+
+func rebaseStashedFile(ctx context.Context, dir string, stashRef string, rel string) (bool, error) {
+	base, baseErr := ShowFile(ctx, dir, stashRef+"^1", rel)
+	if baseErr != nil {
+		base = nil // file did not exist when the stash was taken
+	}
+	theirs, theirsErr := ShowFile(ctx, dir, stashRef, rel)
+	workPath := filepath.Join(dir, filepath.FromSlash(rel))
+	if theirsErr != nil {
+		// Stash recorded a deletion. Re-delete when the tree still matches
+		// the stash base; otherwise keep the newer content and flag it.
+		current, readErr := os.ReadFile(workPath)
+		if readErr != nil {
+			if os.IsNotExist(readErr) {
+				return false, nil
+			}
+			return false, readErr
+		}
+		if base != nil && bytes.Equal(current, base) {
+			return false, os.Remove(workPath)
+		}
+		return true, nil
+	}
+	return mergeIntoWorkingFile(ctx, dir, rel, base, theirs)
+}
+
+// mergeIntoWorkingFile 3-way merges stashed content into the working file.
+// A nil base means the stashed file had no ancestor (brand-new file).
+func mergeIntoWorkingFile(ctx context.Context, dir string, rel string, base []byte, theirs []byte) (bool, error) {
+	workPath := filepath.Join(dir, filepath.FromSlash(rel))
+	current, err := os.ReadFile(workPath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return false, err
+		}
+		// Nothing in the tree: restore the stashed content verbatim.
+		if err := os.MkdirAll(filepath.Dir(workPath), 0o755); err != nil {
+			return false, err
+		}
+		return false, os.WriteFile(workPath, theirs, 0o644)
+	}
+	if bytes.Equal(current, theirs) {
+		return false, nil
+	}
+
+	tmpDir, err := os.MkdirTemp("", "browseros-patch-stash")
+	if err != nil {
+		return false, err
+	}
+	defer os.RemoveAll(tmpDir)
+	basePath := filepath.Join(tmpDir, "base")
+	theirsPath := filepath.Join(tmpDir, "stashed")
+	if err := os.WriteFile(basePath, base, 0o644); err != nil {
+		return false, err
+	}
+	if err := os.WriteFile(theirsPath, theirs, 0o644); err != nil {
+		return false, err
+	}
+	result, err := Run(ctx, dir, nil,
+		"merge-file",
+		"-L", "local", "-L", "base", "-L", "stashed",
+		workPath, basePath, theirsPath)
+	if err != nil {
+		return false, err
+	}
+	if result.Code < 0 {
+		return false, errors.New(strings.TrimSpace(result.Stderr))
+	}
+	return result.Code > 0, nil
 }
 
 func PullRebase(ctx context.Context, dir string, remote string, branch string) error {

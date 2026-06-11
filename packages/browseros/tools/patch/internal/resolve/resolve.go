@@ -82,7 +82,7 @@ func FindActive(reg *workspace.Registry, cwd string) (workspace.Entry, error) {
 	}
 	switch len(active) {
 	case 0:
-		return workspace.Entry{}, fmt.Errorf(`no active conflict resolution found; run "browseros-patch apply" or "browseros-patch sync --rebase" first`)
+		return workspace.Entry{}, fmt.Errorf(`no active conflict resolution found; run "browseros-patch apply" or "browseros-patch sync" first`)
 	case 1:
 		return active[0], nil
 	default:

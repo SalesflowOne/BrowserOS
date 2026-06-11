@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -19,14 +20,17 @@ type SyncOptions struct {
 }
 
 type SyncResult struct {
-	Workspace string   `json:"workspace"`
-	Remote    string   `json:"remote"`
-	RepoHead  string   `json:"repo_head"`
-	StashRef  string   `json:"stash_ref,omitempty"`
-	Rebased   bool     `json:"rebased"`
-	Fallback  bool     `json:"fallback"`
-	Applied   []string `json:"applied,omitempty"`
-	Conflicts []string `json:"conflicts,omitempty"`
+	Workspace          string   `json:"workspace"`
+	Remote             string   `json:"remote"`
+	RepoHead           string   `json:"repo_head"`
+	StashRef           string   `json:"stash_ref,omitempty"`
+	Rebased            bool     `json:"rebased"`
+	Fallback           bool     `json:"fallback"`
+	StashRestored      bool     `json:"stash_restored,omitempty"`
+	StashConflict      bool     `json:"stash_conflict,omitempty"`
+	StashConflictFiles []string `json:"stash_conflict_files,omitempty"`
+	Applied            []string `json:"applied,omitempty"`
+	Conflicts          []string `json:"conflicts,omitempty"`
 }
 
 func Sync(ctx context.Context, opts SyncOptions) (*SyncResult, error) {
@@ -125,12 +129,29 @@ func Sync(ctx context.Context, opts SyncOptions) (*SyncResult, error) {
 		}
 	}
 	if opts.Rebase && result.StashRef != "" {
-		reportProgress(opts.Progress, "Restoring stashed local changes")
-		if err := git.StashPop(ctx, opts.Workspace.Path, result.StashRef); err != nil {
-			return nil, err
+		reportProgress(opts.Progress, "Rebasing stashed local changes")
+		if err := git.StashRebase(ctx, opts.Workspace.Path, result.StashRef); err != nil {
+			var conflict *git.StashConflictError
+			if !errors.As(err, &conflict) {
+				return nil, err
+			}
+			result.StashConflict = true
+			result.StashConflictFiles = conflict.Files
+		} else {
+			result.StashRestored = true
 		}
 	}
-	state.PendingStash = ""
+	switch {
+	case result.StashConflict:
+		// Keep PendingStash: git preserved the stash entry and the user
+		// still has to resolve the pop conflict.
+	case !opts.Rebase && result.StashRef != "":
+		// Local changes stay parked; remember where they are instead of
+		// silently forgetting the stash.
+		state.PendingStash = result.StashRef
+	default:
+		state.PendingStash = ""
+	}
 	state.BaseCommit = opts.Repo.BaseCommit
 	state.LastSyncRev = head
 	state.LastSyncAt = time.Now().UTC()
