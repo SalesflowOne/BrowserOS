@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/envx"
+	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/logx"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -89,6 +91,10 @@ checkout; run it from anywhere inside the BrowserOS repo or set BROWSEROS_ROOT.`
 	Version:       Version,
 	SilenceUsage:  true,
 	SilenceErrors: true,
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		logx.EnableFileLog()
+		envx.LoadDotenv()
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	},
