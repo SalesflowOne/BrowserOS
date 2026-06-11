@@ -18,6 +18,7 @@ import { HttpAgentError } from '../agent/errors'
 import { INLINED_ENV } from '../env'
 import { KlavisClient } from '../lib/clients/klavis/klavis-client'
 import { initializeOAuth, shutdownOAuth } from '../lib/clients/oauth'
+import { RemoteHermesClient } from '../lib/clients/remote-hermes/remote-hermes-client'
 import { getDb } from '../lib/db'
 import { logger } from '../lib/logger'
 import { Sentry } from '../lib/sentry'
@@ -40,6 +41,7 @@ import {
   connectKlavisInBackground,
   type KlavisProxyRef,
 } from './services/klavis/strata-proxy'
+import { RemoteHermesService } from './services/remote-hermes/remote-hermes-service'
 import type { Env, HttpServerConfig } from './types'
 import { defaultCorsConfig } from './utils/cors'
 import { requireTrustedAppOrigin } from './utils/request-auth'
@@ -93,6 +95,24 @@ export async function createHttpServer(config: HttpServerConfig) {
       })
     : () => {}
 
+  // Remote Hermes provider. Opt-in via AGENT_RUNNER_JWT_SECRET in env;
+  // when absent we still wire the routes but they return a soft
+  // not_configured response (agent UI degrades gracefully).
+  const remoteHermes =
+    browserosId && INLINED_ENV.AGENT_RUNNER_JWT_SECRET
+      ? new RemoteHermesService({
+          client: new RemoteHermesClient({
+            browserosId,
+            jwtSecret: INLINED_ENV.AGENT_RUNNER_JWT_SECRET,
+          }),
+          resolveLocalMcpUrl: (server) =>
+            server === 'browseros' ? `http://127.0.0.1:${port}/mcp` : null,
+        })
+      : null
+  if (!remoteHermes) {
+    logger.warn('Remote Hermes disabled: AGENT_RUNNER_JWT_SECRET not set')
+  }
+
   const agentRoutes = new Hono<Env>()
     .use('/*', requireTrustedAppOrigin())
     .route(
@@ -119,6 +139,7 @@ export async function createHttpServer(config: HttpServerConfig) {
               error: err instanceof Error ? err.message : String(err),
             }),
           )
+          remoteHermes?.close()
           onShutdown?.()
         },
       }),
@@ -168,11 +189,15 @@ export async function createHttpServer(config: HttpServerConfig) {
         aiSdkDevtoolsEnabled: config.aiSdkDevtoolsEnabled,
         serverPort: port,
         resourcesDir,
+        remoteHermes,
       }),
     )
     .route('/screencast', createScreencastRoute({ browser }))
     .route('/agents', agentRoutes)
-    .route('/remote-hermes', createRemoteHermesRoutes())
+    .route(
+      '/remote-hermes',
+      createRemoteHermesRoutes({ service: remoteHermes }),
+    )
 
   // Error handler
   app.onError((err, c) => {

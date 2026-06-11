@@ -2,77 +2,39 @@
  * @license
  * Copyright 2025 BrowserOS
  * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Thin orchestration over RemoteHermesService. When the service is null
+ * the provider is not configured (no AGENT_RUNNER_JWT_SECRET in env);
+ * we return a soft response so the agent UI can degrade gracefully.
  */
-import { Hono } from 'hono'
-import { identity } from '../../lib/identity'
-import { logger } from '../../lib/logger'
-import { mintLaptopJwt } from '../../lib/remote-hermes/auth'
-import {
-  loadRemoteHermesEnv,
-  type RemoteHermesEnv,
-  requireConfigured,
-} from '../../lib/remote-hermes/env'
 
-/**
- * Lifecycle + status endpoints for the `remote-hermes` provider. Mirrors
- * the worker's VM lifecycle so the agent UI can express user intent
- * without ever having to know about the Cloudflare control plane:
- *   POST /remote-hermes/start    — fired on provider save
- *   POST /remote-hermes/destroy  — fired when the last remote-hermes
- *                                  provider is deleted
- *   GET  /remote-hermes/status   — debug + cold-start poll source for turn.ts
- */
-export function createRemoteHermesRoutes() {
+import { Hono } from 'hono'
+import type { RemoteHermesService } from '../services/remote-hermes/remote-hermes-service'
+
+export interface RemoteHermesRouteDeps {
+  service: RemoteHermesService | null
+}
+
+const NOT_CONFIGURED = { ok: false, reason: 'not_configured' } as const
+
+export function createRemoteHermesRoutes(deps: RemoteHermesRouteDeps) {
+  const { service } = deps
   return new Hono()
-    .post('/start', async (c) => {
-      const env = ensureConfiguredOrSoftFail(c, 'start')
-      if (!env) return c.json({ ok: false, reason: 'not_configured' }, 200)
-      void fireVmLifecycle('start', env).catch((err) => {
-        logger.warn('Remote Hermes warm /vm/start failed', {
-          err: err instanceof Error ? err.message : String(err),
-        })
-      })
+    .post('/start', (c) => {
+      if (!service) return c.json(NOT_CONFIGURED)
+      void service.warm()
       return c.json({ ok: true })
     })
-    .post('/destroy', async (c) => {
-      const env = ensureConfiguredOrSoftFail(c, 'destroy')
-      if (!env) return c.json({ ok: false, reason: 'not_configured' }, 200)
-      // Fire-and-forget; the UI removed the provider locally already and
-      // we don't want to block the user on a Fly destroy round-trip.
-      void fireVmLifecycle('destroy', env).catch((err) => {
-        logger.warn('Remote Hermes /vm/destroy failed', {
-          err: err instanceof Error ? err.message : String(err),
-        })
-      })
+    .post('/destroy', (c) => {
+      if (!service) return c.json(NOT_CONFIGURED)
+      void service.teardown()
       return c.json({ ok: true })
     })
     .get('/status', async (c) => {
-      const env = loadRemoteHermesEnv()
+      if (!service) return c.json({ error: 'not_configured' }, 500)
       try {
-        requireConfigured(env)
-      } catch (err) {
-        return c.json(
-          {
-            error: 'not_configured',
-            message: err instanceof Error ? err.message : String(err),
-          },
-          500,
-        )
-      }
-      try {
-        const browserosId = identity.getBrowserOSId()
-        const jwt = await mintLaptopJwt({
-          browserosId,
-          secret: env.jwtSecret,
-        })
-        const res = await fetch(`${env.baseUrl}/v1/laptop/vm/status`, {
-          headers: { authorization: `Bearer ${jwt}` },
-        })
-        const body = (await res.json().catch(() => ({}))) as Record<
-          string,
-          unknown
-        >
-        return c.json(body, res.status as 200)
+        const view = await service.status(c.req.raw.signal)
+        return c.json(view)
       } catch (err) {
         return c.json(
           {
@@ -83,36 +45,4 @@ export function createRemoteHermesRoutes() {
         )
       }
     })
-}
-
-function ensureConfiguredOrSoftFail(
-  _c: { json: (b: unknown, status?: number) => Response },
-  endpoint: string,
-): (RemoteHermesEnv & { jwtSecret: string }) | null {
-  const env = loadRemoteHermesEnv()
-  try {
-    requireConfigured(env)
-    return env
-  } catch (err) {
-    logger.warn(`Remote Hermes /${endpoint} hit but server is not configured`, {
-      err: err instanceof Error ? err.message : String(err),
-    })
-    return null
-  }
-}
-
-async function fireVmLifecycle(
-  action: 'start' | 'destroy',
-  env: RemoteHermesEnv & { jwtSecret: string },
-): Promise<void> {
-  const browserosId = identity.getBrowserOSId()
-  const jwt = await mintLaptopJwt({
-    browserosId,
-    secret: env.jwtSecret,
-  })
-  const res = await fetch(`${env.baseUrl}/v1/laptop/vm/${action}`, {
-    method: 'POST',
-    headers: { authorization: `Bearer ${jwt}` },
-  })
-  logger.info(`Remote Hermes /vm/${action} dispatched`, { status: res.status })
 }

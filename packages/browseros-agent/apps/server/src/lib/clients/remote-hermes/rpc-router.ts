@@ -3,7 +3,10 @@
  * Copyright 2025 BrowserOS
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+import { logger } from '../../logger'
 import type { RpcRequestFrame, RpcResponseFrame } from './frames'
+
+const MODULE = 'remote-hermes'
 
 export interface RpcRouterDeps {
   /** Returns the local MCP base URL for a given logical server name. */
@@ -17,7 +20,6 @@ export interface RpcRouterDeps {
   scopeId: string
   /** Provider id forwarded as `X-BrowserOS-Agent-Id` for audit. */
   agentId: string
-  log?: (msg: string) => void
 }
 
 interface JsonRpcResponse {
@@ -31,7 +33,6 @@ export async function dispatchRpcRequest(
   frame: RpcRequestFrame,
   deps: RpcRouterDeps,
 ): Promise<RpcResponseFrame> {
-  const log = deps.log ?? noop
   const base = deps.resolveBaseUrl(frame.server)
   if (!base) {
     return errorFrame(
@@ -58,7 +59,11 @@ export async function dispatchRpcRequest(
       }),
     })
   } catch (err) {
-    log(`local fetch failed for ${frame.server}: ${String(err)}`)
+    logger.warn('Remote Hermes RPC local dispatch failed', {
+      module: MODULE,
+      server: frame.server,
+      err: err instanceof Error ? err.message : String(err),
+    })
     return errorFrame(frame.id, 'local_dispatch_failed', err)
   }
   let json: JsonRpcResponse
@@ -96,5 +101,3 @@ function errorFrame(id: string, code: string, err: unknown): RpcResponseFrame {
     },
   }
 }
-
-function noop(): void {}

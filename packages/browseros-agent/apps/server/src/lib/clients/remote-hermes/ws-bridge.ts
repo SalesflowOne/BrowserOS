@@ -2,9 +2,21 @@
  * @license
  * Copyright 2025 BrowserOS
  * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Persistent WebSocket bridge to the agent-control-worker, plus the
+ * dispatch logic that routes worker-originated `rpc.request` frames to
+ * the laptop's local BrowserOS MCP server.
+ *
+ * The class is shape-aware of three invariants:
+ *  1. At most one OPEN socket per process. Concurrent `ensureOpen()`
+ *     callers share the same `openingPromise`.
+ *  2. Never close while a turn is in flight. `withTurn(fn)` ref-counts.
+ *  3. Activity-based idle close. The sweep timer only acts when
+ *     `inflightTurns === 0` AND we've been quiet for IDLE_CLOSE_MS.
  */
+
 import ReconnectingWebSocket from 'partysocket/ws'
-import { mintLaptopJwt } from './auth'
+import { logger } from '../../logger'
 import {
   CLOSE_CODE_REPLACED,
   IDLE_CLOSE_MS,
@@ -14,22 +26,21 @@ import {
   PING_INTERVAL_MS,
   PONG_TIMEOUT_MS,
   TURN_REFCOUNT_GUARD_MS,
-  WS_SUBPROTOCOL,
 } from './constants'
-import type { RemoteHermesEnv } from './env'
 import { encodeFrame, PING_FRAME, parseFrame } from './frames'
+import type { RemoteHermesClient } from './remote-hermes-client'
 import { dispatchRpcRequest } from './rpc-router'
 
-export interface BridgeDeps {
-  env: RemoteHermesEnv & { jwtSecret: string }
-  browserosId: string
+export interface WsBridgeDeps {
+  client: RemoteHermesClient
   resolveLocalMcpUrl(server: string): string | null
-  log?: (msg: string) => void
 }
 
 type SocketState = 'closed' | 'connecting' | 'open'
 
-export class RemoteHermesBridge {
+const MODULE = 'remote-hermes'
+
+export class WsBridge {
   private socket: ReconnectingWebSocket | null = null
   private openingPromise: Promise<void> | null = null
   private inflightTurns = 0
@@ -39,7 +50,7 @@ export class RemoteHermesBridge {
   private lastPongAt = 0
   private state: SocketState = 'closed'
 
-  constructor(private readonly deps: BridgeDeps) {}
+  constructor(private readonly deps: WsBridgeDeps) {}
 
   async ensureOpen(): Promise<void> {
     if (this.state === 'open') return
@@ -57,7 +68,9 @@ export class RemoteHermesBridge {
     const guard = setTimeout(() => {
       if (this.inflightTurns > 0) {
         this.inflightTurns = Math.max(0, this.inflightTurns - 1)
-        this.log('refcount safety-belt fired — caller leaked a turn')
+        logger.warn('Remote Hermes refcount safety-belt fired', {
+          module: MODULE,
+        })
       }
     }, TURN_REFCOUNT_GUARD_MS)
     try {
@@ -69,8 +82,8 @@ export class RemoteHermesBridge {
     }
   }
 
-  /** For tests / shutdown only. */
-  forceClose(): void {
+  /** Called from Application.shutdown(). */
+  close(): void {
     this.stopPings()
     this.stopIdleSweep()
     try {
@@ -98,9 +111,9 @@ export class RemoteHermesBridge {
   private async doOpen(): Promise<void> {
     // If a previous doOpen call timed out at OPEN_DEADLINE_MS but the
     // underlying socket is still attempting to connect (partysocket's
-    // connectionTimeout is longer than ours), close it now. Otherwise the
-    // stale socket can fire 'open' later, flip state on the new socket's
-    // behalf, and start a parallel set of pings + idle sweep.
+    // connectionTimeout is longer than ours), close it now. Otherwise
+    // the stale socket can fire 'open' later, flip state on the new
+    // socket's behalf, and start a parallel set of pings + idle sweep.
     if (this.socket) {
       try {
         this.socket.close()
@@ -111,18 +124,13 @@ export class RemoteHermesBridge {
     }
     this.state = 'connecting'
     const sock = new ReconnectingWebSocket(
-      this.deps.env.wsUrl,
-      async () => [
-        WS_SUBPROTOCOL,
-        await mintLaptopJwt({
-          browserosId: this.deps.browserosId,
-          secret: this.deps.env.jwtSecret,
-        }),
-      ],
+      this.deps.client.wsUrl,
+      () => this.deps.client.wsSubprotocol(),
       {
-        // partysocket has a flat-delay bug despite README claiming jitter:
-        // packages/partysocket/src/ws.ts:127 vs README:174. Lockstep retries
-        // across clients after a CF blip — add per-instance jitter ourselves.
+        // partysocket has a flat-delay bug despite README claiming jitter
+        // (packages/partysocket/src/ws.ts:127 vs README:174). Lockstep
+        // retries across clients after a CF blip — add per-instance
+        // jitter ourselves.
         minReconnectionDelay: 1_000 + Math.random() * 2_000,
         maxReconnectionDelay: 30_000,
         reconnectionDelayGrowFactor: 1.5,
@@ -143,14 +151,19 @@ export class RemoteHermesBridge {
       this.touch()
       this.startPings()
       this.startIdleSweep()
-      this.log(`ws open ${this.deps.env.wsUrl}`)
+      logger.info('Remote Hermes WS open', {
+        module: MODULE,
+        wsUrl: this.deps.client.wsUrl,
+      })
     })
     sock.addEventListener('close', (ev) => {
       if (this.socket !== sock) return
       this.stopPings()
       const replaced = (ev as CloseEvent).code === CLOSE_CODE_REPLACED
       if (replaced) {
-        this.log('ws closed by server (replaced); stopping reconnect')
+        logger.info('Remote Hermes WS replaced by server; not reconnecting', {
+          module: MODULE,
+        })
         try {
           sock.close()
         } catch {
@@ -172,7 +185,10 @@ export class RemoteHermesBridge {
       if (this.socket !== sock) return
       this.touch()
       void this.onMessage(ev as MessageEvent).catch((err) =>
-        this.log(`onMessage error: ${String(err)}`),
+        logger.warn('Remote Hermes onMessage error', {
+          module: MODULE,
+          err: err instanceof Error ? err.message : String(err),
+        }),
       )
     })
 
@@ -205,21 +221,23 @@ export class RemoteHermesBridge {
       return
     }
     if (frame.type === 'ping' || frame.type === 'rpc.response') return
-    // rpc.request — route to local MCP and send the response back.
     const reply = await dispatchRpcRequest(frame, {
       resolveBaseUrl: this.deps.resolveLocalMcpUrl,
-      // v1: use browserosId as a stable per-install scope. Threading per-
-      // turn conversationId requires worker-side propagation in the
-      // rpc.request frame (design doc Open Item #2).
-      scopeId: this.deps.browserosId,
+      // v1: use the install's browserosId as a stable per-install scope.
+      // Per-conversation isolation requires worker-side propagation of
+      // threadId on the rpc.request frame (Open Item #2 in the design
+      // doc).
+      scopeId: this.deps.client.browserosId,
       agentId: 'remote-hermes',
-      log: (m) => this.log(m),
     })
     try {
       this.socket?.send(encodeFrame(reply))
       this.touch()
     } catch (err) {
-      this.log(`failed to send rpc.response: ${String(err)}`)
+      logger.warn('Remote Hermes failed to send rpc.response', {
+        module: MODULE,
+        err: err instanceof Error ? err.message : String(err),
+      })
     }
   }
 
@@ -232,9 +250,10 @@ export class RemoteHermesBridge {
     this.lastPongAt = Date.now()
     this.pingTimer = setInterval(() => {
       if (Date.now() - this.lastPongAt > PONG_TIMEOUT_MS) {
-        this.log(
-          `pong timeout (${Date.now() - this.lastPongAt}ms) — forcing reconnect`,
-        )
+        logger.warn('Remote Hermes WS pong timeout; forcing reconnect', {
+          module: MODULE,
+          ageMs: Date.now() - this.lastPongAt,
+        })
         try {
           this.socket?.reconnect()
         } catch {
@@ -243,8 +262,9 @@ export class RemoteHermesBridge {
         return
       }
       try {
-        // CF's setWebSocketAutoResponse intercepts this literal and replies
-        // {"type":"pong"} without waking the DO. The static literal matters.
+        // CF's setWebSocketAutoResponse intercepts this literal and
+        // replies {"type":"pong"} without waking the DO. The static
+        // literal matters.
         this.socket?.send(PING_FRAME)
       } catch {
         // close handler will reconnect
@@ -276,7 +296,7 @@ export class RemoteHermesBridge {
     if (!this.socket) return
     if (this.inflightTurns > 0) return
     if (Date.now() - this.lastActivityAt < IDLE_CLOSE_MS) return
-    this.log('idle close')
+    logger.info('Remote Hermes WS idle close', { module: MODULE })
     try {
       this.socket.close(1000, 'idle')
     } catch {
@@ -287,21 +307,4 @@ export class RemoteHermesBridge {
     this.stopPings()
     this.stopIdleSweep()
   }
-
-  private log(msg: string): void {
-    this.deps.log?.(msg) ?? undefined
-  }
-}
-
-let singleton: RemoteHermesBridge | null = null
-
-export function getBridge(deps: BridgeDeps): RemoteHermesBridge {
-  if (!singleton) singleton = new RemoteHermesBridge(deps)
-  return singleton
-}
-
-/** Test hook only. */
-export function resetBridge(): void {
-  singleton?.forceClose()
-  singleton = null
 }

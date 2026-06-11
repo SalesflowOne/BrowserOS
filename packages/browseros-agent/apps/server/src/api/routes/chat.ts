@@ -1,21 +1,15 @@
+import { REMOTE_HERMES_PROVIDER_TYPE } from '@browseros/shared/constants/hermes'
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { SessionStore } from '../../agent/session-store'
 import type { Browser } from '../../browser/browser'
 import type { BrowserSession } from '../../browser/core/session'
-import { identity } from '../../lib/identity'
 import { logger } from '../../lib/logger'
 import { metrics } from '../../lib/metrics'
-import { getBridge } from '../../lib/remote-hermes/bridge'
-import { REMOTE_HERMES_PROVIDER_TYPE } from '../../lib/remote-hermes/constants'
-import {
-  loadRemoteHermesEnv,
-  requireConfigured,
-} from '../../lib/remote-hermes/env'
-import { streamRemoteHermesTurn } from '../../lib/remote-hermes/turn'
 import { Sentry } from '../../lib/sentry'
 import { ChatService } from '../services/chat-service'
 import type { KlavisProxyRef } from '../services/klavis/strata-proxy'
+import type { RemoteHermesService } from '../services/remote-hermes/remote-hermes-service'
 import { ChatRequestSchema } from '../types'
 import { ConversationIdParamSchema } from '../utils/validation'
 
@@ -32,6 +26,9 @@ interface ChatRouteDeps {
    *  bundled-Bun launcher under <resourcesDir>/bin/third_party/bun
    *  can be located for built-in adapters (claude / codex). */
   resourcesDir?: string | null
+  /** Configured at server startup when AGENT_RUNNER_JWT_SECRET is set.
+   *  Null otherwise; `remote-hermes` chat requests get a soft 500. */
+  remoteHermes?: RemoteHermesService | null
 }
 
 export function createChatRoutes(deps: ChatRouteDeps) {
@@ -84,50 +81,16 @@ export function createChatRoutes(deps: ChatRouteDeps) {
       })
 
       if (request.provider === REMOTE_HERMES_PROVIDER_TYPE) {
-        const env = loadRemoteHermesEnv()
-        try {
-          requireConfigured(env)
-        } catch (err) {
-          logger.warn(
-            'Remote Hermes request received but server not configured',
-            {
-              err: err instanceof Error ? err.message : String(err),
-            },
-          )
-          return c.json(
-            {
-              error: 'remote_hermes_not_configured',
-              message:
-                err instanceof Error
-                  ? err.message
-                  : 'Remote Hermes not configured',
-            },
-            500,
-          )
+        if (!deps.remoteHermes) {
+          return c.json({ error: 'remote_hermes_not_configured' }, 500)
         }
-        const browserosId = identity.getBrowserOSId()
-        const bridge = getBridge({
-          env,
-          browserosId,
-          resolveLocalMcpUrl: (server) =>
-            server === 'browseros'
-              ? `http://127.0.0.1:${deps.serverPort}/mcp`
-              : null,
-          log: (msg) => logger.debug(`[remote-hermes] ${msg}`),
-        })
-        return streamRemoteHermesTurn(
+        return deps.remoteHermes.streamTurn(
           {
             conversationId: request.conversationId,
             message: request.message,
             modelId: request.model,
-            abortSignal: c.req.raw.signal,
           },
-          {
-            env,
-            browserosId,
-            bridge,
-            log: (msg) => logger.debug(`[remote-hermes] ${msg}`),
-          },
+          c.req.raw.signal,
         )
       }
 
