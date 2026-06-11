@@ -27,6 +27,15 @@ class ComputeNinjaJobsTest(unittest.TestCase):
         with mock.patch.object(standard, "IS_WINDOWS", return_value=False):
             self.assertIsNone(standard.compute_ninja_jobs({}))
 
+    def test_valid_override_on_windows_skips_memory_probe(self):
+        with (
+            mock.patch.object(standard, "IS_WINDOWS", return_value=True),
+            mock.patch.object(standard, "_windows_total_memory_gb") as probe,
+        ):
+            jobs = standard.compute_ninja_jobs({"BROWSEROS_NINJA_JOBS": "24"})
+        self.assertEqual(jobs, 24)
+        probe.assert_not_called()
+
     def test_invalid_override_on_windows_falls_through_to_memory_cap(self):
         with (
             mock.patch.object(standard, "IS_WINDOWS", return_value=True),

@@ -17,6 +17,7 @@ from ...common.utils import (
     IS_WINDOWS,
 )
 from ...common.notify import get_notifier, COLOR_GREEN
+from ..compile.standard import autoninja_command
 
 
 class WindowsPackageModule(CommandModule):
@@ -118,8 +119,6 @@ def build_mini_installer(ctx: Context) -> bool:
 
     # Build mini_installer using autoninja
     try:
-        from ..compile.standard import autoninja_command
-
         cmd = autoninja_command(ctx.out_dir, ["setup", "mini_installer"])
 
         # Change to chromium_src directory before running (like compile.py does)
