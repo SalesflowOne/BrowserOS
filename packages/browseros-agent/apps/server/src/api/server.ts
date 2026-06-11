@@ -32,6 +32,7 @@ import { createMcpRoutes } from './routes/mcp'
 import { createOAuthRoutes } from './routes/oauth'
 import { createProviderRoutes } from './routes/provider'
 import { createRefinePromptRoutes } from './routes/refine-prompt'
+import { createRemoteHermesRoutes } from './routes/remote-hermes'
 import { createScreencastRoute } from './routes/screencast'
 import { createShutdownRoute } from './routes/shutdown'
 import { createStatusRoute } from './routes/status'
@@ -171,6 +172,7 @@ export async function createHttpServer(config: HttpServerConfig) {
     )
     .route('/screencast', createScreencastRoute({ browser }))
     .route('/agents', agentRoutes)
+    .route('/remote-hermes', createRemoteHermesRoutes())
 
   // Error handler
   app.onError((err, c) => {

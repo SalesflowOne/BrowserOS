@@ -66,6 +66,16 @@ export const ProviderTemplatesSection: FC<ProviderTemplatesSectionProps> = ({
 
         <CollapsibleContent>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {filteredTemplates
+              .filter((t) => t.id === 'remote-hermes')
+              .map((template) => (
+                <ProviderTemplateCard
+                  key={template.id}
+                  template={template}
+                  highlighted
+                  onUseTemplate={onUseTemplate}
+                />
+              ))}
             {codingAdapters.map((adapter) => (
               <CodingAgentTemplateCard
                 key={`coding-${adapter.id}`}
@@ -73,13 +83,15 @@ export const ProviderTemplatesSection: FC<ProviderTemplatesSectionProps> = ({
                 onCreate={onCreateAgent}
               />
             ))}
-            {filteredTemplates.map((template) => (
-              <ProviderTemplateCard
-                key={template.id}
-                template={template}
-                onUseTemplate={onUseTemplate}
-              />
-            ))}
+            {filteredTemplates
+              .filter((t) => t.id !== 'remote-hermes')
+              .map((template) => (
+                <ProviderTemplateCard
+                  key={template.id}
+                  template={template}
+                  onUseTemplate={onUseTemplate}
+                />
+              ))}
           </div>
         </CollapsibleContent>
       </div>

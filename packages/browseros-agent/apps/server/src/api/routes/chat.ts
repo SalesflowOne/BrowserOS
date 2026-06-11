@@ -3,8 +3,16 @@ import { Hono } from 'hono'
 import { SessionStore } from '../../agent/session-store'
 import type { Browser } from '../../browser/browser'
 import type { BrowserSession } from '../../browser/core/session'
+import { identity } from '../../lib/identity'
 import { logger } from '../../lib/logger'
 import { metrics } from '../../lib/metrics'
+import { getBridge } from '../../lib/remote-hermes/bridge'
+import { REMOTE_HERMES_PROVIDER_TYPE } from '../../lib/remote-hermes/constants'
+import {
+  loadRemoteHermesEnv,
+  requireConfigured,
+} from '../../lib/remote-hermes/env'
+import { streamRemoteHermesTurn } from '../../lib/remote-hermes/turn'
 import { Sentry } from '../../lib/sentry'
 import { ChatService } from '../services/chat-service'
 import type { KlavisProxyRef } from '../services/klavis/strata-proxy'
@@ -74,6 +82,54 @@ export function createChatRoutes(deps: ChatRouteDeps) {
         provider: request.provider,
         model: request.model,
       })
+
+      if (request.provider === REMOTE_HERMES_PROVIDER_TYPE) {
+        const env = loadRemoteHermesEnv()
+        try {
+          requireConfigured(env)
+        } catch (err) {
+          logger.warn(
+            'Remote Hermes request received but server not configured',
+            {
+              err: err instanceof Error ? err.message : String(err),
+            },
+          )
+          return c.json(
+            {
+              error: 'remote_hermes_not_configured',
+              message:
+                err instanceof Error
+                  ? err.message
+                  : 'Remote Hermes not configured',
+            },
+            500,
+          )
+        }
+        const browserosId = identity.getBrowserOSId()
+        const bridge = getBridge({
+          env,
+          browserosId,
+          resolveLocalMcpUrl: (server) =>
+            server === 'browseros'
+              ? `http://127.0.0.1:${deps.serverPort}/mcp`
+              : null,
+          log: (msg) => logger.debug(`[remote-hermes] ${msg}`),
+        })
+        return streamRemoteHermesTurn(
+          {
+            conversationId: request.conversationId,
+            message: request.message,
+            modelId: request.model,
+            abortSignal: c.req.raw.signal,
+          },
+          {
+            env,
+            browserosId,
+            bridge,
+            log: (msg) => logger.debug(`[remote-hermes] ${msg}`),
+          },
+        )
+      }
 
       return service.processMessage(request, c.req.raw.signal)
     })
