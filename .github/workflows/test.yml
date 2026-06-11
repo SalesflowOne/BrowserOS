@@ -190,8 +190,10 @@ jobs:
   comment:
     name: PR test summary
     needs: test
+    # !cancelled() (not always()): a run cancelled by concurrency
+    # cancel-in-progress must not post a misleading partial summary.
     if: >-
-      always()
+      !cancelled()
       && github.event_name == 'pull_request'
       && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
