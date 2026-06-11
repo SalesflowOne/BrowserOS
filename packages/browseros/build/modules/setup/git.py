@@ -2,9 +2,12 @@
 """Git operations module for BrowserOS build system"""
 
 import re
+import shutil
 import subprocess
 import tarfile
 import urllib.request
+import zipfile
+from pathlib import Path
 from typing import List
 
 from ...common.module import CommandModule, ValidationError
@@ -156,3 +159,59 @@ class SparkleSetupModule(CommandModule):
         sparkle_archive.unlink()
 
         log_success("Sparkle setup complete")
+
+
+class WinSparkleSetupModule(CommandModule):
+    produces = []
+    requires = []
+    description = "Download and setup WinSparkle library (Windows only)"
+
+    def validate(self, ctx: Context) -> None:
+        if not IS_WINDOWS():
+            raise ValidationError("WinSparkle setup requires Windows")
+
+    def execute(self, ctx: Context) -> None:
+        log_info("\n✨ Setting up WinSparkle library...")
+
+        winsparkle_dir = ctx.get_winsparkle_dir()
+
+        if winsparkle_dir.exists():
+            safe_rmtree(winsparkle_dir)
+
+        winsparkle_dir.mkdir(parents=True)
+
+        winsparkle_url = ctx.get_winsparkle_url()
+        winsparkle_archive = winsparkle_dir / "winsparkle.zip"
+
+        log_info(f"Downloading WinSparkle from {winsparkle_url}...")
+        urllib.request.urlretrieve(winsparkle_url, winsparkle_archive)
+
+        log_info("Extracting WinSparkle...")
+        extract_winsparkle_zip(winsparkle_archive, winsparkle_dir)
+
+        winsparkle_archive.unlink()
+
+        log_success("WinSparkle setup complete")
+
+
+def extract_winsparkle_zip(archive: Path, dest: Path) -> None:
+    """Extract the release zip stripping its top-level WinSparkle-<version>/
+    directory, so //third_party/winsparkle paths stay version-independent
+    (include/, x64/Release/, ...) and match the vendored BUILD.gn.
+    """
+    with zipfile.ZipFile(archive) as zf:
+        for info in zf.infolist():
+            parts = Path(info.filename).parts
+            if info.filename.startswith(("/", "\\")) or ".." in parts:
+                raise RuntimeError(f"Unsafe path in archive: {info.filename}")
+            # parts[0] is the WinSparkle-<version>/ wrapper; entries directly
+            # at the root (only the wrapper dir itself) carry nothing to copy.
+            if len(parts) <= 1:
+                continue
+            target = dest.joinpath(*parts[1:])
+            if info.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(info) as src, open(target, "wb") as out:
+                shutil.copyfileobj(src, out)
