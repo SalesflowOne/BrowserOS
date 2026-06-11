@@ -101,7 +101,9 @@ def generate_release_json(
         "artifacts": {},
     }
 
-    if platform == "macos":
+    # Sparkle (macOS) and WinSparkle (Windows) both compare against this
+    # BUILD.PATCH version in the appcast.
+    if platform in ("macos", "win"):
         release_data["sparkle_version"] = ctx.get_sparkle_version()
 
     base_url = f"{env.r2_cdn_base_url}/{ctx.get_release_path(platform)}"
@@ -176,9 +178,9 @@ def _get_artifact_key(filename: str, platform: str) -> str:
 
     elif platform == "win":
         if "installer.exe" in lower:
-            return "x64_installer"
+            return "arm64_installer" if "arm64" in lower else "x64_installer"
         elif "installer.zip" in lower:
-            return "x64_zip"
+            return "arm64_zip" if "arm64" in lower else "x64_zip"
 
     elif platform == "linux":
         artifact_key = _get_linux_artifact_key(filename)
