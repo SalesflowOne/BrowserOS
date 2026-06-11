@@ -14,6 +14,8 @@ import (
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/modules/resources"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/modules/setup"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/modules/sign"
+	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/modules/storage"
+	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/modules/universal"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/pipeline"
 )
 
@@ -55,7 +57,7 @@ func Available() pipeline.Registry {
 		"bundled_extensions": func() pipeline.Module { return extensions.NewBundled() },
 		// Build
 		"compile":         func() pipeline.Module { return compile.NewCompile() },
-		"universal_build": placeholder("universal_build", "Build macOS universal binary (arm64 + x64)"),
+		"universal_build": func() pipeline.Module { return universal.NewBuild() },
 		// Sign (platform-specific, validated at runtime)
 		"sign_macos":   func() pipeline.Module { return sign.NewMacOSSign() },
 		"sign_windows": func() pipeline.Module { return sign.NewWindowsSign() },
@@ -66,6 +68,6 @@ func Available() pipeline.Registry {
 		"package_windows": func() pipeline.Module { return pkg.NewWindowsPackage() },
 		"package_linux":   func() pipeline.Module { return pkg.NewLinuxPackage() },
 		// Storage
-		"upload": placeholder("upload", "Upload artifacts to R2"),
+		"upload": func() pipeline.Module { return storage.NewUpload() },
 	}
 }

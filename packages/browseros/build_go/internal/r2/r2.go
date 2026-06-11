@@ -228,6 +228,19 @@ func (c *Client) Exists(key string) (bool, error) {
 	return false, fmt.Errorf("head %s: HTTP %d", key, resp.StatusCode)
 }
 
+// Delete removes a key (used for upload rollback).
+func (c *Client) Delete(key string) error {
+	resp, err := c.do(http.MethodDelete, key, nil, nil, nil, -1, sha256Hex(nil))
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("delete %s: HTTP %d", key, resp.StatusCode)
+	}
+	return nil
+}
+
 // Copy performs a server-side object copy within the bucket.
 func (c *Client) Copy(srcKey, dstKey string) error {
 	headers := map[string]string{
