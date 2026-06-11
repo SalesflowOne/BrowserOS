@@ -84,7 +84,7 @@ func Extract(ctx context.Context, opts ExtractOptions) (*ExtractResult, error) {
 		return nil, err
 	}
 	reportProgress(opts.Progress, "Writing %d patch %s", len(set), plural(len(set), "file", "files"))
-	written, deleted, err := patch.WriteRepoPatchSet(opts.Repo.PatchesDir, set, scope)
+	written, deleted, _, err := patch.WriteRepoPatchSet(opts.Repo.PatchesDir, set, scope)
 	if err != nil {
 		return nil, err
 	}

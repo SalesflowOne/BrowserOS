@@ -62,7 +62,7 @@ rename to chrome/new.cc
 `),
 		},
 	}
-	if _, _, err := WriteRepoPatchSet(patchesDir, set, nil); err != nil {
+	if _, _, _, err := WriteRepoPatchSet(patchesDir, set, nil); err != nil {
 		t.Fatalf("WriteRepoPatchSet: %v", err)
 	}
 	if _, err := filepath.Abs(filepath.Join(patchesDir, "chrome", "dead.cc.deleted")); err != nil {
@@ -114,6 +114,139 @@ func TestBuildRangePatchSetUsesLatestBaseScopedPatch(t *testing.T) {
 	}
 	if strings.Contains(content, "+two") {
 		t.Fatalf("expected latest base-scoped patch, got %q", content)
+	}
+}
+
+func modifyPatch(rel string, indexLine string, addedLine string) FilePatch {
+	content := "diff --git a/" + rel + " b/" + rel + "\n" +
+		indexLine + "\n" +
+		"--- a/" + rel + "\n" +
+		"+++ b/" + rel + "\n" +
+		"@@ -1 +1 @@\n" +
+		"-old\n" +
+		"+" + addedLine + "\n"
+	return FilePatch{Path: rel, Op: OpModify, Content: []byte(content)}
+}
+
+const fullIndex = "index 0000000000000000000000000000000000000000..1111111111111111111111111111111111111111 100644"
+const abbrevIndex = "index 000000000000a..111111111111b 100644"
+
+func TestWriteRepoPatchSetSkipsUnchangedFiles(t *testing.T) {
+	patchesDir := t.TempDir()
+	rel := "chrome/foo.cc"
+	set := PatchSet{rel: modifyPatch(rel, fullIndex, "new")}
+
+	written, _, _, err := WriteRepoPatchSet(patchesDir, set, nil)
+	if err != nil {
+		t.Fatalf("first write: %v", err)
+	}
+	if len(written) != 1 {
+		t.Fatalf("first write should create the file, wrote %v", written)
+	}
+
+	// Simulate a legacy on-disk patch: same hunks, abbreviated index line.
+	legacy := string(modifyPatch(rel, abbrevIndex, "new").Content)
+	target := filepath.Join(patchesDir, "chrome", "foo.cc")
+	if err := os.WriteFile(target, []byte(legacy), 0o644); err != nil {
+		t.Fatalf("write legacy: %v", err)
+	}
+
+	written, deleted, unchanged, err := WriteRepoPatchSet(patchesDir, set, nil)
+	if err != nil {
+		t.Fatalf("second write: %v", err)
+	}
+	if len(written) != 0 || len(deleted) != 0 {
+		t.Fatalf("expected no-op write, got written=%v deleted=%v", written, deleted)
+	}
+	if len(unchanged) != 1 || unchanged[0] != rel {
+		t.Fatalf("expected %s unchanged, got %v", rel, unchanged)
+	}
+	after, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	if string(after) != legacy {
+		t.Fatalf("legacy bytes must be preserved verbatim\n--- want ---\n%q\n--- got ---\n%q", legacy, string(after))
+	}
+}
+
+func TestWriteRepoPatchSetRewritesChangedContent(t *testing.T) {
+	patchesDir := t.TempDir()
+	rel := "chrome/foo.cc"
+	if _, _, _, err := WriteRepoPatchSet(patchesDir, PatchSet{rel: modifyPatch(rel, fullIndex, "new")}, nil); err != nil {
+		t.Fatalf("first write: %v", err)
+	}
+
+	next := modifyPatch(rel, fullIndex, "different")
+	written, _, unchanged, err := WriteRepoPatchSet(patchesDir, PatchSet{rel: next}, nil)
+	if err != nil {
+		t.Fatalf("second write: %v", err)
+	}
+	if len(written) != 1 || written[0] != rel {
+		t.Fatalf("expected rewrite of %s, got written=%v unchanged=%v", rel, written, unchanged)
+	}
+	after, err := os.ReadFile(filepath.Join(patchesDir, "chrome", "foo.cc"))
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	if string(after) != string(next.Content) {
+		t.Fatalf("expected canonical rewrite, got %q", string(after))
+	}
+}
+
+func TestWriteRepoPatchSetSkipsUnchangedMarkers(t *testing.T) {
+	patchesDir := t.TempDir()
+	set := PatchSet{"chrome/dead.cc": {Path: "chrome/dead.cc", Op: OpDelete}}
+	if _, _, _, err := WriteRepoPatchSet(patchesDir, set, nil); err != nil {
+		t.Fatalf("first write: %v", err)
+	}
+	written, _, unchanged, err := WriteRepoPatchSet(patchesDir, set, nil)
+	if err != nil {
+		t.Fatalf("second write: %v", err)
+	}
+	if len(written) != 0 || len(unchanged) != 1 {
+		t.Fatalf("expected marker to be skip-stable, written=%v unchanged=%v", written, unchanged)
+	}
+}
+
+func TestPlanRepoPatchSetClassifies(t *testing.T) {
+	patchesDir := t.TempDir()
+	existingSame := modifyPatch("chrome/same.cc", fullIndex, "new")
+	existingDiff := modifyPatch("chrome/diff.cc", fullIndex, "new")
+	existingGone := modifyPatch("chrome/gone.cc", fullIndex, "new")
+	seed := PatchSet{
+		"chrome/same.cc": existingSame,
+		"chrome/diff.cc": existingDiff,
+		"chrome/gone.cc": existingGone,
+	}
+	if _, _, _, err := WriteRepoPatchSet(patchesDir, seed, nil); err != nil {
+		t.Fatalf("seed write: %v", err)
+	}
+
+	incoming := PatchSet{
+		"chrome/same.cc": existingSame,
+		"chrome/diff.cc": modifyPatch("chrome/diff.cc", fullIndex, "changed"),
+		"chrome/new.cc":  modifyPatch("chrome/new.cc", fullIndex, "new"),
+	}
+	plan, err := PlanRepoPatchSet(patchesDir, incoming, nil)
+	if err != nil {
+		t.Fatalf("PlanRepoPatchSet: %v", err)
+	}
+	assertStrings(t, "creates", plan.Creates, []string{"chrome/new.cc"})
+	assertStrings(t, "updates", plan.Updates, []string{"chrome/diff.cc"})
+	assertStrings(t, "unchanged", plan.Unchanged, []string{"chrome/same.cc"})
+	assertStrings(t, "deletes", plan.Deletes, []string{"chrome/gone.cc"})
+}
+
+func assertStrings(t *testing.T, label string, got []string, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("%s = %v, want %v", label, got, want)
+	}
+	for idx := range want {
+		if got[idx] != want[idx] {
+			t.Fatalf("%s = %v, want %v", label, got, want)
+		}
 	}
 }
 
