@@ -511,7 +511,7 @@ func (d *Deps) GithubCreate(opts GithubOptions) error {
 	}
 	if res.Code != 0 {
 		if strings.Contains(res.Stderr, "already exists") {
-			return fmt.Errorf("release v%s already exists", opts.Version)
+			return fmt.Errorf("release v%s already exists", tagVersion)
 		}
 		return fmt.Errorf("gh release create failed: %s", strings.TrimSpace(res.Stderr))
 	}

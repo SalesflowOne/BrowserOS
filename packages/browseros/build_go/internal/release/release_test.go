@@ -152,6 +152,19 @@ func TestGithubCreateCommandSequence(t *testing.T) {
 	}
 }
 
+func TestNormalizeVersion(t *testing.T) {
+	cases := map[string]string{
+		"0.46.17":   "0.46.17",
+		"0.46.17.3": "0.46.17", // patch stripped like github.py normalize_version
+		"0.46":      "0.46",
+	}
+	for in, want := range cases {
+		if got := NormalizeVersion(in); got != want {
+			t.Errorf("NormalizeVersion(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestRepoFromGitParsesRemotes(t *testing.T) {
 	for remote, want := range map[string]string{
 		"git@github.com:browseros-ai/BrowserOS.git": "browseros-ai/BrowserOS",
