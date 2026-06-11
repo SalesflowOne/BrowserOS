@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/buildctx"
+	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/modules/compile"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/modules/extensions"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/modules/patchmod"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/build_go/internal/modules/resources"
@@ -51,7 +52,7 @@ func Available() pipeline.Registry {
 		"resources":          func() pipeline.Module { return resources.NewCopy() },
 		"bundled_extensions": func() pipeline.Module { return extensions.NewBundled() },
 		// Build
-		"compile":         placeholder("compile", "Compile BrowserOS with autoninja"),
+		"compile":         func() pipeline.Module { return compile.NewCompile() },
 		"universal_build": placeholder("universal_build", "Build macOS universal binary (arm64 + x64)"),
 		// Sign (platform-specific, validated at runtime)
 		"sign_macos":   placeholder("sign_macos", "Sign and notarize macOS app"),
