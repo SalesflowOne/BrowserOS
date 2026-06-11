@@ -81,7 +81,7 @@ AVAILABLE_MODULES = {
     "sign_macos": MacOSSignModule,
     "sign_windows": WindowsSignModule,
     "sign_linux": LinuxSignModule,
-    "sparkle_sign": SparkleSignModule,  # macOS Sparkle signing for auto-update
+    "sparkle_sign": SparkleSignModule,  # Sparkle/WinSparkle Ed25519 signing for auto-update
     # Package (platform-specific, validated at runtime)
     "package_macos": MacOSPackageModule,
     "package_windows": WindowsPackageModule,

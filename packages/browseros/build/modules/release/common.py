@@ -136,21 +136,17 @@ def generate_appcast_item(
     signature = artifact.get("sparkle_signature", "")
     length = artifact.get("sparkle_length", artifact.get("size", 0))
 
-    if platform == "win":
-        enclosure = f"""<enclosure
-    url="{artifact['url']}"
-    sparkle:os="windows"
+    os_attr = '\n    sparkle:os="windows"' if platform == "win" else ""
+    footer = (
+        ""
+        if platform == "win"
+        else "\n  <sparkle:minimumSystemVersion>10.15</sparkle:minimumSystemVersion>"
+    )
+    enclosure = f"""<enclosure
+    url="{artifact['url']}"{os_attr}
     sparkle:edSignature="{signature}"
     length="{length}"
     type="application/octet-stream" />"""
-        footer = ""
-    else:
-        enclosure = f"""<enclosure
-    url="{artifact['url']}"
-    sparkle:edSignature="{signature}"
-    length="{length}"
-    type="application/octet-stream" />"""
-        footer = "\n  <sparkle:minimumSystemVersion>10.15</sparkle:minimumSystemVersion>"
 
     return f"""<item>
   <title>BrowserOS - {version}</title>

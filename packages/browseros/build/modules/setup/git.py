@@ -200,15 +200,26 @@ def extract_winsparkle_zip(archive: Path, dest: Path) -> None:
     (include/, x64/Release/, ...) and match the vendored BUILD.gn.
     """
     with zipfile.ZipFile(archive) as zf:
-        for info in zf.infolist():
+        infos = zf.infolist()
+
+        # The official archive wraps everything in a single version dir; a
+        # different layout would silently produce a broken tree, so fail fast.
+        top_levels = {Path(info.filename).parts[0] for info in infos if info.filename.strip("/")}
+        if len(top_levels) != 1:
+            raise RuntimeError(
+                f"Expected a single top-level directory in {archive.name}, "
+                f"got: {sorted(top_levels)}"
+            )
+
+        resolved_dest = dest.resolve()
+        for info in infos:
             parts = Path(info.filename).parts
-            if info.filename.startswith(("/", "\\")) or ".." in parts:
-                raise RuntimeError(f"Unsafe path in archive: {info.filename}")
-            # parts[0] is the WinSparkle-<version>/ wrapper; entries directly
-            # at the root (only the wrapper dir itself) carry nothing to copy.
             if len(parts) <= 1:
                 continue
             target = dest.joinpath(*parts[1:])
+            # Guards against zip-slip (.., absolute or drive-relative paths).
+            if not target.resolve().is_relative_to(resolved_dest):
+                raise RuntimeError(f"Unsafe path in archive: {info.filename}")
             if info.is_dir():
                 target.mkdir(parents=True, exist_ok=True)
                 continue

@@ -276,9 +276,10 @@ def upload_release_artifacts(
         artifact_metadata.append(metadata)
 
     release_data = generate_release_json(ctx, artifact_metadata, platform)
-    if platform == "linux":
-        # Linux x64 and arm64 release jobs must be sequenced. A parallel
-        # fetch-merge-upload flow can still race and drop one architecture.
+    if platform in ("linux", "win"):
+        # Per-arch release jobs (linux x64/arm64, win x64/arm64) must be
+        # sequenced. A parallel fetch-merge-upload flow can still race and
+        # drop one architecture.
         existing_release_data = get_release_json(
             ctx.get_semantic_version(), platform, env
         )
@@ -293,7 +294,7 @@ def upload_release_artifacts(
     log_success(f"\nSuccessfully uploaded {len(artifacts)} artifact(s) to R2")
     log_info("\nRelease metadata:")
     log_info(f"  Version: {release_data['version']}")
-    if platform == "macos":
+    if platform in ("macos", "win"):
         log_info(f"  Sparkle version: {release_data.get('sparkle_version', 'N/A')}")
     log_info(f"  Artifacts: {list(release_data['artifacts'].keys())}")
 

@@ -36,7 +36,7 @@ class CleanModule(CommandModule):
         winsparkle_dir = ctx.get_winsparkle_dir()
         if winsparkle_dir.exists():
             safe_rmtree(winsparkle_dir)
-        log_success("Cleaned Sparkle build directory")
+        log_success("Cleaned Sparkle/WinSparkle build directories")
 
     def _git_reset(self, ctx: Context) -> None:
         run_command(["git", "reset", "--hard", "HEAD"], cwd=ctx.chromium_src)
