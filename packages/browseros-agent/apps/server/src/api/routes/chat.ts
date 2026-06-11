@@ -82,8 +82,18 @@ export function createChatRoutes(deps: ChatRouteDeps) {
 
       if (request.provider === REMOTE_HERMES_PROVIDER_TYPE) {
         if (!deps.remoteHermes) {
+          logger.warn(
+            'Remote Hermes chat received but service not configured',
+            {
+              conversationId: request.conversationId,
+            },
+          )
           return c.json({ error: 'remote_hermes_not_configured' }, 500)
         }
+        logger.info('Routing chat to Remote Hermes', {
+          conversationId: request.conversationId,
+          model: request.model,
+        })
         return deps.remoteHermes.streamTurn(
           {
             conversationId: request.conversationId,

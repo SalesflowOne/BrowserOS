@@ -65,7 +65,11 @@ import {
   providerTypeOptions,
 } from '@/lib/llm-providers/providerTemplates'
 import { type TestResult, testProvider } from '@/lib/llm-providers/testProvider'
-import type { LlmProviderConfig, ProviderType } from '@/lib/llm-providers/types'
+import {
+  type LlmProviderConfig,
+  type ProviderType,
+  REMOTE_HERMES_PROVIDER_TYPE,
+} from '@/lib/llm-providers/types'
 import { track } from '@/lib/metrics/track'
 import { cn } from '@/lib/utils'
 import { useAgentServerUrl } from '@/modules/browseros/agent-server-url.hooks'
@@ -90,7 +94,7 @@ function isAcpProviderType(type: ProviderType | undefined): boolean {
 }
 
 function isRemoteHermesType(type: ProviderType | undefined): boolean {
-  return type === 'remote-hermes'
+  return type === REMOTE_HERMES_PROVIDER_TYPE
 }
 
 const EFFORT_LABEL: Record<string, string> = {

@@ -13,6 +13,12 @@
  *   - close()     → graceful WS shutdown (called from Application.shutdown)
  *
  * No env / JWT / fetch lives here — those are all in RemoteHermesClient.
+ *
+ * Wire format end-to-end is the AI SDK UI Message Stream protocol. The
+ * VM produces it via `streamText().toUIMessageStream()`; the worker
+ * proxies the SSE bytes unchanged; this service parses one `data: …` line
+ * at a time and forwards each JSON object straight into the writer. No
+ * translation lives anywhere on the path.
  */
 
 import {
@@ -24,7 +30,6 @@ import {
   COLD_START_BUDGET_MS,
   STATUS_POLL_INTERVAL_MS,
 } from '../../../lib/clients/remote-hermes/constants'
-import { WorkerEventTranslator } from '../../../lib/clients/remote-hermes/event-translator'
 import type {
   RemoteHermesClient,
   VmStatusView,
@@ -57,9 +62,18 @@ export class RemoteHermesService {
     })
   }
 
-  /** Provider-save side-effect. Best-effort warm-start of the VM. */
+  /**
+   * Provider-save side-effect. Best-effort warm-start of the VM. Throws
+   * on upstream failure so the route's `.catch` surfaces a real log
+   * line — the UI doesn't block on this, so failure is non-fatal.
+   */
   async warm(): Promise<void> {
     const res = await this.client.startVm()
+    if (!res.ok) {
+      throw new Error(
+        `Remote Hermes /vm/start failed: ${res.status} ${await safeReadText(res)}`,
+      )
+    }
     logger.info('Remote Hermes /vm/start dispatched', {
       module: MODULE,
       status: res.status,
@@ -69,6 +83,11 @@ export class RemoteHermesService {
   /** Provider-delete side-effect. Best-effort destroy of the VM. */
   async teardown(): Promise<void> {
     const res = await this.client.destroyVm()
+    if (!res.ok) {
+      throw new Error(
+        `Remote Hermes /vm/destroy failed: ${res.status} ${await safeReadText(res)}`,
+      )
+    }
     logger.info('Remote Hermes /vm/destroy dispatched', {
       module: MODULE,
       status: res.status,
@@ -194,7 +213,6 @@ export class RemoteHermesService {
     writer: UIMessageStreamWriter,
     clientAbort: AbortSignal,
   ): Promise<void> {
-    const translator = new WorkerEventTranslator(writer)
     let firstContentSeen = false
     const dismissBoot = () => {
       if (firstContentSeen) return
@@ -230,32 +248,32 @@ export class RemoteHermesService {
           }`,
         })
       }
-      translator.flush()
       return
     }
 
     if (!sseRes.ok || !sseRes.body) {
       writeUpstreamError(writer, await safeReadText(sseRes), sseRes.status)
-      translator.flush()
       return
     }
 
     try {
-      for await (const event of parseSseStream(sseRes.body)) {
-        if (event.name === 'end') break
-        if (event.name !== 'protocol_event') continue
-        let parsed: { type: string; payload: unknown } | null = null
+      for await (const data of readSseDataLines(sseRes.body)) {
+        if (data === '[DONE]') break
+        let part: Record<string, unknown>
         try {
-          parsed = JSON.parse(event.data) as { type: string; payload: unknown }
+          part = JSON.parse(data) as Record<string, unknown>
         } catch {
-          logger.debug('Remote Hermes bad protocol_event JSON', {
+          logger.debug('Remote Hermes bad UI message stream JSON', {
             module: MODULE,
-            preview: event.data.slice(0, 120),
+            preview: data.slice(0, 120),
           })
           continue
         }
-        if (parsed && parsed.type !== 'turn.start') dismissBoot()
-        if (parsed) translator.handle(parsed)
+        // Any real assistant signal dismisses the boot pill — the `start`
+        // part marks the beginning of the assistant message, so anything
+        // after counts as "running content arrived".
+        if (firstContentSeen || part.type !== 'start') dismissBoot()
+        writer.write(part as Parameters<typeof writer.write>[0])
       }
     } catch (err) {
       if (!upstreamAbort.signal.aborted) {
@@ -265,19 +283,22 @@ export class RemoteHermesService {
         })
       }
     } finally {
-      translator.flush()
+      // Stream may end (DONE, abort, error) before any non-`start` part
+      // arrives — without this the boot pill strands at `booting` and the
+      // side panel keeps spinning. dismissBoot is idempotent so the
+      // normal first-content path stays a no-op here.
+      dismissBoot()
     }
   }
 }
 
-interface SseEvent {
-  name: string
-  data: string
-}
-
-async function* parseSseStream(
+/**
+ * Emits the payload of each `data: …\n\n` SSE record. Ignores comments,
+ * blank lines, and the `event:` field (the worker only uses `data:`).
+ */
+async function* readSseDataLines(
   body: ReadableStream<Uint8Array>,
-): AsyncGenerator<SseEvent> {
+): AsyncGenerator<string> {
   const reader = body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
@@ -285,20 +306,17 @@ async function* parseSseStream(
     while (true) {
       const { done, value } = await reader.read()
       if (done) {
-        if (buffer.trim()) {
-          const ev = parseSseRecord(buffer)
-          if (ev) yield ev
-        }
+        const line = extractDataLine(buffer)
+        if (line !== null) yield line
         return
       }
       buffer += decoder.decode(value, { stream: true })
       while (true) {
         const idx = buffer.indexOf('\n\n')
         if (idx === -1) break
-        const record = buffer.slice(0, idx)
+        const line = extractDataLine(buffer.slice(0, idx))
         buffer = buffer.slice(idx + 2)
-        const ev = parseSseRecord(record)
-        if (ev) yield ev
+        if (line !== null) yield line
       }
     }
   } finally {
@@ -306,19 +324,16 @@ async function* parseSseStream(
   }
 }
 
-function parseSseRecord(record: string): SseEvent | null {
-  let name = 'message'
+function extractDataLine(record: string): string | null {
   const dataLines: string[] = []
   for (const line of record.split('\n')) {
     if (!line || line.startsWith(':')) continue
-    if (line.startsWith('event:')) {
-      name = line.slice(6).trim()
-    } else if (line.startsWith('data:')) {
+    if (line.startsWith('data:')) {
       dataLines.push(line.slice(5).replace(/^ /, ''))
     }
   }
   if (dataLines.length === 0) return null
-  return { name, data: dataLines.join('\n') }
+  return dataLines.join('\n')
 }
 
 async function readTaskId(
