@@ -1,0 +1,29 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.8/schema.json",
+  "root": false,
+  "extends": "//",
+  "files": {
+    "includes": ["**", "!routeTree.gen.ts", "!.wxt", "!.output", "!dist"]
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["components/ui/**", "components/ai-elements/**"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUnusedImports": "off",
+            "noUnusedVariables": "off"
+          },
+          "nursery": {
+            "useSortedClasses": "off"
+          }
+        }
+      }
+    }
+  ]
+}

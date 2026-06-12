@@ -1,0 +1,44 @@
+{
+  "name": "@browseros/agent-mcp-ui",
+  "type": "module",
+  "private": true,
+  "version": "0.0.1",
+  "description": "WXT extension surface for the BrowserOS v2 agent cockpit. React + shadcn (base-vega). Talks to @browseros/agent-mcp-interface over hono-rpc.",
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "build:dev": "wxt build --mode development",
+    "zip": "wxt zip",
+    "compile": "wxt prepare && tsc --noEmit",
+    "typecheck": "wxt prepare && tsc --noEmit",
+    "lint": "bunx biome check",
+    "lint:fix": "bunx biome check --write --unsafe"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.0.0-beta.6",
+    "@browseros/agent-mcp-interface": "*",
+    "@radix-ui/react-slot": "^1.2.4",
+    "@tabler/icons-react": "^3.34.1",
+    "@tanstack/react-query": "^5.95.2",
+    "@tanstack/react-router": "^1.131.41",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "hono": "^4.12.3",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-query-kit": "^3.3.1",
+    "tailwind-merge": "^3.4.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.17",
+    "@tanstack/router-plugin": "^1.131.41",
+    "@types/chrome": "^0.1.28",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "@wxt-dev/module-react": "^1.1.5",
+    "tailwindcss": "^4.1.17",
+    "typescript": "^5.9.2",
+    "vite": "^7.3.1",
+    "wxt": "^0.20.18"
+  }
+}

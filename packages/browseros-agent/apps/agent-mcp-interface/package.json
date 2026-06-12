@@ -8,6 +8,10 @@
     "./server": {
       "types": "./src/server.ts",
       "default": null
+    },
+    "./shared/port": {
+      "types": "./src/shared/port.ts",
+      "default": "./src/shared/port.ts"
     }
   },
   "scripts": {
