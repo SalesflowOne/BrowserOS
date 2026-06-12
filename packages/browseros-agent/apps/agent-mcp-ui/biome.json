@@ -3,7 +3,7 @@
   "root": false,
   "extends": "//",
   "files": {
-    "includes": ["**", "!routeTree.gen.ts", "!.wxt", "!.output", "!dist"]
+    "includes": ["**", "!.wxt", "!.output", "!dist"]
   },
   "css": {
     "parser": {
