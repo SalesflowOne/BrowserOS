@@ -80,6 +80,48 @@ jobs:
             echo "publish=$publish"
           } >> "$GITHUB_OUTPUT"
 
+  # WarpBuild provisions runners on demand via webhook; when none arrive
+  # (org runner-group policy, bad label, account issue) the build jobs sit
+  # queued until GitHub discards them 24h later, holding the
+  # nightly-release concurrency group all day. Fail fast instead — see the
+  # troubleshooting section of
+  # packages/browseros/build/docs/nightly-warpbuild-ci.md.
+  queue-watchdog:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: write
+    steps:
+      - name: Fail fast when no runner picks up the builds
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          deadline=$(( $(date +%s) + 20 * 60 ))
+          while :; do
+            jobs="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" \
+              --jq '[.jobs[] | select(.name | startswith("build (")) | {name, status}]')"
+            total="$(jq 'length' <<<"$jobs")"
+            queued="$(jq '[.[] | select(.status == "queued")] | length' <<<"$jobs")"
+            if [ "$total" -gt 0 ] && [ "$queued" -eq 0 ]; then
+              echo "All $total build jobs picked up by runners."
+              exit 0
+            fi
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              stuck="$(jq -r '[.[] | select(.status == "queued") | .name] | join(", ")' <<<"$jobs")"
+              doc="packages/browseros/build/docs/nightly-warpbuild-ci.md"
+              if [ "$queued" -eq "$total" ]; then
+                echo "::error::No WarpBuild runner picked up any build job in 20 min ($stuck). Check the runner-group public-repo setting, runner labels, and the WarpBuild dashboard — see $doc. Cancelling the run to free the nightly-release concurrency group."
+                gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/cancel"
+              else
+                echo "::error::Still queued after 20 min: $stuck. In-progress builds keep running — see $doc."
+              fi
+              exit 1
+            fi
+            sleep 120
+          done
+
   build:
     needs: plan
     strategy:
