@@ -11,7 +11,7 @@
  *
  * Plain mutable string rather than a hook/store because writer and
  * reader live in the same Bun process and the value is written
- * exactly once at boot. Mirrors the agent-company idiom.
+ * exactly once at boot.
  */
 
 let localServerUrl: string | null = null

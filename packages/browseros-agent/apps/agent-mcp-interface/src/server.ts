@@ -9,8 +9,8 @@
  * `AppType` so the future agent-mcp-ui can build a fully typed
  * hono-rpc client with `hc<AppType>(baseUrl)`.
  *
- * Mirrors browseros-ai/agent-company's apps/desktop/src/main/server.ts
- * pattern, adapted for Bun + a loopback-only bind.
+ * Bun + loopback-only bind; the chain shape is the standard hono-rpc
+ * recipe.
  */
 
 import { Hono } from 'hono'
@@ -45,7 +45,7 @@ app.use('*', cors({ origin: '*' }))
 // their own expected failures (404s, validation) inline and return
 // structured 4xx JSON. Anything that escapes that lands here, gets
 // reported via the injected capture, and turns into a structured 5xx
-// JSON body. Mirrors agent-company's app.onError shape.
+// JSON body.
 app.onError((err, c) => {
   captureRouteError(err, c.req.path, c.req.method)
   if (err instanceof HttpError) {
