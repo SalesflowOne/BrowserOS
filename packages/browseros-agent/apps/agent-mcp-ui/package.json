@@ -5,9 +5,9 @@
   "version": "0.0.1",
   "description": "WXT extension surface for the BrowserOS v2 agent cockpit. React + shadcn (base-vega). Talks to @browseros/agent-mcp-interface over hono-rpc.",
   "scripts": {
-    "dev": "wxt",
+    "dev": "bun --env-file=.env.development wxt",
     "build": "wxt build",
-    "build:dev": "wxt build --mode development",
+    "build:dev": "bun --env-file=.env.development wxt build --mode development",
     "zip": "wxt zip",
     "compile": "wxt prepare && tsc --noEmit",
     "typecheck": "wxt prepare && tsc --noEmit",
