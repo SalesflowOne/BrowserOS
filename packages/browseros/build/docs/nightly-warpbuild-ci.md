@@ -43,6 +43,20 @@ leaves `queued`:
      -F allows_public_repositories=true
    ```
 
+   Before flipping the toggle, check what else lives in that group — it
+   widens exposure for every runner in it:
+
+   ```bash
+   gh api "orgs/browseros-ai/actions/runner-groups/<id>/runners" \
+     --jq '.runners[] | {name, status, labels: [.labels[].name]}'
+   ```
+
+   Expect only ephemeral `warp-*` runners (usually none while idle). The
+   signed-nightly Mac (`browseros-builder`) is registered at the repo
+   level, so this org-group toggle does not change its exposure. If the
+   group ever holds other persistent org-level runners, give WarpBuild a
+   dedicated runner group instead of widening Default.
+
 2. **The WarpBuild org must be active**: sign in at
    https://app.warpbuild.com/, confirm the `browseros-ai` connection and
    that billing/credits are set up — runners are not provisioned without
@@ -192,7 +206,10 @@ Mechanics worth knowing:
   exactly this). The `queue-watchdog` job therefore steps in at the
   20-minute mark: it cancels the run when no build job is actually
   running (everything stuck in queue or already finished), and fails
-  loudly without cancelling while any build is in progress.
+  loudly without cancelling while any build is in progress. In that
+  mixed case, cancel the run manually once the live builds finish — a
+  still-queued job otherwise pins the group for up to 24h with no
+  watcher left.
 - Fixing the root cause does not revive already-queued jobs: WarpBuild
   provisions on the `workflow_job.queued` webhook, which has already
   fired. Cancel the stuck run and re-dispatch.
