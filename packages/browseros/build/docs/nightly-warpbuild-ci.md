@@ -11,15 +11,18 @@ up here, that workflow can be retired.
 
 | Platform | Label | Specs | Disk |
 | --- | --- | --- | --- |
-| Linux x64 | `warp-ubuntu-2204-x64-32x` | 32 vCPU / 128 GB | 150 GB |
+| Linux x64 | `warp-ubuntu-2204-x64-32x` | 32 vCPU / 128 GB | 256 GB |
 | Windows x64 | `warp-windows-2025-x64-32x` | 32 vCPU / 128 GB | 256 GB |
-| macOS arm64 | `warp-macos-15-arm64-12x` | M4 Pro, 12 vCPU / 44 GB | 270 GB |
+| macOS arm64 | `warp-macos-15-arm64-12x` | M4 Pro, 12 vCPU / 44 GB | 500 GB |
 
 There is no 32-core macOS tier; 12x is WarpBuild's largest Mac. WarpBuild
 runners register as self-hosted, so GitHub's 6-hour hosted-job cap does not
 apply — but `timeout-minutes` must be set explicitly (the implicit default is
-360). Linux's 150 GB disk is the tightest fit: ~60-75 GB checkout +
-~25-40 GB out dir + OS image. The workflow prints `df -h` after each build.
+360). Disk is comfortable on all three tiers — the ~60-75 GB checkout +
+~25-40 GB out dir leave ample headroom. The workflow prints `df -h`
+after each build. Specs above come from the account's runner catalog
+(app.warpbuild.com → Runners), which is the source of truth for labels
+and sizes; WarpBuild's public docs pages can lag it.
 
 ## One-time setup (WarpBuild)
 
@@ -56,6 +59,9 @@ leaves `queued`:
    level, so this org-group toggle does not change its exposure. If the
    group ever holds other persistent org-level runners, give WarpBuild a
    dedicated runner group instead of widening Default.
+
+   Done for `browseros-ai` on 2026-06-13 — pickup verified live (a
+   queued job was claimed within ~60 s of dispatch).
 
 2. **The WarpBuild org must be active**: sign in at
    https://app.warpbuild.com/, confirm the `browseros-ai` connection and
@@ -187,12 +193,11 @@ Causes, in the order to check:
 
 1. **Runner group blocks public repos** — see one-time setup above. This
    stalls all platforms at once.
-2. **Label not in WarpBuild's catalog** — supported images: Ubuntu
-   22.04/24.04 (x64, arm64), macOS 14/15/26 (arm64), Windows Server 2022
-   (x64) (https://www.warpbuild.com/docs/ci/preinstalled-software). An
-   unsupported label queues forever (this workflow originally shipped a
-   `windows-2025` label that WarpBuild does not image); WarpBuild reports
-   no error back to GitHub.
+2. **Label not in the account's runner catalog** — the canonical list is
+   the Runners page at https://app.warpbuild.com/ (the public docs lag
+   it: in 2026-06 the preinstalled-software page omitted the Windows
+   Server 2025 images the catalog already offered). An unsupported label
+   queues forever; WarpBuild reports no error back to GitHub.
 3. **WarpBuild account** — org connection or billing lapsed
    (https://app.warpbuild.com/).
 4. **WarpBuild capacity or incident** — rare; check their dashboard.
@@ -213,3 +218,8 @@ Mechanics worth knowing:
 - Fixing the root cause does not revive already-queued jobs: WarpBuild
   provisions on the `workflow_job.queued` webhook, which has already
   fired. Cancel the stuck run and re-dispatch.
+- A job that IS picked up but dies in "Set up job" within seconds with
+  `Unable to resolve action <owner>/<name>@vN` has nothing to do with
+  WarpBuild: the floating major tag does not exist upstream (e.g.
+  astral-sh/setup-uv publishes v8.x.y releases but no `v8` tag). Pin an
+  exact existing version.
