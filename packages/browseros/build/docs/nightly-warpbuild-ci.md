@@ -12,7 +12,7 @@ up here, that workflow can be retired.
 | Platform | Label | Specs | Disk |
 | --- | --- | --- | --- |
 | Linux x64 | `warp-ubuntu-2204-x64-32x` | 32 vCPU / 128 GB | 150 GB |
-| Windows x64 | `warp-windows-2022-x64-32x` | 32 vCPU / 128 GB | 256 GB |
+| Windows x64 | `warp-windows-2025-x64-32x` | 32 vCPU / 128 GB | 256 GB |
 | macOS arm64 | `warp-macos-15-arm64-12x` | M4 Pro, 12 vCPU / 44 GB | 270 GB |
 
 There is no 32-core macOS tier; 12x is WarpBuild's largest Mac. WarpBuild
