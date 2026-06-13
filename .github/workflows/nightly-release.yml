@@ -152,6 +152,11 @@ jobs:
     defaults:
       run:
         shell: bash
+    env:
+      # Windows runners pipe stdout as cp1252, which crashes the emoji-heavy
+      # build CLI with UnicodeEncodeError; force UTF-8 for python and all
+      # its subprocesses (gclient, hooks). No-op on Linux/macOS.
+      PYTHONUTF8: "1"
     steps:
       - uses: actions/checkout@v6
 
