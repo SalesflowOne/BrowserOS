@@ -201,9 +201,9 @@ Mechanics worth knowing:
 
 - GitHub discards self-hosted jobs queued for more than 24h, and the
   workflow's `nightly-release` concurrency group
-  (`cancel-in-progress: false`) makes every later run wait — one stuck
-  night delays the next by a full day (runs 27367077749 → 27407228486 did
-  exactly this). The `queue-watchdog` job therefore steps in at the
+  (`cancel-in-progress: false`) makes the next run wait (newer pending
+  runs supersede older pending ones) — one stuck night delays the next
+  by a full day (runs 27367077749 → 27407228486 did exactly this). The `queue-watchdog` job therefore steps in at the
   20-minute mark: it cancels the run when no build job is actually
   running (everything stuck in queue or already finished), and fails
   loudly without cancelling while any build is in progress. In that
