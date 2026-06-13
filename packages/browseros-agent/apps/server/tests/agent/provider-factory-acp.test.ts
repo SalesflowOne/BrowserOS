@@ -362,6 +362,17 @@ describe('createLanguageModel — ACP dangerously-allow mode', () => {
     expect(prepareCalls).toBe(0)
     expect(setModeCalls).toEqual([])
   })
+
+  it('does not touch modes for an acp-custom agent named like a built-in', async () => {
+    await createLanguageModel({
+      ...baseConfig(),
+      provider: 'acp-custom',
+      acpAgentId: 'claude',
+      acpCommand: 'my-bin acp',
+    } as never)
+    expect(prepareCalls).toBe(0)
+    expect(setModeCalls).toEqual([])
+  })
 })
 
 describe('createLanguageModel — ACP mcpServers forwarding', () => {

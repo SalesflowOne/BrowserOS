@@ -159,7 +159,12 @@ async function createAcpLanguageModel(
     agentRegistryOverrides,
     mcpServers: config.acpMcpServers,
   })
-  await applyDangerouslyAllowMode(provider, agentId, config.conversationId)
+  // Only built-in claude/codex providers resolving to their default
+  // agent id get a danger mode. A user-overridden acpAgentId or an
+  // acp-custom agent (even one named 'claude') has unknown mode ids.
+  if (BUILT_IN_ACP_AGENT_BY_PROVIDER[config.provider] === agentId) {
+    await applyDangerouslyAllowMode(provider, agentId, config.conversationId)
+  }
   return {
     model: provider.languageModel() as LanguageModel,
     // acpx-ai-provider's docs put close() ownership on the caller: skip
@@ -223,7 +228,10 @@ async function applyDangerouslyAllowMode(
       return
     } catch (err) {
       lastError = err
-      logger.warn('ACP session mode rejected', {
+      // debug, not warn: codex's first candidate is expected to be
+      // rejected whenever the spawned package advertises the other id.
+      // Only the all-rejected case below warns.
+      logger.debug('ACP session mode candidate rejected', {
         conversationId,
         agentId,
         mode,
