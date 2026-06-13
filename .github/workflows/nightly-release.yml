@@ -155,7 +155,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: astral-sh/setup-uv@v8
+      # v8.x.y releases exist but astral-sh publishes no floating `v8`
+      # major tag — `@v8` is unresolvable and kills the job in Set up job.
+      - uses: astral-sh/setup-uv@v8.2.0
 
       - name: Resolve chromium pin and paths
         id: pin
