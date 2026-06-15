@@ -19,7 +19,6 @@ describe('loadServerConfig', () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'browseros-config-test-'))
     originalEnv = { ...process.env }
 
-    // Clear relevant env vars
     delete process.env.BROWSEROS_CDP_PORT
     delete process.env.BROWSEROS_SERVER_PORT
     delete process.env.BROWSEROS_EXTENSION_PORT
@@ -50,7 +49,6 @@ describe('loadServerConfig', () => {
       if (!result.ok) return
       assert.strictEqual(result.value.cdpPort, 9222)
       assert.strictEqual(result.value.serverPort, 9223)
-      // agentPort is deprecated - always equals serverPort
       assert.strictEqual(result.value.agentPort, 9223)
       assert.strictEqual(result.value.extensionPort, 9224)
       assert.strictEqual(result.value.mcpAllowRemote, false)
@@ -488,7 +486,7 @@ describe('loadServerConfig', () => {
       assert.strictEqual(result.value.browserUseNewTools, false)
     })
 
-    it('disables new browser tools via BROWSER_USE_NEW_TOOLS=0', () => {
+    it('rejects boolean aliases for BROWSER_USE_NEW_TOOLS', () => {
       process.env.BROWSER_USE_NEW_TOOLS = '0'
 
       const result = loadServerConfig([
@@ -497,9 +495,29 @@ describe('loadServerConfig', () => {
         '--server-port=3000',
       ])
 
-      assert.strictEqual(result.ok, true)
-      if (!result.ok) return
-      assert.strictEqual(result.value.browserUseNewTools, false)
+      assert.strictEqual(result.ok, false)
+      if (result.ok) return
+      assert.match(
+        result.error,
+        /BROWSER_USE_NEW_TOOLS must be "true" or "false"/,
+      )
+    })
+
+    it('rejects invalid BROWSER_USE_NEW_TOOLS values', () => {
+      process.env.BROWSER_USE_NEW_TOOLS = 'enabled'
+
+      const result = loadServerConfig([
+        'bun',
+        'src/index.ts',
+        '--server-port=3000',
+      ])
+
+      assert.strictEqual(result.ok, false)
+      if (result.ok) return
+      assert.match(
+        result.error,
+        /BROWSER_USE_NEW_TOOLS must be "true" or "false"/,
+      )
     })
   })
 
