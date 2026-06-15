@@ -194,6 +194,7 @@ export async function createHttpServer(config: HttpServerConfig) {
         browserosId,
         klavisRef,
         aiSdkDevtoolsEnabled: config.aiSdkDevtoolsEnabled,
+        browserUseNewTools: config.browserUseNewTools,
         serverPort: port,
         resourcesDir,
         remoteHermes,

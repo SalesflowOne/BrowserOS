@@ -54,8 +54,10 @@ export class ToolLoopExecutorBackend implements ExecutorBackend {
     try {
       agent = await AiSdkAgent.create({
         resolvedConfig: agentConfig,
+        browser,
         browserSession,
         browserContext,
+        browserUseNewTools: true,
       })
 
       await agent.toolLoopAgent.generate({

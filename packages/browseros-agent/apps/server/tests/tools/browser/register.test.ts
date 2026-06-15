@@ -4,8 +4,14 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { TOOL_LIMITS } from '@browseros/shared/constants/limits'
 import { z } from 'zod'
-import { CHAT_MODE_ALLOWED_TOOLS } from '../../../src/agent/chat-mode'
-import { buildBrowserToolSet } from '../../../src/agent/tool-adapter'
+import {
+  CHAT_MODE_ALLOWED_TOOLS,
+  LEGACY_CHAT_MODE_ALLOWED_TOOLS,
+} from '../../../src/agent/chat-mode'
+import {
+  buildBrowserToolSet,
+  buildLegacyBrowserToolSet,
+} from '../../../src/agent/tool-adapter'
 import type { BrowserSession } from '../../../src/browser/core/session'
 import {
   defineTool,
@@ -673,6 +679,43 @@ describe('registerBrowserTools', () => {
 })
 
 describe('buildBrowserToolSet', () => {
+  it('builds the compact browser tool surface', () => {
+    const session = { pages: {} } as unknown as BrowserSession
+    const tools = buildBrowserToolSet(session)
+
+    expect(tools.tabs).toBeDefined()
+    expect(tools.new_page).toBeUndefined()
+    expect(Object.keys(tools)).toEqual(BROWSER_TOOLS.map((t) => t.name))
+  })
+
+  it('builds the legacy browser tool surface', () => {
+    const tools = buildLegacyBrowserToolSet({} as never)
+
+    expect(tools.new_page).toBeDefined()
+    expect(tools.get_bookmarks).toBeDefined()
+    expect(tools.browseros_info).toBeDefined()
+    expect(tools.tabs).toBeUndefined()
+    expect(Object.keys(tools).length).toBeGreaterThan(50)
+  })
+
+  it('uses legacy tool names for legacy chat-mode filtering', () => {
+    const legacyTools = buildLegacyBrowserToolSet({} as never)
+    const chatTools = Object.fromEntries(
+      Object.entries(legacyTools).filter(([name]) =>
+        LEGACY_CHAT_MODE_ALLOWED_TOOLS.has(name),
+      ),
+    )
+
+    expect(Object.keys(chatTools).sort()).toEqual([
+      'evaluate_script',
+      'get_page_content',
+      'list_pages',
+      'scroll',
+      'take_snapshot',
+    ])
+    expect(chatTools.tabs).toBeUndefined()
+  })
+
   it('allows chat mode to list tabs without allowing tab mutation', async () => {
     expect(CHAT_MODE_ALLOWED_TOOLS.has('tabs')).toBe(true)
     const calls: string[] = []

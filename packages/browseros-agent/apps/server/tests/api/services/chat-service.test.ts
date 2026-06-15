@@ -294,6 +294,69 @@ describe('ChatService scheduled task hidden page lifecycle', () => {
   })
 })
 
+describe('ChatService browser tool config', () => {
+  it('passes browserUseNewTools and browser into new and rebuilt agent sessions', async () => {
+    const firstAgent = createFakeAgent()
+    const secondAgent = createFakeAgent()
+    agentToReturn = firstAgent
+    streamResponseHandler = async ({ onFinish, uiMessages }) => {
+      await onFinish({ messages: uiMessages ?? [] })
+      return new Response('ok')
+    }
+
+    const klavisRef = { handle: null as object | null }
+    const browser = {
+      resolveTabIds: mock(
+        async (tabIds: number[]) =>
+          new Map(tabIds.map((tabId) => [tabId, tabId + 100])),
+      ),
+      closePage: mock(async () => {}),
+    }
+    const service = new ChatService({
+      sessionStore: createSessionStore() as never,
+      klavisRef: klavisRef as never,
+      browser: browser as never,
+      browserSession: { pages: {} } as never,
+      browserUseNewTools: false,
+    })
+    const createCallsBefore = createAgentSpy.mock.calls.length
+    const request = {
+      conversationId: crypto.randomUUID(),
+      message: 'check integrations',
+      isScheduledTask: false,
+      mode: 'agent',
+      origin: 'sidepanel',
+      browserContext: {
+        activeTab: {
+          id: 3,
+          url: 'https://example.com',
+          title: 'Example',
+        },
+        enabledMcpServers: ['slack'],
+      },
+    } as never
+
+    await service.processMessage(request, new AbortController().signal)
+
+    agentToReturn = secondAgent
+    klavisRef.handle = {}
+
+    await service.processMessage(
+      { ...request, message: 'check integrations again' },
+      new AbortController().signal,
+    )
+
+    const createCalls = createAgentSpy.mock.calls.slice(createCallsBefore)
+    expect(createCalls).toHaveLength(2)
+    for (const [config] of createCalls) {
+      expect(config).toMatchObject({
+        browser,
+        browserUseNewTools: false,
+      })
+    }
+  })
+})
+
 describe('ChatService Klavis session rebuilds', () => {
   it('rebuilds a managed-app session when the shared Klavis handle appears', async () => {
     const firstAgent = createFakeAgent()
@@ -565,7 +628,6 @@ describe('ChatService ACP provider chat history handling', () => {
           // The new code never includes this in promptUiMessages.
           {
             type: 'tool-mcp.browseros.grep',
-            // biome-ignore lint/suspicious/noExplicitAny: synthetic phantom shape
             toolCallId: 'acpx-3',
             state: 'input-streaming',
             input: undefined,

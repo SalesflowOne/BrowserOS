@@ -19,6 +19,7 @@ interface ChatRouteDeps {
   browserosId?: string
   klavisRef?: KlavisProxyRef
   aiSdkDevtoolsEnabled?: boolean
+  browserUseNewTools?: boolean
   /** Port the BrowserOS server bound to. Threaded to ACP providers so
    *  the spawned agent can dial back into the local /mcp route. */
   serverPort: number
@@ -42,6 +43,7 @@ export function createChatRoutes(deps: ChatRouteDeps) {
     browserSession: deps.browserSession,
     browserosId,
     aiSdkDevtoolsEnabled: deps.aiSdkDevtoolsEnabled,
+    browserUseNewTools: deps.browserUseNewTools === true,
     serverPort: deps.serverPort,
     resourcesDir: deps.resourcesDir,
   })
