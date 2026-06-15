@@ -4,15 +4,13 @@ A Bun-workspaces monorepo for the BrowserOS MCP server, agent extension UI, CLI,
 
 ## Before you push
 
-There is no root `bun run check` script here. Run the real checks:
+Run the root check suite:
 
 ```
-bun run lint
-bun run typecheck
-bun run test:main
+bun run check
 ```
 
-For docs-only changes, also run `git diff --check`. For release/build changes, run the relevant `bun run build:*` command.
+This runs lint, typecheck, Fallow, and the main test suite. For docs-only changes, also run `git diff --check`. For release/build changes, run the relevant `bun run build:*` command.
 
 ## Universal rules
 
