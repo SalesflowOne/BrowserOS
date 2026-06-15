@@ -118,8 +118,24 @@ mock.module('@/lib/llm-providers/providerIcons', () => ({
 
 mock.module('@/components/agents/AdapterIcon', () => ({
   AdapterIcon: ({ adapter }: { adapter: string }) =>
-    createElement('span', null, adapter),
-  adapterLabel: (adapter: string) => adapter,
+    createElement(
+      'span',
+      {
+        'aria-label':
+          adapter === 'codex'
+            ? 'Codex'
+            : adapter === 'claude'
+              ? 'Claude Code'
+              : 'Agent',
+      },
+      null,
+    ),
+  adapterLabel: (adapter: string) =>
+    adapter === 'codex'
+      ? 'Codex'
+      : adapter === 'claude'
+        ? 'Claude Code'
+        : 'Agent',
 }))
 
 let ProviderTemplatesSection: FC<ProviderTemplatesSectionProps>
