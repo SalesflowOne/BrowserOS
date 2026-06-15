@@ -1,10 +1,10 @@
 import type { Dirent } from 'node:fs'
-import { lstat, readdir, realpath } from 'node:fs/promises'
-import { dirname, isAbsolute, join, relative, resolve, win32 } from 'node:path'
+import { readdir, realpath } from 'node:fs/promises'
+import { join, relative } from 'node:path'
 import { TOOL_LIMITS } from '@browseros/shared/constants/limits'
-import { getBrowserosDir } from '../../lib/browseros-dir'
 import { logger } from '../../lib/logger'
 import { metrics } from '../../lib/metrics'
+import { isPathInside } from './path-boundary'
 
 const MAX_LINES = 2000
 const MAX_BYTES = 50 * 1024
@@ -16,7 +16,13 @@ export const DEFAULT_BASH_TIMEOUT = 120
 export const MAX_GREP_FILE_SIZE = 2 * 1024 * 1024
 export const MAX_READ_LINES = TOOL_LIMITS.FILESYSTEM_READ_MAX_LINES
 export const MAX_READ_CHARS = TOOL_LIMITS.FILESYSTEM_READ_MAX_CHARS
-const BROWSER_TOOL_OUTPUT_DIR_NAME = 'tool-output'
+
+export {
+  getBrowserToolOutputDir,
+  resolveBrowserToolOutputPath,
+  resolveWorkspacePath,
+  resolveWorkspaceWritePath,
+} from './path-boundary'
 
 export interface FilesystemToolResult {
   text: string
@@ -29,118 +35,6 @@ export interface TruncationResult {
   truncated: boolean
   totalLines: number
   keptLines: number
-}
-
-export function getBrowserToolOutputDir(): string {
-  return join(getBrowserosDir(), BROWSER_TOOL_OUTPUT_DIR_NAME)
-}
-
-function isAbsoluteInput(inputPath: string): boolean {
-  return isAbsolute(inputPath) || win32.isAbsolute(inputPath)
-}
-
-function isInside(root: string, candidate: string): boolean {
-  const rel = relative(root, candidate)
-  return rel === '' || (!rel.startsWith('..') && !isAbsoluteInput(rel))
-}
-
-function assertRelativeWorkspaceInput(inputPath: string): void {
-  if (isAbsoluteInput(inputPath)) {
-    throw new Error('Path must be relative to the selected workspace.')
-  }
-}
-
-function assertInsideWorkspace(root: string, candidate: string): void {
-  if (!isInside(root, candidate)) {
-    throw new Error('Path is outside the selected workspace.')
-  }
-}
-
-async function realWorkspaceRoot(cwd: string): Promise<string> {
-  return await realpath(cwd)
-}
-
-async function findExistingParent(
-  root: string,
-  targetPath: string,
-): Promise<string> {
-  let parent = dirname(targetPath)
-
-  while (isInside(root, parent)) {
-    try {
-      await lstat(parent)
-      return parent
-    } catch (error) {
-      if (!(error instanceof Error) || !('code' in error)) throw error
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-    }
-
-    const next = dirname(parent)
-    if (next === parent) break
-    parent = next
-  }
-
-  throw new Error('Path is outside the selected workspace.')
-}
-
-/**
- * Resolves an existing workspace path and rejects traversal or symlink escapes.
- */
-export async function resolveWorkspacePath(
-  cwd: string,
-  inputPath: string,
-): Promise<string> {
-  assertRelativeWorkspaceInput(inputPath)
-  const root = await realWorkspaceRoot(cwd)
-  const candidate = resolve(root, inputPath)
-  assertInsideWorkspace(root, candidate)
-  const canonical = await realpath(candidate)
-  assertInsideWorkspace(root, canonical)
-  return canonical
-}
-
-/**
- * Resolves a workspace write target, validating the existing parent chain first.
- */
-export async function resolveWorkspaceWritePath(
-  cwd: string,
-  inputPath: string,
-): Promise<string> {
-  assertRelativeWorkspaceInput(inputPath)
-  const root = await realWorkspaceRoot(cwd)
-  const candidate = resolve(root, inputPath)
-  assertInsideWorkspace(root, candidate)
-
-  try {
-    const canonical = await realpath(candidate)
-    assertInsideWorkspace(root, canonical)
-    return canonical
-  } catch (error) {
-    if (!(error instanceof Error) || !('code' in error)) throw error
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-  }
-
-  const parent = await findExistingParent(root, candidate)
-  const canonicalParent = await realpath(parent)
-  assertInsideWorkspace(root, canonicalParent)
-  const resolved = resolve(canonicalParent, relative(parent, candidate))
-  assertInsideWorkspace(root, resolved)
-  return resolved
-}
-
-/**
- * Resolves a BrowserOS-generated output file without exposing sibling app state.
- */
-export async function resolveBrowserToolOutputPath(
-  inputPath: string,
-): Promise<string> {
-  const outputRoot = await realpath(getBrowserToolOutputDir())
-  const candidate = resolve(inputPath)
-  const canonical = await realpath(candidate)
-  if (!isInside(outputRoot, canonical)) {
-    throw new Error('Path is outside BrowserOS tool output.')
-  }
-  return canonical
 }
 
 export function truncateHead(
@@ -321,7 +215,9 @@ export const IMAGE_MIME_TYPES: Record<string, string> = {
 export async function* walkFiles(
   dir: string,
   baseDir: string,
+  boundaryRoot?: string,
 ): AsyncGenerator<string> {
+  const root = boundaryRoot ?? (await realpath(baseDir))
   let entries: Dirent[]
   try {
     entries = (await readdir(dir, { withFileTypes: true })) as Dirent[]
@@ -333,8 +229,10 @@ export async function* walkFiles(
     const fullPath = join(dir, entry.name as string)
     if (entry.isDirectory()) {
       if (IGNORED_DIRS.has(entry.name as string)) continue
-      yield* walkFiles(fullPath, baseDir)
+      yield* walkFiles(fullPath, baseDir, root)
     } else if (entry.isFile() || entry.isSymbolicLink()) {
+      const canonical = await realpath(fullPath).catch(() => null)
+      if (!canonical || !isPathInside(root, canonical)) continue
       yield relative(baseDir, fullPath)
     }
   }
