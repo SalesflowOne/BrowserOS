@@ -1,11 +1,24 @@
 import { describe, expect, test } from 'bun:test'
-
+import modelsDevData from '../apps/agent/lib/llm-providers/models-dev-data.json'
 import {
   formatModelsData,
   generateModelsData,
   type ModelsDevModel,
   type ModelsDevProvider,
+  type OutputProvider,
 } from './generate-models'
+
+const REQUIRED_PROVIDER_IDS = [
+  'anthropic',
+  'openai',
+  'google',
+  'openrouter',
+  'azure',
+  'bedrock',
+  'lmstudio',
+  'moonshot',
+  'github-copilot',
+]
 
 function model(overrides: Partial<ModelsDevModel>): ModelsDevModel {
   return {
@@ -74,6 +87,34 @@ describe('generateModelsData', () => {
     })
   })
 
+  test('omits non-chat models', () => {
+    const output = generateModelsData(
+      {
+        'source-provider': provider({
+          imageOnly: model({
+            id: 'image-only',
+            modalities: { input: ['text'], output: ['image'] },
+            limit: { context: 0, output: 0 },
+          }),
+          missingLimits: model({
+            id: 'missing-limits',
+            modalities: { input: ['text'], output: ['text'] },
+            limit: { context: 0, output: 8192 },
+          }),
+          chat: model({
+            id: 'chat-model',
+            modalities: { input: ['text', 'image'], output: ['text'] },
+          }),
+        }),
+      },
+      { 'source-provider': 'browseros-provider' },
+    )
+
+    expect(output['browseros-provider']?.models.map((m) => m.id)).toEqual([
+      'chat-model',
+    ])
+  })
+
   test('sorts models by last update then id', () => {
     const output = generateModelsData(
       {
@@ -126,5 +167,32 @@ describe('generateModelsData', () => {
 
     expect(json.endsWith('\n')).toBe(true)
     expect(JSON.parse(json)).toEqual(output)
+  })
+
+  test('checked-in snapshot has required chat providers and models', () => {
+    const data = modelsDevData as Record<string, OutputProvider>
+
+    expect(Object.keys(data)).toEqual(REQUIRED_PROVIDER_IDS)
+
+    for (const [providerId, provider] of Object.entries(data)) {
+      expect(provider.models.length).toBeGreaterThan(0)
+
+      const ids = new Set<string>()
+      for (const model of provider.models) {
+        expect(ids.has(model.id)).toBe(false)
+        ids.add(model.id)
+
+        expect(model.id).toBeTruthy()
+        expect(model.name).toBeTruthy()
+        expect(model.contextWindow).toBeGreaterThan(0)
+        expect(model.maxOutput).toBeGreaterThan(0)
+        expect(typeof model.supportsImages).toBe('boolean')
+        expect(typeof model.supportsReasoning).toBe('boolean')
+        expect(typeof model.supportsToolCall).toBe('boolean')
+      }
+
+      expect(ids.size).toBe(provider.models.length)
+      expect(REQUIRED_PROVIDER_IDS).toContain(providerId)
+    }
   })
 })

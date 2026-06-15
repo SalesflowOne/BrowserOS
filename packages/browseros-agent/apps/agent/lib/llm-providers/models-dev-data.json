@@ -307,15 +307,6 @@
         "outputCost": 14
       },
       {
-        "id": "chatgpt-image-latest",
-        "name": "chatgpt-image-latest",
-        "contextWindow": 0,
-        "maxOutput": 0,
-        "supportsImages": true,
-        "supportsReasoning": false,
-        "supportsToolCall": false
-      },
-      {
         "id": "gpt-5.2",
         "name": "GPT-5.2",
         "contextWindow": 400000,
@@ -358,15 +349,6 @@
         "supportsToolCall": true,
         "inputCost": 21,
         "outputCost": 168
-      },
-      {
-        "id": "gpt-image-1.5",
-        "name": "gpt-image-1.5",
-        "contextWindow": 0,
-        "maxOutput": 0,
-        "supportsImages": true,
-        "supportsReasoning": false,
-        "supportsToolCall": false
       },
       {
         "id": "gpt-5.1",
@@ -435,15 +417,6 @@
         "outputCost": 120
       },
       {
-        "id": "gpt-image-1-mini",
-        "name": "gpt-image-1-mini",
-        "contextWindow": 0,
-        "maxOutput": 0,
-        "supportsImages": true,
-        "supportsReasoning": false,
-        "supportsToolCall": false
-      },
-      {
         "id": "gpt-5-codex",
         "name": "GPT-5-Codex",
         "contextWindow": 400000,
@@ -508,15 +481,6 @@
         "supportsToolCall": true,
         "inputCost": 20,
         "outputCost": 80
-      },
-      {
-        "id": "gpt-image-1",
-        "name": "gpt-image-1",
-        "contextWindow": 0,
-        "maxOutput": 0,
-        "supportsImages": true,
-        "supportsReasoning": false,
-        "supportsToolCall": false
       },
       {
         "id": "o3",
@@ -944,28 +908,6 @@
         "supportsToolCall": false,
         "inputCost": 0.15,
         "outputCost": 0
-      },
-      {
-        "id": "gemini-2.5-flash-preview-tts",
-        "name": "Gemini 2.5 Flash Preview TTS",
-        "contextWindow": 8192,
-        "maxOutput": 16384,
-        "supportsImages": false,
-        "supportsReasoning": false,
-        "supportsToolCall": false,
-        "inputCost": 0.5,
-        "outputCost": 10
-      },
-      {
-        "id": "gemini-2.5-pro-preview-tts",
-        "name": "Gemini 2.5 Pro Preview TTS",
-        "contextWindow": 8192,
-        "maxOutput": 16384,
-        "supportsImages": false,
-        "supportsReasoning": false,
-        "supportsToolCall": false,
-        "inputCost": 1,
-        "outputCost": 20
       }
     ]
   },

@@ -69,6 +69,8 @@ export const PROVIDER_MAP: Record<string, string> = {
 /** Converts a models.dev model into the compact BrowserOS snapshot shape. */
 export function transformModel(model: ModelsDevModel): OutputModel | null {
   if (model.status === 'deprecated') return null
+  if (!model.modalities.output.includes('text')) return null
+  if (model.limit.context <= 0 || model.limit.output <= 0) return null
 
   const supportsImages =
     model.attachment || model.modalities.input.includes('image')
