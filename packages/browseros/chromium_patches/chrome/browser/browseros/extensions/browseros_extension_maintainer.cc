@@ -1,9 +1,9 @@
 diff --git a/chrome/browser/browseros/extensions/browseros_extension_maintainer.cc b/chrome/browser/browseros/extensions/browseros_extension_maintainer.cc
 new file mode 100644
-index 0000000000000..5804d54696e8f
+index 0000000000000..75848548e95a2
 --- /dev/null
 +++ b/chrome/browser/browseros/extensions/browseros_extension_maintainer.cc
-@@ -0,0 +1,395 @@
+@@ -0,0 +1,409 @@
 +// Copyright 2024 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -79,6 +79,8 @@ index 0000000000000..5804d54696e8f
 +            << " extensions, scheduling in "
 +            << kInitialMaintenanceDelay.InSeconds() << "s";
 +
++  UninstallDeprecatedExtensions();
++
 +  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
 +      FROM_HERE,
 +      base::BindOnce(&BrowserOSExtensionMaintainer::RunMaintenanceCycle,
@@ -132,7 +134,9 @@ index 0000000000000..5804d54696e8f
 +      last_config_ = std::move(config);
 +
 +      for (const auto [id, _] : last_config_) {
-+        extension_ids_.insert(id);
++        if (IsBrowserOSExtension(id)) {
++          extension_ids_.insert(id);
++        }
 +      }
 +
 +      LOG(INFO) << "browseros: Updated config with " << last_config_.size()
@@ -188,7 +192,7 @@ index 0000000000000..5804d54696e8f
 +}
 +
 +void BrowserOSExtensionMaintainer::UninstallDeprecatedExtensions() {
-+  if (!profile_ || last_config_.empty()) {
++  if (!profile_) {
 +    return;
 +  }
 +
@@ -201,19 +205,10 @@ index 0000000000000..5804d54696e8f
 +    return;
 +  }
 +
-+  std::set<std::string> server_ids;
-+  for (const auto [id, _] : last_config_) {
-+    server_ids.insert(id);
-+  }
-+
-+  for (const std::string& id : GetBrowserOSExtensionIds()) {
-+    if (server_ids.contains(id)) {
-+      continue;
-+    }
-+
++  auto uninstall = [&](const std::string& id) {
 +    const extensions::Extension* ext = registry->GetInstalledExtension(id);
 +    if (!ext) {
-+      continue;
++      return;
 +    }
 +
 +    LOG(INFO) << "browseros: Uninstalling deprecated extension " << id;
@@ -223,6 +218,25 @@ index 0000000000000..5804d54696e8f
 +            id, extensions::UNINSTALL_REASON_ORPHANED_EXTERNAL_EXTENSION,
 +            &error)) {
 +      LOG(WARNING) << "browseros: Failed to uninstall " << id << ": " << error;
++    }
++  };
++
++  for (const std::string& id : GetDeprecatedBrowserOSExtensionIds()) {
++    uninstall(id);
++  }
++
++  if (last_config_.empty()) {
++    return;
++  }
++
++  std::set<std::string> server_ids;
++  for (const auto [id, _] : last_config_) {
++    server_ids.insert(id);
++  }
++
++  for (const std::string& id : GetBrowserOSExtensionIds()) {
++    if (!server_ids.contains(id)) {
++      uninstall(id);
 +    }
 +  }
 +}

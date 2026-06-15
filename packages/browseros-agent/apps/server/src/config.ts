@@ -20,7 +20,6 @@ const ServerConfigSchema = z.object({
   cdpPort: portSchema.nullable(),
   serverPort: portSchema,
   agentPort: portSchema,
-  extensionPort: portSchema.nullable(),
   resourcesDir: z.string(),
   executionDir: z.string(),
   mcpAllowRemote: z.boolean(),
@@ -167,7 +166,6 @@ function parseCliArgs(argv: string[]): ConfigResult<ParsedCliArgs> {
       overrides: omitUndefined({
         cdpPort: opts.cdpPort,
         serverPort: opts.serverPort ?? opts.httpMcpPort,
-        extensionPort: opts.extensionPort,
         resourcesDir: opts.resourcesDir
           ? toAbsolutePath(opts.resourcesDir, cwd)
           : undefined,
@@ -211,7 +209,6 @@ function parseConfigFile(filePath?: string): ConfigResult<PartialConfig> {
       value: omitUndefined({
         cdpPort: cfg.ports?.cdp,
         serverPort: cfg.ports?.server ?? cfg.ports?.http_mcp,
-        extensionPort: cfg.ports?.extension,
         resourcesDir: parseAbsolutePath(cfg.directories?.resources, configDir),
         executionDir: parseAbsolutePath(cfg.directories?.execution, configDir),
         mcpAllowRemote:
@@ -259,9 +256,6 @@ function parseRuntimeEnv(): ConfigResult<PartialConfig> {
       serverPort: process.env.BROWSEROS_SERVER_PORT
         ? safeParseInt(process.env.BROWSEROS_SERVER_PORT)
         : undefined,
-      extensionPort: process.env.BROWSEROS_EXTENSION_PORT
-        ? safeParseInt(process.env.BROWSEROS_EXTENSION_PORT)
-        : undefined,
       resourcesDir: process.env.BROWSEROS_RESOURCES_DIR
         ? toAbsolutePath(process.env.BROWSEROS_RESOURCES_DIR, cwd)
         : undefined,
@@ -302,7 +296,6 @@ function validateInlinedEnv(): ConfigResult<void> {
 function getDefaults(cwd: string): PartialConfig {
   return {
     cdpPort: null,
-    extensionPort: null,
     resourcesDir: cwd,
     executionDir: cwd,
     mcpAllowRemote: false,
