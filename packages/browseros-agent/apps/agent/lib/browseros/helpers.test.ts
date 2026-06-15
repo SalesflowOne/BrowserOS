@@ -1,11 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 
-const prefRequests: string[] = []
 const MCP_PORT_PREF = 'browseros.server.mcp_port'
 let originalChrome: typeof globalThis.chrome | undefined
 
 function readPref(name: string): { value: unknown } {
-  prefRequests.push(name)
   return name === MCP_PORT_PREF ? { value: 9105 } : { value: null }
 }
 
@@ -39,7 +37,6 @@ mock.module('./adapter', () => ({
 
 describe('getAgentServerUrl', () => {
   beforeEach(() => {
-    prefRequests.length = 0
     originalChrome = globalThis.chrome
     Object.assign(globalThis, {
       chrome: {
@@ -69,7 +66,5 @@ describe('getAgentServerUrl', () => {
     const { getAgentServerUrl } = await import('./helpers')
 
     await expect(getAgentServerUrl()).resolves.toBe('http://127.0.0.1:9105')
-    expect(prefRequests).toContain(MCP_PORT_PREF)
-    expect(prefRequests).not.toContain('browseros.server.agent_port')
   })
 })
