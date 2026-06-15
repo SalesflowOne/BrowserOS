@@ -1,8 +1,14 @@
 import { describe, it } from 'bun:test'
 import assert from 'node:assert'
-import { existsSync, readFileSync, rmSync, unlinkSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import {
+  existsSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  unlinkSync,
+} from 'node:fs'
+import { dirname, isAbsolute, relative } from 'node:path'
+import { getBrowserToolOutputDir } from '../../src/tools/filesystem/utils'
 import {
   type WithBrowserContext,
   withBrowser,
@@ -84,6 +90,17 @@ function cleanupSavedDom(domPath: string): void {
   } catch {}
 }
 
+function assertSavedUnderBrowserToolOutput(domPath: string): void {
+  const rel = relative(
+    realpathSync(getBrowserToolOutputDir()),
+    realpathSync(dirname(domPath)),
+  )
+  assert.ok(
+    rel === '' || (!rel.startsWith('..') && !isAbsolute(rel)),
+    'Saved DOM file should be written to BrowserOS tool output',
+  )
+}
+
 /** Opens the shared DOM fixture after its static form controls are queryable. */
 async function openRichPage(
   execute: WithBrowserContext['execute'],
@@ -121,12 +138,7 @@ describe('get_dom', () => {
 
         assert.ok(textOf(result).includes('Saved DOM'))
         assert.ok(existsSync(domPath), 'Saved DOM file should exist')
-        assert.ok(
-          dirname(domPath).startsWith(
-            join(tmpdir(), 'browseros-browser-tool-'),
-          ),
-          'Saved DOM file should be written to an OS temp directory',
-        )
+        assertSavedUnderBrowserToolOutput(domPath)
         assert.ok(html.includes('<html'), 'Should contain <html> tag')
         assert.ok(html.includes('</html>'), 'Should contain closing </html>')
         assert.ok(html.includes('id="login-form"'), 'Should contain form ID')
@@ -275,12 +287,7 @@ describe('get_dom', () => {
         const html = readFileSync(domPath, 'utf8')
 
         assert.ok(textOf(result).includes('Saved DOM'))
-        assert.ok(
-          dirname(domPath).startsWith(
-            join(tmpdir(), 'browseros-browser-tool-'),
-          ),
-          'Saved DOM file should be written to an OS temp directory',
-        )
+        assertSavedUnderBrowserToolOutput(domPath)
         assert.ok(data.totalLength > 100_000, 'Expected a large DOM payload')
         assert.strictEqual(html.length, data.totalLength)
         assert.ok(

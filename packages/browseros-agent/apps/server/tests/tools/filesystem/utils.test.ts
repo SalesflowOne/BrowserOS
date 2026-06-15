@@ -320,9 +320,10 @@ describe('filesystem path boundaries', () => {
     await mkdir(outputDir, { recursive: true })
     const outputPath = join(outputDir, 'snapshot.md')
     await writeFile(outputPath, 'snapshot')
+    const expectedPath = await realpath(outputPath)
 
     await expect(resolveBrowserToolOutputPath(outputPath)).resolves.toBe(
-      outputPath,
+      expectedPath,
     )
   })
 
