@@ -37,13 +37,19 @@ function assertRelativeWorkspaceInput(inputPath: string): void {
   }
 }
 
+function assertAbsoluteBrowserosOutputInput(inputPath: string): void {
+  if (!isAbsoluteInput(inputPath)) {
+    throw new Error('Path must be an absolute BrowserOS tool output path.')
+  }
+}
+
 function assertInsideWorkspace(root: string, candidate: string): void {
   if (!isPathInside(root, candidate)) {
     throw new Error('Path is outside the selected workspace.')
   }
 }
 
-async function realWorkspaceRoot(cwd: string): Promise<string> {
+export async function resolveWorkspaceRoot(cwd: string): Promise<string> {
   return await realpath(cwd)
 }
 
@@ -75,8 +81,18 @@ export async function resolveWorkspacePath(
   cwd: string,
   inputPath: string,
 ): Promise<string> {
+  return await resolveWorkspacePathFromRoot(
+    await resolveWorkspaceRoot(cwd),
+    inputPath,
+  )
+}
+
+/** Resolves an existing workspace path when the canonical workspace root is already known. */
+export async function resolveWorkspacePathFromRoot(
+  root: string,
+  inputPath: string,
+): Promise<string> {
   assertRelativeWorkspaceInput(inputPath)
-  const root = await realWorkspaceRoot(cwd)
   const candidate = resolve(root, inputPath)
   assertInsideWorkspace(root, candidate)
   const canonical = await realpath(candidate)
@@ -90,7 +106,7 @@ export async function resolveWorkspaceWritePath(
   inputPath: string,
 ): Promise<string> {
   assertRelativeWorkspaceInput(inputPath)
-  const root = await realWorkspaceRoot(cwd)
+  const root = await resolveWorkspaceRoot(cwd)
   const candidate = resolve(root, inputPath)
   assertInsideWorkspace(root, candidate)
 
@@ -115,6 +131,7 @@ export async function resolveWorkspaceWritePath(
 export async function resolveBrowserToolOutputPath(
   inputPath: string,
 ): Promise<string> {
+  assertAbsoluteBrowserosOutputInput(inputPath)
   const outputRoot = await getToolOutputDir()
   const candidate = resolve(inputPath)
   const canonical = await realpath(candidate)

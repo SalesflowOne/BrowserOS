@@ -66,6 +66,7 @@ export async function writeToolOutputFile(
 ): Promise<void> {
   await writeFile(filePath, content, {
     encoding: 'utf-8',
+    flag: 'wx',
     mode: TOOL_OUTPUT_FILE_MODE,
   })
   await chmod(filePath, TOOL_OUTPUT_FILE_MODE)

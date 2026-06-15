@@ -3,7 +3,10 @@ import { mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { createGrepTool } from '../../../src/tools/filesystem/grep'
-import type { FilesystemToolResult } from '../../../src/tools/filesystem/utils'
+import {
+  type FilesystemToolResult,
+  MAX_GREP_FILE_SIZE,
+} from '../../../src/tools/filesystem/utils'
 
 let tmpDir: string
 let exec: (params: Record<string, unknown>) => Promise<FilesystemToolResult>
@@ -138,6 +141,18 @@ describe('filesystem_grep', () => {
     const result = await exec({ pattern: 'beta', path: 'single.txt' })
     expect(result.text).toContain('beta')
     expect(result.text).not.toContain('alpha')
+  })
+
+  it('does not read oversized single-file targets', async () => {
+    await writeFile(
+      join(tmpDir, 'large.log'),
+      'x'.repeat(MAX_GREP_FILE_SIZE + 1),
+    )
+
+    const result = await exec({ pattern: 'x', path: 'large.log' })
+
+    expect(result.isError).toBe(true)
+    expect(result.text).toContain('Unable to read file')
   })
 
   it('handles regex special characters', async () => {

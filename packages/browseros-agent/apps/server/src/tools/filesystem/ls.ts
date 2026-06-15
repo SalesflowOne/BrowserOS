@@ -6,7 +6,8 @@ import { z } from 'zod'
 import {
   DEFAULT_LS_LIMIT,
   executeWithMetrics,
-  resolveWorkspacePath,
+  resolveWorkspacePathFromRoot,
+  resolveWorkspaceRoot,
   toModelOutput,
 } from './utils'
 
@@ -19,7 +20,7 @@ function formatSize(bytes: number): string {
 }
 
 async function collectVisibleEntries(
-  cwd: string,
+  root: string,
   inputPath: string,
   resolved: string,
   entries: Dirent[],
@@ -30,7 +31,7 @@ async function collectVisibleEntries(
   for (const entry of entries) {
     const childPath = join(inputPath, entry.name as string)
     try {
-      await resolveWorkspacePath(cwd, childPath)
+      await resolveWorkspacePathFromRoot(root, childPath)
     } catch {
       continue
     }
@@ -98,11 +99,12 @@ export function createLsTool(cwd: string) {
     execute: (params) =>
       executeWithMetrics(TOOL_NAME, async () => {
         const inputPath = params.path || '.'
-        const resolved = await resolveWorkspacePath(cwd, inputPath)
+        const root = await resolveWorkspaceRoot(cwd)
+        const resolved = await resolveWorkspacePathFromRoot(root, inputPath)
         const limit = params.limit || DEFAULT_LS_LIMIT
         const entries = await readdir(resolved, { withFileTypes: true })
         const { dirs, files } = await collectVisibleEntries(
-          cwd,
+          root,
           inputPath,
           resolved,
           entries,

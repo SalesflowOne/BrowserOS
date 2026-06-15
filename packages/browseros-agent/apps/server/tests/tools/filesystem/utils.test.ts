@@ -365,6 +365,12 @@ describe('filesystem path boundaries', () => {
     )
   })
 
+  it('rejects relative BrowserOS tool output paths', async () => {
+    await expect(resolveBrowserToolOutputPath('snapshot.md')).rejects.toThrow(
+      'absolute BrowserOS tool output path',
+    )
+  })
+
   it('rejects sibling BrowserOS state paths outside the output directory', async () => {
     const outputDir = await getToolOutputDir()
     const siblingPath = join(outputDir, '..', 'config.json')

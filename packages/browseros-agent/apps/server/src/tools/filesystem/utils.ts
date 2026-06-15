@@ -21,6 +21,8 @@ export {
   isBrowserosStatePath,
   resolveBrowserToolOutputPath,
   resolveWorkspacePath,
+  resolveWorkspacePathFromRoot,
+  resolveWorkspaceRoot,
   resolveWorkspaceWritePath,
 } from './path-boundary'
 

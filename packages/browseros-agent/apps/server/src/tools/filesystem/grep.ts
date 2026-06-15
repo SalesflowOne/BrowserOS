@@ -191,7 +191,10 @@ export function createGrepTool(cwd: string) {
         let totalMatchCount = 0
 
         if (pathStat.isFile()) {
-          const content = await readGrepFileContent(searchPath)
+          const content = await readGrepFileContent(
+            searchPath,
+            MAX_GREP_FILE_SIZE,
+          )
           if (content === null) {
             return {
               text: `Unable to read file: ${params.path || searchPath}`,

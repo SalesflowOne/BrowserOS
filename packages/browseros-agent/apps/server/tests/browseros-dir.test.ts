@@ -11,6 +11,7 @@ import {
   realpathSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -24,6 +25,7 @@ import {
   getToolOutputDir,
   logDevelopmentBrowserosDir,
   TOOL_OUTPUT_DIR_MODE,
+  writeToolOutputFile,
 } from '../src/lib/browseros-dir'
 import { logger } from '../src/lib/logger'
 
@@ -171,6 +173,23 @@ describe('getBrowserosDir', () => {
       if (process.platform !== 'win32') {
         expect(statSync(outputDir).mode & 0o777).toBe(TOOL_OUTPUT_DIR_MODE)
       }
+    } finally {
+      rmSync(browserosDir, { recursive: true, force: true })
+    }
+  })
+
+  it('does not overwrite existing generated tool output files', async () => {
+    const browserosDir = mkdtempSync(join(tmpdir(), 'browseros-dir-test-'))
+    process.env.BROWSEROS_DIR = browserosDir
+
+    try {
+      const outputDir = await getToolOutputDir()
+      const outputPath = join(outputDir, 'existing.txt')
+      writeFileSync(outputPath, 'original')
+
+      await expect(
+        writeToolOutputFile(outputPath, 'replacement'),
+      ).rejects.toThrow('EEXIST')
     } finally {
       rmSync(browserosDir, { recursive: true, force: true })
     }
