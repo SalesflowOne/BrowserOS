@@ -2,6 +2,8 @@ import { type FC, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import type { Provider } from '@/components/chat/chatComponentTypes'
 import { Feature } from '@/lib/browseros/capabilities'
+import { createBrowserOSAction } from '@/lib/chat-actions/types'
+import { openSidePanelWithSearch } from '@/lib/messaging/sidepanel/openSidepanelWithSearch'
 import {
   useAgentAdapters,
   useHarnessAgents,
@@ -36,6 +38,9 @@ export const AgentCommandHome: FC = () => {
   const { adapters } = useAgentAdapters()
   const { supports } = useCapabilities()
   const hermesAgentSupported = supports(Feature.HERMES_AGENT_SUPPORT)
+  const supportsInlineChat =
+    supports(Feature.ALPHA_FEATURES_SUPPORT) &&
+    supports(Feature.NEWTAB_CHAT_SUPPORT)
   const [selectedProvider, setSelectedProvider] = useState<Provider | null>(
     null,
   )
@@ -96,15 +101,24 @@ export const AgentCommandHome: FC = () => {
       navigate(route.path)
       return
     }
-    // LLM target → /home/chat. That chat resolves its provider from the shared
-    // chat-target selection (preferred over the global default), so persist
-    // this pick there before navigating; also set it as the default to mirror
-    // the sidepanel's behaviour.
     const target = targets.find(
       (entry) => entry.kind === 'llm' && entry.id === route.providerId,
     )
     await persistSidepanelChatTargetSelection(target)
     await setDefaultProvider(route.providerId)
+    if (!supportsInlineChat) {
+      const action = createBrowserOSAction({
+        mode: 'chat',
+        message: input.text,
+        tabs: input.selectedTabs,
+      })
+      await openSidePanelWithSearch('open', {
+        query: input.text,
+        mode: 'chat',
+        action,
+      })
+      return
+    }
     navigate(route.path)
   }
 
