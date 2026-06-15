@@ -69,8 +69,10 @@ async function getOrCreateBrowser(): Promise<Browser> {
   return cachedBrowser
 }
 
+/** Tears down the cached browser/CDP pair used by withBrowser tests. */
 export async function cleanupWithBrowser(): Promise<void> {
   await mutex.runExclusive(async () => {
+    await cachedCdp?.disconnect().catch(() => {})
     await killBrowser()
     cachedCdp = null
     cachedBrowser = null
