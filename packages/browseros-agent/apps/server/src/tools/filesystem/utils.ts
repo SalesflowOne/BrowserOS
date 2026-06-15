@@ -213,11 +213,17 @@ export const IMAGE_MIME_TYPES: Record<string, string> = {
   '.ico': 'image/x-icon',
 }
 
+export interface WalkFileEntry {
+  path: string
+  realPath: string
+}
+
+/** Walks visible files while preserving both display and canonical read paths. */
 export async function* walkFiles(
   dir: string,
   baseDir: string,
   boundaryRoot?: string,
-): AsyncGenerator<string> {
+): AsyncGenerator<WalkFileEntry> {
   const root = boundaryRoot ?? (await realpath(baseDir))
   let entries: Dirent[]
   try {
@@ -234,7 +240,10 @@ export async function* walkFiles(
     } else if (entry.isFile() || entry.isSymbolicLink()) {
       const canonical = await realpath(fullPath).catch(() => null)
       if (!canonical || !isPathInside(root, canonical)) continue
-      yield relative(baseDir, fullPath)
+      yield {
+        path: relative(baseDir, fullPath),
+        realPath: canonical,
+      }
     }
   }
 }

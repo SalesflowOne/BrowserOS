@@ -1,12 +1,6 @@
 import { describe, it } from 'bun:test'
 import assert from 'node:assert'
-import {
-  existsSync,
-  readFileSync,
-  realpathSync,
-  rmSync,
-  unlinkSync,
-} from 'node:fs'
+import { existsSync, readFileSync, realpathSync, unlinkSync } from 'node:fs'
 import { dirname, isAbsolute, relative } from 'node:path'
 import { getBrowserToolOutputDir } from '../../src/tools/filesystem/utils'
 import {
@@ -85,9 +79,6 @@ const RICH_PAGE = `data:text/html,${encodeURIComponent(`<!DOCTYPE html>
 
 function cleanupSavedDom(domPath: string): void {
   unlinkSync(domPath)
-  try {
-    rmSync(dirname(domPath))
-  } catch {}
 }
 
 function assertSavedUnderBrowserToolOutput(domPath: string): void {

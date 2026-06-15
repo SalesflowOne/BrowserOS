@@ -190,7 +190,7 @@ describe('walkFiles', () => {
 
     const files: string[] = []
     for await (const f of walkFiles(tmpDir, tmpDir)) {
-      files.push(f)
+      files.push(f.path)
     }
     expect(files).toContain('root.txt')
     expect(files).toContain(join('a', 'mid.txt'))
@@ -204,7 +204,7 @@ describe('walkFiles', () => {
 
     const files: string[] = []
     for await (const f of walkFiles(tmpDir, tmpDir)) {
-      files.push(f)
+      files.push(f.path)
     }
     expect(files).toContain('real.ts')
     expect(files.some((f) => f.includes('node_modules'))).toBe(false)
@@ -217,7 +217,7 @@ describe('walkFiles', () => {
 
     const files: string[] = []
     for await (const f of walkFiles(tmpDir, tmpDir)) {
-      files.push(f)
+      files.push(f.path)
     }
     expect(files).toContain('code.ts')
     expect(files.some((f) => f.includes('.git'))).toBe(false)
@@ -226,7 +226,7 @@ describe('walkFiles', () => {
   it('handles empty directories', async () => {
     const files: string[] = []
     for await (const f of walkFiles(tmpDir, tmpDir)) {
-      files.push(f)
+      files.push(f.path)
     }
     expect(files.length).toBe(0)
   })
@@ -234,9 +234,24 @@ describe('walkFiles', () => {
   it('handles nonexistent directory gracefully', async () => {
     const files: string[] = []
     for await (const f of walkFiles(join(tmpDir, 'nonexistent'), tmpDir)) {
-      files.push(f)
+      files.push(f.path)
     }
     expect(files.length).toBe(0)
+  })
+
+  it('returns canonical read paths for workspace symlinks', async () => {
+    await mkdir(join(tmpDir, 'target'), { recursive: true })
+    const realFile = join(tmpDir, 'target', 'real.txt')
+    await writeFile(realFile, 'ok')
+    await symlink(realFile, join(tmpDir, 'link.txt'))
+
+    const files: Array<{ path: string; realPath: string }> = []
+    for await (const f of walkFiles(tmpDir, tmpDir)) {
+      files.push(f)
+    }
+
+    const link = files.find((f) => f.path === 'link.txt')
+    expect(link?.realPath).toBe(await realpath(realFile))
   })
 })
 

@@ -1,12 +1,6 @@
 import { describe, it } from 'bun:test'
 import assert from 'node:assert'
-import {
-  existsSync,
-  readFileSync,
-  realpathSync,
-  rmSync,
-  unlinkSync,
-} from 'node:fs'
+import { existsSync, readFileSync, realpathSync, unlinkSync } from 'node:fs'
 import { dirname, isAbsolute, relative } from 'node:path'
 import { getBrowserToolOutputDir } from '../../src/tools/filesystem/utils'
 import { withBrowser } from '../__helpers__/with-browser'
@@ -46,9 +40,6 @@ function pageIdOf(result: {
 
 function cleanupSavedContent(path: string): void {
   unlinkSync(path)
-  try {
-    rmSync(dirname(path))
-  } catch {}
 }
 
 function assertSavedUnderBrowserToolOutput(path: string): void {

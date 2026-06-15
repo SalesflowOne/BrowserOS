@@ -45,9 +45,9 @@ export function createFindTool(cwd: string) {
         const glob = new Bun.Glob(effectivePattern)
         const matches: string[] = []
 
-        for await (const relPath of walkFiles(searchPath, searchPath)) {
-          if (glob.match(relPath)) {
-            matches.push(relPath)
+        for await (const file of walkFiles(searchPath, searchPath)) {
+          if (glob.match(file.path)) {
+            matches.push(file.path)
             if (matches.length >= limit) break
           }
         }
