@@ -6,6 +6,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 import { Feature } from '@/lib/browseros/capabilities'
+import { visibleProviderTemplates } from '@/lib/llm-providers/provider-visibility'
 import {
   type ProviderTemplate,
   providerTemplates,
@@ -34,10 +35,10 @@ export const ProviderTemplatesSection: FC<ProviderTemplatesSectionProps> = ({
 }) => {
   const { supports } = useCapabilities()
 
-  // Remote Hermes is the recommended quick-start path, so pin it to the
-  // top of the grid (and highlight it below). Everything else keeps the
-  // declaration order from providerTemplates.
-  const filteredTemplates = providerTemplates
+  const filteredTemplates = visibleProviderTemplates(
+    providerTemplates,
+    supports,
+  )
     .filter((template) => {
       if (template.id === 'chatgpt-pro')
         return supports(Feature.CHATGPT_PRO_SUPPORT)
@@ -78,11 +79,8 @@ export const ProviderTemplatesSection: FC<ProviderTemplatesSectionProps> = ({
         <CollapsibleContent>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {filteredTemplates.map((template, idx) => {
-              // Remote Hermes is pinned first by the sort above; render the
-              // coding-agent cards directly after it so they appear ahead of
-              // the long tail of API providers.
               const isHermes = template.id === REMOTE_HERMES_PROVIDER_TYPE
-              const codingAfterHermes = idx === 0 && isHermes
+              const showCodingAdapters = idx === 0
               return (
                 <Fragment key={template.id}>
                   <ProviderTemplateCard
@@ -90,7 +88,7 @@ export const ProviderTemplatesSection: FC<ProviderTemplatesSectionProps> = ({
                     highlighted={isHermes}
                     onUseTemplate={onUseTemplate}
                   />
-                  {codingAfterHermes &&
+                  {showCodingAdapters &&
                     codingAdapters.map((adapter) => (
                       <CodingAgentTemplateCard
                         key={`coding-${adapter.id}`}
