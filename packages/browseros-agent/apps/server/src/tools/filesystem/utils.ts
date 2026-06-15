@@ -19,6 +19,7 @@ export const MAX_READ_CHARS = TOOL_LIMITS.FILESYSTEM_READ_MAX_CHARS
 
 export {
   getBrowserToolOutputDir,
+  isBrowserosStatePath,
   resolveBrowserToolOutputPath,
   resolveWorkspacePath,
   resolveWorkspaceWritePath,

@@ -1,11 +1,9 @@
 import { lstat, realpath } from 'node:fs/promises'
-import { dirname, isAbsolute, join, relative, resolve, win32 } from 'node:path'
-import { getBrowserosDir } from '../../lib/browseros-dir'
-
-const BROWSER_TOOL_OUTPUT_DIR_NAME = 'tool-output'
+import { dirname, isAbsolute, relative, resolve, win32 } from 'node:path'
+import { getBrowserosDir, getToolOutputDir } from '../../lib/browseros-dir'
 
 export function getBrowserToolOutputDir(): string {
-  return join(getBrowserosDir(), BROWSER_TOOL_OUTPUT_DIR_NAME)
+  return getToolOutputDir()
 }
 
 function isAbsoluteInput(inputPath: string): boolean {
@@ -15,6 +13,12 @@ function isAbsoluteInput(inputPath: string): boolean {
 export function isPathInside(root: string, candidate: string): boolean {
   const rel = relative(root, candidate)
   return rel === '' || (!rel.startsWith('..') && !isAbsoluteInput(rel))
+}
+
+export function isBrowserosStatePath(inputPath: string): boolean {
+  return (
+    isAbsoluteInput(inputPath) && isPathInside(getBrowserosDir(), inputPath)
+  )
 }
 
 function assertRelativeWorkspaceInput(inputPath: string): void {

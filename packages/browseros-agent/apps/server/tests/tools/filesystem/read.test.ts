@@ -5,14 +5,23 @@ import { basename, join } from 'node:path'
 import { createReadTool } from '../../../src/tools/filesystem/read'
 import type { FilesystemToolResult } from '../../../src/tools/filesystem/utils'
 import {
+  getBrowserToolOutputDir,
   MAX_READ_CHARS,
   MAX_READ_LINES,
 } from '../../../src/tools/filesystem/utils'
 
 let tmpDir: string
+let browserosDir: string
+let previousBrowserosDir: string | undefined
 let exec: (params: Record<string, unknown>) => Promise<FilesystemToolResult>
 
 beforeEach(async () => {
+  previousBrowserosDir = process.env.BROWSEROS_DIR
+  browserosDir = join(
+    tmpdir(),
+    `fs-read-browseros-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  )
+  process.env.BROWSEROS_DIR = browserosDir
   tmpDir = join(
     tmpdir(),
     `fs-read-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -25,6 +34,12 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await rm(tmpDir, { recursive: true, force: true })
+  await rm(browserosDir, { recursive: true, force: true })
+  if (previousBrowserosDir === undefined) {
+    delete process.env.BROWSEROS_DIR
+  } else {
+    process.env.BROWSEROS_DIR = previousBrowserosDir
+  }
 })
 
 describe('filesystem_read', () => {
@@ -142,6 +157,27 @@ describe('filesystem_read', () => {
     } finally {
       await rm(outsideDir, { recursive: true, force: true })
     }
+  })
+
+  it('reads BrowserOS-generated output files', async () => {
+    const outputDir = getBrowserToolOutputDir()
+    await mkdir(outputDir, { recursive: true })
+    const outputPath = join(outputDir, 'snapshot.md')
+    await writeFile(outputPath, 'generated snapshot')
+
+    const result = await exec({ path: outputPath })
+    expect(result.isError).toBeUndefined()
+    expect(result.text).toContain('generated snapshot')
+  })
+
+  it('rejects absolute BrowserOS state paths outside generated outputs', async () => {
+    await mkdir(getBrowserToolOutputDir(), { recursive: true })
+    const statePath = join(browserosDir, 'config.json')
+    await writeFile(statePath, '{}')
+
+    const result = await exec({ path: statePath })
+    expect(result.isError).toBe(true)
+    expect(result.text).toContain('outside BrowserOS tool output')
   })
 
   it('errors when a read would exceed the line limit', async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { TOOL_LIMITS } from '@browseros/shared/constants/limits'
@@ -20,6 +20,7 @@ import {
 } from '../../../src/tools/browser/framework'
 import { registerBrowserTools } from '../../../src/tools/browser/register'
 import { BROWSER_TOOLS } from '../../../src/tools/browser/registry'
+import { getBrowserToolOutputDir } from '../../../src/tools/filesystem/utils'
 
 type RegisteredHandler = (args: Record<string, unknown>) => Promise<{
   content: unknown
@@ -47,6 +48,22 @@ function createFakeServer() {
         handlers.set(name, handler)
       },
     },
+  }
+}
+
+async function withBrowserosDir<T>(run: () => Promise<T>): Promise<T> {
+  const previous = process.env.BROWSEROS_DIR
+  const browserosDir = mkdtempSync(join(tmpdir(), 'browseros-output-test-'))
+  process.env.BROWSEROS_DIR = browserosDir
+  try {
+    return await run()
+  } finally {
+    if (previous === undefined) {
+      delete process.env.BROWSEROS_DIR
+    } else {
+      process.env.BROWSEROS_DIR = previous
+    }
+    rmSync(browserosDir, { recursive: true, force: true })
   }
 }
 
@@ -363,44 +380,51 @@ describe('registerBrowserTools', () => {
     expect(evaluateCalls[0]?.timeout).toBe(30_000)
   })
 
-  it('caps large read results and writes the full content to a file', async () => {
-    const fake = createFakeServer()
-    const largeText = 'x'.repeat(TOOL_LIMITS.INLINE_PAGE_CONTENT_MAX_CHARS + 1)
-    const session = {
-      pages: {
-        getSession: async () => ({
-          session: {
-            Runtime: {
-              evaluate: async () => ({ result: { value: largeText } }),
+  it('caps large read results and writes the full content to a BrowserOS output file', async () => {
+    await withBrowserosDir(async () => {
+      const fake = createFakeServer()
+      const largeText = 'x'.repeat(
+        TOOL_LIMITS.INLINE_PAGE_CONTENT_MAX_CHARS + 1,
+      )
+      const session = {
+        pages: {
+          getSession: async () => ({
+            session: {
+              Runtime: {
+                evaluate: async () => ({ result: { value: largeText } }),
+              },
             },
-          },
-        }),
-        getInfo: () => ({ url: 'https://example.com' }),
-      },
-    } as unknown as BrowserSession
+          }),
+          getInfo: () => ({ url: 'https://example.com' }),
+        },
+      } as unknown as BrowserSession
 
-    registerBrowserTools(fake.server as never, session)
+      registerBrowserTools(fake.server as never, session)
 
-    const result = await fake.handlers.get('read')?.({
-      page: 1,
-      format: 'text',
+      const result = await fake.handlers.get('read')?.({
+        page: 1,
+        format: 'text',
+      })
+
+      expect(result?.isError).toBeFalsy()
+      expect(result?.structuredContent).toMatchObject({
+        page: 1,
+        format: 'text',
+        contentLength: largeText.length,
+        writtenToFile: true,
+      })
+      expect(result?.content).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'text',
+            text: expect.stringContaining('Content truncated'),
+          }),
+        ]),
+      )
+      const data = result?.structuredContent as { path?: string } | undefined
+      expect(dirname(data?.path ?? '')).toBe(getBrowserToolOutputDir())
+      expect(readFileSync(data?.path ?? '', 'utf8')).toBe(largeText)
     })
-
-    expect(result?.isError).toBeFalsy()
-    expect(result?.structuredContent).toMatchObject({
-      page: 1,
-      format: 'text',
-      contentLength: largeText.length,
-      writtenToFile: true,
-    })
-    expect(result?.content).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: 'text',
-          text: expect.stringContaining('Content truncated'),
-        }),
-      ]),
-    )
   })
 
   it('keeps small snapshots inline with the existing structured content', async () => {
@@ -435,25 +459,23 @@ describe('registerBrowserTools', () => {
     expect(JSON.stringify(result?.structuredContent)).not.toContain('path')
   })
 
-  it('writes very large snapshots to a markdown temp file', async () => {
-    const fake = createFakeServer()
-    const largeSnapshot = Array.from(
-      { length: 5001 },
-      (_, i) => `node-${i}`,
-    ).join(' ')
-    const session = {
-      observe: () => ({
-        snapshot: async () => ({ text: largeSnapshot }),
-      }),
-      pages: {
-        getInfo: () => ({ url: 'https://example.com/large' }),
-      },
-    } as unknown as BrowserSession
-    let savedPath: string | undefined
+  it('writes very large snapshots to a BrowserOS output markdown file', async () => {
+    await withBrowserosDir(async () => {
+      const fake = createFakeServer()
+      const largeSnapshot = Array.from(
+        { length: 5001 },
+        (_, i) => `node-${i}`,
+      ).join(' ')
+      const session = {
+        observe: () => ({
+          snapshot: async () => ({ text: largeSnapshot }),
+        }),
+        pages: {
+          getInfo: () => ({ url: 'https://example.com/large' }),
+        },
+      } as unknown as BrowserSession
+      registerBrowserTools(fake.server as never, session)
 
-    registerBrowserTools(fake.server as never, session)
-
-    try {
       const result = await fake.handlers.get('snapshot')?.({ page: 4 })
 
       expect(result?.isError).toBeFalsy()
@@ -471,12 +493,10 @@ describe('registerBrowserTools', () => {
         wordCount: 5001,
         writtenToFile: true,
       })
-      savedPath = data?.path
+      const savedPath = data?.path
       expect(savedPath).toBeTruthy()
       expect(savedPath?.endsWith('.md')).toBe(true)
-      expect(dirname(savedPath ?? '')).toStartWith(
-        join(tmpdir(), 'browseros-browser-tool-'),
-      )
+      expect(dirname(savedPath ?? '')).toBe(getBrowserToolOutputDir())
       expect(result?.content).toEqual([
         expect.objectContaining({
           type: 'text',
@@ -497,28 +517,23 @@ describe('registerBrowserTools', () => {
       expect(savedContent).toContain('node-0')
       expect(savedContent).toContain('node-5000')
       expect(data?.contentLength).toBe(savedContent.length)
-    } finally {
-      if (savedPath)
-        rmSync(dirname(savedPath), { recursive: true, force: true })
-    }
+    })
   })
 
-  it('writes very long unbroken snapshots to a markdown temp file', async () => {
-    const fake = createFakeServer()
-    const largeSnapshot = 'x'.repeat(50_001)
-    const session = {
-      observe: () => ({
-        snapshot: async () => ({ text: largeSnapshot }),
-      }),
-      pages: {
-        getInfo: () => ({ url: 'https://example.com/long-token' }),
-      },
-    } as unknown as BrowserSession
-    let savedPath: string | undefined
+  it('writes very long unbroken snapshots to a BrowserOS output markdown file', async () => {
+    await withBrowserosDir(async () => {
+      const fake = createFakeServer()
+      const largeSnapshot = 'x'.repeat(50_001)
+      const session = {
+        observe: () => ({
+          snapshot: async () => ({ text: largeSnapshot }),
+        }),
+        pages: {
+          getInfo: () => ({ url: 'https://example.com/long-token' }),
+        },
+      } as unknown as BrowserSession
+      registerBrowserTools(fake.server as never, session)
 
-    registerBrowserTools(fake.server as never, session)
-
-    try {
       const result = await fake.handlers.get('snapshot')?.({ page: 5 })
       const data = result?.structuredContent as
         | {
@@ -533,18 +548,16 @@ describe('registerBrowserTools', () => {
         wordCount: 1,
         writtenToFile: true,
       })
-      savedPath = data?.path
+      const savedPath = data?.path
       expect(result?.content).toEqual([
         expect.objectContaining({
           type: 'text',
           text: expect.stringContaining(savedPath ?? ''),
         }),
       ])
+      expect(dirname(savedPath ?? '')).toBe(getBrowserToolOutputDir())
       expect(readFileSync(savedPath ?? '', 'utf8')).toContain(largeSnapshot)
-    } finally {
-      if (savedPath)
-        rmSync(dirname(savedPath), { recursive: true, force: true })
-    }
+    })
   })
 
   it('returns read errors for page-side exceptions', async () => {
