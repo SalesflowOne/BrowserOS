@@ -2,10 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
+import { getToolOutputDir } from '../../../src/lib/browseros-dir'
 import { createReadTool } from '../../../src/tools/filesystem/read'
 import type { FilesystemToolResult } from '../../../src/tools/filesystem/utils'
 import {
-  getBrowserToolOutputDir,
   MAX_READ_CHARS,
   MAX_READ_LINES,
 } from '../../../src/tools/filesystem/utils'
@@ -160,8 +160,7 @@ describe('filesystem_read', () => {
   })
 
   it('reads BrowserOS-generated output files', async () => {
-    const outputDir = getBrowserToolOutputDir()
-    await mkdir(outputDir, { recursive: true })
+    const outputDir = await getToolOutputDir()
     const outputPath = join(outputDir, 'snapshot.md')
     await writeFile(outputPath, 'generated snapshot')
 
@@ -171,7 +170,7 @@ describe('filesystem_read', () => {
   })
 
   it('rejects absolute BrowserOS state paths outside generated outputs', async () => {
-    await mkdir(getBrowserToolOutputDir(), { recursive: true })
+    await getToolOutputDir()
     const statePath = join(browserosDir, 'config.json')
     await writeFile(statePath, '{}')
 

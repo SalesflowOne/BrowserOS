@@ -1,14 +1,6 @@
 import { lstat, realpath } from 'node:fs/promises'
 import { dirname, isAbsolute, relative, resolve, win32 } from 'node:path'
-import {
-  getBrowserosDir,
-  getRealToolOutputDir,
-  getToolOutputDir,
-} from '../../lib/browseros-dir'
-
-export function getBrowserToolOutputDir(): string {
-  return getToolOutputDir()
-}
+import { getBrowserosDir, getToolOutputDir } from '../../lib/browseros-dir'
 
 function isAbsoluteInput(inputPath: string): boolean {
   return isAbsolute(inputPath) || win32.isAbsolute(inputPath)
@@ -123,7 +115,7 @@ export async function resolveWorkspaceWritePath(
 export async function resolveBrowserToolOutputPath(
   inputPath: string,
 ): Promise<string> {
-  const outputRoot = await getRealToolOutputDir()
+  const outputRoot = await getToolOutputDir()
   const candidate = resolve(inputPath)
   const canonical = await realpath(candidate)
   if (!isPathInside(outputRoot, canonical)) {

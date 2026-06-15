@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
+import { getToolOutputDir } from '../../../src/lib/browseros-dir'
 import {
   detectLineEnding,
-  getBrowserToolOutputDir,
   isBinaryPath,
   normalizeToLF,
   resolveBrowserToolOutputPath,
@@ -355,8 +355,7 @@ describe('filesystem path boundaries', () => {
   })
 
   it('accepts BrowserOS tool output paths under the dedicated output directory', async () => {
-    const outputDir = getBrowserToolOutputDir()
-    await mkdir(outputDir, { recursive: true })
+    const outputDir = await getToolOutputDir()
     const outputPath = join(outputDir, 'snapshot.md')
     await writeFile(outputPath, 'snapshot')
     const expectedPath = await realpath(outputPath)
@@ -367,9 +366,9 @@ describe('filesystem path boundaries', () => {
   })
 
   it('rejects sibling BrowserOS state paths outside the output directory', async () => {
-    await mkdir(getBrowserToolOutputDir(), { recursive: true })
-    const siblingPath = join(getBrowserToolOutputDir(), '..', 'config.json')
-    await mkdir(join(getBrowserToolOutputDir(), '..'), { recursive: true })
+    const outputDir = await getToolOutputDir()
+    const siblingPath = join(outputDir, '..', 'config.json')
+    await mkdir(join(outputDir, '..'), { recursive: true })
     await writeFile(siblingPath, '{}')
 
     await expect(resolveBrowserToolOutputPath(siblingPath)).rejects.toThrow(
@@ -378,8 +377,9 @@ describe('filesystem path boundaries', () => {
   })
 
   it('rejects symlinked BrowserOS tool output roots', async () => {
-    await symlink(outsideDir, getBrowserToolOutputDir())
-    const outputPath = join(getBrowserToolOutputDir(), 'snapshot.md')
+    const rawOutputDir = join(browserosDir, 'tool-output')
+    await symlink(outsideDir, rawOutputDir)
+    const outputPath = join(rawOutputDir, 'snapshot.md')
     await writeFile(join(outsideDir, 'snapshot.md'), 'snapshot')
 
     await expect(resolveBrowserToolOutputPath(outputPath)).rejects.toThrow(

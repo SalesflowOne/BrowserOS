@@ -17,11 +17,9 @@ import { join } from 'node:path'
 import { PATHS } from '@browseros/shared/constants/paths'
 import {
   ensureBrowserosDir,
-  ensureToolOutputDir,
   getBrowserosDir,
   getCacheDir,
   getDbPath,
-  getRealToolOutputDir,
   getSessionsDir,
   getToolOutputDir,
   logDevelopmentBrowserosDir,
@@ -143,7 +141,7 @@ describe('getBrowserosDir', () => {
       await ensureBrowserosDir()
 
       expect(existsSync(getSessionsDir())).toBe(true)
-      expect(existsSync(getToolOutputDir())).toBe(true)
+      expect(existsSync(join(browserosDir, 'tool-output'))).toBe(true)
       expect(existsSync(join(browserosDir, 'cache', 'vm'))).toBe(false)
       expect(existsSync(join(browserosDir, 'vm'))).toBe(false)
       expect(existsSync(join(browserosDir, 'lazy-monitoring'))).toBe(false)
@@ -160,15 +158,16 @@ describe('getBrowserosDir', () => {
     process.env.BROWSEROS_DIR = browserosDir
 
     try {
-      const createdOutputDir = await getRealToolOutputDir()
-      expect(createdOutputDir).toBe(realpathSync(getToolOutputDir()))
+      const rawOutputDir = join(browserosDir, 'tool-output')
+      const createdOutputDir = await getToolOutputDir()
+      expect(createdOutputDir).toBe(realpathSync(rawOutputDir))
       if (process.platform !== 'win32') {
-        chmodSync(getToolOutputDir(), 0o777)
+        chmodSync(rawOutputDir, 0o777)
       }
 
-      const outputDir = await ensureToolOutputDir()
+      const outputDir = await getToolOutputDir()
 
-      expect(outputDir).toBe(realpathSync(getToolOutputDir()))
+      expect(outputDir).toBe(realpathSync(rawOutputDir))
       if (process.platform !== 'win32') {
         expect(statSync(outputDir).mode & 0o777).toBe(TOOL_OUTPUT_DIR_MODE)
       }

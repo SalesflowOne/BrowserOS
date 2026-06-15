@@ -22,6 +22,7 @@ import {
 import type { Browser } from '../../../src/browser/browser'
 import type { BrowserSession } from '../../../src/browser/core/session'
 import {
+  getToolOutputDir,
   TOOL_OUTPUT_DIR_MODE,
   TOOL_OUTPUT_FILE_MODE,
 } from '../../../src/lib/browseros-dir'
@@ -33,7 +34,6 @@ import {
 import { registerBrowserTools } from '../../../src/tools/browser/register'
 import { BROWSER_TOOLS } from '../../../src/tools/browser/registry'
 import { createReadTool } from '../../../src/tools/filesystem/read'
-import { getBrowserToolOutputDir } from '../../../src/tools/filesystem/utils'
 import { get_page_content as legacyGetPageContent } from '../../../src/tools/legacy/browser/snapshot'
 import { executeTool as executeLegacyTool } from '../../../src/tools/legacy/framework'
 
@@ -82,16 +82,15 @@ async function withBrowserosDir<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-function expectBrowserToolOutputPath(filePath: string | undefined): void {
+async function expectBrowserToolOutputPath(
+  filePath: string | undefined,
+): Promise<void> {
   expect(filePath).toBeTruthy()
   const path = filePath ?? ''
-  expect(realpathSync(dirname(path))).toBe(
-    realpathSync(getBrowserToolOutputDir()),
-  )
+  const outputDir = await getToolOutputDir()
+  expect(realpathSync(dirname(path))).toBe(realpathSync(outputDir))
   if (process.platform !== 'win32') {
-    expect(statSync(getBrowserToolOutputDir()).mode & 0o777).toBe(
-      TOOL_OUTPUT_DIR_MODE,
-    )
+    expect(statSync(outputDir).mode & 0o777).toBe(TOOL_OUTPUT_DIR_MODE)
     expect(statSync(path).mode & 0o777).toBe(TOOL_OUTPUT_FILE_MODE)
   }
 }
@@ -451,7 +450,7 @@ describe('registerBrowserTools', () => {
         ]),
       )
       const data = result?.structuredContent as { path?: string } | undefined
-      expectBrowserToolOutputPath(data?.path)
+      await expectBrowserToolOutputPath(data?.path)
       expect(readFileSync(data?.path ?? '', 'utf8')).toBe(largeText)
     })
   })
@@ -523,7 +522,7 @@ describe('registerBrowserTools', () => {
         writtenToFile: true,
       })
       const savedPath = data?.path
-      expectBrowserToolOutputPath(savedPath)
+      await expectBrowserToolOutputPath(savedPath)
       expect(savedPath?.endsWith('.md')).toBe(true)
       expect(result?.content).toEqual([
         expect.objectContaining({
@@ -583,7 +582,7 @@ describe('registerBrowserTools', () => {
           text: expect.stringContaining(savedPath ?? ''),
         }),
       ])
-      expectBrowserToolOutputPath(savedPath)
+      await expectBrowserToolOutputPath(savedPath)
       expect(readFileSync(savedPath ?? '', 'utf8')).toContain(largeSnapshot)
     })
   })
@@ -758,7 +757,7 @@ describe('buildBrowserToolSet', () => {
       const data = result.structuredContent as { path?: string } | undefined
       expect(result.isError).toBeUndefined()
       const savedPath = data?.path
-      expectBrowserToolOutputPath(savedPath)
+      await expectBrowserToolOutputPath(savedPath)
 
       const readTool = createReadTool(process.cwd())
       const readResult = (await readTool.execute?.(

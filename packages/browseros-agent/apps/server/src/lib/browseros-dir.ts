@@ -43,33 +43,20 @@ export function getCacheDir(): string {
   return join(getBrowserosDir(), PATHS.CACHE_DIR_NAME)
 }
 
-/** Returns the directory used for large generated tool outputs. */
-export function getToolOutputDir(): string {
-  return join(getBrowserosDir(), 'tool-output')
-}
-
-async function realToolOutputDir(): Promise<string> {
-  await mkdir(getToolOutputDir(), {
+/** Returns the ready-to-use directory for large generated tool outputs. */
+export async function getToolOutputDir(): Promise<string> {
+  const outputDirPath = join(getBrowserosDir(), 'tool-output')
+  await mkdir(outputDirPath, {
     recursive: true,
     mode: TOOL_OUTPUT_DIR_MODE,
   })
-  const info = await lstat(getToolOutputDir())
+  const info = await lstat(outputDirPath)
   if (!info.isDirectory() || info.isSymbolicLink()) {
     throw new Error('BrowserOS tool output directory must be a real directory.')
   }
-  const outputDir = await realpath(getToolOutputDir())
+  const outputDir = await realpath(outputDirPath)
   await chmod(outputDir, TOOL_OUTPUT_DIR_MODE)
   return outputDir
-}
-
-/** Ensures large generated tool outputs use a real BrowserOS-owned directory. */
-export async function ensureToolOutputDir(): Promise<string> {
-  return await realToolOutputDir()
-}
-
-/** Resolves the generated tool output directory without creating it. */
-export async function getRealToolOutputDir(): Promise<string> {
-  return await realToolOutputDir()
 }
 
 /** Writes a generated tool output file with private owner-only permissions. */
@@ -115,7 +102,7 @@ export function removeServerConfigSync(): void {
 export async function ensureBrowserosDir(): Promise<void> {
   logDevelopmentBrowserosDir()
   await mkdir(getSessionsDir(), { recursive: true })
-  await realToolOutputDir()
+  await getToolOutputDir()
 }
 
 export async function cleanOldSessions(): Promise<void> {

@@ -18,7 +18,6 @@ export const MAX_READ_LINES = TOOL_LIMITS.FILESYSTEM_READ_MAX_LINES
 export const MAX_READ_CHARS = TOOL_LIMITS.FILESYSTEM_READ_MAX_CHARS
 
 export {
-  getBrowserToolOutputDir,
   isBrowserosStatePath,
   resolveBrowserToolOutputPath,
   resolveWorkspacePath,
