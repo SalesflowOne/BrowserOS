@@ -21,6 +21,7 @@ import {
   getBrowserosDir,
   getCacheDir,
   getDbPath,
+  getRealToolOutputDir,
   getSessionsDir,
   getToolOutputDir,
   logDevelopmentBrowserosDir,
@@ -142,6 +143,7 @@ describe('getBrowserosDir', () => {
       await ensureBrowserosDir()
 
       expect(existsSync(getSessionsDir())).toBe(true)
+      expect(existsSync(getToolOutputDir())).toBe(true)
       expect(existsSync(join(browserosDir, 'cache', 'vm'))).toBe(false)
       expect(existsSync(join(browserosDir, 'vm'))).toBe(false)
       expect(existsSync(join(browserosDir, 'lazy-monitoring'))).toBe(false)
@@ -158,7 +160,8 @@ describe('getBrowserosDir', () => {
     process.env.BROWSEROS_DIR = browserosDir
 
     try {
-      await ensureToolOutputDir()
+      const createdOutputDir = await getRealToolOutputDir()
+      expect(createdOutputDir).toBe(realpathSync(getToolOutputDir()))
       if (process.platform !== 'win32') {
         chmodSync(getToolOutputDir(), 0o777)
       }

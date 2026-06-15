@@ -49,17 +49,11 @@ export function getToolOutputDir(): string {
 }
 
 async function realToolOutputDir(): Promise<string> {
-  let info: Awaited<ReturnType<typeof lstat>>
-  try {
-    info = await lstat(getToolOutputDir())
-  } catch (error) {
-    if (error instanceof Error && 'code' in error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        throw new Error('BrowserOS tool output directory does not exist.')
-      }
-    }
-    throw error
-  }
+  await mkdir(getToolOutputDir(), {
+    recursive: true,
+    mode: TOOL_OUTPUT_DIR_MODE,
+  })
+  const info = await lstat(getToolOutputDir())
   if (!info.isDirectory() || info.isSymbolicLink()) {
     throw new Error('BrowserOS tool output directory must be a real directory.')
   }
@@ -70,10 +64,6 @@ async function realToolOutputDir(): Promise<string> {
 
 /** Ensures large generated tool outputs use a real BrowserOS-owned directory. */
 export async function ensureToolOutputDir(): Promise<string> {
-  await mkdir(getToolOutputDir(), {
-    recursive: true,
-    mode: TOOL_OUTPUT_DIR_MODE,
-  })
   return await realToolOutputDir()
 }
 
@@ -125,6 +115,7 @@ export function removeServerConfigSync(): void {
 export async function ensureBrowserosDir(): Promise<void> {
   logDevelopmentBrowserosDir()
   await mkdir(getSessionsDir(), { recursive: true })
+  await realToolOutputDir()
 }
 
 export async function cleanOldSessions(): Promise<void> {
