@@ -66,9 +66,29 @@ export const PROVIDER_MAP: Record<string, string> = {
   'github-copilot': 'github-copilot',
 }
 
+const NON_CHAT_MODEL_CLASS_TERMS = [
+  'embedding',
+  'image',
+  'audio',
+  'tts',
+  'transcribe',
+  'whisper',
+  'moderation',
+]
+
+function isNonChatModelClass(model: ModelsDevModel): boolean {
+  return [model.id, model.name, model.family ?? ''].some((value) => {
+    const normalized = value.toLowerCase()
+
+    return NON_CHAT_MODEL_CLASS_TERMS.some((term) => normalized.includes(term))
+  })
+}
+
 /** Converts a models.dev model into the compact BrowserOS snapshot shape. */
 export function transformModel(model: ModelsDevModel): OutputModel | null {
   if (model.status === 'deprecated') return null
+  if (isNonChatModelClass(model)) return null
+  if (!model.modalities.input.includes('text')) return null
   if (!model.modalities.output.includes('text')) return null
   if (model.limit.context <= 0 || model.limit.output <= 0) return null
 

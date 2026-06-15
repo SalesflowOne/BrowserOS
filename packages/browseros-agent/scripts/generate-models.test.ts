@@ -20,6 +20,9 @@ const REQUIRED_PROVIDER_IDS = [
   'github-copilot',
 ]
 
+const NON_CHAT_MODEL_CLASS_PATTERN =
+  /embedding|image|audio|tts|transcribe|whisper|moderation/i
+
 function model(overrides: Partial<ModelsDevModel>): ModelsDevModel {
   return {
     id: 'model-a',
@@ -96,10 +99,28 @@ describe('generateModelsData', () => {
             modalities: { input: ['text'], output: ['image'] },
             limit: { context: 0, output: 0 },
           }),
+          imageTextOutput: model({
+            id: 'gemini-3-pro-image-preview',
+            name: 'Nano Banana Pro',
+            modalities: { input: ['text', 'image'], output: ['text', 'image'] },
+          }),
+          audioTextOutput: model({
+            id: 'openai/gpt-audio',
+            name: 'GPT Audio',
+            modalities: { input: ['text', 'audio'], output: ['text', 'audio'] },
+          }),
+          embeddingFamily: model({
+            id: 'text-embedding-3-large',
+            family: 'text-embedding',
+          }),
           missingLimits: model({
             id: 'missing-limits',
             modalities: { input: ['text'], output: ['text'] },
             limit: { context: 0, output: 8192 },
+          }),
+          noTextInput: model({
+            id: 'non-text-input',
+            modalities: { input: ['image'], output: ['text'] },
           }),
           chat: model({
             id: 'chat-model',
@@ -184,6 +205,8 @@ describe('generateModelsData', () => {
 
         expect(model.id).toBeTruthy()
         expect(model.name).toBeTruthy()
+        expect(model.id).not.toMatch(NON_CHAT_MODEL_CLASS_PATTERN)
+        expect(model.name).not.toMatch(NON_CHAT_MODEL_CLASS_PATTERN)
         expect(model.contextWindow).toBeGreaterThan(0)
         expect(model.maxOutput).toBeGreaterThan(0)
         expect(typeof model.supportsImages).toBe('boolean')
