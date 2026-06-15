@@ -1,16 +1,30 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
-import { BROWSEROS_PREFS } from './prefs'
 
 const prefRequests: string[] = []
+const MCP_PORT_PREF = 'browseros.server.mcp_port'
+
+mock.module('./prefs', () => ({
+  BROWSEROS_PREFS: {
+    MCP_PORT: MCP_PORT_PREF,
+    PROVIDERS: 'browseros.providers',
+    THIRD_PARTY_LLM_PROVIDERS: 'browseros.third_party_llm.providers',
+    PROXY_PORT: 'browseros.server.proxy_port',
+    SERVER_PORT: 'browseros.server.server_port',
+    ALLOW_REMOTE_MCP: 'browseros.server.allow_remote_in_mcp',
+    RESTART_SERVER: 'browseros.server.restart_requested',
+    SHOW_LLM_CHAT: 'browseros.show_llm_chat',
+    SHOW_TOOLBAR_LABELS: 'browseros.show_toolbar_labels',
+    VERTICAL_TABS_ENABLED: 'browseros.vertical_tabs_enabled',
+    INSTALL_ID: 'browseros.metrics_install_id',
+  },
+}))
 
 mock.module('./adapter', () => ({
   BrowserOSAdapter: {
     getInstance: () => ({
       getPref: async (name: string) => {
         prefRequests.push(name)
-        return name === BROWSEROS_PREFS.MCP_PORT
-          ? { value: 9105 }
-          : { value: null }
+        return name === MCP_PORT_PREF ? { value: 9105 } : { value: null }
       },
       getBrowserosVersion: async () => null,
     }),
@@ -18,9 +32,7 @@ mock.module('./adapter', () => ({
   getBrowserOSAdapter: () => ({
     getPref: async (name: string) => {
       prefRequests.push(name)
-      return name === BROWSEROS_PREFS.MCP_PORT
-        ? { value: 9105 }
-        : { value: null }
+      return name === MCP_PORT_PREF ? { value: 9105 } : { value: null }
     },
   }),
 }))
@@ -34,7 +46,7 @@ describe('getAgentServerUrl', () => {
     const { getAgentServerUrl } = await import('./helpers')
 
     await expect(getAgentServerUrl()).resolves.toBe('http://127.0.0.1:9105')
-    expect(prefRequests).toContain(BROWSEROS_PREFS.MCP_PORT)
+    expect(prefRequests).toContain(MCP_PORT_PREF)
     expect(prefRequests).not.toContain('browseros.server.agent_port')
   })
 })
