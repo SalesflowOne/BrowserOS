@@ -10,6 +10,10 @@ import {
   syncLlmProviders,
 } from '@/lib/llm-providers/storage'
 import { fetchMcpTools } from '@/lib/mcp/client'
+import {
+  onRuntimeMessage,
+  RuntimeMessageType,
+} from '@/lib/messaging/runtime/runtimeMessages'
 import { onServerMessage } from '@/lib/messaging/server/serverMessages'
 import { onOpenSidePanelWithSearch } from '@/lib/messaging/sidepanel/openSidepanelWithSearch'
 import { authRedirectPathStorage } from '@/lib/onboarding/onboardingStorage'
@@ -83,39 +87,36 @@ export default defineBackground(() => {
     }
   })
 
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message?.type === 'get-tab-id') {
-      sendResponse({ tabId: sender.tab?.id })
-      return true
-    }
+  onRuntimeMessage(RuntimeMessageType.getTabId, ({ sender }) => {
+    return { tabId: sender.tab?.id }
+  })
 
-    if (message?.type === 'AUTH_SUCCESS' && sender.tab?.id) {
-      const tabId = sender.tab.id
-      authRedirectPathStorage
-        .getValue()
-        .then((redirectPath) => {
-          const hash = redirectPath || '/home'
-          chrome.tabs.update(tabId, {
-            url: chrome.runtime.getURL(`app.html#${hash}`),
-          })
-          if (redirectPath) authRedirectPathStorage.removeValue()
-        })
-        .catch(() => {
-          chrome.tabs.update(tabId, {
-            url: chrome.runtime.getURL('app.html#/home'),
-          })
-        })
-    }
+  onRuntimeMessage(RuntimeMessageType.authSuccess, async ({ sender }) => {
+    if (!sender.tab?.id) return
 
-    if (message?.type === 'stop-agent' && message?.conversationId) {
-      stopAgentStorage.setValue({
-        conversationId: message.conversationId,
-        timestamp: Date.now(),
+    const tabId = sender.tab.id
+
+    try {
+      const redirectPath = await authRedirectPathStorage.getValue()
+      const hash = redirectPath || '/home'
+      await chrome.tabs.update(tabId, {
+        url: chrome.runtime.getURL(`app.html#${hash}`),
+      })
+      if (redirectPath) await authRedirectPathStorage.removeValue()
+    } catch {
+      await chrome.tabs.update(tabId, {
+        url: chrome.runtime.getURL('app.html#/home'),
       })
     }
   })
 
-  // Clean up selected text storage when a tab is closed
+  onRuntimeMessage(RuntimeMessageType.stopAgent, async ({ data }) => {
+    await stopAgentStorage.setValue({
+      conversationId: data.conversationId,
+      timestamp: Date.now(),
+    })
+  })
+
   chrome.tabs.onRemoved.addListener((tabId) => {
     const key = String(tabId)
     selectedTextStorage.getValue().then((map) => {
