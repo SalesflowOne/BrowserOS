@@ -29,14 +29,3 @@ index 7238955992d8c..e1ec87fccbe6f 100644
  #if BUILDFLAG(IS_CHROMEOS)
    // Accounts / Users / People.
    (*s_allowlist)[ash::kAccountsPrefAllowGuest] =
-@@ -1205,6 +1218,10 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetAllowlistedKeys() {
-       settings_api::PrefType::kBoolean;
-   (*s_allowlist)[::prefs::kImportDialogSearchEngine] =
-       settings_api::PrefType::kBoolean;
-+  (*s_allowlist)[::prefs::kImportDialogExtensions] =
-+      settings_api::PrefType::kBoolean;
-+  (*s_allowlist)[::prefs::kImportDialogCookies] =
-+      settings_api::PrefType::kBoolean;
- #endif  // BUILDFLAG(IS_CHROMEOS)
- 
-   // Supervised Users.  This setting is queried in our Tast tests (b/241943380).
