@@ -19,12 +19,16 @@ import {
   buildKlavisToolSet,
   type KlavisProxyRef,
 } from '../api/services/klavis/strata-proxy'
+import type { Browser } from '../browser/browser'
 import type { BrowserSession } from '../browser/core/session'
 import { logger } from '../lib/logger'
 import { metrics } from '../lib/metrics'
 import { buildFilesystemToolSet } from '../tools/filesystem/build-toolset'
 import { isAcpProvider } from './acp-providers'
-import { CHAT_MODE_ALLOWED_TOOLS } from './chat-mode'
+import {
+  CHAT_MODE_ALLOWED_TOOLS,
+  LEGACY_CHAT_MODE_ALLOWED_TOOLS,
+} from './chat-mode'
 import { createCompactionPrepareStep, type StepWithUsage } from './compaction'
 import { buildMcpServerSpecs, createMcpClients } from './mcp-builder'
 import {
@@ -34,17 +38,32 @@ import {
 import { buildNudgeToolSet } from './nudge-tools'
 import { buildSystemPrompt } from './prompt'
 import { createLanguageModel } from './provider-factory'
-import { readSoulPrompt } from './soul-prompt'
-import { buildBrowserToolSet } from './tool-adapter'
+import { buildBrowserToolSet, buildLegacyBrowserToolSet } from './tool-adapter'
 import type { ResolvedAgentConfig } from './types'
 
 export interface AiSdkAgentConfig {
   resolvedConfig: ResolvedAgentConfig
+  browser: Browser
   browserSession: BrowserSession
   browserContext?: BrowserContext
   klavisRef?: KlavisProxyRef
   browserosId?: string
   aiSdkDevtoolsEnabled?: boolean
+  browserUseNewTools: boolean
+}
+
+/** Builds filesystem tools only for model-backed agent sessions with an explicit workspace. */
+export function buildAgentFilesystemToolSet(
+  resolvedConfig: ResolvedAgentConfig,
+): ToolSet {
+  if (
+    isAcpProvider(resolvedConfig.provider) ||
+    resolvedConfig.chatMode ||
+    !resolvedConfig.workingDir
+  ) {
+    return {}
+  }
+  return buildFilesystemToolSet(resolvedConfig.workingDir)
 }
 
 export class AiSdkAgent {
@@ -102,23 +121,34 @@ export class AiSdkAgent {
     // (and any user-configured MCP servers) directly via the
     // mcpServers config on ResolvedAgentConfig.
     const useMcpBoundaryOnly = isAcpProvider(config.resolvedConfig.provider)
+    const useCompactBrowserTools = config.browserUseNewTools === true
 
     const allBrowserTools = useMcpBoundaryOnly
       ? {}
-      : buildBrowserToolSet(config.browserSession, {
-          readOnly: config.resolvedConfig.chatMode,
-        })
+      : useCompactBrowserTools
+        ? buildBrowserToolSet(config.browserSession, {
+            readOnly: config.resolvedConfig.chatMode,
+          })
+        : buildLegacyBrowserToolSet(config.browser, {
+            workingDir: config.resolvedConfig.workingDir,
+            origin: config.resolvedConfig.origin,
+            originPageId: config.browserContext?.activeTab?.pageId,
+          })
     const reservedBrowserToolNames = new Set(Object.keys(allBrowserTools))
+    const chatModeAllowedTools = useCompactBrowserTools
+      ? CHAT_MODE_ALLOWED_TOOLS
+      : LEGACY_CHAT_MODE_ALLOWED_TOOLS
     const browserTools = config.resolvedConfig.chatMode
       ? Object.fromEntries(
           Object.entries(allBrowserTools).filter(([name]) =>
-            CHAT_MODE_ALLOWED_TOOLS.has(name),
+            chatModeAllowedTools.has(name),
           ),
         )
       : allBrowserTools
     if (config.resolvedConfig.chatMode && !useMcpBoundaryOnly) {
       logger.info('Chat mode enabled, restricting to read-only browser tools', {
-        allowedTools: Array.from(CHAT_MODE_ALLOWED_TOOLS),
+        allowedTools: Array.from(chatModeAllowedTools),
+        browserUseNewTools: useCompactBrowserTools,
       })
     }
 
@@ -191,12 +221,7 @@ export class AiSdkAgent {
     // workspace is selected, and for ACP providers (Claude Code and
     // Codex ship their own filesystem tools; double-registering would
     // collide on tool names and yield stale-snapshot behaviour).
-    const filesystemTools =
-      !useMcpBoundaryOnly &&
-      !config.resolvedConfig.chatMode &&
-      config.resolvedConfig.workingDir
-        ? buildFilesystemToolSet(config.resolvedConfig.workingDir)
-        : {}
+    const filesystemTools = buildAgentFilesystemToolSet(config.resolvedConfig)
     const tools = {
       ...browserTools,
       ...externalMcpTools,
@@ -220,15 +245,12 @@ export class AiSdkAgent {
     ) {
       excludeSections.push('nudges')
     }
-    const soulContent = await readSoulPrompt()
-
     const instructions = buildSystemPrompt({
       userSystemPrompt: config.resolvedConfig.userSystemPrompt,
       exclude: excludeSections,
       isScheduledTask: config.resolvedConfig.isScheduledTask,
       scheduledTaskPageId: config.browserContext?.activeTab?.pageId,
       workspaceDir: config.resolvedConfig.workingDir,
-      soulContent,
       chatMode: config.resolvedConfig.chatMode,
       connectedApps: config.browserContext?.enabledMcpServers,
       declinedApps: config.resolvedConfig.declinedApps,

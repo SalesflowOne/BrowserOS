@@ -7,7 +7,7 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "includes": ["**", "!**/apps/eval/src/dashboard/index.html"]
+    "includes": ["**", "!**/apps/eval/src/dashboard/index.html", "!**/*.svg"]
   },
   "formatter": {
     "enabled": true,
@@ -48,5 +48,31 @@
         "organizeImports": "on"
       }
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["**/apps/eval/src/dashboard/viewer.html"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "useValidAnchor": "off"
+          },
+          "complexity": {
+            "noExcessiveCognitiveComplexity": "off",
+            "useOptionalChain": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["**/scripts/dev/inspect-ui.ts"],
+      "linter": {
+        "rules": {
+          "complexity": {
+            "noExcessiveCognitiveComplexity": "off"
+          }
+        }
+      }
+    }
+  ]
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import {
   checkFeatureSupport,
   Feature,
+  resolveFeatureStaticSupport,
   resolveStaticFeatureSupport,
 } from './capabilities'
 
@@ -43,6 +44,64 @@ describe('resolveStaticFeatureSupport', () => {
       }),
     ).toBeNull()
   })
+
+  it('enables development-only features in development', () => {
+    expect(
+      resolveStaticFeatureSupport({
+        isDevelopment: true,
+        alphaFeaturesEnabled: false,
+        requiresDevelopmentFlag: true,
+      }),
+    ).toBe(true)
+  })
+
+  it('disables development-only features outside development', () => {
+    expect(
+      resolveStaticFeatureSupport({
+        isDevelopment: false,
+        alphaFeaturesEnabled: true,
+        requiresDevelopmentFlag: true,
+      }),
+    ).toBe(false)
+  })
+})
+
+describe('resolveFeatureStaticSupport', () => {
+  it('gates Hermes support on development mode only', () => {
+    expect(
+      resolveFeatureStaticSupport({
+        feature: Feature.HERMES_AGENT_SUPPORT,
+        isDevelopment: true,
+        alphaFeaturesEnabled: false,
+      }),
+    ).toBe(true)
+
+    expect(
+      resolveFeatureStaticSupport({
+        feature: Feature.HERMES_AGENT_SUPPORT,
+        isDevelopment: false,
+        alphaFeaturesEnabled: true,
+      }),
+    ).toBe(false)
+  })
+
+  it('preserves alpha-gated support for alpha features', () => {
+    expect(
+      resolveFeatureStaticSupport({
+        feature: Feature.ALPHA_FEATURES_SUPPORT,
+        isDevelopment: false,
+        alphaFeaturesEnabled: false,
+      }),
+    ).toBe(false)
+
+    expect(
+      resolveFeatureStaticSupport({
+        feature: Feature.ALPHA_FEATURES_SUPPORT,
+        isDevelopment: false,
+        alphaFeaturesEnabled: true,
+      }),
+    ).toBe(true)
+  })
 })
 
 describe('checkFeatureSupport — AGENT_HARNESS_SUPPORT', () => {
@@ -65,7 +124,7 @@ describe('checkFeatureSupport — AGENT_HARNESS_SUPPORT', () => {
 })
 
 describe('checkFeatureSupport — HERMES_AGENT_SUPPORT', () => {
-  it('has no version dependency once the static alpha gate allows it', () => {
+  it('has no version dependency once static support allows it', () => {
     expect(
       checkFeatureSupport(
         { browserOSVersion: null, serverVersion: null },

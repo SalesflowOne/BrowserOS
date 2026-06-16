@@ -30,6 +30,7 @@ export interface ChatServiceDeps {
   browserSession: BrowserSession
   browserosId?: string
   aiSdkDevtoolsEnabled?: boolean
+  browserUseNewTools: boolean
   /** Port the BrowserOS server bound to. Forwarded into the ACP MCP
    *  bridge so the spawned agent can dial back into /mcp. */
   serverPort: number
@@ -42,6 +43,7 @@ export interface ChatServiceDeps {
 export class ChatService {
   constructor(private deps: ChatServiceDeps) {}
 
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: chat request orchestration; refactor tracked separately
   async processMessage(
     request: ChatRequest,
     abortSignal: AbortSignal,
@@ -247,11 +249,13 @@ export class ChatService {
 
       const agent = await AiSdkAgent.create({
         resolvedConfig: agentConfig,
+        browser: this.deps.browser,
         browserSession: this.deps.browserSession,
         browserContext,
         klavisRef: this.deps.klavisRef,
         browserosId: this.deps.browserosId,
         aiSdkDevtoolsEnabled: this.deps.aiSdkDevtoolsEnabled,
+        browserUseNewTools: this.deps.browserUseNewTools,
       })
       session = {
         agent,
@@ -452,11 +456,13 @@ export class ChatService {
         )
     const agent = await AiSdkAgent.create({
       resolvedConfig: agentConfig,
+      browser: this.deps.browser,
       browserSession: this.deps.browserSession,
       browserContext,
       klavisRef: this.deps.klavisRef,
       browserosId: this.deps.browserosId,
       aiSdkDevtoolsEnabled: this.deps.aiSdkDevtoolsEnabled,
+      browserUseNewTools: this.deps.browserUseNewTools,
     })
     const newSession: AgentSession = {
       agent,

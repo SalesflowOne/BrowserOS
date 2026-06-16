@@ -20,7 +20,6 @@ const ServerConfigSchema = z.object({
   cdpPort: portSchema.nullable(),
   serverPort: portSchema,
   agentPort: portSchema,
-  extensionPort: portSchema.nullable(),
   resourcesDir: z.string(),
   executionDir: z.string(),
   mcpAllowRemote: z.boolean(),
@@ -46,32 +45,28 @@ interface ParsedCliArgs {
   overrides: PartialConfig
 }
 
+/** Loads and validates server config from CLI, file, env, and defaults. */
 export function loadServerConfig(
   argv: string[] = process.argv,
 ): ConfigResult<ServerConfig> {
-  // 1. Parse CLI args
   const cli = parseCliArgs(argv)
   if (!cli.ok) return cli
 
-  // 2. Parse config file (only if --config provided)
   const file = parseConfigFile(cli.value.configPath)
   if (!file.ok) return file
 
-  // 3. Parse runtime environment variables
   const runtimeEnv = parseRuntimeEnv()
+  if (!runtimeEnv.ok) return runtimeEnv
 
-  // 4. Merge: Defaults < Env < File < CLI
   const merged = mergeConfigs(
     getDefaults(cli.value.cwd),
-    runtimeEnv,
+    runtimeEnv.value,
     file.value,
     cli.value.overrides,
   )
 
-  // 5. agentPort is deprecated - always equals serverPort
   merged.agentPort = merged.serverPort
 
-  // 6. Validate with Zod
   const result = ServerConfigSchema.safeParse(merged)
   if (!result.success) {
     const errors = result.error.issues
@@ -83,7 +78,6 @@ export function loadServerConfig(
     }
   }
 
-  // 7. Validate required inlined env vars for production
   const inlinedValidation = validateInlinedEnv()
   if (!inlinedValidation.ok) return inlinedValidation
 
@@ -172,7 +166,6 @@ function parseCliArgs(argv: string[]): ConfigResult<ParsedCliArgs> {
       overrides: omitUndefined({
         cdpPort: opts.cdpPort,
         serverPort: opts.serverPort ?? opts.httpMcpPort,
-        extensionPort: opts.extensionPort,
         resourcesDir: opts.resourcesDir
           ? toAbsolutePath(opts.resourcesDir, cwd)
           : undefined,
@@ -216,7 +209,6 @@ function parseConfigFile(filePath?: string): ConfigResult<PartialConfig> {
       value: omitUndefined({
         cdpPort: cfg.ports?.cdp,
         serverPort: cfg.ports?.server ?? cfg.ports?.http_mcp,
-        extensionPort: cfg.ports?.extension,
         resourcesDir: parseAbsolutePath(cfg.directories?.resources, configDir),
         executionDir: parseAbsolutePath(cfg.directories?.execution, configDir),
         mcpAllowRemote:
@@ -247,30 +239,36 @@ function parseConfigFile(filePath?: string): ConfigResult<PartialConfig> {
   }
 }
 
-function parseRuntimeEnv(): PartialConfig {
+function parseRuntimeEnv(): ConfigResult<PartialConfig> {
   const cwd = process.cwd()
-  return omitUndefined({
-    cdpPort: process.env.BROWSEROS_CDP_PORT
-      ? safeParseInt(process.env.BROWSEROS_CDP_PORT)
-      : undefined,
-    serverPort: process.env.BROWSEROS_SERVER_PORT
-      ? safeParseInt(process.env.BROWSEROS_SERVER_PORT)
-      : undefined,
-    extensionPort: process.env.BROWSEROS_EXTENSION_PORT
-      ? safeParseInt(process.env.BROWSEROS_EXTENSION_PORT)
-      : undefined,
-    resourcesDir: process.env.BROWSEROS_RESOURCES_DIR
-      ? toAbsolutePath(process.env.BROWSEROS_RESOURCES_DIR, cwd)
-      : undefined,
-    executionDir: process.env.BROWSEROS_EXECUTION_DIR
-      ? toAbsolutePath(process.env.BROWSEROS_EXECUTION_DIR, cwd)
-      : undefined,
-    instanceInstallId: process.env.BROWSEROS_INSTALL_ID,
-    instanceClientId: process.env.BROWSEROS_CLIENT_ID,
-    aiSdkDevtoolsEnabled:
-      process.env.BROWSEROS_AI_SDK_DEVTOOLS === 'true' ? true : undefined,
-    browserUseNewTools: parseOptionalBoolean(process.env.BROWSER_USE_NEW_TOOLS),
-  })
+  const browserUseNewTools = parseBooleanEnv(
+    'BROWSER_USE_NEW_TOOLS',
+    process.env.BROWSER_USE_NEW_TOOLS,
+  )
+  if (!browserUseNewTools.ok) return browserUseNewTools
+
+  return {
+    ok: true,
+    value: omitUndefined({
+      cdpPort: process.env.BROWSEROS_CDP_PORT
+        ? safeParseInt(process.env.BROWSEROS_CDP_PORT)
+        : undefined,
+      serverPort: process.env.BROWSEROS_SERVER_PORT
+        ? safeParseInt(process.env.BROWSEROS_SERVER_PORT)
+        : undefined,
+      resourcesDir: process.env.BROWSEROS_RESOURCES_DIR
+        ? toAbsolutePath(process.env.BROWSEROS_RESOURCES_DIR, cwd)
+        : undefined,
+      executionDir: process.env.BROWSEROS_EXECUTION_DIR
+        ? toAbsolutePath(process.env.BROWSEROS_EXECUTION_DIR, cwd)
+        : undefined,
+      instanceInstallId: process.env.BROWSEROS_INSTALL_ID,
+      instanceClientId: process.env.BROWSEROS_CLIENT_ID,
+      aiSdkDevtoolsEnabled:
+        process.env.BROWSEROS_AI_SDK_DEVTOOLS === 'true' ? true : undefined,
+      browserUseNewTools: browserUseNewTools.value,
+    }),
+  }
 }
 
 function validateInlinedEnv(): ConfigResult<void> {
@@ -298,7 +296,6 @@ function validateInlinedEnv(): ConfigResult<void> {
 function getDefaults(cwd: string): PartialConfig {
   return {
     cdpPort: null,
-    extensionPort: null,
     resourcesDir: cwd,
     executionDir: cwd,
     mcpAllowRemote: false,
@@ -324,12 +321,18 @@ function safeParseInt(value: string): number | undefined {
   return Number.isNaN(num) ? undefined : num
 }
 
-function parseOptionalBoolean(value: string | undefined): boolean | undefined {
-  if (value === undefined) return undefined
-  const normalized = value.trim().toLowerCase()
-  if (['true', '1', 'yes', 'y', 'on'].includes(normalized)) return true
-  if (['false', '0', 'no', 'n', 'off'].includes(normalized)) return false
-  return undefined
+/** Parses a strict boolean env var, defaulting missing values to false. */
+function parseBooleanEnv(
+  envName: string,
+  value: string | undefined,
+): ConfigResult<boolean> {
+  if (value === undefined) return { ok: true, value: false }
+  if (value === 'true') return { ok: true, value: true }
+  if (value === 'false') return { ok: true, value: false }
+  return {
+    ok: false,
+    error: `${envName} must be "true" or "false".`,
+  }
 }
 
 function omitUndefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
