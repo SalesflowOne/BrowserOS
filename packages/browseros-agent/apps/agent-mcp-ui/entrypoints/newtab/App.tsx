@@ -10,6 +10,7 @@ import { SiteRulesTab } from '@/screens/governance/SiteRulesTab'
 import { LiveRun } from '@/screens/live-run/LiveRun'
 import { Mcp } from '@/screens/mcp/Mcp'
 import { NewAgent } from '@/screens/new-agent/NewAgent'
+import { Onboarding } from '@/screens/onboarding/Onboarding'
 import { Replay } from '@/screens/replay/Replay'
 
 /**
@@ -26,6 +27,7 @@ export function App() {
           <Route path="/" element={<Cockpit />} />
           <Route path="/agents" element={<Agents />} />
           <Route path="/agents/new" element={<NewAgent />} />
+          <Route path="/agents/:id/edit" element={<NewAgent mode="edit" />} />
           <Route path="/governance" element={<Governance />}>
             <Route index element={<Navigate to="audit" replace />} />
             <Route path="audit" element={<AuditTab />} />
@@ -37,6 +39,7 @@ export function App() {
         </Route>
         <Route path="/run/:runId" element={<LiveRun />} />
         <Route path="/governance/audit/:runId/replay" element={<Replay />} />
+        <Route path="/onboarding" element={<Onboarding />} />
       </Routes>
     </HashRouter>
   )
