@@ -134,7 +134,7 @@
     },
     "apps/server": {
       "name": "@browseros/server",
-      "version": "0.0.108",
+      "version": "0.0.109",
       "bin": {
         "browseros-server": "./src/index.ts",
       },
