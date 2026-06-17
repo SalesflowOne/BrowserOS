@@ -1,19 +1,20 @@
-import { Check, Code, Copy, Sparkles } from 'lucide-react'
+import { Check, Copy } from 'lucide-react'
+import { HarnessIcon } from '@/components/harness/HarnessIcon'
 import { cn } from '@/lib/utils'
-import type { AgentRow } from '@/modules/api/agents.hooks'
+import type { AgentProfile } from '@/modules/api/agents.hooks'
 
 interface CopyFromExistingCardProps {
-  agents: readonly AgentRow[]
+  profiles: readonly AgentProfile[]
   selectedId: string | null
-  onClone: (agent: AgentRow) => void
+  onClone: (profile: AgentProfile) => void
 }
 
 export function CopyFromExistingCard({
-  agents,
+  profiles,
   selectedId,
   onClone,
 }: CopyFromExistingCardProps) {
-  if (agents.length === 0) return null
+  if (profiles.length === 0) return null
   return (
     <div className="rounded-2xl border border-accent-tint-2 bg-gradient-to-br from-accent-tint to-[hsl(35_90%_96%)] p-4">
       <div className="mb-1 flex items-center gap-2">
@@ -27,15 +28,13 @@ export function CopyFromExistingCard({
         trust, then tweak.
       </p>
       <div className="flex flex-wrap gap-2">
-        {agents.map((agent) => {
-          const selected = selectedId === agent.id
-          const isCodex = agent.harness === 'Codex'
-          const HarnessIcon = selected ? Check : isCodex ? Code : Sparkles
+        {profiles.map((profile) => {
+          const selected = selectedId === profile.id
           return (
             <button
-              key={agent.id}
+              key={profile.id}
               type="button"
-              onClick={() => onClone(agent)}
+              onClick={() => onClone(profile)}
               className={cn(
                 'flex max-w-[220px] items-center gap-2 rounded-lg border p-2 text-left transition-colors',
                 selected
@@ -43,22 +42,20 @@ export function CopyFromExistingCard({
                   : 'border-border-2 bg-card/60 hover:border-accent/60 hover:bg-card',
               )}
             >
-              <HarnessIcon
-                className={cn(
-                  'size-3.5 shrink-0',
-                  selected
-                    ? 'text-green'
-                    : isCodex
-                      ? 'text-ink-3'
-                      : 'text-accent',
-                )}
-              />
+              {selected ? (
+                <Check className="size-3.5 shrink-0 text-green" />
+              ) : (
+                <HarnessIcon
+                  harness={profile.harness}
+                  className="size-3.5 shrink-0 text-accent"
+                />
+              )}
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-semibold text-xs">
-                  {agent.label}
+                  {profile.name}
                 </span>
                 <span className="text-[10.5px] text-ink-3">
-                  {agent.harness}
+                  {profile.harness}
                 </span>
               </span>
             </button>

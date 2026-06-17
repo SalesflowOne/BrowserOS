@@ -30,7 +30,7 @@ function client() {
 function makeBody(overrides: Partial<NewAgentValues> = {}): NewAgentValues {
   return {
     name: 'Cowork . Finance ops',
-    harness: 'Claude Cowork',
+    harness: 'Claude Desktop',
     loginMode: 'profile',
     selectedSites: [],
     approvals: {
@@ -56,7 +56,7 @@ describe('/agents routes', () => {
       const createRes = await api.agents.$post({ json: makeBody() })
       expect(createRes.status).toBe(201)
       const created = await createRes.json()
-      expect(created.harness).toBe('Claude Cowork')
+      expect(created.harness).toBe('Claude Desktop')
       expect(created.slug).toBe('cowork-finance-ops')
       expect(created.mcpUrl).toMatch(/\/mcp\/cowork-finance-ops$/)
       expect(created.cliCommand).toBe('mcp add cowork-finance-ops')
@@ -101,8 +101,12 @@ describe('/agents routes', () => {
         param: { id: created.id },
       })
       expect(delRes.status).toBe(200)
-      const del = await delRes.json()
-      expect(del).toEqual({ id: created.id })
+      const del = (await delRes.json()) as {
+        id: string
+        harnessUninstall: { installed: boolean; message: string }
+      }
+      expect(del.id).toBe(created.id)
+      expect(typeof del.harnessUninstall.message).toBe('string')
 
       // listed empty
       const emptyRes = await api.agents.$get()

@@ -16,7 +16,7 @@ import { withTempBrowserosDir } from '../../_helpers/temp-browseros-dir'
 function makeInput(overrides: Partial<NewAgentValues> = {}): NewAgentValues {
   return {
     name: 'Cowork . Finance ops',
-    harness: 'Claude Cowork',
+    harness: 'Claude Desktop',
     loginMode: 'profile',
     selectedSites: [],
     approvals: {
@@ -173,7 +173,9 @@ describe('agents service', () => {
   test('remove deletes the file and subsequent getDetail is null', async () => {
     await withTempBrowserosDir(async () => {
       const created = await agents.create(makeInput())
-      expect(await agents.remove(created.id)).toEqual({ id: created.id })
+      const removed = await agents.remove(created.id)
+      expect(removed?.id).toBe(created.id)
+      expect(removed?.harnessUninstall.installed).toBe(false)
       expect(await agents.getDetail(created.id)).toBeNull()
     })
   })

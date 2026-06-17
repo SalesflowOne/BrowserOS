@@ -4,13 +4,22 @@ import { type ReactNode, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { Form } from '@/components/ui/form'
 import { Spinner } from '@/components/ui/spinner'
-import type { AgentRow } from '@/modules/api/agents.hooks'
+import {
+  type AgentProfile,
+  useAgentProfileDetail,
+} from '@/modules/api/agents.hooks'
 import { AclRulesSection } from './AclRulesSection'
 import { ApprovalsSection } from './ApprovalsSection'
 import { ConnectorPreviewRail } from './ConnectorPreviewRail'
 import { CopyFromExistingCard } from './CopyFromExistingCard'
 import { HarnessSection } from './HarnessSection'
-import { LoginsSection } from './LoginsSection'
+// TODO(logins-filter): re-enable LoginsSection once the
+// Phase 8 (vault / Chrome import) work lands so the wizard can
+// actually filter the user's saved sessions per agent. Until then
+// the form defaults to loginMode='profile' so every submission is a
+// well-formed value, and the section is hidden from the UI to avoid
+// promising a capability the backend can't honor yet.
+// import { LoginsSection } from './LoginsSection'
 import { type AgentWizardMode, useAgentWizardData } from './new-agent.data'
 import { SEED_ACL_RULES } from './new-agent.helpers'
 import {
@@ -25,8 +34,15 @@ interface NewAgentProps {
 }
 
 export function NewAgent({ mode = 'create' }: NewAgentProps) {
-  const { agentId, agents, createAgent, updateAgent, profileDetail, navigate } =
-    useAgentWizardData(mode)
+  const {
+    agentId,
+    existingProfiles,
+    queryClient,
+    createAgent,
+    updateAgent,
+    profileDetail,
+    navigate,
+  } = useAgentWizardData(mode)
 
   const initialDefaults: NewAgentValues = {
     ...newAgentDefaults,
@@ -42,11 +58,39 @@ export function NewAgent({ mode = 'create' }: NewAgentProps) {
 
   const [cloneFromId, setCloneFromId] = useState<string | null>(null)
 
-  const handleClone = (agent: AgentRow) => {
-    setCloneFromId(agent.id)
-    form.setValue('harness', agent.harness, { shouldDirty: true })
-    if (form.getValues('name').trim() === '') {
-      form.setValue('name', `Copy of ${agent.label}`, { shouldDirty: true })
+  const handleClone = async (profile: AgentProfile) => {
+    setCloneFromId(profile.id)
+    // Fetch the full wizard-shape values for the chosen profile and
+    // hydrate every field. Cached by tanstack so reopening the same
+    // card after a clone is instant; the detail endpoint returns the
+    // exact NewAgentValues shape `form` already knows about.
+    try {
+      const detail = await queryClient.fetchQuery(
+        useAgentProfileDetail.getFetchOptions({ id: profile.id }),
+      )
+      if (!detail) {
+        // Backend returned 404. Drop the "selected" highlight so the
+        // user can pick another card; the form keeps its current
+        // values rather than wiping to defaults.
+        setCloneFromId(null)
+        return
+      }
+      form.reset(
+        { ...detail, name: `Copy of ${profile.name}` },
+        { keepDefaultValues: false },
+      )
+    } catch (err) {
+      // Network error, 5xx, or the SDK rejected the response. Without
+      // this clear, the chip stays highlighted while the form
+      // continues to render its prior values, which reads as "the
+      // clone worked silently". Log so an operator can diagnose;
+      // toast is intentionally not added here to avoid coupling the
+      // wizard to a notification system we don't have yet.
+      console.warn(
+        '[NewAgent.handleClone] failed to fetch profile detail; clearing selection',
+        err,
+      )
+      setCloneFromId(null)
     }
   }
 
@@ -77,7 +121,11 @@ export function NewAgent({ mode = 'create' }: NewAgentProps) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-1 bg-bg-canvas">
+    // h-screen (not h-full) so the rail's internal overflow-y-auto
+    // anchors against the viewport. Without this, an unconstrained
+    // parent lets the rail grow to the document height, pushing the
+    // "Add to ..." CTA off-screen below the form.
+    <div className="flex h-screen min-h-0 flex-1 bg-bg-canvas">
       <Form {...form}>
         <form
           onSubmit={form.handleSubmit(onSubmit)}
@@ -103,7 +151,7 @@ export function NewAgent({ mode = 'create' }: NewAgentProps) {
             <div className="mx-auto flex w-full max-w-[600px] flex-col gap-6 px-6 py-6 pb-20">
               {!isEdit && (
                 <CopyFromExistingCard
-                  agents={agents}
+                  profiles={existingProfiles}
                   selectedId={cloneFromId}
                   onClone={handleClone}
                 />
@@ -115,22 +163,16 @@ export function NewAgent({ mode = 'create' }: NewAgentProps) {
               >
                 <HarnessSection />
               </NumberedSection>
+              {/* See TODO(logins-filter) at the top of this file.  */}
               <NumberedSection
                 n={2}
-                title="Logins (profile)"
-                sub="Which of your saved sessions this agent may use. Passwords never leave this Mac."
-              >
-                <LoginsSection />
-              </NumberedSection>
-              <NumberedSection
-                n={3}
                 title="Tool approvals"
                 sub="What this agent does automatically vs. what needs your OK."
               >
                 <ApprovalsSection />
               </NumberedSection>
               <NumberedSection
-                n={4}
+                n={3}
                 title="ACL rules"
                 sub="Site-level blocks enforced at the browser, even under prompt injection."
               >

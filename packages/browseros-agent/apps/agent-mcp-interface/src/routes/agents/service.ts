@@ -23,8 +23,14 @@ import { toSlug, uniqueSlug } from '../../lib/slug'
 import { listFiles, readJson, removeFile, writeJson } from '../../lib/storage'
 import { getLocalServerUrl } from '../../local-server-url'
 import {
+  installForAgent,
+  reconcileHarnessLink,
+  uninstallForAgent,
+} from '../../services/harness-install'
+import {
   type AgentProfileSummary,
   type CreatedAgent,
+  type DeletedAgent,
   type NewAgentValues,
   type RegeneratedMcpUrl,
   type StoredAgentProfile,
@@ -215,6 +221,15 @@ export async function create(input: NewAgentValues): Promise<CreatedAgent> {
       updatedAt: now,
     }
     await writeJson(fileFor(id), profile, storedAgentProfileSchema)
+    // Best-effort harness install. A failure here does NOT roll back
+    // the profile; the user can retry or fix the harness state and
+    // we'll attempt again on the next create. The outcome rides
+    // back in the response so the wizard can surface it.
+    const harnessInstall = await installForAgent({
+      slug: profile.slug,
+      mcpUrl: profile.mcpUrl,
+      harness: profile.harness,
+    })
     return {
       id,
       name: profile.name,
@@ -222,6 +237,7 @@ export async function create(input: NewAgentValues): Promise<CreatedAgent> {
       slug,
       mcpUrl: profile.mcpUrl,
       cliCommand: buildCliCommand(slug),
+      harnessInstall,
     }
   })
 }
@@ -257,14 +273,38 @@ export async function update(
       updatedAt: nowIso(),
     }
     await writeJson(fileFor(id), next, storedAgentProfileSchema)
+    // Best-effort harness reconcile: if the harness or slug rotated,
+    // wire the new entry into the new harness and drop the old one.
+    // Failures are logged inside the helpers and do NOT roll back the
+    // profile rewrite.
+    await reconcileHarnessLink({
+      before: { slug: existing.slug, harness: existing.harness },
+      after: { slug: next.slug, mcpUrl: next.mcpUrl, harness: next.harness },
+    })
     return next
   })
 }
 
-export async function remove(id: string): Promise<{ id: string } | null> {
+export async function remove(id: string): Promise<DeletedAgent | null> {
   if (!isValidId(id)) return null
+  // Load the profile before we wipe it so we can issue the uninstall
+  // with the right harness + slug. A delete that races a parallel
+  // delete may find no profile here; that's the "already gone" path
+  // and we 404.
+  const profile = await loadById(id)
+  if (!profile) return null
+  // Remove the file FIRST. Two concurrent deletes both observe the
+  // same profile via loadById, but only the winner's removeFile
+  // returns true; the loser exits with 404 here and never
+  // side-effects the harness. Without this order, both calls would
+  // run uninstallForAgent and the loser would still report 404.
   const existed = await removeFile(fileFor(id))
-  return existed ? { id } : null
+  if (!existed) return null
+  const harnessUninstall = await uninstallForAgent({
+    slug: profile.slug,
+    harness: profile.harness,
+  })
+  return { id, harnessUninstall }
 }
 
 export async function regenerateMcpUrl(
@@ -292,6 +332,14 @@ export async function regenerateMcpUrl(
       updatedAt: nowIso(),
     }
     await writeJson(fileFor(id), next, storedAgentProfileSchema)
+    // The whole point of rotating is to issue a fresh URL to the
+    // harness; reconcile the link so the harness picks it up
+    // automatically. Harness is unchanged so only the slug pair
+    // differs.
+    await reconcileHarnessLink({
+      before: { slug: existing.slug, harness: existing.harness },
+      after: { slug: next.slug, mcpUrl: next.mcpUrl, harness: next.harness },
+    })
     return { id, mcpUrl: next.mcpUrl }
   })
 }
