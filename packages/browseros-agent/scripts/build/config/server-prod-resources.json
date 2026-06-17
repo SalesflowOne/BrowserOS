@@ -117,9 +117,7 @@
         "path": "apps/server/src/lib/db/migrations"
       },
       "destination": "resources/db/migrations",
-      "recursive": true,
-      "os": ["macos"],
-      "arch": ["arm64", "x64"]
+      "recursive": true
     }
   ]
 }
