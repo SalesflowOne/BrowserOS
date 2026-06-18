@@ -3,6 +3,7 @@ import { wrapUntrusted } from './trust-boundary'
 
 const LARGE_SNAPSHOT_WORD_THRESHOLD = 5_000
 const LARGE_SNAPSHOT_CHAR_THRESHOLD = 50_000
+const MAX_SAVE_FAILURE_EXCERPT_CHARS = 4_000
 
 export interface FormattedSnapshot {
   text: string
@@ -28,23 +29,42 @@ export async function formatSnapshotResult(
     wordCount > LARGE_SNAPSHOT_WORD_THRESHOLD ||
     snapshotText.length > LARGE_SNAPSHOT_CHAR_THRESHOLD
   ) {
-    const path = await writeTempToolOutputFile({
-      toolName: 'snapshot',
-      extension: 'md',
-      content: wrappedSnapshot,
-    })
+    try {
+      const path = await writeTempToolOutputFile({
+        toolName: 'snapshot',
+        extension: 'md',
+        content: wrappedSnapshot,
+      })
 
-    return {
-      text: [
-        `Large snapshot (${wordCount} words, ${contentLength} chars) saved to: ${path}`,
-        'Read the file for the full snapshot and refs.',
-      ].join('\n'),
-      structured: {
-        path,
-        contentLength,
-        wordCount,
-        writtenToFile: true,
-      },
+      return {
+        text: [
+          `Large snapshot (${wordCount} words, ${contentLength} chars) saved to: ${path}`,
+          'Read the file for the full snapshot and refs.',
+        ].join('\n'),
+        structured: {
+          path,
+          contentLength,
+          wordCount,
+          writtenToFile: true,
+        },
+      }
+    } catch (error) {
+      const saveError = error instanceof Error ? error.message : String(error)
+      const excerpt = snapshotText.slice(0, MAX_SAVE_FAILURE_EXCERPT_CHARS)
+      return {
+        text: [
+          `Large snapshot (${wordCount} words, ${contentLength} chars) could not be saved to a BrowserOS output file: ${saveError}`,
+          `Showing the first ${excerpt.length} chars instead:`,
+          wrapUntrusted(excerpt, origin),
+        ].join('\n'),
+        structured: {
+          contentLength,
+          wordCount,
+          writtenToFile: false,
+          outputWriteFailed: true,
+          error: saveError,
+        },
+      }
     }
   }
 

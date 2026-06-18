@@ -168,6 +168,43 @@ describe('browser tool framework post-actions', () => {
     })
   })
 
+  it('keeps large snapshot post-actions visible when output file writes fail', async () => {
+    await withBrowserosFile(async () => {
+      const largeSnapshot = Array.from(
+        { length: 5001 },
+        (_, i) => `node-${i}`,
+      ).join(' ')
+      const postActionTool = defineTool({
+        name: 'large_snapshot_post_action_failure_test',
+        description: 'Test failed large snapshot post-action output.',
+        input: z.object({ page: z.number().int() }),
+        handler: async (args, _ctx, response) => {
+          response.includeSnapshot(args.page)
+        },
+      })
+      const session = {
+        observe: () => ({
+          snapshot: async () => ({ text: largeSnapshot }),
+        }),
+        pages: {
+          getInfo: () => ({ url: 'https://example.com/large-snapshot' }),
+          getTabId: () => undefined,
+        },
+      } as unknown as BrowserSession
+
+      const result = await executeTool(postActionTool, { page: 8 }, { session })
+      const text = textOf(result)
+
+      expect(result.isError).toBeFalsy()
+      expect(text).toContain('[Page 8 snapshot]')
+      expect(text).toContain('could not be saved to a BrowserOS output file')
+      expect(text).toContain('Showing the first')
+      expect(text).toContain('[UNTRUSTED_PAGE_CONTENT')
+      expect(text).toContain('node-0')
+      expect(text).not.toContain('node-5000')
+    })
+  })
+
   it('runs diff post-actions through ToolResponse', async () => {
     const events: string[] = []
     const postActionTool = defineTool({
