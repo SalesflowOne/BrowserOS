@@ -180,16 +180,29 @@ describe('side panel scope routing', () => {
     expect(closeCalls).toEqual([{ windowId: 3 }])
   })
 
-  it('opens without closing when search opens an already-open window panel', async () => {
-    registerSidePanelOpenStateListeners()
+  it('keeps programmatic opens on the BrowserOS API in window mode', async () => {
     await setSidePanelPerWindowPreference(true)
-    fireWindowOpened(3)
 
     const result = await openSidePanel({ tabId: 7, windowId: 3 })
 
     expect(result).toEqual({ opened: true })
+    expect(browserosIsOpenCalls).toEqual([{ tabId: 7 }])
+    expect(browserosToggleCalls).toEqual([{ tabId: 7 }])
+    expect(openCalls).toEqual([])
     expect(closeCalls).toEqual([])
+  })
+
+  it('opens without closing when programmatic opens target an already-open tab panel', async () => {
+    await setSidePanelPerWindowPreference(true)
+    browserosIsOpenResult = true
+
+    const result = await openSidePanel({ tabId: 7, windowId: 3 })
+
+    expect(result).toEqual({ opened: true })
+    expect(browserosIsOpenCalls).toEqual([{ tabId: 7 }])
     expect(browserosToggleCalls).toEqual([])
+    expect(openCalls).toEqual([])
+    expect(closeCalls).toEqual([])
   })
 
   it('refreshes the cached scope from BrowserOS prefs outside the click path', async () => {

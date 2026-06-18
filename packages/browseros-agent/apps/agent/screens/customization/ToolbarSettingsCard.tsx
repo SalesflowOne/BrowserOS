@@ -73,15 +73,30 @@ export const ToolbarSettingsCard: FC = () => {
   }
 
   const handleSidePanelScopeToggle = async (checked: boolean) => {
-    const updated = await handleToggle(
-      BROWSEROS_PREFS.SIDE_PANEL_PER_WINDOW,
-      checked,
-      setSidePanelPerWindow,
-    )
-    if (updated) {
+    const adapter = getBrowserOSAdapter()
+    const previous = sidePanelPerWindow
+    let saved = false
+    try {
+      const success = await adapter.setPref(
+        BROWSEROS_PREFS.SIDE_PANEL_PER_WINDOW,
+        checked,
+      )
+      if (!success) {
+        throw new Error('Failed to update setting')
+      }
+      saved = true
       await sendRuntimeMessage(RuntimeMessageType.sidePanelScopeChanged, {
         perWindow: checked,
-      }).catch(() => null)
+      })
+      setSidePanelPerWindow(checked)
+    } catch {
+      if (saved) {
+        await adapter
+          .setPref(BROWSEROS_PREFS.SIDE_PANEL_PER_WINDOW, previous)
+          .catch(() => null)
+      }
+      setSidePanelPerWindow(previous)
+      toast.error('Failed to update setting')
     }
   }
 

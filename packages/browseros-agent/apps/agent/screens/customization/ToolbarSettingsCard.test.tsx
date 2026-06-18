@@ -115,6 +115,7 @@ function checkFeatureSupport(
 let prefValues = new Map<string, unknown>()
 let setPrefCalls: Array<{ name: string; value: unknown }> = []
 let sentRuntimeMessages: Array<{ type: string; data: unknown }> = []
+let sendRuntimeMessageError: Error | null = null
 let renderedSwitches: Array<{
   id?: string
   checked?: boolean
@@ -200,6 +201,9 @@ mock.module('@/lib/messaging/runtime/runtimeMessages', () => ({
   },
   sendRuntimeMessage: async (type: string, data: unknown) => {
     sentRuntimeMessages.push({ type, data })
+    if (sendRuntimeMessageError) {
+      throw sendRuntimeMessageError
+    }
   },
 }))
 
@@ -214,6 +218,7 @@ beforeEach(() => {
   prefValues = new Map()
   setPrefCalls = []
   sentRuntimeMessages = []
+  sendRuntimeMessageError = null
   renderedSwitches = []
 })
 
@@ -266,5 +271,25 @@ describe('ToolbarSettingsCard', () => {
         data: { perWindow: true },
       },
     ])
+  })
+
+  it('rolls back the side panel scope pref when background application fails', async () => {
+    sendRuntimeMessageError = new Error('No receiver')
+    prefValues.set(BROWSEROS_PREFS.SIDE_PANEL_PER_WINDOW, false)
+    renderCard()
+
+    await getRenderedSwitch('side-panel-per-window').onCheckedChange?.(true)
+
+    expect(setPrefCalls).toEqual([
+      {
+        name: BROWSEROS_PREFS.SIDE_PANEL_PER_WINDOW,
+        value: true,
+      },
+      {
+        name: BROWSEROS_PREFS.SIDE_PANEL_PER_WINDOW,
+        value: false,
+      },
+    ])
+    expect(prefValues.get(BROWSEROS_PREFS.SIDE_PANEL_PER_WINDOW)).toBe(false)
   })
 })

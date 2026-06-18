@@ -160,14 +160,11 @@ export function registerSidePanelOpenStateListeners(): void {
   })
 }
 
-/** Opens the configured side panel scope without closing an already-open panel. */
+/** Opens from non-toolbar flows that may not carry Chrome's user gesture. */
 export async function openSidePanel(
   target: SidePanelTarget,
 ): Promise<SidePanelToggleResult> {
   await ensureSidePanelRuntimeStateLoaded()
-  if (sidePanelPerWindow) {
-    return await openWindowSidePanel(target)
-  }
   return await openTabSidePanel(target)
 }
 
