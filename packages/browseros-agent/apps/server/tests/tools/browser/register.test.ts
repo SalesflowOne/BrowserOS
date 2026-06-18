@@ -103,7 +103,7 @@ describe('registerBrowserTools', () => {
     registerBrowserTools(fake.server as never, session)
 
     expect([...fake.handlers.keys()]).toEqual(BROWSER_TOOLS.map((t) => t.name))
-    expect(fake.handlers.size).toBe(10)
+    expect(fake.handlers.size).toBe(11)
     expect(fake.configs.get('tabs')?.inputSchema).toBeDefined()
   })
 
@@ -160,7 +160,7 @@ describe('registerBrowserTools', () => {
     ])
   })
 
-  it('runs page-context JavaScript through the page session', async () => {
+  it('evaluates page-context JavaScript through the page session', async () => {
     const fake = createFakeServer()
     const evaluateCalls: Array<Record<string, unknown>> = []
     const session = {
@@ -175,13 +175,13 @@ describe('registerBrowserTools', () => {
             },
           },
         }),
-        getInfo: () => ({ url: 'https://example.com/run' }),
+        getInfo: () => ({ url: 'https://example.com/eval' }),
       },
     } as unknown as BrowserSession
 
     registerBrowserTools(fake.server as never, session)
 
-    const result = await fake.handlers.get('run')?.({
+    const result = await fake.handlers.get('eval')?.({
       page: 3,
       code: 'return document.title',
       timeout: 1234,
@@ -398,7 +398,7 @@ describe('registerBrowserTools', () => {
 
     registerBrowserTools(fake.server as never, session)
 
-    const result = await fake.handlers.get('run')?.({
+    const result = await fake.handlers.get('eval')?.({
       page: 3,
       code: 'return true',
       timeout: 120_000,
