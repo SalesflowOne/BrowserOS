@@ -175,13 +175,13 @@ describe('registerBrowserTools', () => {
             },
           },
         }),
-        getInfo: () => ({ url: 'https://example.com/eval' }),
+        getInfo: () => ({ url: 'https://example.com/evaluate' }),
       },
     } as unknown as BrowserSession
 
     registerBrowserTools(fake.server as never, session)
 
-    const result = await fake.handlers.get('eval')?.({
+    const result = await fake.handlers.get('evaluate')?.({
       page: 3,
       code: 'return document.title',
       timeout: 1234,
@@ -523,7 +523,7 @@ return 'late'
 
     registerBrowserTools(fake.server as never, session)
 
-    const result = await fake.handlers.get('eval')?.({
+    const result = await fake.handlers.get('evaluate')?.({
       page: 3,
       code: 'return true',
       timeout: 120_000,

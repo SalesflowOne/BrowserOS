@@ -1,6 +1,6 @@
 import { act } from './act'
 import { diff } from './diff'
-import { evalTool } from './eval'
+import { evaluate } from './evaluate'
 import type { ToolDefinition } from './framework'
 import { grep } from './grep'
 import { navigate } from './navigate'
@@ -21,6 +21,6 @@ export const BROWSER_TOOLS: readonly ToolDefinition[] = [
   grep,
   screenshot,
   wait,
-  evalTool,
+  evaluate,
   run,
 ]

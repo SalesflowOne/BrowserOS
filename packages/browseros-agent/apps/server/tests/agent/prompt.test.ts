@@ -425,6 +425,7 @@ describe('capability coverage', () => {
       'grep',
       'screenshot',
       'wait',
+      'evaluate',
       'run',
     ]
     for (const tool of browserTools) {
