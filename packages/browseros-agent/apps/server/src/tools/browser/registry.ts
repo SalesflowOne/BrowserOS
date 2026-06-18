@@ -11,6 +11,7 @@ import { snapshot } from './snapshot'
 import { tab_groups } from './tab-groups'
 import { tabs } from './tabs'
 import { wait } from './wait'
+import { windows } from './windows'
 
 export const BROWSER_TOOLS: readonly ToolDefinition[] = [
   tabs,
@@ -23,6 +24,7 @@ export const BROWSER_TOOLS: readonly ToolDefinition[] = [
   grep,
   screenshot,
   wait,
+  windows,
   evalTool,
   run,
 ]
