@@ -942,9 +942,18 @@ return 'late'
         landscape: true,
         background: false,
       })
+      const upstreamOptions = await fake.handlers.get('pdf')?.({
+        page: 1,
+        printBackground: false,
+        preferCSSPageSize: true,
+      })
 
       expect(result?.isError).toBeFalsy()
-      expect(printCalls).toEqual([{ landscape: true, printBackground: false }])
+      expect(upstreamOptions?.isError).toBeFalsy()
+      expect(printCalls).toEqual([
+        { landscape: true, printBackground: false, preferCSSPageSize: false },
+        { landscape: false, printBackground: false, preferCSSPageSize: true },
+      ])
       const data = result?.structuredContent as
         | { page?: number; path?: string; bytes?: number }
         | undefined

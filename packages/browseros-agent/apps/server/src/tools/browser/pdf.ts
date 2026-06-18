@@ -11,15 +11,24 @@ export const pdf = defineTool({
     landscape: z.boolean().optional().describe('Use landscape orientation.'),
     background: z
       .boolean()
-      .default(true)
+      .optional()
+      .describe('Compatibility alias for printBackground.'),
+    printBackground: z
+      .boolean()
+      .optional()
       .describe('Print background graphics.'),
+    preferCSSPageSize: z
+      .boolean()
+      .default(false)
+      .describe('Use CSS page size when the page defines one.'),
   }),
   annotations: { readOnlyHint: true },
   handler: async (args, ctx) => {
     const { session } = await ctx.session.pages.getSession(args.page)
     const { data } = await session.Page.printToPDF({
       landscape: args.landscape ?? false,
-      printBackground: args.background,
+      printBackground: args.printBackground ?? args.background ?? true,
+      preferCSSPageSize: args.preferCSSPageSize,
     })
     const bytes = Buffer.from(data, 'base64')
     const path = await writeTempToolOutputBinaryFile({
