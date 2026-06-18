@@ -19,7 +19,6 @@ const BROWSEROS_PREFS = {
   RESTART_SERVER: 'browseros.server.restart_requested',
   SHOW_LLM_CHAT: 'browseros.show_llm_chat',
   SHOW_TOOLBAR_LABELS: 'browseros.show_toolbar_labels',
-  SIDE_PANEL_PER_WINDOW: 'browseros.side_panel.per_window',
   VERTICAL_TABS_ENABLED: 'browseros.vertical_tabs_enabled',
   INSTALL_ID: 'browseros.metrics_install_id',
 } as const
@@ -114,6 +113,8 @@ function checkFeatureSupport(
 
 let prefValues = new Map<string, unknown>()
 let setPrefCalls: Array<{ name: string; value: unknown }> = []
+let sidePanelPerWindowValue = false
+let sidePanelPerWindowWrites: boolean[] = []
 let sentRuntimeMessages: Array<{ type: string; data: unknown }> = []
 let sendRuntimeMessageError: Error | null = null
 let renderedSwitches: Array<{
@@ -180,6 +181,16 @@ mock.module('@/lib/browseros/prefs', () => ({
   BROWSEROS_PREFS,
 }))
 
+mock.module('@/lib/browseros/sidePanelOpenStateStorage', () => ({
+  sidePanelPerWindowStorage: {
+    getValue: async () => sidePanelPerWindowValue,
+    setValue: async (value: boolean) => {
+      sidePanelPerWindowWrites.push(value)
+      sidePanelPerWindowValue = value
+    },
+  },
+}))
+
 mock.module('@/lib/browseros/capabilities', () => ({
   Capabilities: {
     getStaticSupport: () => null,
@@ -217,6 +228,8 @@ beforeAll(async () => {
 beforeEach(() => {
   prefValues = new Map()
   setPrefCalls = []
+  sidePanelPerWindowValue = false
+  sidePanelPerWindowWrites = []
   sentRuntimeMessages = []
   sendRuntimeMessageError = null
   renderedSwitches = []
@@ -259,12 +272,8 @@ describe('ToolbarSettingsCard', () => {
 
     await getRenderedSwitch('side-panel-per-window').onCheckedChange?.(true)
 
-    expect(setPrefCalls).toEqual([
-      {
-        name: BROWSEROS_PREFS.SIDE_PANEL_PER_WINDOW,
-        value: true,
-      },
-    ])
+    expect(sidePanelPerWindowWrites).toEqual([true])
+    expect(setPrefCalls).toEqual([])
     expect(sentRuntimeMessages).toEqual([
       {
         type: 'runtime.sidePanelScopeChanged',
@@ -275,21 +284,13 @@ describe('ToolbarSettingsCard', () => {
 
   it('rolls back the side panel scope pref when background application fails', async () => {
     sendRuntimeMessageError = new Error('No receiver')
-    prefValues.set(BROWSEROS_PREFS.SIDE_PANEL_PER_WINDOW, false)
+    sidePanelPerWindowValue = false
     renderCard()
 
     await getRenderedSwitch('side-panel-per-window').onCheckedChange?.(true)
 
-    expect(setPrefCalls).toEqual([
-      {
-        name: BROWSEROS_PREFS.SIDE_PANEL_PER_WINDOW,
-        value: true,
-      },
-      {
-        name: BROWSEROS_PREFS.SIDE_PANEL_PER_WINDOW,
-        value: false,
-      },
-    ])
-    expect(prefValues.get(BROWSEROS_PREFS.SIDE_PANEL_PER_WINDOW)).toBe(false)
+    expect(sidePanelPerWindowWrites).toEqual([true, false])
+    expect(setPrefCalls).toEqual([])
+    expect(sidePanelPerWindowValue).toBe(false)
   })
 })
