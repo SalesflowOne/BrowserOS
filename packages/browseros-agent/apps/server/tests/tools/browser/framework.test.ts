@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
@@ -63,6 +63,24 @@ async function withBrowserosDir<T>(run: () => Promise<T>): Promise<T> {
       process.env.BROWSEROS_DIR = previous
     }
     rmSync(browserosDir, { recursive: true, force: true })
+  }
+}
+
+async function withBrowserosFile<T>(run: () => Promise<T>): Promise<T> {
+  const previous = process.env.BROWSEROS_DIR
+  const parentDir = mkdtempSync(join(tmpdir(), 'browseros-framework-test-'))
+  const browserosPath = join(parentDir, 'not-a-directory')
+  writeFileSync(browserosPath, 'not a directory')
+  process.env.BROWSEROS_DIR = browserosPath
+  try {
+    return await run()
+  } finally {
+    if (previous === undefined) {
+      delete process.env.BROWSEROS_DIR
+    } else {
+      process.env.BROWSEROS_DIR = previous
+    }
+    rmSync(parentDir, { recursive: true, force: true })
   }
 }
 
@@ -199,6 +217,49 @@ describe('browser tool framework post-actions', () => {
       expect(text).not.toContain('word-2000')
       expect(text).not.toContain('[UNTRUSTED_PAGE_CONTENT')
       expect(readFileSync(savedPath ?? '', 'utf8')).toContain('word-2000')
+    })
+  })
+
+  it('keeps large diff post-actions visible when output file writes fail', async () => {
+    await withBrowserosFile(async () => {
+      const largeDiff = Array.from(
+        { length: 2001 },
+        (_, i) => `word-${i}`,
+      ).join(' ')
+      const postActionTool = defineTool({
+        name: 'large_diff_post_action_failure_test',
+        description: 'Test failed large diff post-action output.',
+        input: z.object({ page: z.number().int() }),
+        handler: async (args, _ctx, response) => {
+          response.includeDiff(args.page)
+        },
+      })
+      const session = {
+        observe: () => ({
+          diff: async () => ({
+            changed: true,
+            text: largeDiff,
+            added: 2001,
+            removed: 0,
+            afterUrl: 'https://example.com/large',
+          }),
+        }),
+        pages: {
+          getInfo: () => ({ url: 'https://example.com/large' }),
+          getTabId: () => undefined,
+        },
+      } as unknown as BrowserSession
+
+      const result = await executeTool(postActionTool, { page: 4 }, { session })
+      const text = textOf(result)
+
+      expect(result.isError).toBeFalsy()
+      expect(text).toContain('[Page 4 diff]')
+      expect(text).toContain('saving it to a BrowserOS output file failed')
+      expect(text).toContain('Showing the first')
+      expect(text).toContain('[UNTRUSTED_PAGE_CONTENT')
+      expect(text).toContain('word-0')
+      expect(text).not.toContain('word-2000')
     })
   })
 

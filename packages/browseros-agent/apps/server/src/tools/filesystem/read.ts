@@ -17,6 +17,10 @@ import {
 
 const TOOL_NAME = 'filesystem_read'
 
+export interface ReadToolOptions {
+  allowedOutputPaths?: ReadonlySet<string>
+}
+
 function createImageResult(
   path: string,
   ext: string,
@@ -101,18 +105,36 @@ function formatReadResult(args: {
 const NO_WORKSPACE_READ_ERROR =
   'No workspace selected. filesystem_read can only read BrowserOS-generated tool output files by absolute path.'
 
-async function resolveGeneratedOutputPath(inputPath: string): Promise<string> {
+function assertAllowedGeneratedOutputPath(
+  resolvedPath: string,
+  allowedOutputPaths: ReadonlySet<string>,
+): void {
+  if (!allowedOutputPaths.has(resolvedPath)) {
+    throw new Error(
+      'filesystem_read can only read BrowserOS-generated tool output files returned in this session.',
+    )
+  }
+}
+
+async function resolveGeneratedOutputPath(
+  inputPath: string,
+  allowedOutputPaths: ReadonlySet<string>,
+): Promise<string> {
   if (!(await isBrowserosStatePath(inputPath))) {
     throw new Error(NO_WORKSPACE_READ_ERROR)
   }
-  return await resolveBrowserToolOutputPath(inputPath)
+  const resolved = await resolveBrowserToolOutputPath(inputPath)
+  assertAllowedGeneratedOutputPath(resolved, allowedOutputPaths)
+  return resolved
 }
 
 async function resolveReadPath(
   cwd: string | undefined,
   inputPath: string,
+  allowedOutputPaths: ReadonlySet<string>,
 ): Promise<string> {
-  if (!cwd) return await resolveGeneratedOutputPath(inputPath)
+  if (!cwd)
+    return await resolveGeneratedOutputPath(inputPath, allowedOutputPaths)
 
   try {
     return await resolveWorkspacePath(cwd, inputPath)
@@ -125,7 +147,9 @@ async function resolveReadPath(
 }
 
 /** Creates the read tool for workspace files, or generated browser outputs when no workspace exists. */
-export function createReadTool(cwd?: string) {
+export function createReadTool(cwd?: string, options: ReadToolOptions = {}) {
+  const allowedOutputPaths = options.allowedOutputPaths ?? new Set<string>()
+
   return tool({
     description: cwd
       ? `Read a file from the filesystem. Returns text content with line numbers, or image data for image files. Text reads are limited to ${MAX_READ_LINES} lines and ${MAX_READ_CHARS} characters per call. Use offset and limit to paginate through large files.`
@@ -151,7 +175,11 @@ export function createReadTool(cwd?: string) {
     }),
     execute: (params) =>
       executeWithMetrics(TOOL_NAME, async () => {
-        const resolved = await resolveReadPath(cwd, params.path)
+        const resolved = await resolveReadPath(
+          cwd,
+          params.path,
+          allowedOutputPaths,
+        )
         const ext = extname(resolved).toLowerCase()
 
         if (IMAGE_EXTENSIONS.has(ext)) {

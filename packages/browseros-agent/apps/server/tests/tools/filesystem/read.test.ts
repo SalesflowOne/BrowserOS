@@ -4,8 +4,15 @@ import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { TOOL_LIMITS } from '@browseros/shared/constants/limits'
 import { getToolOutputDir } from '../../../src/lib/browseros-dir'
+import {
+  createBrowserOutputFileAccess,
+  withBrowserOutputFileAccess,
+} from '../../../src/tools/browser/output-file'
 import { read as browserRead } from '../../../src/tools/browser/read'
-import { createReadTool } from '../../../src/tools/filesystem/read'
+import {
+  createReadTool,
+  type ReadToolOptions,
+} from '../../../src/tools/filesystem/read'
 import type { FilesystemToolResult } from '../../../src/tools/filesystem/utils'
 import {
   MAX_READ_CHARS,
@@ -21,8 +28,8 @@ type ReadToolExecutor = {
   execute(params: Record<string, unknown>): Promise<FilesystemToolResult>
 }
 
-function createReadExec(cwd?: string) {
-  const tool = createReadTool(cwd) as unknown as ReadToolExecutor
+function createReadExec(cwd?: string, options?: ReadToolOptions) {
+  const tool = createReadTool(cwd, options) as unknown as ReadToolExecutor
   return (params: Record<string, unknown>) => tool.execute(params)
 }
 
@@ -189,15 +196,29 @@ describe('filesystem_read', () => {
   })
 
   it('reads BrowserOS-generated output files without a workspace', async () => {
-    const noWorkspaceExec = createReadExec()
     const outputDir = await getToolOutputDir()
     const outputPath = join(outputDir, 'snapshot.md')
     await writeFile(outputPath, 'generated snapshot without workspace')
+    const noWorkspaceExec = createReadExec(undefined, {
+      allowedOutputPaths: new Set([outputPath]),
+    })
 
     const result = await noWorkspaceExec({ path: outputPath })
 
     expect(result.isError).toBeUndefined()
     expect(result.text).toContain('generated snapshot without workspace')
+  })
+
+  it('rejects unregistered BrowserOS-generated output files without a workspace', async () => {
+    const outputDir = await getToolOutputDir()
+    const outputPath = join(outputDir, 'snapshot.md')
+    await writeFile(outputPath, 'generated snapshot from another session')
+    const noWorkspaceExec = createReadExec()
+
+    const result = await noWorkspaceExec({ path: outputPath })
+
+    expect(result.isError).toBe(true)
+    expect(result.text).toContain('returned in this session')
   })
 
   it('rejects relative paths without a workspace', async () => {
@@ -223,7 +244,10 @@ describe('filesystem_read', () => {
   })
 
   it('preserves browser trust markers when reading saved page content without a workspace', async () => {
-    const noWorkspaceExec = createReadExec()
+    const outputFileAccess = createBrowserOutputFileAccess()
+    const noWorkspaceExec = createReadExec(undefined, {
+      allowedOutputPaths: outputFileAccess.paths,
+    })
     const pageText = Array.from(
       { length: 140 },
       (_, i) =>
@@ -233,23 +257,27 @@ describe('filesystem_read', () => {
       TOOL_LIMITS.INLINE_PAGE_CONTENT_MAX_CHARS,
     )
 
-    const browserResult = await browserRead.handler(
-      { page: 1, format: 'markdown' },
-      {
-        session: {
-          pages: {
-            getSession: async () => ({
-              session: {
-                Runtime: {
-                  evaluate: async () => ({ result: { value: pageText } }),
-                },
+    const browserResult = await withBrowserOutputFileAccess(
+      outputFileAccess,
+      () =>
+        browserRead.handler(
+          { page: 1, format: 'markdown' },
+          {
+            session: {
+              pages: {
+                getSession: async () => ({
+                  session: {
+                    Runtime: {
+                      evaluate: async () => ({ result: { value: pageText } }),
+                    },
+                  },
+                }),
+                getInfo: () => ({ url: 'https://example.com/injection' }),
               },
-            }),
-            getInfo: () => ({ url: 'https://example.com/injection' }),
-          },
-        },
-      } as never,
-      {} as never,
+            },
+          } as never,
+          {} as never,
+        ),
     )
     const path = (
       browserResult?.structuredContent as { path?: string } | undefined

@@ -24,6 +24,7 @@ import {
   executeTool,
   textResult,
 } from '../../../src/tools/browser/framework'
+import { createBrowserOutputFileAccess } from '../../../src/tools/browser/output-file'
 import { registerBrowserTools } from '../../../src/tools/browser/register'
 import { BROWSER_TOOLS } from '../../../src/tools/browser/registry'
 
@@ -1354,6 +1355,42 @@ describe('buildBrowserToolSet', () => {
     expect(tools.tabs).toBeDefined()
     expect(tools.new_page).toBeUndefined()
     expect(Object.keys(tools)).toEqual(BROWSER_TOOLS.map((t) => t.name))
+  })
+
+  it('records generated output paths from AI SDK browser tools', async () => {
+    await withBrowserosDir(async () => {
+      const outputFileAccess = createBrowserOutputFileAccess()
+      const largeText = 'x'.repeat(
+        TOOL_LIMITS.INLINE_PAGE_CONTENT_MAX_CHARS + 1,
+      )
+      const session = {
+        pages: {
+          getSession: async () => ({
+            session: {
+              Runtime: {
+                evaluate: async () => ({ result: { value: largeText } }),
+              },
+            },
+          }),
+          getInfo: () => ({ url: 'https://example.com' }),
+        },
+      } as unknown as BrowserSession
+      const tools = buildBrowserToolSet(session, { outputFileAccess })
+
+      const result = await tools.read.execute?.({ page: 1, format: 'text' }, {
+        abortSignal: new AbortController().signal,
+      } as never)
+      const text =
+        (result as { content?: Array<{ type: string; text: string }> }).content
+          ?.filter((item) => item.type === 'text')
+          .map((item) => item.text)
+          .join('\n') ?? ''
+      const savedPath = text.match(/saved to: (.+\.txt)/)?.[1]
+
+      expect(savedPath).toBeTruthy()
+      await expectBrowserToolOutputPath(savedPath)
+      expect(outputFileAccess.paths.has(savedPath ?? '')).toBe(true)
+    })
   })
 
   it('allows chat mode to list tabs without allowing tab mutation', async () => {

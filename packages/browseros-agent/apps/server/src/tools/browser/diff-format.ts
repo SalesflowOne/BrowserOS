@@ -3,6 +3,7 @@ import { writeTempToolOutputFile } from './output-file'
 import { wrapUntrusted } from './trust-boundary'
 
 const MAX_INLINE_DIFF_WORDS = 2_000
+const MAX_SAVE_FAILURE_EXCERPT_CHARS = 4_000
 
 export interface FormattedDiff {
   text: string
@@ -35,24 +36,48 @@ export async function formatDiffResult(
   }
 
   if (wordCount > MAX_INLINE_DIFF_WORDS) {
-    const path = await writeTempToolOutputFile({
-      toolName: 'diff',
-      extension: 'md',
-      content: wrappedDiff,
-    })
-    const text = diff.urlChanged
-      ? `URL changed; full current snapshot is ${wordCount} words, over the ${MAX_INLINE_DIFF_WORDS}-word inline limit, saved to: ${path}\nRead the file for the full current snapshot.`
-      : `Diff is ${wordCount} words, over the ${MAX_INLINE_DIFF_WORDS}-word inline limit, saved to: ${path}\nRead the file for the full diff.`
-    return {
-      text,
-      structured: {
-        ...structured,
-        truncated: true,
-        wordCount,
-        path,
-        contentLength: wrappedDiff.length,
-        writtenToFile: true,
-      },
+    try {
+      const path = await writeTempToolOutputFile({
+        toolName: 'diff',
+        extension: 'md',
+        content: wrappedDiff,
+      })
+      const text = diff.urlChanged
+        ? `URL changed; full current snapshot is ${wordCount} words, over the ${MAX_INLINE_DIFF_WORDS}-word inline limit, saved to: ${path}\nRead the file for the full current snapshot.`
+        : `Diff is ${wordCount} words, over the ${MAX_INLINE_DIFF_WORDS}-word inline limit, saved to: ${path}\nRead the file for the full diff.`
+      return {
+        text,
+        structured: {
+          ...structured,
+          truncated: true,
+          wordCount,
+          path,
+          contentLength: wrappedDiff.length,
+          writtenToFile: true,
+        },
+      }
+    } catch (error) {
+      const saveError = error instanceof Error ? error.message : String(error)
+      const excerpt = diffText.slice(0, MAX_SAVE_FAILURE_EXCERPT_CHARS)
+      const text = diff.urlChanged
+        ? `URL changed; full current snapshot is ${wordCount} words, over the ${MAX_INLINE_DIFF_WORDS}-word inline limit, but saving it to a BrowserOS output file failed: ${saveError}`
+        : `Diff is ${wordCount} words, over the ${MAX_INLINE_DIFF_WORDS}-word inline limit, but saving it to a BrowserOS output file failed: ${saveError}`
+      return {
+        text: [
+          text,
+          `Showing the first ${excerpt.length} chars instead:`,
+          wrapUntrusted(excerpt, origin),
+        ].join('\n'),
+        structured: {
+          ...structured,
+          truncated: true,
+          wordCount,
+          contentLength: wrappedDiff.length,
+          writtenToFile: false,
+          outputWriteFailed: true,
+          error: saveError,
+        },
+      }
     }
   }
 

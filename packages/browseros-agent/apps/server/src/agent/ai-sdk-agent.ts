@@ -22,6 +22,10 @@ import {
 import type { BrowserSession } from '../browser/core/session'
 import { logger } from '../lib/logger'
 import { metrics } from '../lib/metrics'
+import {
+  type BrowserOutputFileAccess,
+  createBrowserOutputFileAccess,
+} from '../tools/browser/output-file'
 import { buildFilesystemToolSet } from '../tools/filesystem/build-toolset'
 import { createReadTool } from '../tools/filesystem/read'
 import { isAcpProvider } from './acp-providers'
@@ -50,12 +54,17 @@ export interface AiSdkAgentConfig {
 /** Builds filesystem tools for model-backed sessions, with output-only reads before workspace selection. */
 export function buildAgentFilesystemToolSet(
   resolvedConfig: ResolvedAgentConfig,
+  options: { outputFileAccess?: BrowserOutputFileAccess } = {},
 ): ToolSet {
   if (isAcpProvider(resolvedConfig.provider) || resolvedConfig.chatMode) {
     return {}
   }
   if (!resolvedConfig.workingDir) {
-    return { filesystem_read: createReadTool() }
+    return {
+      filesystem_read: createReadTool(undefined, {
+        allowedOutputPaths: options.outputFileAccess?.paths,
+      }),
+    }
   }
   return buildFilesystemToolSet(resolvedConfig.workingDir)
 }
@@ -115,11 +124,13 @@ export class AiSdkAgent {
     // (and any user-configured MCP servers) directly via the
     // mcpServers config on ResolvedAgentConfig.
     const useMcpBoundaryOnly = isAcpProvider(config.resolvedConfig.provider)
+    const outputFileAccess = createBrowserOutputFileAccess()
 
     const allBrowserTools = useMcpBoundaryOnly
       ? {}
       : buildBrowserToolSet(config.browserSession, {
           readOnly: config.resolvedConfig.chatMode,
+          outputFileAccess,
         })
     const reservedBrowserToolNames = new Set(Object.keys(allBrowserTools))
     const chatModeAllowedTools = CHAT_MODE_ALLOWED_TOOLS
@@ -203,7 +214,9 @@ export class AiSdkAgent {
 
     // ACP providers and chat mode do not receive AI SDK filesystem tools.
     // Regular no-workspace sessions get only output-file reads for browser-generated files.
-    const filesystemTools = buildAgentFilesystemToolSet(config.resolvedConfig)
+    const filesystemTools = buildAgentFilesystemToolSet(config.resolvedConfig, {
+      outputFileAccess,
+    })
     const tools = {
       ...browserTools,
       ...externalMcpTools,
