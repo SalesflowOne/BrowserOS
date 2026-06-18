@@ -11,15 +11,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { TOOL_LIMITS } from '@browseros/shared/constants/limits'
 import { z } from 'zod'
-import {
-  CHAT_MODE_ALLOWED_TOOLS,
-  LEGACY_CHAT_MODE_ALLOWED_TOOLS,
-} from '../../../src/agent/chat-mode'
-import {
-  buildBrowserToolSet,
-  buildLegacyBrowserToolSet,
-} from '../../../src/agent/tool-adapter'
-import type { Browser } from '../../../src/browser/browser'
+import { CHAT_MODE_ALLOWED_TOOLS } from '../../../src/agent/chat-mode'
+import { buildBrowserToolSet } from '../../../src/agent/tool-adapter'
 import type { BrowserSession } from '../../../src/browser/core/session'
 import {
   getToolOutputDir,
@@ -33,9 +26,6 @@ import {
 } from '../../../src/tools/browser/framework'
 import { registerBrowserTools } from '../../../src/tools/browser/register'
 import { BROWSER_TOOLS } from '../../../src/tools/browser/registry'
-import { createReadTool } from '../../../src/tools/filesystem/read'
-import { get_page_content as legacyGetPageContent } from '../../../src/tools/legacy/browser/snapshot'
-import { executeTool as executeLegacyTool } from '../../../src/tools/legacy/framework'
 
 type RegisteredHandler = (args: Record<string, unknown>) => Promise<{
   content: unknown
@@ -1339,68 +1329,6 @@ describe('buildBrowserToolSet', () => {
     expect(tools.tabs).toBeDefined()
     expect(tools.new_page).toBeUndefined()
     expect(Object.keys(tools)).toEqual(BROWSER_TOOLS.map((t) => t.name))
-  })
-
-  it('builds the legacy browser tool surface', () => {
-    const tools = buildLegacyBrowserToolSet({} as never)
-
-    expect(tools.new_page).toBeDefined()
-    expect(tools.get_bookmarks).toBeDefined()
-    expect(tools.browseros_info).toBeDefined()
-    expect(tools.tabs).toBeUndefined()
-    expect(Object.keys(tools).length).toBeGreaterThan(50)
-  })
-
-  it('writes legacy large page content to BrowserOS output files readable by filesystem_read', async () => {
-    await withBrowserosDir(async () => {
-      const largeText = `${'legacy output token\n'.repeat(4)}${'x'.repeat(
-        TOOL_LIMITS.INLINE_PAGE_CONTENT_MAX_CHARS + 1,
-      )}`
-      const browser = {
-        contentAsMarkdown: async () => largeText,
-        getTabIdForPage: () => undefined,
-      } as unknown as Browser
-
-      const result = await executeLegacyTool(
-        legacyGetPageContent,
-        { page: 1 },
-        { browser, directories: {} },
-        AbortSignal.timeout(1_000),
-      )
-      const data = result.structuredContent as { path?: string } | undefined
-      expect(result.isError).toBeUndefined()
-      const savedPath = data?.path
-      await expectBrowserToolOutputPath(savedPath)
-
-      const readTool = createReadTool(process.cwd())
-      const readResult = (await readTool.execute?.(
-        { path: savedPath as string },
-        {
-          toolCallId: 'read-legacy-output',
-          messages: [],
-        } as never,
-      )) as { text?: string; isError?: boolean }
-      expect(readResult.isError).toBeUndefined()
-      expect(readResult.text).toContain('legacy output token')
-    })
-  })
-
-  it('uses legacy tool names for legacy chat-mode filtering', () => {
-    const legacyTools = buildLegacyBrowserToolSet({} as never)
-    const chatTools = Object.fromEntries(
-      Object.entries(legacyTools).filter(([name]) =>
-        LEGACY_CHAT_MODE_ALLOWED_TOOLS.has(name),
-      ),
-    )
-
-    expect(Object.keys(chatTools).sort()).toEqual([
-      'evaluate_script',
-      'get_page_content',
-      'list_pages',
-      'scroll',
-      'take_snapshot',
-    ])
-    expect(chatTools.tabs).toBeUndefined()
   })
 
   it('allows chat mode to list tabs without allowing tab mutation', async () => {

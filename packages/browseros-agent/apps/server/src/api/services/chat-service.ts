@@ -30,7 +30,6 @@ export interface ChatServiceDeps {
   browserSession: BrowserSession
   browserosId?: string
   aiSdkDevtoolsEnabled?: boolean
-  browserUseNewTools: boolean
   /** Port the BrowserOS server bound to. Forwarded into the ACP MCP
    *  bridge so the spawned agent can dial back into /mcp. */
   serverPort: number
@@ -255,7 +254,6 @@ export class ChatService {
         klavisRef: this.deps.klavisRef,
         browserosId: this.deps.browserosId,
         aiSdkDevtoolsEnabled: this.deps.aiSdkDevtoolsEnabled,
-        browserUseNewTools: this.deps.browserUseNewTools,
       })
       session = {
         agent,
@@ -462,7 +460,6 @@ export class ChatService {
       klavisRef: this.deps.klavisRef,
       browserosId: this.deps.browserosId,
       aiSdkDevtoolsEnabled: this.deps.aiSdkDevtoolsEnabled,
-      browserUseNewTools: this.deps.browserUseNewTools,
     })
     const newSession: AgentSession = {
       agent,

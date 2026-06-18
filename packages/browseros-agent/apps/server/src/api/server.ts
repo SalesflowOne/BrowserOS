@@ -174,10 +174,8 @@ export async function createHttpServer(config: HttpServerConfig) {
       '/mcp',
       createMcpRoutes({
         version,
-        browser,
         browserSession,
         klavisRef,
-        browserUseNewTools: config.browserUseNewTools,
       }),
     )
     .route(
@@ -194,7 +192,6 @@ export async function createHttpServer(config: HttpServerConfig) {
         browserosId,
         klavisRef,
         aiSdkDevtoolsEnabled: config.aiSdkDevtoolsEnabled,
-        browserUseNewTools: config.browserUseNewTools,
         serverPort: port,
         resourcesDir,
         remoteHermes,

@@ -75,10 +75,8 @@ describe('createMcpRoutes', () => {
     const klavisRef: KlavisProxyRef = { handle: null }
     const app = createMcpRoutes({
       version: '0.0.0-test',
-      browser: {} as never,
       browserSession: {} as never,
       klavisRef,
-      browserUseNewTools: true,
     })
 
     const first = await postMcp(app)

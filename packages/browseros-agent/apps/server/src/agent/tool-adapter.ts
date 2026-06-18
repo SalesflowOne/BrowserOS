@@ -1,8 +1,6 @@
 import type { LanguageModelV2ToolResultOutput } from '@ai-sdk/provider'
 import { type ToolSet, tool } from 'ai'
-import type { Browser } from '../browser/browser'
 import type { BrowserSession } from '../browser/core/session'
-import { logger } from '../lib/logger'
 import { metrics } from '../lib/metrics'
 import {
   type ToolDefinition as BrowserToolDefinition,
@@ -13,20 +11,9 @@ import {
   throwIfAborted,
 } from '../tools/browser/framework'
 import { BROWSER_TOOLS } from '../tools/browser/registry'
-import {
-  executeTool as executeLegacyTool,
-  type ToolContext as LegacyToolContext,
-} from '../tools/legacy/framework'
-import { registry as LEGACY_BROWSER_TOOLS } from '../tools/legacy/registry'
 
 export interface BrowserToolSetOptions {
   readOnly?: boolean
-}
-
-export interface LegacyBrowserToolSetOptions {
-  workingDir?: string
-  origin?: 'sidepanel' | 'newtab'
-  originPageId?: number
 }
 
 interface ToolExecuteOptions {
@@ -104,83 +91,6 @@ export function buildBrowserToolSet(
           source: 'chat',
         })
         return { content: result.content, isError: result.isError ?? false }
-      },
-      toModelOutput: ({ output }) => {
-        const result = output as { content: ContentBlock[]; isError: boolean }
-        if (result.isError) {
-          const text = result.content
-            .filter(
-              (c): c is ContentBlock & { type: 'text' } => c.type === 'text',
-            )
-            .map((c) => c.text)
-            .join('\n')
-          return { type: 'error-text', value: text }
-        }
-        if (!result.content?.length) {
-          return { type: 'text', value: 'Success' }
-        }
-        return contentToModelOutput(result.content)
-      },
-    })
-  }
-
-  return toolSet
-}
-
-/** Wraps the legacy browser tool surface as AI SDK tools for the internal agent. */
-export function buildLegacyBrowserToolSet(
-  browser: Browser,
-  options: LegacyBrowserToolSetOptions = {},
-): ToolSet {
-  const toolSet: ToolSet = {}
-  const context: LegacyToolContext = {
-    browser,
-    directories: { workingDir: options.workingDir },
-    session: {
-      origin: options.origin,
-      originPageId: options.originPageId,
-    },
-  }
-
-  for (const def of LEGACY_BROWSER_TOOLS.all()) {
-    toolSet[def.name] = tool({
-      description: def.description,
-      inputSchema: def.input,
-      execute: async (params, executeOptions?: ToolExecuteOptions) => {
-        const startTime = performance.now()
-        const signal = withBrowserToolTimeout(executeOptions?.abortSignal)
-        try {
-          const result = await executeLegacyTool(def, params, context, signal)
-          metrics.log('tool_executed', {
-            tool_name: def.name,
-            duration_ms: Math.round(performance.now() - startTime),
-            success: !result.isError,
-            source: 'chat',
-          })
-          return {
-            content: result.content,
-            isError: result.isError ?? false,
-            metadata: result.metadata,
-          }
-        } catch (error) {
-          const errorText =
-            error instanceof Error ? error.message : String(error)
-          logger.error('Tool execution failed', {
-            tool: def.name,
-            error: errorText,
-          })
-          metrics.log('tool_executed', {
-            tool_name: def.name,
-            duration_ms: Math.round(performance.now() - startTime),
-            success: false,
-            error_message: errorText,
-            source: 'chat',
-          })
-          return {
-            content: [{ type: 'text' as const, text: errorText }],
-            isError: true,
-          }
-        }
       },
       toModelOutput: ({ output }) => {
         const result = output as { content: ContentBlock[]; isError: boolean }

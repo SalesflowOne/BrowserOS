@@ -29,7 +29,6 @@ const ServerConfigSchema = z.object({
   instanceBrowserosVersion: z.string().optional(),
   instanceChromiumVersion: z.string().optional(),
   aiSdkDevtoolsEnabled: z.boolean(),
-  browserUseNewTools: z.boolean(),
 })
 
 export type ServerConfig = z.infer<typeof ServerConfigSchema>
@@ -244,11 +243,6 @@ function parseConfigFile(filePath?: string): ConfigResult<PartialConfig> {
 
 function parseRuntimeEnv(): ConfigResult<PartialConfig> {
   const cwd = process.cwd()
-  const browserUseNewTools = parseBooleanEnv(
-    'BROWSER_USE_NEW_TOOLS',
-    process.env.BROWSER_USE_NEW_TOOLS,
-  )
-  if (!browserUseNewTools.ok) return browserUseNewTools
 
   return {
     ok: true,
@@ -272,7 +266,6 @@ function parseRuntimeEnv(): ConfigResult<PartialConfig> {
       instanceClientId: process.env.BROWSEROS_CLIENT_ID,
       aiSdkDevtoolsEnabled:
         process.env.BROWSEROS_AI_SDK_DEVTOOLS === 'true' ? true : undefined,
-      browserUseNewTools: browserUseNewTools.value,
     }),
   }
 }
@@ -307,7 +300,6 @@ function getDefaults(cwd: string): PartialConfig {
     executionDir: cwd,
     mcpAllowRemote: false,
     aiSdkDevtoolsEnabled: false,
-    browserUseNewTools: false,
   }
 }
 
@@ -326,20 +318,6 @@ function mergeConfigs(...configs: PartialConfig[]): PartialConfig {
 function safeParseInt(value: string): number | undefined {
   const num = parseInt(value, 10)
   return Number.isNaN(num) ? undefined : num
-}
-
-/** Parses a strict boolean env var, defaulting missing values to false. */
-function parseBooleanEnv(
-  envName: string,
-  value: string | undefined,
-): ConfigResult<boolean> {
-  if (value === undefined) return { ok: true, value: false }
-  if (value === 'true') return { ok: true, value: true }
-  if (value === 'false') return { ok: true, value: false }
-  return {
-    ok: false,
-    error: `${envName} must be "true" or "false".`,
-  }
 }
 
 function omitUndefined<T extends Record<string, unknown>>(obj: T): Partial<T> {

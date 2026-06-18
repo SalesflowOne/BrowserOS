@@ -12,11 +12,3 @@ export const CHAT_MODE_ALLOWED_TOOLS = new Set([
   ),
   'tabs',
 ])
-
-export const LEGACY_CHAT_MODE_ALLOWED_TOOLS = new Set([
-  'list_pages',
-  'get_page_content',
-  'scroll',
-  'take_snapshot',
-  'evaluate_script',
-])

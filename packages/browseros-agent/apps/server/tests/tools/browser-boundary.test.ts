@@ -68,7 +68,7 @@ describe('browser tool boundary', () => {
     }
   })
 
-  it('keeps the old browser modules as legacy reference code only', () => {
+  it('keeps old browser modules out of the active browser tool surface', () => {
     const toolsDir = join(import.meta.dir, '../../src/tools')
 
     for (const file of legacyBrowserToolFiles) {
@@ -76,8 +76,6 @@ describe('browser tool boundary', () => {
         existsSync(join(toolsDir, 'legacy/browser', file)),
         `Expected legacy/browser/${file}`,
       )
-      // snapshot.ts, tab-groups.ts, and windows.ts intentionally exist in both surfaces:
-      // the compact browser tools provide consolidated replacements alongside the legacy reference.
       if (
         file !== 'snapshot.ts' &&
         file !== 'tab-groups.ts' &&

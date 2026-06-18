@@ -295,7 +295,7 @@ describe('ChatService scheduled task hidden page lifecycle', () => {
 })
 
 describe('ChatService browser tool config', () => {
-  it('passes browserUseNewTools and browser into new and rebuilt agent sessions', async () => {
+  it('passes browser session into new and rebuilt agent sessions', async () => {
     const firstAgent = createFakeAgent()
     const secondAgent = createFakeAgent()
     agentToReturn = firstAgent
@@ -317,7 +317,6 @@ describe('ChatService browser tool config', () => {
       klavisRef: klavisRef as never,
       browser: browser as never,
       browserSession: { pages: {} } as never,
-      browserUseNewTools: false,
     })
     const createCallsBefore = createAgentSpy.mock.calls.length
     const request = {
@@ -349,10 +348,7 @@ describe('ChatService browser tool config', () => {
     const createCalls = createAgentSpy.mock.calls.slice(createCallsBefore)
     expect(createCalls).toHaveLength(2)
     for (const [config] of createCalls) {
-      expect(config).toMatchObject({
-        browser,
-        browserUseNewTools: false,
-      })
+      expect(config).toMatchObject({ browserSession: { pages: {} } })
     }
   })
 })
