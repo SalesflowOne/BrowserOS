@@ -313,6 +313,17 @@ describe('mode-aware framing', () => {
     expect(prompt).toContain('filesystem_read')
   })
 
+  it('chat mode with a selected workspace does not advertise workspace tools when only output reads are registered', () => {
+    const prompt = buildChatMode({
+      workspaceDir: '/tmp/browseros-workspace',
+      generatedOutputReadAvailable: true,
+    })
+    expect(prompt).toContain('### Browser Output Files')
+    expect(prompt).not.toContain('<workspace>')
+    expect(prompt).not.toContain('filesystem_write')
+    expect(prompt).not.toContain('filesystem_bash')
+  })
+
   it('scheduled task includes starting pageId in page context', () => {
     const prompt = buildScheduled({ scheduledTaskPageId: 99 })
     expect(prompt).toContain('starting page ID `99`')

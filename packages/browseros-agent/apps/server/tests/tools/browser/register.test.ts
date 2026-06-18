@@ -1473,6 +1473,8 @@ describe('buildBrowserToolSet', () => {
       expect(behaviors).toEqual(['allow', 'default'])
       expect(savedPath).toBeTruthy()
       expect(outputFileAccess.paths.has(savedPath ?? '')).toBe(true)
+      expect(readResult.text).toContain('[UNTRUSTED_PAGE_CONTENT')
+      expect(readResult.text).toContain('[END_UNTRUSTED_PAGE_CONTENT')
       expect(readResult.text).toContain('browseros,1')
     })
   })

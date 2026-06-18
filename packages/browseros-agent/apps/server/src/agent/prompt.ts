@@ -15,7 +15,7 @@ import { OAUTH_MCP_SERVERS } from '../lib/clients/klavis/oauth-mcp-servers'
  * - Added tool selection strategy
  * - Added safety rules
  * - Expanded security to cover all untrusted data sources
- * - Workspace-gated filesystem: tools only available when user selects directory
+ * - Workspace-gated filesystem: full tools only available when user selects directory
  * - Expanded error recovery per tool category
  * - Removed dangling tab-grouping reference
  * - Added mode-aware framing (regular/scheduled/chat)
@@ -30,7 +30,7 @@ function getRoleAndMode(
   _exclude: Set<string>,
   options?: BuildSystemPromptOptions,
 ): string {
-  const hasWorkspace = !!options?.workspaceDir
+  const hasWorkspace = !!options?.workspaceDir && !options?.chatMode
 
   let role: string
   if (hasWorkspace) {
@@ -121,7 +121,7 @@ function getCapabilities(
   _exclude: Set<string>,
   options?: BuildSystemPromptOptions,
 ): string {
-  const hasWorkspace = !!options?.workspaceDir
+  const hasWorkspace = !!options?.workspaceDir && !options?.chatMode
   const hasGeneratedOutputRead = !!options?.generatedOutputReadAvailable
 
   let capabilities = `<capabilities>
@@ -395,7 +395,7 @@ function getErrorRecovery(
   _exclude: Set<string>,
   options?: BuildSystemPromptOptions,
 ): string {
-  const hasWorkspace = !!options?.workspaceDir
+  const hasWorkspace = !!options?.workspaceDir && !options?.chatMode
 
   let recovery = `<error_recovery>
 ## Error Recovery
@@ -440,7 +440,7 @@ function getWorkspace(
   _exclude: Set<string>,
   options?: BuildSystemPromptOptions,
 ): string {
-  if (!options?.workspaceDir) return ''
+  if (!options?.workspaceDir || options.chatMode) return ''
   return `<workspace>
 ## Workspace
 
@@ -502,7 +502,7 @@ function getStyle(
   _exclude: Set<string>,
   options?: BuildSystemPromptOptions,
 ): string {
-  const hasWorkspace = !!options?.workspaceDir
+  const hasWorkspace = !!options?.workspaceDir && !options?.chatMode
   const hasGeneratedOutputRead = !!options?.generatedOutputReadAvailable
 
   let style = `<style_rules>

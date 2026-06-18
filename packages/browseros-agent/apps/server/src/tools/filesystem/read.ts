@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { extname } from 'node:path'
 import { tool } from 'ai'
 import { z } from 'zod'
+import { wrapUntrusted } from '../browser/trust-boundary'
 import {
   executeWithMetrics,
   type FilesystemToolResult,
@@ -200,12 +201,19 @@ export function createReadTool(cwd?: string, options: ReadToolOptions = {}) {
 
         const selected = getSelectedLines(allLines, startIdx, params.limit)
         validateSelectedRange(selected, startIdx)
-        return formatReadResult({
+        const result = formatReadResult({
           selected,
           startIdx,
           totalLines,
           limit: params.limit,
         })
+        if (!cwd) {
+          return {
+            ...result,
+            text: wrapUntrusted(result.text, params.path),
+          }
+        }
+        return result
       }),
     toModelOutput,
   })

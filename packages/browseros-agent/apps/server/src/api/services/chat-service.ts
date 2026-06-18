@@ -190,13 +190,31 @@ export class ChatService {
           ].join(' '),
         )
       } else if (!previousWorkingDir) {
-        contextChanges.push(
-          `The user connected a workspace during this conversation. Filesystem tools are now available. Working directory: ${request.userWorkingDir}`,
-        )
+        if (agentConfig.chatMode) {
+          contextChanges.push(
+            [
+              'The user connected a workspace during this conversation, but read-only chat mode cannot use workspace filesystem tools.',
+              'filesystem_read can only read BrowserOS-generated output files returned in this session.',
+            ].join(' '),
+          )
+        } else {
+          contextChanges.push(
+            `The user connected a workspace during this conversation. Filesystem tools are now available. Working directory: ${request.userWorkingDir}`,
+          )
+        }
       } else {
-        contextChanges.push(
-          `The user switched workspace during this conversation. Filesystem tools now use the new working directory: ${request.userWorkingDir}`,
-        )
+        if (agentConfig.chatMode) {
+          contextChanges.push(
+            [
+              'The user switched workspace during this conversation, but read-only chat mode cannot use workspace filesystem tools.',
+              'filesystem_read can only read BrowserOS-generated output files returned in this session.',
+            ].join(' '),
+          )
+        } else {
+          contextChanges.push(
+            `The user switched workspace during this conversation. Filesystem tools now use the new working directory: ${request.userWorkingDir}`,
+          )
+        }
       }
     }
 

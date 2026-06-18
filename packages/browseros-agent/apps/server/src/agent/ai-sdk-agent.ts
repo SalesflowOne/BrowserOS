@@ -219,6 +219,10 @@ export class AiSdkAgent {
     const filesystemTools = buildAgentFilesystemToolSet(config.resolvedConfig, {
       outputFileAccess,
     })
+    const workspaceDirForPrompt =
+      !config.resolvedConfig.chatMode && 'filesystem_write' in filesystemTools
+        ? config.resolvedConfig.workingDir
+        : undefined
     const tools = {
       ...browserTools,
       ...externalMcpTools,
@@ -247,7 +251,7 @@ export class AiSdkAgent {
       exclude: excludeSections,
       isScheduledTask: config.resolvedConfig.isScheduledTask,
       scheduledTaskPageId: config.browserContext?.activeTab?.pageId,
-      workspaceDir: config.resolvedConfig.workingDir,
+      workspaceDir: workspaceDirForPrompt,
       chatMode: config.resolvedConfig.chatMode,
       connectedApps: config.browserContext?.enabledMcpServers,
       declinedApps: config.resolvedConfig.declinedApps,
