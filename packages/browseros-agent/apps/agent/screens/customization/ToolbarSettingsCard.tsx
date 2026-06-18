@@ -5,10 +5,15 @@ import { Switch } from '@/components/ui/switch'
 import { getBrowserOSAdapter } from '@/lib/browseros/adapter'
 import { Capabilities, Feature } from '@/lib/browseros/capabilities'
 import { BROWSEROS_PREFS } from '@/lib/browseros/prefs'
+import {
+  RuntimeMessageType,
+  sendRuntimeMessage,
+} from '@/lib/messaging/runtime/runtimeMessages'
 
 export const ToolbarSettingsCard: FC = () => {
   const [showLlmChat, setShowLlmChat] = useState(true)
   const [showToolbarLabels, setShowToolbarLabels] = useState(true)
+  const [sidePanelPerWindow, setSidePanelPerWindow] = useState(false)
   const [verticalTabsEnabled, setVerticalTabsEnabled] = useState(true)
   const [supportsVerticalTabs, setSupportsVerticalTabs] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
@@ -17,12 +22,15 @@ export const ToolbarSettingsCard: FC = () => {
     const loadPrefs = async () => {
       try {
         const adapter = getBrowserOSAdapter()
-        const [chatPref, labelsPref] = await Promise.all([
-          adapter.getPref(BROWSEROS_PREFS.SHOW_LLM_CHAT),
-          adapter.getPref(BROWSEROS_PREFS.SHOW_TOOLBAR_LABELS),
-        ])
+        const [chatPref, labelsPref, sidePanelPerWindowPref] =
+          await Promise.all([
+            adapter.getPref(BROWSEROS_PREFS.SHOW_LLM_CHAT),
+            adapter.getPref(BROWSEROS_PREFS.SHOW_TOOLBAR_LABELS),
+            adapter.getPref(BROWSEROS_PREFS.SIDE_PANEL_PER_WINDOW),
+          ])
         setShowLlmChat(chatPref?.value !== false)
         setShowToolbarLabels(labelsPref?.value !== false)
+        setSidePanelPerWindow(sidePanelPerWindowPref?.value === true)
 
         const hasVerticalTabsSupport = await Capabilities.supports(
           Feature.VERTICAL_TABS_SUPPORT,
@@ -57,7 +65,37 @@ export const ToolbarSettingsCard: FC = () => {
         throw new Error('Failed to update setting')
       }
       setter(value)
+      return true
     } catch {
+      toast.error('Failed to update setting')
+      return false
+    }
+  }
+
+  const handleSidePanelScopeToggle = async (checked: boolean) => {
+    const adapter = getBrowserOSAdapter()
+    const previous = sidePanelPerWindow
+    let saved = false
+    try {
+      const success = await adapter.setPref(
+        BROWSEROS_PREFS.SIDE_PANEL_PER_WINDOW,
+        checked,
+      )
+      if (!success) {
+        throw new Error('Failed to update setting')
+      }
+      saved = true
+      await sendRuntimeMessage(RuntimeMessageType.sidePanelScopeChanged, {
+        perWindow: checked,
+      })
+      setSidePanelPerWindow(checked)
+    } catch {
+      if (saved) {
+        await adapter
+          .setPref(BROWSEROS_PREFS.SIDE_PANEL_PER_WINDOW, previous)
+          .catch(() => null)
+      }
+      setSidePanelPerWindow(previous)
       toast.error('Failed to update setting')
     }
   }
@@ -116,8 +154,28 @@ export const ToolbarSettingsCard: FC = () => {
           />
         </div>
 
+        <div className="flex items-center justify-between border-border border-t pt-4">
+          <div className="space-y-0.5">
+            <Label
+              htmlFor="side-panel-per-window"
+              className="font-medium text-sm"
+            >
+              One Side Panel Per Window
+            </Label>
+            <p className="text-muted-foreground text-xs">
+              Share the side panel across tabs in this window
+            </p>
+          </div>
+          <Switch
+            id="side-panel-per-window"
+            checked={sidePanelPerWindow}
+            onCheckedChange={handleSidePanelScopeToggle}
+            disabled={isLoading}
+          />
+        </div>
+
         {supportsVerticalTabs && (
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between border-border border-t pt-4">
             <div className="space-y-0.5">
               <Label
                 htmlFor="vertical-tabs-enabled"

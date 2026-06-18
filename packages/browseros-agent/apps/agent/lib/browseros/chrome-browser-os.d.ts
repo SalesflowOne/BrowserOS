@@ -52,3 +52,37 @@ declare namespace chrome.browserOS {
   ): void
   function choosePath(callback: (result: SelectedPath | null) => void): void
 }
+
+declare namespace chrome.sidePanel {
+  interface BrowserosToggleOptions {
+    tabId: number
+    open?: boolean
+  }
+
+  interface BrowserosToggleResult {
+    opened: boolean
+  }
+
+  interface BrowserosIsOpenOptions {
+    tabId: number
+  }
+
+  function browserosToggle(
+    options: BrowserosToggleOptions,
+  ): Promise<BrowserosToggleResult>
+  function browserosToggle(
+    options: BrowserosToggleOptions,
+    callback: (result: BrowserosToggleResult) => void,
+  ): void
+
+  function browserosIsOpen(options: BrowserosIsOpenOptions): Promise<boolean>
+  function browserosIsOpen(
+    options: BrowserosIsOpenOptions,
+    callback: (isOpen: boolean) => void,
+  ): void
+
+  function close(options: CloseOptions): Promise<void>
+  function close(options: CloseOptions, callback: () => void): void
+
+  const onClosed: chrome.events.Event<(info: PanelClosedInfo) => void>
+}

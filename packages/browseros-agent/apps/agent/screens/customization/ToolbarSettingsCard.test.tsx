@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it, mock } from 'bun:test'
+import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test'
 import { type ComponentProps, createElement, type FC } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 
@@ -19,6 +19,7 @@ const BROWSEROS_PREFS = {
   RESTART_SERVER: 'browseros.server.restart_requested',
   SHOW_LLM_CHAT: 'browseros.show_llm_chat',
   SHOW_TOOLBAR_LABELS: 'browseros.show_toolbar_labels',
+  SIDE_PANEL_PER_WINDOW: 'browseros.side_panel.per_window',
   VERTICAL_TABS_ENABLED: 'browseros.vertical_tabs_enabled',
   INSTALL_ID: 'browseros.metrics_install_id',
 } as const
@@ -111,10 +112,24 @@ function checkFeatureSupport(
   return false
 }
 
+let prefValues = new Map<string, unknown>()
+let setPrefCalls: Array<{ name: string; value: unknown }> = []
+let sentRuntimeMessages: Array<{ type: string; data: unknown }> = []
+let sendRuntimeMessageError: Error | null = null
+let renderedSwitches: Array<{
+  id?: string
+  checked?: boolean
+  onCheckedChange?: (checked: boolean) => void
+}> = []
+
 const browserOSAdapter = {
   getBrowserosVersion: async () => null,
   getPref: async (name: string) =>
     new Promise<{ value: unknown } | null>((resolve) => {
+      if (prefValues.has(name)) {
+        resolve({ value: prefValues.get(name) })
+        return
+      }
       const getPref = globalThis.chrome?.browserOS?.getPref
       if (getPref) {
         getPref(name, resolve)
@@ -122,7 +137,11 @@ const browserOSAdapter = {
       }
       resolve(name === BROWSEROS_PREFS.MCP_PORT ? { value: 9105 } : null)
     }),
-  setPref: async () => true,
+  setPref: async (name: string, value: unknown) => {
+    setPrefCalls.push({ name, value })
+    prefValues.set(name, value)
+    return true
+  },
 }
 
 mock.module('sonner', () => ({
@@ -135,12 +154,19 @@ mock.module('@/components/ui/label', () => ({
 }))
 
 mock.module('@/components/ui/switch', () => ({
-  Switch: ({
-    checked: _checked,
-    onCheckedChange: _onCheckedChange,
-    ...props
-  }: SwitchProps) =>
-    createElement('button', { type: 'button', role: 'switch', ...props }),
+  Switch: ({ checked, onCheckedChange, ...props }: SwitchProps) => {
+    renderedSwitches.push({
+      id: typeof props.id === 'string' ? props.id : undefined,
+      checked,
+      onCheckedChange,
+    })
+    return createElement('button', {
+      type: 'button',
+      role: 'switch',
+      'data-checked': String(checked),
+      ...props,
+    })
+  },
 }))
 
 mock.module('@/lib/browseros/adapter', () => ({
@@ -169,6 +195,18 @@ mock.module('@/lib/browseros/capabilities', () => ({
   resolveStaticFeatureSupport,
 }))
 
+mock.module('@/lib/messaging/runtime/runtimeMessages', () => ({
+  RuntimeMessageType: {
+    sidePanelScopeChanged: 'runtime.sidePanelScopeChanged',
+  },
+  sendRuntimeMessage: async (type: string, data: unknown) => {
+    sentRuntimeMessages.push({ type, data })
+    if (sendRuntimeMessageError) {
+      throw sendRuntimeMessageError
+    }
+  },
+}))
+
 let ToolbarSettingsCard: FC
 
 beforeAll(async () => {
@@ -176,8 +214,25 @@ beforeAll(async () => {
     .ToolbarSettingsCard
 })
 
+beforeEach(() => {
+  prefValues = new Map()
+  setPrefCalls = []
+  sentRuntimeMessages = []
+  sendRuntimeMessageError = null
+  renderedSwitches = []
+})
+
 function renderCard() {
+  renderedSwitches = []
   return renderToStaticMarkup(createElement(ToolbarSettingsCard))
+}
+
+function getRenderedSwitch(id: string) {
+  const renderedSwitch = renderedSwitches.find((item) => item.id === id)
+  if (!renderedSwitch) {
+    throw new Error(`Missing switch: ${id}`)
+  }
+  return renderedSwitch
 }
 
 describe('ToolbarSettingsCard', () => {
@@ -188,5 +243,53 @@ describe('ToolbarSettingsCard', () => {
     expect(html).toContain('Show Button Labels')
     expect(html).not.toContain('Show Hub Button')
     expect(html).not.toContain('show-llm-hub')
+  })
+
+  it('renders the side panel scope toggle in the default per-tab state', () => {
+    const html = renderCard()
+
+    expect(html).toContain('One Side Panel Per Window')
+    expect(html).toContain('Share the side panel across tabs in this window')
+    expect(html).toContain('id="side-panel-per-window"')
+    expect(getRenderedSwitch('side-panel-per-window').checked).toBe(false)
+  })
+
+  it('persists the side panel scope toggle', async () => {
+    renderCard()
+
+    await getRenderedSwitch('side-panel-per-window').onCheckedChange?.(true)
+
+    expect(setPrefCalls).toEqual([
+      {
+        name: BROWSEROS_PREFS.SIDE_PANEL_PER_WINDOW,
+        value: true,
+      },
+    ])
+    expect(sentRuntimeMessages).toEqual([
+      {
+        type: 'runtime.sidePanelScopeChanged',
+        data: { perWindow: true },
+      },
+    ])
+  })
+
+  it('rolls back the side panel scope pref when background application fails', async () => {
+    sendRuntimeMessageError = new Error('No receiver')
+    prefValues.set(BROWSEROS_PREFS.SIDE_PANEL_PER_WINDOW, false)
+    renderCard()
+
+    await getRenderedSwitch('side-panel-per-window').onCheckedChange?.(true)
+
+    expect(setPrefCalls).toEqual([
+      {
+        name: BROWSEROS_PREFS.SIDE_PANEL_PER_WINDOW,
+        value: true,
+      },
+      {
+        name: BROWSEROS_PREFS.SIDE_PANEL_PER_WINDOW,
+        value: false,
+      },
+    ])
+    expect(prefValues.get(BROWSEROS_PREFS.SIDE_PANEL_PER_WINDOW)).toBe(false)
   })
 })

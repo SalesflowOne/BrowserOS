@@ -2,7 +2,13 @@ import { storage } from '@wxt-dev/storage'
 import { sessionStorage } from '@/lib/auth/sessionStorage'
 import { Capabilities } from '@/lib/browseros/capabilities'
 import { getHealthCheckUrl, getMcpServerUrl } from '@/lib/browseros/helpers'
-import { openSidePanel, toggleSidePanel } from '@/lib/browseros/toggleSidePanel'
+import {
+  ensureSidePanelRuntimeStateLoaded,
+  openSidePanel,
+  registerSidePanelOpenStateListeners,
+  setSidePanelPerWindowPreference,
+  toggleSidePanel,
+} from '@/lib/browseros/toggleSidePanel'
 import { checkAndShowChangelog } from '@/lib/changelog/changelog-notifier'
 import {
   setupLlmProvidersBackupToBrowserOS,
@@ -42,7 +48,8 @@ const cleanupLegacyToolApprovalStorage = async () => {
 }
 
 export default defineBackground(() => {
-  chrome.sidePanel.setOptions({ enabled: false })
+  registerSidePanelOpenStateListeners()
+  ensureSidePanelRuntimeStateLoaded().catch(() => null)
 
   Capabilities.initialize().catch(() => null)
   setupLlmProvidersBackupToBrowserOS()
@@ -52,8 +59,8 @@ export default defineBackground(() => {
   scheduledJobRuns()
 
   chrome.action.onClicked.addListener(async (tab) => {
-    if (tab.id) {
-      await toggleSidePanel(tab.id)
+    if (typeof tab.id === 'number' && typeof tab.windowId === 'number') {
+      await toggleSidePanel({ tabId: tab.id, windowId: tab.windowId })
     }
   })
 
@@ -62,9 +69,15 @@ export default defineBackground(() => {
       active: true,
       currentWindow: true,
     })
-    const currentTab = currentTabsList?.[0]?.id
-    if (currentTab) {
-      const { opened } = await openSidePanel(currentTab)
+    const currentTab = currentTabsList?.[0]
+    if (
+      typeof currentTab?.id === 'number' &&
+      typeof currentTab.windowId === 'number'
+    ) {
+      const { opened } = await openSidePanel({
+        tabId: currentTab.id,
+        windowId: currentTab.windowId,
+      })
 
       if (opened) {
         setTimeout(() => {
@@ -116,6 +129,13 @@ export default defineBackground(() => {
       timestamp: Date.now(),
     })
   })
+
+  onRuntimeMessage(
+    RuntimeMessageType.sidePanelScopeChanged,
+    async ({ data }) => {
+      await setSidePanelPerWindowPreference(data.perWindow)
+    },
+  )
 
   chrome.tabs.onRemoved.addListener((tabId) => {
     const key = String(tabId)
