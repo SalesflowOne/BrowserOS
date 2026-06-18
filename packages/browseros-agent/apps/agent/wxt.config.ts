@@ -71,7 +71,6 @@ export default defineConfig({
     host_permissions: [
       'http://127.0.0.1/*',
       'https://suggestqueries.google.com/*',
-      '*://*.linkedin.com/*',
     ],
   },
   vite: () => ({
