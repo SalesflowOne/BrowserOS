@@ -99,6 +99,12 @@ export const tab_groups = defineTool({
         if (!args.pages?.length) {
           return errorResult('tab_groups create: pages is required.')
         }
+        // addTabsToGroup only accepts groupId + tabIds, so title would be silently dropped here.
+        if (args.groupId && args.title !== undefined) {
+          return errorResult(
+            'tab_groups create: title cannot be set when adding pages to an existing groupId; use action="update" to rename.',
+          )
+        }
         const tabIds = await toTabIds(args.pages)
         const params = args.groupId
           ? { groupId: args.groupId, tabIds }
@@ -166,9 +172,6 @@ export const tab_groups = defineTool({
           groupId: args.groupId,
         })
       }
-
-      default:
-        return errorResult('tab_groups: unsupported action.')
     }
   },
 })

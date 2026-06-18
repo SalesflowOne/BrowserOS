@@ -163,6 +163,19 @@ describe('tab_groups tool', () => {
     })
   })
 
+  it('errors when create combines an existing groupId with a title', async () => {
+    const { session, calls } = createSession({ pageTabs: { 1: 11 } })
+    const result = await executeTool(
+      tab_groups,
+      { action: 'create', pages: [1], groupId: 'g1', title: 'Renamed' },
+      { session },
+    )
+
+    expect(result.isError).toBe(true)
+    expect(textOf(result)).toContain('use action="update" to rename')
+    expect(calls).toEqual([])
+  })
+
   it('updates a group title and color', async () => {
     const { session, calls } = createSession({
       pageTabs: { 1: 11, 2: 22 },
