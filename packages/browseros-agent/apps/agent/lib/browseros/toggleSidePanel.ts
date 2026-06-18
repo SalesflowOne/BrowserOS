@@ -12,12 +12,12 @@ let sidePanelRuntimeStateLoadPromise: Promise<void> | null = null
 let sidePanelScopePreferenceEpoch = 0
 let persistWindowSidePanelOpenStatePromise: Promise<void> = Promise.resolve()
 
-type SidePanelTarget = {
+export type SidePanelTarget = {
   tabId: number
   windowId: number
 }
 
-type SidePanelToggleResult = {
+export type SidePanelToggleResult = {
   opened: boolean
 }
 

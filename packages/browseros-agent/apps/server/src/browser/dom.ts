@@ -15,21 +15,3 @@ export function parseNodeAttributes(node: CdpNode): Record<string, string> {
   }
   return attrs
 }
-
-export function formatSearchResult(result: DomSearchResult): string {
-  const parts: string[] = []
-
-  let header = `<${result.tag}`
-  for (const [k, v] of Object.entries(result.attributes)) {
-    header += ` ${k}="${esc(v)}"`
-  }
-  header += '>'
-  parts.push(header)
-  parts.push(`  nodeId: ${result.nodeId}`)
-
-  return parts.join('\n')
-}
-
-function esc(s: string): string {
-  return s.replace(/"/g, '\\"')
-}

@@ -40,7 +40,8 @@ const BUILT_IN_ACP_AGENT_BY_PROVIDER: Record<string, string> = {
   [LLM_PROVIDERS.CODEX]: 'codex',
 }
 
-type EnsureWorkspaceInstructionFile = typeof ensureWorkspaceInstructionFile
+export type EnsureWorkspaceInstructionFile =
+  typeof ensureWorkspaceInstructionFile
 
 let ensureWorkspaceInstructionFileForTesting: EnsureWorkspaceInstructionFile | null =
   null
