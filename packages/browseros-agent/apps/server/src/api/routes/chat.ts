@@ -8,7 +8,7 @@ import { logger } from '../../lib/logger'
 import { metrics } from '../../lib/metrics'
 import { Sentry } from '../../lib/sentry'
 import { ChatService } from '../services/chat-service'
-import type { KlavisProxyRef } from '../services/klavis/strata-proxy'
+import type { KlavisService } from '../services/klavis'
 import type { RemoteHermesService } from '../services/remote-hermes/remote-hermes-service'
 import { ChatRequestSchema } from '../types'
 import { ConversationIdParamSchema } from '../utils/validation'
@@ -17,7 +17,7 @@ interface ChatRouteDeps {
   browser: Browser
   browserSession: BrowserSession
   browserosId?: string
-  klavisRef?: KlavisProxyRef
+  klavis?: KlavisService
   aiSdkDevtoolsEnabled?: boolean
   /** Port the BrowserOS server bound to. Threaded to ACP providers so
    *  the spawned agent can dial back into the local /mcp route. */
@@ -37,7 +37,7 @@ export function createChatRoutes(deps: ChatRouteDeps) {
   const sessionStore = new SessionStore()
   const service = new ChatService({
     sessionStore,
-    klavisRef: deps.klavisRef,
+    klavis: deps.klavis,
     browser: deps.browser,
     browserSession: deps.browserSession,
     browserosId,

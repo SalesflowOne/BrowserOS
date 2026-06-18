@@ -8,7 +8,7 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import type { OAuthTokenManager } from '../../lib/clients/oauth/token-manager'
 import { requireTrustedOrigin } from '../middleware/require-trusted-origin'
-import type { KlavisProxyRef } from '../services/klavis/strata-proxy'
+import type { KlavisService } from '../services/klavis'
 import type { RemoteHermesService } from '../services/remote-hermes/remote-hermes-service'
 import type { Env, HttpServerConfig } from '../types'
 import { defaultCorsConfig } from '../utils/cors'
@@ -33,7 +33,7 @@ interface CreateApiRoutesDeps {
   agentRoutes?: Hono<Env>
   config: HttpServerConfig
   gatewayBaseUrl?: string
-  klavisRef: KlavisProxyRef
+  klavis: KlavisService
   onShutdown: () => void
   remoteHermes: RemoteHermesService | null
   tokenManager: OAuthTokenManager | null
@@ -45,7 +45,7 @@ export function createApiRoutes(deps: CreateApiRoutesDeps) {
     agentRoutes,
     config,
     gatewayBaseUrl,
-    klavisRef,
+    klavis,
     remoteHermes,
     tokenManager,
   } = deps
@@ -65,7 +65,7 @@ export function createApiRoutes(deps: CreateApiRoutesDeps) {
     .route('/acpx/probe', createAcpxProbeRoutes({ resourcesDir }))
     .route('/refine-prompt', createRefinePromptRoutes({ browserosId }))
     .route('/oauth', oauthRoutes(tokenManager))
-    .route('/klavis', createKlavisRoutes({ browserosId: browserosId || '' }))
+    .route('/klavis', createKlavisRoutes({ klavis }))
     .route(
       '/credits',
       createCreditsRoutes({
@@ -78,7 +78,7 @@ export function createApiRoutes(deps: CreateApiRoutesDeps) {
       createMcpRoutes({
         version,
         browserSession,
-        klavisRef,
+        klavis,
       }),
     )
     .route(
@@ -93,7 +93,7 @@ export function createApiRoutes(deps: CreateApiRoutesDeps) {
         browser,
         browserSession,
         browserosId,
-        klavisRef,
+        klavis,
         aiSdkDevtoolsEnabled: config.aiSdkDevtoolsEnabled,
         serverPort: port,
         resourcesDir,
