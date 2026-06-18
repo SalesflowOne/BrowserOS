@@ -133,6 +133,10 @@ export function createKlavisRoutes(deps: KlavisRouteDeps) {
       async (c) => {
         const { serverName, apiKey, apiKeyUrl } = c.req.valid('json')
 
+        if (!isSupportedConnector(serverName)) {
+          return c.json({ error: `Invalid server: ${serverName}` }, 400)
+        }
+
         try {
           await klavis.submitApiKey({ serverName, apiKey, apiKeyUrl })
 

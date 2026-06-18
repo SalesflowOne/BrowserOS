@@ -96,4 +96,30 @@ describe('createKlavisRoutes', () => {
       apiKeyUrl: 'https://auth.example.com/setup?instance_id=abc123',
     })
   })
+
+  it('rejects unsupported API-key connector names with 400', async () => {
+    let called = false
+    globalThis.fetch = (async () => {
+      called = true
+      return Response.json({})
+    }) as typeof fetch
+
+    const route = createRoute()
+    const response = await route.request('/servers/submit-api-key', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        serverName: 'Unknown App',
+        apiKey: 'secret',
+        apiKeyUrl: 'https://auth.example.com/setup?instance_id=abc123',
+      }),
+    })
+    const body = await response.json()
+
+    assert.strictEqual(response.status, 400)
+    assert.deepStrictEqual(body, { error: 'Invalid server: Unknown App' })
+    assert.strictEqual(called, false)
+  })
 })
