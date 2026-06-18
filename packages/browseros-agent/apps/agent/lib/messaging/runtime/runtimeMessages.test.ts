@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import type {
+  RuntimeSidePanelScopeChangedData,
   RuntimeStopAgentData,
   RuntimeTabIdResponse,
 } from './runtimeMessages'
@@ -15,6 +16,9 @@ describe('runtime message protocol', () => {
     expect(source).toContain("getTabId: 'runtime.getTabId'")
     expect(source).toContain("authSuccess: 'runtime.authSuccess'")
     expect(source).toContain("stopAgent: 'runtime.stopAgent'")
+    expect(source).toContain(
+      "sidePanelScopeChanged: 'runtime.sidePanelScopeChanged'",
+    )
     expect(source).not.toContain("'get-tab-id'")
     expect(source).not.toContain("'AUTH_SUCCESS'")
     expect(source).not.toContain("'stop-agent'")
@@ -48,8 +52,12 @@ describe('runtime message protocol', () => {
       conversationId: 'conversation-1',
     } satisfies RuntimeStopAgentData
     const tabId = { tabId: 123 } satisfies RuntimeTabIdResponse
+    const sidePanelScope = {
+      perWindow: true,
+    } satisfies RuntimeSidePanelScopeChangedData
 
     expect(stopAgent.conversationId).toBe('conversation-1')
     expect(tabId.tabId).toBe(123)
+    expect(sidePanelScope.perWindow).toBe(true)
   })
 })

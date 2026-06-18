@@ -114,6 +114,7 @@ function checkFeatureSupport(
 
 let prefValues = new Map<string, unknown>()
 let setPrefCalls: Array<{ name: string; value: unknown }> = []
+let sentRuntimeMessages: Array<{ type: string; data: unknown }> = []
 let renderedSwitches: Array<{
   id?: string
   checked?: boolean
@@ -193,6 +194,15 @@ mock.module('@/lib/browseros/capabilities', () => ({
   resolveStaticFeatureSupport,
 }))
 
+mock.module('@/lib/messaging/runtime/runtimeMessages', () => ({
+  RuntimeMessageType: {
+    sidePanelScopeChanged: 'runtime.sidePanelScopeChanged',
+  },
+  sendRuntimeMessage: async (type: string, data: unknown) => {
+    sentRuntimeMessages.push({ type, data })
+  },
+}))
+
 let ToolbarSettingsCard: FC
 
 beforeAll(async () => {
@@ -203,6 +213,7 @@ beforeAll(async () => {
 beforeEach(() => {
   prefValues = new Map()
   setPrefCalls = []
+  sentRuntimeMessages = []
   renderedSwitches = []
 })
 
@@ -247,6 +258,12 @@ describe('ToolbarSettingsCard', () => {
       {
         name: BROWSEROS_PREFS.SIDE_PANEL_PER_WINDOW,
         value: true,
+      },
+    ])
+    expect(sentRuntimeMessages).toEqual([
+      {
+        type: 'runtime.sidePanelScopeChanged',
+        data: { perWindow: true },
       },
     ])
   })

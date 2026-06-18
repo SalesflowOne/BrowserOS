@@ -5,6 +5,10 @@ import { Switch } from '@/components/ui/switch'
 import { getBrowserOSAdapter } from '@/lib/browseros/adapter'
 import { Capabilities, Feature } from '@/lib/browseros/capabilities'
 import { BROWSEROS_PREFS } from '@/lib/browseros/prefs'
+import {
+  RuntimeMessageType,
+  sendRuntimeMessage,
+} from '@/lib/messaging/runtime/runtimeMessages'
 
 export const ToolbarSettingsCard: FC = () => {
   const [showLlmChat, setShowLlmChat] = useState(true)
@@ -61,8 +65,23 @@ export const ToolbarSettingsCard: FC = () => {
         throw new Error('Failed to update setting')
       }
       setter(value)
+      return true
     } catch {
       toast.error('Failed to update setting')
+      return false
+    }
+  }
+
+  const handleSidePanelScopeToggle = async (checked: boolean) => {
+    const updated = await handleToggle(
+      BROWSEROS_PREFS.SIDE_PANEL_PER_WINDOW,
+      checked,
+      setSidePanelPerWindow,
+    )
+    if (updated) {
+      await sendRuntimeMessage(RuntimeMessageType.sidePanelScopeChanged, {
+        perWindow: checked,
+      }).catch(() => null)
     }
   }
 
@@ -135,13 +154,7 @@ export const ToolbarSettingsCard: FC = () => {
           <Switch
             id="side-panel-per-window"
             checked={sidePanelPerWindow}
-            onCheckedChange={(checked) =>
-              handleToggle(
-                BROWSEROS_PREFS.SIDE_PANEL_PER_WINDOW,
-                checked,
-                setSidePanelPerWindow,
-              )
-            }
+            onCheckedChange={handleSidePanelScopeToggle}
             disabled={isLoading}
           />
         </div>

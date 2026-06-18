@@ -1,0 +1,175 @@
+import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test'
+
+const BROWSEROS_PREFS = {
+  SIDE_PANEL_PER_WINDOW: 'browseros.side_panel.per_window',
+} as const
+
+let prefValues = new Map<string, unknown>()
+let browserosToggleCalls: unknown[] = []
+let browserosIsOpenCalls: unknown[] = []
+let openCalls: unknown[] = []
+let closeCalls: unknown[] = []
+let setOptionsCalls: unknown[] = []
+let browserosIsOpenResult = false
+const onOpenedListeners: Array<
+  (info: chrome.sidePanel.PanelOpenedInfo) => void
+> = []
+const onClosedListeners: Array<
+  (info: chrome.sidePanel.PanelClosedInfo) => void
+> = []
+
+const browserOSAdapter = {
+  getPref: async (name: string) =>
+    prefValues.has(name) ? { value: prefValues.get(name) } : null,
+}
+
+const BrowserOSAdapter = {
+  getInstance: () => browserOSAdapter,
+}
+
+mock.module('@/lib/browseros/adapter', () => ({
+  BrowserOSAdapter,
+  getBrowserOSAdapter: () => browserOSAdapter,
+}))
+
+mock.module('./adapter', () => ({
+  BrowserOSAdapter,
+  getBrowserOSAdapter: () => browserOSAdapter,
+}))
+
+mock.module('@/lib/browseros/prefs', () => ({
+  BROWSEROS_PREFS,
+}))
+
+let openSidePanel: typeof import('./toggleSidePanel').openSidePanel
+let toggleSidePanel: typeof import('./toggleSidePanel').toggleSidePanel
+let registerSidePanelOpenStateListeners: typeof import('./toggleSidePanel').registerSidePanelOpenStateListeners
+let refreshSidePanelScopePreference: typeof import('./toggleSidePanel').refreshSidePanelScopePreference
+let setSidePanelPerWindowPreference: typeof import('./toggleSidePanel').setSidePanelPerWindowPreference
+
+beforeAll(async () => {
+  const module = await import('./toggleSidePanel')
+  openSidePanel = module.openSidePanel
+  toggleSidePanel = module.toggleSidePanel
+  registerSidePanelOpenStateListeners =
+    module.registerSidePanelOpenStateListeners
+  refreshSidePanelScopePreference = module.refreshSidePanelScopePreference
+  setSidePanelPerWindowPreference = module.setSidePanelPerWindowPreference
+})
+
+beforeEach(async () => {
+  prefValues = new Map()
+  browserosToggleCalls = []
+  browserosIsOpenCalls = []
+  openCalls = []
+  closeCalls = []
+  setOptionsCalls = []
+  browserosIsOpenResult = false
+
+  globalThis.chrome = {
+    sidePanel: {
+      browserosToggle: async (options: unknown) => {
+        browserosToggleCalls.push(options)
+        return { opened: true }
+      },
+      browserosIsOpen: async (options: unknown) => {
+        browserosIsOpenCalls.push(options)
+        return browserosIsOpenResult
+      },
+      open: async (options: unknown) => {
+        openCalls.push(options)
+      },
+      close: async (options: unknown) => {
+        closeCalls.push(options)
+      },
+      setOptions: async (options: unknown) => {
+        setOptionsCalls.push(options)
+      },
+      onOpened: {
+        addListener: (
+          listener: (info: chrome.sidePanel.PanelOpenedInfo) => void,
+        ) => {
+          onOpenedListeners.push(listener)
+        },
+      },
+      onClosed: {
+        addListener: (
+          listener: (info: chrome.sidePanel.PanelClosedInfo) => void,
+        ) => {
+          onClosedListeners.push(listener)
+        },
+      },
+    },
+  } as typeof chrome
+
+  fireWindowClosed(3)
+  await setSidePanelPerWindowPreference(false)
+  setOptionsCalls = []
+})
+
+function fireWindowOpened(windowId: number) {
+  for (const listener of onOpenedListeners) {
+    listener({ windowId, path: 'sidepanel.html' })
+  }
+}
+
+function fireWindowClosed(windowId: number) {
+  for (const listener of onClosedListeners) {
+    listener({ windowId, path: 'sidepanel.html' })
+  }
+}
+
+describe('side panel scope routing', () => {
+  it('keeps toolbar toggles on the BrowserOS tab-specific API by default', async () => {
+    const result = await toggleSidePanel({ tabId: 7, windowId: 3 })
+
+    expect(result).toEqual({ opened: true })
+    expect(browserosToggleCalls).toEqual([{ tabId: 7 }])
+    expect(openCalls).toEqual([])
+    expect(closeCalls).toEqual([])
+  })
+
+  it('uses Chromium window APIs when the window-level preference is enabled', async () => {
+    registerSidePanelOpenStateListeners()
+    await setSidePanelPerWindowPreference(true)
+
+    expect(setOptionsCalls).toEqual([{ enabled: true, path: 'sidepanel.html' }])
+    setOptionsCalls = []
+
+    const opened = await toggleSidePanel({ tabId: 7, windowId: 3 })
+
+    expect(opened).toEqual({ opened: true })
+    expect(setOptionsCalls).toEqual([])
+    expect(openCalls).toEqual([{ windowId: 3 }])
+    expect(browserosToggleCalls).toEqual([])
+
+    fireWindowOpened(3)
+    const closed = await toggleSidePanel({ tabId: 7, windowId: 3 })
+
+    expect(closed).toEqual({ opened: false })
+    expect(closeCalls).toEqual([{ windowId: 3 }])
+  })
+
+  it('opens without closing when search opens an already-open window panel', async () => {
+    registerSidePanelOpenStateListeners()
+    await setSidePanelPerWindowPreference(true)
+    fireWindowOpened(3)
+
+    const result = await openSidePanel({ tabId: 7, windowId: 3 })
+
+    expect(result).toEqual({ opened: true })
+    expect(closeCalls).toEqual([])
+    expect(browserosToggleCalls).toEqual([])
+  })
+
+  it('refreshes the cached scope from BrowserOS prefs outside the click path', async () => {
+    prefValues.set(BROWSEROS_PREFS.SIDE_PANEL_PER_WINDOW, true)
+
+    await refreshSidePanelScopePreference()
+    const result = await toggleSidePanel({ tabId: 7, windowId: 3 })
+
+    expect(result).toEqual({ opened: true })
+    expect(openCalls).toEqual([{ windowId: 3 }])
+    expect(browserosToggleCalls).toEqual([])
+  })
+})
