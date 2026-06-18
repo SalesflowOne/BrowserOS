@@ -57,10 +57,10 @@ export function buildAgentFilesystemToolSet(
   resolvedConfig: ResolvedAgentConfig,
   options: { outputFileAccess?: BrowserOutputFileAccess } = {},
 ): ToolSet {
-  if (isAcpProvider(resolvedConfig.provider) || resolvedConfig.chatMode) {
+  if (isAcpProvider(resolvedConfig.provider)) {
     return {}
   }
-  if (!resolvedConfig.workingDir) {
+  if (resolvedConfig.chatMode || !resolvedConfig.workingDir) {
     return {
       filesystem_read: createReadTool(undefined, {
         allowedOutputPaths: options.outputFileAccess?.paths,

@@ -925,6 +925,14 @@ return 'late'
         ]),
       )
       const data = result?.structuredContent as { path?: string } | undefined
+      const resultText = (result?.content[0] as { text?: string } | undefined)
+        ?.text
+      expect(resultText).toBeDefined()
+      expect(data?.path).toBeDefined()
+      const endMarkerIndex =
+        resultText?.indexOf('[END_UNTRUSTED_PAGE_CONTENT') ?? -1
+      const pathIndex = resultText?.indexOf(data?.path ?? '') ?? -1
+      expect(pathIndex).toBeGreaterThan(endMarkerIndex)
       await expectBrowserToolOutputPath(data?.path)
       const savedContent = readFileSync(data?.path ?? '', 'utf8')
       expect(savedContent).toContain('[UNTRUSTED_PAGE_CONTENT')

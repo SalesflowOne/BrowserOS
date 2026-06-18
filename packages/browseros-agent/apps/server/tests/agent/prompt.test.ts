@@ -307,10 +307,10 @@ describe('mode-aware framing', () => {
     expect(prompt).not.toContain('<page_context>')
   })
 
-  it('chat mode omits generated-output read guidance', () => {
-    const prompt = buildChatMode()
-    expect(prompt).not.toContain('### Browser Output Files')
-    expect(prompt).not.toContain('filesystem_read')
+  it('chat mode includes generated-output read guidance when the tool is registered', () => {
+    const prompt = buildChatMode({ generatedOutputReadAvailable: true })
+    expect(prompt).toContain('### Browser Output Files')
+    expect(prompt).toContain('filesystem_read')
   })
 
   it('scheduled task includes starting pageId in page context', () => {

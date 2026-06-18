@@ -181,7 +181,13 @@ export class ChatService {
 
       if (!request.userWorkingDir) {
         contextChanges.push(
-          'The user disconnected the workspace during this conversation. Filesystem tools (filesystem_read, filesystem_write, filesystem_edit, filesystem_bash, filesystem_grep, filesystem_find, filesystem_ls) are no longer available. Return all output directly in chat. If the user asks for file operations, suggest they select a working directory from the chat toolbar.',
+          [
+            'The user disconnected the workspace during this conversation.',
+            'Workspace filesystem tools (filesystem_write, filesystem_edit, filesystem_bash, filesystem_grep, filesystem_find, filesystem_ls, and workspace file reads) are no longer available.',
+            'filesystem_read can only read BrowserOS-generated output files returned in this session.',
+            'Return other output directly in chat.',
+            'If the user asks for file operations, suggest they select a working directory from the chat toolbar.',
+          ].join(' '),
         )
       } else if (!previousWorkingDir) {
         contextChanges.push(

@@ -35,11 +35,11 @@ describe('buildAgentFilesystemToolSet', () => {
     ])
   })
 
-  it('omits filesystem tools in chat mode even when a workspace is selected', () => {
+  it('exposes only output-file reads in chat mode even when a workspace is selected', () => {
     const tools = buildAgentFilesystemToolSet(
       agentConfig({ chatMode: true, workingDir: '/tmp/browseros-workspace' }),
     )
-    expect(Object.keys(tools)).toEqual([])
+    expect(Object.keys(tools)).toEqual(['filesystem_read'])
   })
 
   it('omits filesystem tools for ACP providers', () => {
