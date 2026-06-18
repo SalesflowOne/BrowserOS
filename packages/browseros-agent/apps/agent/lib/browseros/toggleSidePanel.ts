@@ -1,10 +1,15 @@
 import { getBrowserOSAdapter } from './adapter'
 import { BROWSEROS_PREFS } from './prefs'
+import { openWindowSidePanelIdsStorage } from './sidePanelOpenStateStorage'
 
 const SIDEPANEL_PATH = 'sidepanel.html'
 const openWindowSidePanelIds = new Set<number>()
 let sidePanelPerWindow = false
 let sidePanelOpenStateListenersRegistered = false
+let sidePanelRuntimeStateLoaded = false
+let sidePanelRuntimeStateLoadPromise: Promise<void> | null = null
+let sidePanelScopePreferenceEpoch = 0
+let persistWindowSidePanelOpenStatePromise: Promise<void> = Promise.resolve()
 
 type SidePanelTarget = {
   tabId: number
@@ -19,22 +24,85 @@ type SidePanelToggleResult = {
 export async function setSidePanelPerWindowPreference(
   perWindow: boolean,
 ): Promise<void> {
-  sidePanelPerWindow = perWindow
+  const epoch = sidePanelScopePreferenceEpoch + 1
+  sidePanelScopePreferenceEpoch = epoch
+  await applySidePanelPerWindowPreference(perWindow, epoch)
+}
+
+async function applySidePanelPerWindowPreference(
+  perWindow: boolean,
+  epoch: number,
+): Promise<void> {
+  if (epoch !== sidePanelScopePreferenceEpoch) return
   await chrome.sidePanel.setOptions(
     perWindow ? { enabled: true, path: SIDEPANEL_PATH } : { enabled: false },
   )
+  if (epoch !== sidePanelScopePreferenceEpoch) return
+  sidePanelPerWindow = perWindow
 }
 
-/** Loads the stored side panel scope before user-triggered side panel actions run. */
-export async function refreshSidePanelScopePreference(): Promise<void> {
+async function loadSidePanelScopePreference(): Promise<void> {
+  const epoch = sidePanelScopePreferenceEpoch
   try {
     const pref = await getBrowserOSAdapter().getPref(
       BROWSEROS_PREFS.SIDE_PANEL_PER_WINDOW,
     )
-    await setSidePanelPerWindowPreference(pref?.value === true)
+    await applySidePanelPerWindowPreference(pref?.value === true, epoch)
   } catch {
-    await setSidePanelPerWindowPreference(false)
+    await applySidePanelPerWindowPreference(false, epoch)
   }
+}
+
+async function loadWindowSidePanelOpenState(): Promise<void> {
+  const windowIds = await openWindowSidePanelIdsStorage.getValue()
+  openWindowSidePanelIds.clear()
+  for (const windowId of windowIds) {
+    if (Number.isInteger(windowId)) {
+      openWindowSidePanelIds.add(windowId)
+    }
+  }
+}
+
+function queuePersistWindowSidePanelOpenState(): void {
+  const windowIds = [...openWindowSidePanelIds]
+  persistWindowSidePanelOpenStatePromise =
+    persistWindowSidePanelOpenStatePromise
+      .catch(() => undefined)
+      .then(() => openWindowSidePanelIdsStorage.setValue(windowIds))
+}
+
+function rememberWindowSidePanelOpen(windowId: number): void {
+  if (openWindowSidePanelIds.has(windowId)) return
+  openWindowSidePanelIds.add(windowId)
+  queuePersistWindowSidePanelOpenState()
+}
+
+function rememberWindowSidePanelClosed(windowId: number): void {
+  if (!openWindowSidePanelIds.delete(windowId)) return
+  queuePersistWindowSidePanelOpenState()
+}
+
+/** Refreshes the cached side panel scope and open-window state from storage. */
+export async function refreshSidePanelRuntimeState(): Promise<void> {
+  await Promise.all([
+    loadSidePanelScopePreference(),
+    loadWindowSidePanelOpenState(),
+  ])
+  sidePanelRuntimeStateLoaded = true
+}
+
+/** Serializes background startup state before a user-triggered side panel action routes. */
+export async function ensureSidePanelRuntimeStateLoaded(): Promise<void> {
+  if (sidePanelRuntimeStateLoaded) return
+  sidePanelRuntimeStateLoadPromise ??= refreshSidePanelRuntimeState()
+    .catch((error) => {
+      sidePanelRuntimeStateLoaded = false
+      throw error
+    })
+    .finally(() => {
+      sidePanelRuntimeStateLoadPromise = null
+    })
+  await sidePanelRuntimeStateLoadPromise
 }
 
 async function openTabSidePanel({
@@ -58,7 +126,7 @@ async function openWindowSidePanel({
 }: SidePanelTarget): Promise<SidePanelToggleResult> {
   if (!openWindowSidePanelIds.has(windowId)) {
     await chrome.sidePanel.open({ windowId })
-    openWindowSidePanelIds.add(windowId)
+    rememberWindowSidePanelOpen(windowId)
   }
   return { opened: true }
 }
@@ -68,7 +136,7 @@ async function toggleWindowSidePanel(
 ): Promise<SidePanelToggleResult> {
   if (openWindowSidePanelIds.has(target.windowId)) {
     await chrome.sidePanel.close({ windowId: target.windowId })
-    openWindowSidePanelIds.delete(target.windowId)
+    rememberWindowSidePanelClosed(target.windowId)
     return { opened: false }
   }
   return await openWindowSidePanel(target)
@@ -81,13 +149,13 @@ export function registerSidePanelOpenStateListeners(): void {
 
   chrome.sidePanel.onOpened.addListener((info) => {
     if (info.tabId === undefined) {
-      openWindowSidePanelIds.add(info.windowId)
+      rememberWindowSidePanelOpen(info.windowId)
     }
   })
 
   chrome.sidePanel.onClosed.addListener((info) => {
     if (info.tabId === undefined) {
-      openWindowSidePanelIds.delete(info.windowId)
+      rememberWindowSidePanelClosed(info.windowId)
     }
   })
 }
@@ -96,6 +164,7 @@ export function registerSidePanelOpenStateListeners(): void {
 export async function openSidePanel(
   target: SidePanelTarget,
 ): Promise<SidePanelToggleResult> {
+  await ensureSidePanelRuntimeStateLoaded()
   if (sidePanelPerWindow) {
     return await openWindowSidePanel(target)
   }
@@ -106,6 +175,7 @@ export async function openSidePanel(
 export async function toggleSidePanel(
   target: SidePanelTarget,
 ): Promise<SidePanelToggleResult> {
+  await ensureSidePanelRuntimeStateLoaded()
   if (sidePanelPerWindow) {
     return await toggleWindowSidePanel(target)
   }

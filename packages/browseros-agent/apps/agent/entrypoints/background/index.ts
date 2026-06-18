@@ -3,8 +3,8 @@ import { sessionStorage } from '@/lib/auth/sessionStorage'
 import { Capabilities } from '@/lib/browseros/capabilities'
 import { getHealthCheckUrl, getMcpServerUrl } from '@/lib/browseros/helpers'
 import {
+  ensureSidePanelRuntimeStateLoaded,
   openSidePanel,
-  refreshSidePanelScopePreference,
   registerSidePanelOpenStateListeners,
   setSidePanelPerWindowPreference,
   toggleSidePanel,
@@ -50,7 +50,7 @@ const cleanupLegacyToolApprovalStorage = async () => {
 export default defineBackground(() => {
   chrome.sidePanel.setOptions({ enabled: false })
   registerSidePanelOpenStateListeners()
-  refreshSidePanelScopePreference().catch(() => null)
+  ensureSidePanelRuntimeStateLoaded().catch(() => null)
 
   Capabilities.initialize().catch(() => null)
   setupLlmProvidersBackupToBrowserOS()

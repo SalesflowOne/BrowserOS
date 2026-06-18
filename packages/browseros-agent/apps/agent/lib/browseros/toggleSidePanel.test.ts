@@ -5,12 +5,16 @@ const BROWSEROS_PREFS = {
 } as const
 
 let prefValues = new Map<string, unknown>()
+let storedOpenWindowIds: number[] = []
 let browserosToggleCalls: unknown[] = []
 let browserosIsOpenCalls: unknown[] = []
 let openCalls: unknown[] = []
 let closeCalls: unknown[] = []
 let setOptionsCalls: unknown[] = []
 let browserosIsOpenResult = false
+let getPrefOverride:
+  | ((name: string) => Promise<{ value: unknown } | null>)
+  | null = null
 const onOpenedListeners: Array<
   (info: chrome.sidePanel.PanelOpenedInfo) => void
 > = []
@@ -19,8 +23,12 @@ const onClosedListeners: Array<
 > = []
 
 const browserOSAdapter = {
-  getPref: async (name: string) =>
-    prefValues.has(name) ? { value: prefValues.get(name) } : null,
+  getPref: async (name: string) => {
+    if (getPrefOverride) {
+      return await getPrefOverride(name)
+    }
+    return prefValues.has(name) ? { value: prefValues.get(name) } : null
+  },
 }
 
 const BrowserOSAdapter = {
@@ -41,10 +49,19 @@ mock.module('@/lib/browseros/prefs', () => ({
   BROWSEROS_PREFS,
 }))
 
+mock.module('./sidePanelOpenStateStorage', () => ({
+  openWindowSidePanelIdsStorage: {
+    getValue: async () => storedOpenWindowIds,
+    setValue: async (windowIds: number[]) => {
+      storedOpenWindowIds = windowIds
+    },
+  },
+}))
+
 let openSidePanel: typeof import('./toggleSidePanel').openSidePanel
 let toggleSidePanel: typeof import('./toggleSidePanel').toggleSidePanel
 let registerSidePanelOpenStateListeners: typeof import('./toggleSidePanel').registerSidePanelOpenStateListeners
-let refreshSidePanelScopePreference: typeof import('./toggleSidePanel').refreshSidePanelScopePreference
+let refreshSidePanelRuntimeState: typeof import('./toggleSidePanel').refreshSidePanelRuntimeState
 let setSidePanelPerWindowPreference: typeof import('./toggleSidePanel').setSidePanelPerWindowPreference
 
 beforeAll(async () => {
@@ -53,18 +70,20 @@ beforeAll(async () => {
   toggleSidePanel = module.toggleSidePanel
   registerSidePanelOpenStateListeners =
     module.registerSidePanelOpenStateListeners
-  refreshSidePanelScopePreference = module.refreshSidePanelScopePreference
+  refreshSidePanelRuntimeState = module.refreshSidePanelRuntimeState
   setSidePanelPerWindowPreference = module.setSidePanelPerWindowPreference
 })
 
 beforeEach(async () => {
   prefValues = new Map()
+  storedOpenWindowIds = []
   browserosToggleCalls = []
   browserosIsOpenCalls = []
   openCalls = []
   closeCalls = []
   setOptionsCalls = []
   browserosIsOpenResult = false
+  getPrefOverride = null
 
   globalThis.chrome = {
     sidePanel: {
@@ -120,6 +139,17 @@ function fireWindowClosed(windowId: number) {
 }
 
 describe('side panel scope routing', () => {
+  it('hydrates window open state before routing a cold-started toggle', async () => {
+    prefValues.set(BROWSEROS_PREFS.SIDE_PANEL_PER_WINDOW, true)
+    storedOpenWindowIds = [3]
+
+    const result = await toggleSidePanel({ tabId: 7, windowId: 3 })
+
+    expect(result).toEqual({ opened: false })
+    expect(closeCalls).toEqual([{ windowId: 3 }])
+    expect(openCalls).toEqual([])
+  })
+
   it('keeps toolbar toggles on the BrowserOS tab-specific API by default', async () => {
     const result = await toggleSidePanel({ tabId: 7, windowId: 3 })
 
@@ -165,7 +195,27 @@ describe('side panel scope routing', () => {
   it('refreshes the cached scope from BrowserOS prefs outside the click path', async () => {
     prefValues.set(BROWSEROS_PREFS.SIDE_PANEL_PER_WINDOW, true)
 
-    await refreshSidePanelScopePreference()
+    await refreshSidePanelRuntimeState()
+    const result = await toggleSidePanel({ tabId: 7, windowId: 3 })
+
+    expect(result).toEqual({ opened: true })
+    expect(openCalls).toEqual([{ windowId: 3 }])
+    expect(browserosToggleCalls).toEqual([])
+  })
+
+  it('keeps a newer explicit setting change over a stale refresh result', async () => {
+    let resolvePref: (pref: { value: unknown } | null) => void = () => {}
+    getPrefOverride = async () =>
+      new Promise<{ value: unknown } | null>((resolve) => {
+        resolvePref = resolve
+      })
+
+    const refreshPromise = refreshSidePanelRuntimeState()
+    await Promise.resolve()
+    await setSidePanelPerWindowPreference(true)
+    resolvePref({ value: false })
+    await refreshPromise
+
     const result = await toggleSidePanel({ tabId: 7, windowId: 3 })
 
     expect(result).toEqual({ opened: true })
