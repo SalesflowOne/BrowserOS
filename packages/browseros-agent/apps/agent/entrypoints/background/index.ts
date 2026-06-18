@@ -48,7 +48,6 @@ const cleanupLegacyToolApprovalStorage = async () => {
 }
 
 export default defineBackground(() => {
-  chrome.sidePanel.setOptions({ enabled: false })
   registerSidePanelOpenStateListeners()
   ensureSidePanelRuntimeStateLoaded().catch(() => null)
 
