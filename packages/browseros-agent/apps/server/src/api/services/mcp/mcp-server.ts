@@ -6,7 +6,6 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { SetLevelRequestSchema } from '@modelcontextprotocol/sdk/types.js'
-import type { Browser } from '../../../browser/browser'
 import type { BrowserSession } from '../../../browser/core/session'
 import {
   type KlavisProxyRef,
@@ -17,10 +16,8 @@ import { registerTools } from './register-mcp'
 
 export interface McpServiceDeps {
   version: string
-  browser: Browser
   browserSession: BrowserSession
   klavisRef?: KlavisProxyRef
-  browserUseNewTools: boolean
   defaultWindowId?: number
   defaultTabGroupId?: string
 }
@@ -40,9 +37,7 @@ export function createMcpServer(deps: McpServiceDeps): McpServer {
   })
 
   registerTools(server, {
-    browser: deps.browser,
     browserSession: deps.browserSession,
-    useNewTools: deps.browserUseNewTools,
     defaultWindowId: deps.defaultWindowId,
     defaultTabGroupId: deps.defaultTabGroupId,
   })

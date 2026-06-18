@@ -11,15 +11,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { TOOL_LIMITS } from '@browseros/shared/constants/limits'
 import { z } from 'zod'
-import {
-  CHAT_MODE_ALLOWED_TOOLS,
-  LEGACY_CHAT_MODE_ALLOWED_TOOLS,
-} from '../../../src/agent/chat-mode'
-import {
-  buildBrowserToolSet,
-  buildLegacyBrowserToolSet,
-} from '../../../src/agent/tool-adapter'
-import type { Browser } from '../../../src/browser/browser'
+import { CHAT_MODE_ALLOWED_TOOLS } from '../../../src/agent/chat-mode'
+import { buildBrowserToolSet } from '../../../src/agent/tool-adapter'
 import type { BrowserSession } from '../../../src/browser/core/session'
 import {
   getToolOutputDir,
@@ -33,9 +26,6 @@ import {
 } from '../../../src/tools/browser/framework'
 import { registerBrowserTools } from '../../../src/tools/browser/register'
 import { BROWSER_TOOLS } from '../../../src/tools/browser/registry'
-import { createReadTool } from '../../../src/tools/filesystem/read'
-import { get_page_content as legacyGetPageContent } from '../../../src/tools/legacy/browser/snapshot'
-import { executeTool as executeLegacyTool } from '../../../src/tools/legacy/framework'
 
 type RegisteredHandler = (args: Record<string, unknown>) => Promise<{
   content: unknown
@@ -103,8 +93,160 @@ describe('registerBrowserTools', () => {
     registerBrowserTools(fake.server as never, session)
 
     expect([...fake.handlers.keys()]).toEqual(BROWSER_TOOLS.map((t) => t.name))
-    expect(fake.handlers.size).toBe(11)
+    expect(fake.handlers.size).toBe(16)
     expect(fake.configs.get('tabs')?.inputSchema).toBeDefined()
+  })
+
+  it('manages windows through the compact windows tool', async () => {
+    const fake = createFakeServer()
+    const calls: Array<{ method: string; args?: unknown }> = []
+    const window = {
+      windowId: 7,
+      windowType: 'normal' as const,
+      bounds: {},
+      isActive: true,
+      isVisible: true,
+      tabCount: 2,
+    }
+    const hiddenWindow = {
+      ...window,
+      windowId: 8,
+      isActive: false,
+      isVisible: false,
+    }
+    const session = {
+      windows: {
+        list: async () => {
+          calls.push({ method: 'list' })
+          return [window]
+        },
+        create: async (args?: { hidden?: boolean }) => {
+          calls.push({ method: 'create', args })
+          return args?.hidden ? hiddenWindow : window
+        },
+        close: async (windowId: number) => {
+          calls.push({ method: 'close', args: windowId })
+        },
+        activate: async (windowId: number) => {
+          calls.push({ method: 'activate', args: windowId })
+        },
+        setVisibility: async (
+          windowId: number,
+          args: { visible: boolean; activate?: boolean },
+        ) => {
+          calls.push({ method: 'setVisibility', args: { windowId, ...args } })
+          return {
+            previousWindowId: windowId,
+            newWindowId: 9,
+            replaced: true,
+            window: { ...window, windowId: 9, isVisible: args.visible },
+          }
+        },
+      },
+      pages: {
+        list: async () => [],
+      },
+    } as unknown as BrowserSession
+
+    registerBrowserTools(fake.server as never, session)
+    const handler = fake.handlers.get('windows')
+
+    const list = await handler?.({ action: 'list' })
+    expect(list?.isError).toBeFalsy()
+    expect(list?.structuredContent).toEqual({
+      action: 'list',
+      windows: [window],
+      count: 1,
+    })
+    expect(list?.content).toEqual([
+      expect.objectContaining({
+        type: 'text',
+        text: expect.stringContaining('Window 7 (normal, 2 tabs) [ACTIVE]'),
+      }),
+    ])
+
+    const create = await handler?.({ action: 'create', hidden: true })
+    expect(create?.structuredContent).toEqual({
+      action: 'create',
+      window: hiddenWindow,
+    })
+
+    const close = await handler?.({ action: 'close', windowId: 7 })
+    expect(close?.structuredContent).toEqual({ action: 'close', windowId: 7 })
+
+    const activate = await handler?.({ action: 'activate', windowId: 8 })
+    expect(activate?.structuredContent).toEqual({
+      action: 'activate',
+      windowId: 8,
+    })
+
+    const visibility = await handler?.({
+      action: 'set_visibility',
+      windowId: 8,
+      visible: true,
+      activate: false,
+    })
+    expect(visibility?.structuredContent).toEqual({
+      action: 'set_visibility',
+      previousWindowId: 8,
+      newWindowId: 9,
+      replaced: true,
+      window: { ...window, windowId: 9, isVisible: true },
+    })
+
+    expect(calls).toEqual([
+      { method: 'list' },
+      { method: 'create', args: { hidden: true } },
+      { method: 'close', args: 7 },
+      { method: 'activate', args: 8 },
+      {
+        method: 'setVisibility',
+        args: { windowId: 8, visible: true, activate: false },
+      },
+    ])
+  })
+
+  it('returns clear errors for invalid windows actions', async () => {
+    const fake = createFakeServer()
+    const session = {
+      windows: {},
+      pages: {
+        list: async () => [],
+      },
+    } as unknown as BrowserSession
+
+    registerBrowserTools(fake.server as never, session)
+    const handler = fake.handlers.get('windows')
+
+    const close = await handler?.({ action: 'close' })
+    expect(close?.isError).toBe(true)
+    expect(close?.content).toEqual([
+      expect.objectContaining({
+        text: 'windows close: windowId is required.',
+      }),
+    ])
+
+    const visibilityWindow = await handler?.({
+      action: 'set_visibility',
+      visible: true,
+    })
+    expect(visibilityWindow?.isError).toBe(true)
+    expect(visibilityWindow?.content).toEqual([
+      expect.objectContaining({
+        text: 'windows set_visibility: windowId is required.',
+      }),
+    ])
+
+    const visibilityState = await handler?.({
+      action: 'set_visibility',
+      windowId: 7,
+    })
+    expect(visibilityState?.isError).toBe(true)
+    expect(visibilityState?.content).toEqual([
+      expect.objectContaining({
+        text: 'windows set_visibility: visible is required.',
+      }),
+    ])
   })
 
   it('applies scoped defaults when opening a new tab', async () => {
@@ -434,6 +576,59 @@ return 'late'
     ])
   })
 
+  it('caps large direct diffs with snapshot guidance', async () => {
+    const fake = createFakeServer()
+    const largeDiff = Array.from({ length: 2001 }, (_, i) => `word-${i}`).join(
+      ' ',
+    )
+    const session = {
+      observe: () => ({
+        diff: async () => ({
+          changed: true,
+          text: largeDiff,
+          added: 2001,
+          removed: 0,
+          afterUrl: 'https://example.com/large',
+        }),
+      }),
+      pages: {
+        getInfo: () => ({ url: 'https://example.com/large' }),
+      },
+    } as unknown as BrowserSession
+
+    registerBrowserTools(fake.server as never, session)
+
+    const result = await fake.handlers.get('diff')?.({ page: 1 })
+
+    expect(result?.isError).toBeFalsy()
+    expect(result?.structuredContent).toEqual({
+      added: 2001,
+      removed: 0,
+      truncated: true,
+      wordCount: 2001,
+    })
+    expect(result?.content).toEqual([
+      expect.objectContaining({
+        type: 'text',
+        text: expect.stringContaining('Diff is 2001 words'),
+      }),
+    ])
+    expect(result?.content).toEqual([
+      expect.objectContaining({
+        type: 'text',
+        text: expect.stringContaining(
+          'Run snapshot on page 1 for full details',
+        ),
+      }),
+    ])
+    expect(result?.content).toEqual([
+      expect.objectContaining({
+        type: 'text',
+        text: expect.not.stringContaining('word-2000'),
+      }),
+    ])
+  })
+
   it('returns a full snapshot when act readback sees a URL change', async () => {
     const fake = createFakeServer()
     const calls: string[] = []
@@ -473,33 +668,163 @@ return 'late'
       beforeUrl: 'https://example.com/start',
       afterUrl: 'https://example.com/destination',
     })
-    expect(result?.content).toEqual([
-      expect.objectContaining({
-        type: 'text',
-        text: expect.stringContaining('page URL changed;'),
-      }),
-    ])
-    expect(result?.content).toEqual([
-      expect.objectContaining({
-        type: 'text',
-        text: expect.stringContaining(
-          'returning full current snapshot instead of a diff',
-        ),
-      }),
-    ])
-    expect(result?.content).toEqual([
-      expect.objectContaining({
-        type: 'text',
-        text: expect.stringContaining('[UNTRUSTED_PAGE_CONTENT'),
-      }),
-    ])
-    expect(result?.content).toEqual([
-      expect.objectContaining({
-        type: 'text',
-        text: expect.stringContaining('- heading "Destination"'),
-      }),
-    ])
+    expect(result?.content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining('ok (click)'),
+        }),
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining('[Page 1 diff]'),
+        }),
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining('URL changed;'),
+        }),
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining(
+            'returning full current snapshot instead of a diff',
+          ),
+        }),
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining('[UNTRUSTED_PAGE_CONTENT'),
+        }),
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining('- heading "Destination"'),
+        }),
+      ]),
+    )
     expect(calls).toEqual(['click'])
+  })
+
+  it('caps large URL-change act readbacks with URL guidance', async () => {
+    const fake = createFakeServer()
+    const largeSnapshot = Array.from(
+      { length: 2001 },
+      (_, i) => `destination-${i}`,
+    ).join(' ')
+    const session = {
+      input: () => ({
+        click: async () => undefined,
+      }),
+      observe: () => ({
+        diff: async () => ({
+          changed: true,
+          text: largeSnapshot,
+          added: 0,
+          removed: 0,
+          urlChanged: true,
+          beforeUrl: 'https://example.com/start',
+          afterUrl: 'https://example.com/destination',
+        }),
+      }),
+      pages: {
+        getInfo: () => ({ url: 'https://example.com/destination' }),
+      },
+    } as unknown as BrowserSession
+
+    registerBrowserTools(fake.server as never, session)
+
+    const result = await fake.handlers.get('act')?.({
+      page: 1,
+      kind: 'click',
+      ref: 'e1',
+    })
+
+    expect(result?.isError).toBeFalsy()
+    expect(result?.structuredContent).toEqual({
+      kind: 'click',
+      changed: true,
+      urlChanged: true,
+      beforeUrl: 'https://example.com/start',
+      afterUrl: 'https://example.com/destination',
+    })
+    expect(result?.content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining('URL changed'),
+        }),
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining('full current snapshot is 2001 words'),
+        }),
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining(
+            'Run snapshot on page 1 for full details',
+          ),
+        }),
+      ]),
+    )
+    expect(result?.content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'text',
+          text: expect.not.stringContaining('destination-2000'),
+        }),
+      ]),
+    )
+  })
+
+  it('appends diff output after successful act mutations', async () => {
+    const fake = createFakeServer()
+    const calls: string[] = []
+    const session = {
+      input: () => ({
+        click: async () => calls.push('click'),
+      }),
+      observe: () => ({
+        diff: async () => {
+          calls.push('diff')
+          return {
+            changed: true,
+            text: '+   button "Saved" [ref=e1]\n1 added, 0 removed',
+            added: 1,
+            removed: 0,
+            afterUrl: 'https://example.com/current',
+          }
+        },
+      }),
+      pages: {
+        getInfo: () => ({ url: 'https://example.com/current' }),
+      },
+    } as unknown as BrowserSession
+
+    registerBrowserTools(fake.server as never, session)
+
+    const result = await fake.handlers.get('act')?.({
+      page: 1,
+      kind: 'click',
+      ref: 'e1',
+    })
+
+    expect(result?.isError).toBeFalsy()
+    expect(result?.structuredContent).toEqual({
+      kind: 'click',
+      changed: true,
+    })
+    expect(result?.content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining('ok (click)'),
+        }),
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining('[Page 1 diff]'),
+        }),
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining('+   button "Saved" [ref=e1]'),
+        }),
+      ]),
+    )
+    expect(calls).toEqual(['click', 'diff'])
   })
 
   it('caps page-context JavaScript timeouts', async () => {
@@ -577,6 +902,159 @@ return 'late'
       const data = result?.structuredContent as { path?: string } | undefined
       await expectBrowserToolOutputPath(data?.path)
       expect(readFileSync(data?.path ?? '', 'utf8')).toBe(largeText)
+    })
+  })
+
+  it('prints a page to a BrowserOS output PDF file', async () => {
+    await withBrowserosDir(async () => {
+      const fake = createFakeServer()
+      const pdfBytes = Buffer.from('%PDF-1.4 fake pdf', 'utf8')
+      const printCalls: Array<Record<string, unknown>> = []
+      const session = {
+        pages: {
+          getSession: async () => ({
+            session: {
+              Page: {
+                printToPDF: async (params: Record<string, unknown>) => {
+                  printCalls.push(params)
+                  return { data: pdfBytes.toString('base64') }
+                },
+              },
+            },
+          }),
+        },
+      } as unknown as BrowserSession
+
+      registerBrowserTools(fake.server as never, session)
+
+      const result = await fake.handlers.get('pdf')?.({
+        page: 1,
+        landscape: true,
+        background: false,
+      })
+      const upstreamOptions = await fake.handlers.get('pdf')?.({
+        page: 1,
+        printBackground: false,
+        preferCSSPageSize: true,
+      })
+
+      expect(result?.isError).toBeFalsy()
+      expect(upstreamOptions?.isError).toBeFalsy()
+      expect(printCalls).toEqual([
+        { landscape: true, printBackground: false, preferCSSPageSize: false },
+        { landscape: false, printBackground: false, preferCSSPageSize: true },
+      ])
+      const data = result?.structuredContent as
+        | { page?: number; path?: string; bytes?: number }
+        | undefined
+      expect(data).toMatchObject({ page: 1, bytes: pdfBytes.length })
+      const savedPath = data?.path
+      await expectBrowserToolOutputPath(savedPath)
+      expect(savedPath?.endsWith('.pdf')).toBe(true)
+      expect(readFileSync(savedPath ?? '')).toEqual(pdfBytes)
+    })
+  })
+
+  it('downloads a file via a ref click into the BrowserOS output dir', async () => {
+    await withBrowserosDir(async () => {
+      const fake = createFakeServer()
+      const behaviors: string[] = []
+      const clicks: string[] = []
+      type DownloadHandler = (params: Record<string, unknown>) => void
+      const handlers: Record<string, DownloadHandler> = {}
+      const session = {
+        input: () => ({
+          click: async (ref: string) => {
+            clicks.push(ref)
+            handlers.downloadWillBegin?.({
+              guid: 'g1',
+              suggestedFilename: 'report.csv',
+            })
+            handlers.downloadProgress?.({ guid: 'g1', state: 'completed' })
+          },
+        }),
+        pages: {
+          getSession: async () => ({
+            session: {
+              Page: {
+                setDownloadBehavior: async (params: { behavior: string }) => {
+                  behaviors.push(params.behavior)
+                },
+                on: (event: string, handler: DownloadHandler) => {
+                  handlers[event] = handler
+                  return () => {
+                    delete handlers[event]
+                  }
+                },
+              },
+            },
+          }),
+        },
+      } as unknown as BrowserSession
+
+      registerBrowserTools(fake.server as never, session)
+
+      const result = await fake.handlers.get('download')?.({
+        page: 1,
+        ref: 'e12',
+      })
+
+      expect(result?.isError).toBeFalsy()
+      expect(clicks).toEqual(['e12'])
+      expect(behaviors).toEqual(['allow', 'default'])
+      const data = result?.structuredContent as
+        | { page?: number; ref?: string; path?: string; filename?: string }
+        | undefined
+      expect(data).toMatchObject({
+        page: 1,
+        ref: 'e12',
+        filename: 'report.csv',
+      })
+      const outputDir = await getToolOutputDir()
+      expect(realpathSync(dirname(data?.path ?? ''))).toContain(
+        realpathSync(outputDir),
+      )
+      expect(data?.path?.endsWith('report.csv')).toBe(true)
+    })
+  })
+
+  it('uploads files into a ref-resolved file input', async () => {
+    const fake = createFakeServer()
+    const uploads: Array<{ ref: string; files: string[] }> = []
+    const session = {
+      input: () => ({
+        uploadFile: async (ref: string, files: string[]) => {
+          uploads.push({ ref, files })
+        },
+      }),
+      pages: {},
+    } as unknown as BrowserSession
+
+    registerBrowserTools(fake.server as never, session)
+    expect(fake.handlers.has('upload')).toBe(true)
+
+    const multiple = await fake.handlers.get('upload')?.({
+      page: 1,
+      ref: 'e12',
+      files: ['/tmp/a.txt', '/tmp/b.txt'],
+    })
+    const single = await fake.handlers.get('upload')?.({
+      page: 1,
+      ref: 'e13',
+      file: '/tmp/c.txt',
+    })
+
+    expect(multiple?.isError).toBeFalsy()
+    expect(single?.isError).toBeFalsy()
+    expect(uploads).toEqual([
+      { ref: 'e12', files: ['/tmp/a.txt', '/tmp/b.txt'] },
+      { ref: 'e13', files: ['/tmp/c.txt'] },
+    ])
+    expect(single?.structuredContent).toEqual({
+      page: 1,
+      ref: 'e13',
+      files: ['/tmp/c.txt'],
+      uploaded: 1,
     })
   })
 
@@ -851,68 +1329,6 @@ describe('buildBrowserToolSet', () => {
     expect(tools.tabs).toBeDefined()
     expect(tools.new_page).toBeUndefined()
     expect(Object.keys(tools)).toEqual(BROWSER_TOOLS.map((t) => t.name))
-  })
-
-  it('builds the legacy browser tool surface', () => {
-    const tools = buildLegacyBrowserToolSet({} as never)
-
-    expect(tools.new_page).toBeDefined()
-    expect(tools.get_bookmarks).toBeDefined()
-    expect(tools.browseros_info).toBeDefined()
-    expect(tools.tabs).toBeUndefined()
-    expect(Object.keys(tools).length).toBeGreaterThan(50)
-  })
-
-  it('writes legacy large page content to BrowserOS output files readable by filesystem_read', async () => {
-    await withBrowserosDir(async () => {
-      const largeText = `${'legacy output token\n'.repeat(4)}${'x'.repeat(
-        TOOL_LIMITS.INLINE_PAGE_CONTENT_MAX_CHARS + 1,
-      )}`
-      const browser = {
-        contentAsMarkdown: async () => largeText,
-        getTabIdForPage: () => undefined,
-      } as unknown as Browser
-
-      const result = await executeLegacyTool(
-        legacyGetPageContent,
-        { page: 1 },
-        { browser, directories: {} },
-        AbortSignal.timeout(1_000),
-      )
-      const data = result.structuredContent as { path?: string } | undefined
-      expect(result.isError).toBeUndefined()
-      const savedPath = data?.path
-      await expectBrowserToolOutputPath(savedPath)
-
-      const readTool = createReadTool(process.cwd())
-      const readResult = (await readTool.execute?.(
-        { path: savedPath as string },
-        {
-          toolCallId: 'read-legacy-output',
-          messages: [],
-        } as never,
-      )) as { text?: string; isError?: boolean }
-      expect(readResult.isError).toBeUndefined()
-      expect(readResult.text).toContain('legacy output token')
-    })
-  })
-
-  it('uses legacy tool names for legacy chat-mode filtering', () => {
-    const legacyTools = buildLegacyBrowserToolSet({} as never)
-    const chatTools = Object.fromEntries(
-      Object.entries(legacyTools).filter(([name]) =>
-        LEGACY_CHAT_MODE_ALLOWED_TOOLS.has(name),
-      ),
-    )
-
-    expect(Object.keys(chatTools).sort()).toEqual([
-      'evaluate_script',
-      'get_page_content',
-      'list_pages',
-      'scroll',
-      'take_snapshot',
-    ])
-    expect(chatTools.tabs).toBeUndefined()
   })
 
   it('allows chat mode to list tabs without allowing tab mutation', async () => {

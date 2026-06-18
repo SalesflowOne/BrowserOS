@@ -130,6 +130,7 @@ function getCapabilities(
 You control a Chromium browser through a compact tool surface:
 
 - \`tabs\` → list pages, open background/hidden pages, close pages
+- \`windows\` → list, create, close, focus, show, and hide browser windows
 - \`navigate\` → go to URL, back, forward, reload; returns a fresh snapshot
 - \`snapshot\` → accessibility tree with refs like [ref=e12] for acting
 - \`diff\` → what changed since the last snapshot/diff
