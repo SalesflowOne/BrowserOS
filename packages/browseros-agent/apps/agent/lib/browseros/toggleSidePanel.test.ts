@@ -1,7 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test'
 
 let storedOpenWindowIds: number[] = []
-let storedSidePanelPerWindow = false
+let storedSidePanelPerWindow: boolean | undefined
 let browserosToggleCalls: unknown[] = []
 let browserosIsOpenCalls: unknown[] = []
 let openCalls: unknown[] = []
@@ -22,7 +22,7 @@ mock.module('./sidePanelOpenStateStorage', () => ({
       if (getSidePanelPerWindowOverride) {
         return await getSidePanelPerWindowOverride()
       }
-      return storedSidePanelPerWindow
+      return storedSidePanelPerWindow ?? false
     },
     setValue: async (perWindow: boolean) => {
       storedSidePanelPerWindow = perWindow
@@ -54,7 +54,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   storedOpenWindowIds = []
-  storedSidePanelPerWindow = false
+  storedSidePanelPerWindow = undefined
   browserosToggleCalls = []
   browserosIsOpenCalls = []
   openCalls = []
@@ -128,7 +128,18 @@ describe('side panel scope routing', () => {
     expect(openCalls).toEqual([])
   })
 
-  it('keeps toolbar toggles on the BrowserOS tab-specific API by default', async () => {
+  it('keeps toolbar toggles on the BrowserOS tab-specific API when scope storage is absent', async () => {
+    const result = await toggleSidePanel({ tabId: 7, windowId: 3 })
+
+    expect(result).toEqual({ opened: true })
+    expect(browserosToggleCalls).toEqual([{ tabId: 7 }])
+    expect(openCalls).toEqual([])
+    expect(closeCalls).toEqual([])
+  })
+
+  it('keeps toolbar toggles on the BrowserOS tab-specific API when scope storage is false', async () => {
+    storedSidePanelPerWindow = false
+
     const result = await toggleSidePanel({ tabId: 7, windowId: 3 })
 
     expect(result).toEqual({ opened: true })
