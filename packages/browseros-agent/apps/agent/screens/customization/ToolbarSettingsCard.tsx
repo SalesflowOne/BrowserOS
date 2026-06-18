@@ -91,12 +91,6 @@ export const ToolbarSettingsCard: FC = () => {
         setSidePanelPerWindow(state.sidePanelPerWindow)
         setVerticalTabsEnabled(state.verticalTabsEnabled)
         setSupportsVerticalTabs(state.supportsVerticalTabs)
-      } catch {
-        setShowLlmChat(true)
-        setShowToolbarLabels(true)
-        setSidePanelPerWindow(false)
-        setVerticalTabsEnabled(true)
-        setSupportsVerticalTabs(false)
       } finally {
         setIsLoading(false)
       }
