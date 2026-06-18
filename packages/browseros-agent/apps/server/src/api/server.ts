@@ -8,17 +8,13 @@ import { websocket } from 'hono/bun'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { HttpAgentError } from '../agent/errors'
 import { INLINED_ENV } from '../env'
-import { KlavisClient } from '../lib/clients/klavis/klavis-client'
 import { initializeOAuth, shutdownOAuth } from '../lib/clients/oauth'
 import { RemoteHermesClient } from '../lib/clients/remote-hermes/remote-hermes-client'
 import { getDb } from '../lib/db'
 import { logger } from '../lib/logger'
 import { Sentry } from '../lib/sentry'
 import { createApiRoutes } from './routes'
-import {
-  connectKlavisInBackground,
-  type KlavisProxyRef,
-} from './services/klavis/strata-proxy'
+import { KlavisService } from './services/klavis'
 import { RemoteHermesService } from './services/remote-hermes/remote-hermes-service'
 import type { HttpServerConfig } from './types'
 
@@ -56,14 +52,8 @@ export async function createHttpServer(config: HttpServerConfig) {
     : null
   if (!browserosId) shutdownOAuth()
 
-  // Connect Klavis proxy in background with retry — browser tools available immediately
-  const klavisRef: KlavisProxyRef = { handle: null }
-  const stopKlavisBackground = browserosId
-    ? connectKlavisInBackground(klavisRef, {
-        klavisClient: new KlavisClient(),
-        browserosId,
-      })
-    : () => {}
+  const klavis = new KlavisService({ browserosId })
+  klavis.start()
 
   // Remote Hermes provider. Opt-in via AGENT_RUNNER_JWT_SECRET in env;
   // when absent we still wire the routes but they return a soft
@@ -88,17 +78,12 @@ export async function createHttpServer(config: HttpServerConfig) {
     gatewayBaseUrl: INLINED_ENV.BROWSEROS_CONFIG_URL
       ? new URL(INLINED_ENV.BROWSEROS_CONFIG_URL).origin
       : undefined,
-    klavisRef,
+    klavis,
     remoteHermes,
     tokenManager,
     onShutdown: () => {
       shutdownOAuth()
-      stopKlavisBackground()
-      klavisRef.handle?.close().catch((err) =>
-        logger.warn('Failed to close Klavis proxy transport', {
-          error: err instanceof Error ? err.message : String(err),
-        }),
-      )
+      void klavis.stop()
       remoteHermes?.close()
       onShutdown?.()
     },

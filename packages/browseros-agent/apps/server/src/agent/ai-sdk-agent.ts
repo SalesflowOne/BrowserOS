@@ -15,10 +15,7 @@ import {
   type UIMessage,
   wrapLanguageModel,
 } from 'ai'
-import {
-  buildKlavisToolSet,
-  type KlavisProxyRef,
-} from '../api/services/klavis/strata-proxy'
+import type { KlavisService } from '../api/services/klavis'
 import type { BrowserSession } from '../browser/core/session'
 import { logger } from '../lib/logger'
 import { metrics } from '../lib/metrics'
@@ -41,7 +38,7 @@ export interface AiSdkAgentConfig {
   resolvedConfig: ResolvedAgentConfig
   browserSession: BrowserSession
   browserContext?: BrowserContext
-  klavisRef?: KlavisProxyRef
+  klavis?: KlavisService
   browserosId?: string
   aiSdkDevtoolsEnabled?: boolean
 }
@@ -136,13 +133,11 @@ export class AiSdkAgent {
       })
     }
 
-    // Get Klavis tools from shared background handle (no per-session connection).
-    // Only expose when user has enabled servers — matches old per-session gating.
     const klavisTools =
-      !useMcpBoundaryOnly &&
-      config.klavisRef?.handle &&
-      config.browserContext?.enabledMcpServers?.length
-        ? buildKlavisToolSet(config.klavisRef.handle)
+      !useMcpBoundaryOnly && config.klavis
+        ? config.klavis.buildAiSdkToolSet({
+            selectedServerNames: config.browserContext?.enabledMcpServers,
+          })
         : {}
 
     // Connect custom (non-Klavis) MCP servers per-session

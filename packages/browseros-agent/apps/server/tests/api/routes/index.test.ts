@@ -5,6 +5,7 @@
 
 import { describe, expect, it, mock } from 'bun:test'
 import { Hono } from 'hono'
+import { KlavisService } from '../../../src/api/services/klavis'
 import type { Env } from '../../../src/api/types'
 
 mock.module('../../../src/lib/mcp-manager', () => ({
@@ -37,7 +38,7 @@ function createTestApp(agentRoutes = new Hono<Env>()) {
   return createApiRoutes({
     agentRoutes,
     config: createTestConfig(),
-    klavisRef: { handle: null },
+    klavis: new KlavisService({ browserosId: null }),
     remoteHermes: null,
     tokenManager: null,
     onShutdown: () => {},
