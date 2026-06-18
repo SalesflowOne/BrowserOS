@@ -19,13 +19,13 @@ import type { BrowserSession } from '../../browser/core/session'
 import { buildAcpMcpServers } from '../../lib/agents/acpx-provider/buildAcpMcpServers'
 import { resolveLLMConfig } from '../../lib/clients/llm/config'
 import { logger } from '../../lib/logger'
-import type { KlavisProxyRef } from '../services/klavis/strata-proxy'
+import type { KlavisService } from '../services/klavis'
 import type { BrowserContext, ChatRequest } from '../types'
 import { resolveBrowserContextPageIds } from '../utils/resolve-browser-context-page-ids'
 
 export interface ChatServiceDeps {
   sessionStore: SessionStore
-  klavisRef?: KlavisProxyRef
+  klavis?: KlavisService
   browser: Browser
   browserSession: BrowserSession
   browserosId?: string
@@ -93,6 +93,7 @@ export class ChatService {
             conversationId: request.conversationId,
             providerId: llmConfig.provider,
             defaultWindowId: request.browserContext?.windowId,
+            enabledMcpServers: request.browserContext?.enabledMcpServers,
             customMcpServers: request.browserContext?.customMcpServers,
           })
         : undefined,
@@ -147,8 +148,8 @@ export class ChatService {
       }
       if (parts.length === 0) {
         if (
-          oldKlavisState === 'klavis:pending' &&
-          newKlavisState === 'klavis:connected' &&
+          oldKlavisState !== 'klavis:ready' &&
+          newKlavisState === 'klavis:ready' &&
           newServers.size > 0
         ) {
           parts.push(
@@ -250,7 +251,7 @@ export class ChatService {
         resolvedConfig: agentConfig,
         browserSession: this.deps.browserSession,
         browserContext,
-        klavisRef: this.deps.klavisRef,
+        klavis: this.deps.klavis,
         browserosId: this.deps.browserosId,
         aiSdkDevtoolsEnabled: this.deps.aiSdkDevtoolsEnabled,
       })
@@ -455,7 +456,7 @@ export class ChatService {
       resolvedConfig: agentConfig,
       browserSession: this.deps.browserSession,
       browserContext,
-      klavisRef: this.deps.klavisRef,
+      klavis: this.deps.klavis,
       browserosId: this.deps.browserosId,
       aiSdkDevtoolsEnabled: this.deps.aiSdkDevtoolsEnabled,
     })
@@ -480,9 +481,7 @@ export class ChatService {
       browserContext?.customMcpServers?.map((s) => s.url).sort() ?? []
     const klavisState =
       managed.length > 0
-        ? this.deps.klavisRef?.handle
-          ? 'klavis:connected'
-          : 'klavis:pending'
+        ? `klavis:${this.deps.klavis?.getProxyStatus().state ?? 'disabled'}`
         : null
     return [klavisState, ...managed, ...custom].filter(Boolean).join(',')
   }

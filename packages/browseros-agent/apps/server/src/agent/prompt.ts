@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import { OAUTH_MCP_SERVERS } from '../lib/clients/klavis/oauth-mcp-servers'
+import { getConnectorCatalog } from '../api/services/klavis'
 
 /**
  * BrowserOS Agent System Prompt v6
@@ -318,7 +318,7 @@ function getExternalIntegrations(
 ): string {
   const connectedApps = options?.connectedApps ?? []
   const declinedApps = options?.declinedApps ?? []
-  const allServerNames = OAUTH_MCP_SERVERS.map((s) => s.name)
+  const allServerNames = getConnectorCatalog().map((server) => server.name)
 
   const connectedList =
     connectedApps.length > 0

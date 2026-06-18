@@ -6,14 +6,7 @@
 
 import { TIMEOUTS } from '@browseros/shared/constants/timeouts'
 import { EXTERNAL_URLS } from '@browseros/shared/constants/urls'
-
-export interface StrataCreateResponse {
-  strataServerUrl: string
-  strataId: string
-  addedServers: string[]
-  oauthUrls?: Record<string, string>
-  apiKeyUrls?: Record<string, string>
-}
+import type { StrataCreateResponse, UserIntegration } from './types'
 
 interface KlavisIntegrationObject {
   name?: string
@@ -23,11 +16,7 @@ interface KlavisIntegrationObject {
 
 type KlavisIntegrationItem = string | KlavisIntegrationObject
 
-export interface UserIntegration {
-  name: string
-  isAuthenticated: boolean
-}
-
+/** Handles Klavis proxy HTTP calls and response normalization. */
 export class KlavisClient {
   private baseUrl: string
 
@@ -76,10 +65,7 @@ export class KlavisClient {
     }
   }
 
-  /**
-   * Create Strata instance with specified servers
-   * Returns strataServerUrl for MCP connection and oauthUrls for authentication
-   */
+  /** Creates a Strata instance for the requested connector names. */
   async createStrata(
     userId: string,
     servers: string[],
@@ -91,9 +77,7 @@ export class KlavisClient {
     )
   }
 
-  /**
-   * Get user integrations with authentication status
-   */
+  /** Reads the user's Klavis integrations and normalizes auth flags. */
   async getUserIntegrations(userId: string): Promise<UserIntegration[]> {
     const data = await this.request<{
       integrations?: KlavisIntegrationItem[]
@@ -127,10 +111,7 @@ export class KlavisClient {
     return { name, isAuthenticated }
   }
 
-  /**
-   * Submit an API key to Klavis's set-auth endpoint via the proxy.
-   * Extracts instanceId from the apiKeyUrl and routes through the proxy.
-   */
+  /** Submits an API key through the Klavis instance auth endpoint. */
   async submitApiKey(apiKeyUrl: string, apiKey: string): Promise<void> {
     const parsedUrl = new URL(apiKeyUrl)
     const instanceId = parsedUrl.searchParams.get('instance_id')
@@ -138,13 +119,13 @@ export class KlavisClient {
       throw new Error('Missing instance_id in apiKeyUrl')
     }
 
-    // request() already throws on non-2xx responses
     await this.request('POST', '/mcp-server/instance/set-auth', {
       instanceId,
       authData: { api_key: apiKey },
     })
   }
 
+  /** Removes connector names from an existing Strata instance. */
   async deleteServersFromStrata(
     strataId: string,
     servers: string[],
