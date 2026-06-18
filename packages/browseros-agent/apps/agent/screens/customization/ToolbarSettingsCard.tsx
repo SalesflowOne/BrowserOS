@@ -9,6 +9,7 @@ import { BROWSEROS_PREFS } from '@/lib/browseros/prefs'
 export const ToolbarSettingsCard: FC = () => {
   const [showLlmChat, setShowLlmChat] = useState(true)
   const [showToolbarLabels, setShowToolbarLabels] = useState(true)
+  const [sidePanelPerWindow, setSidePanelPerWindow] = useState(false)
   const [verticalTabsEnabled, setVerticalTabsEnabled] = useState(true)
   const [supportsVerticalTabs, setSupportsVerticalTabs] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
@@ -17,12 +18,15 @@ export const ToolbarSettingsCard: FC = () => {
     const loadPrefs = async () => {
       try {
         const adapter = getBrowserOSAdapter()
-        const [chatPref, labelsPref] = await Promise.all([
-          adapter.getPref(BROWSEROS_PREFS.SHOW_LLM_CHAT),
-          adapter.getPref(BROWSEROS_PREFS.SHOW_TOOLBAR_LABELS),
-        ])
+        const [chatPref, labelsPref, sidePanelPerWindowPref] =
+          await Promise.all([
+            adapter.getPref(BROWSEROS_PREFS.SHOW_LLM_CHAT),
+            adapter.getPref(BROWSEROS_PREFS.SHOW_TOOLBAR_LABELS),
+            adapter.getPref(BROWSEROS_PREFS.SIDE_PANEL_PER_WINDOW),
+          ])
         setShowLlmChat(chatPref?.value !== false)
         setShowToolbarLabels(labelsPref?.value !== false)
+        setSidePanelPerWindow(sidePanelPerWindowPref?.value === true)
 
         const hasVerticalTabsSupport = await Capabilities.supports(
           Feature.VERTICAL_TABS_SUPPORT,
@@ -116,8 +120,34 @@ export const ToolbarSettingsCard: FC = () => {
           />
         </div>
 
+        <div className="flex items-center justify-between border-border border-t pt-4">
+          <div className="space-y-0.5">
+            <Label
+              htmlFor="side-panel-per-window"
+              className="font-medium text-sm"
+            >
+              One Side Panel Per Window
+            </Label>
+            <p className="text-muted-foreground text-xs">
+              Share the side panel across tabs in this window
+            </p>
+          </div>
+          <Switch
+            id="side-panel-per-window"
+            checked={sidePanelPerWindow}
+            onCheckedChange={(checked) =>
+              handleToggle(
+                BROWSEROS_PREFS.SIDE_PANEL_PER_WINDOW,
+                checked,
+                setSidePanelPerWindow,
+              )
+            }
+            disabled={isLoading}
+          />
+        </div>
+
         {supportsVerticalTabs && (
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between border-border border-t pt-4">
             <div className="space-y-0.5">
               <Label
                 htmlFor="vertical-tabs-enabled"
