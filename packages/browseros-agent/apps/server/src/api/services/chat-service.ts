@@ -19,6 +19,7 @@ import type { BrowserSession } from '../../browser/core/session'
 import { buildAcpMcpServers } from '../../lib/agents/acpx-provider/buildAcpMcpServers'
 import { resolveLLMConfig } from '../../lib/clients/llm/config'
 import { logger } from '../../lib/logger'
+import { createBrowserOutputFileAccess } from '../../tools/browser/output-file'
 import type { KlavisProxyRef } from '../services/klavis/strata-proxy'
 import type { BrowserContext, ChatRequest } from '../types'
 import { resolveBrowserContextPageIds } from '../utils/resolve-browser-context-page-ids'
@@ -246,6 +247,7 @@ export class ChatService {
         }
       }
 
+      const outputFileAccess = createBrowserOutputFileAccess()
       const agent = await AiSdkAgent.create({
         resolvedConfig: agentConfig,
         browserSession: this.deps.browserSession,
@@ -253,6 +255,7 @@ export class ChatService {
         klavisRef: this.deps.klavisRef,
         browserosId: this.deps.browserosId,
         aiSdkDevtoolsEnabled: this.deps.aiSdkDevtoolsEnabled,
+        outputFileAccess,
       })
       session = {
         agent,
@@ -260,6 +263,7 @@ export class ChatService {
         browserContext,
         mcpServerKey,
         workingDir: request.userWorkingDir,
+        outputFileAccess,
       }
       sessionStore.set(request.conversationId, session)
     }
@@ -451,6 +455,8 @@ export class ChatService {
           this.deps.browser,
           request.browserContext,
         )
+    const outputFileAccess =
+      session.outputFileAccess ?? createBrowserOutputFileAccess()
     const agent = await AiSdkAgent.create({
       resolvedConfig: agentConfig,
       browserSession: this.deps.browserSession,
@@ -458,6 +464,7 @@ export class ChatService {
       klavisRef: this.deps.klavisRef,
       browserosId: this.deps.browserosId,
       aiSdkDevtoolsEnabled: this.deps.aiSdkDevtoolsEnabled,
+      outputFileAccess,
     })
     const newSession: AgentSession = {
       agent,
@@ -465,6 +472,7 @@ export class ChatService {
       browserContext,
       mcpServerKey,
       workingDir: request.userWorkingDir,
+      outputFileAccess,
     }
     newSession.agent.messages = sanitizeMessagesForToolset(
       previousMessages,

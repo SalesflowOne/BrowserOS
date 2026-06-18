@@ -34,7 +34,8 @@ export function withBrowserOutputFileAccess<T>(
   return outputFileAccessStorage.run(access, run)
 }
 
-function recordOutputFile(path: string): void {
+/** Allows the current agent to read a browser-generated output path later. */
+export function recordBrowserOutputFile(path: string): void {
   outputFileAccessStorage.getStore()?.record(path)
 }
 
@@ -64,7 +65,7 @@ export async function writeTempToolOutputFile(args: {
   const outputDir = await getToolOutputDir()
   const filePath = uniqueOutputPath(outputDir, args.toolName, args.extension)
   await writeToolOutputFile(filePath, args.content)
-  recordOutputFile(filePath)
+  recordBrowserOutputFile(filePath)
   return filePath
 }
 
@@ -76,6 +77,6 @@ export async function writeTempToolOutputBinaryFile(args: {
   const outputDir = await getToolOutputDir()
   const filePath = uniqueOutputPath(outputDir, args.toolName, args.extension)
   await writeToolOutputBinaryFile(filePath, args.content)
-  recordOutputFile(filePath)
+  recordBrowserOutputFile(filePath)
   return filePath
 }

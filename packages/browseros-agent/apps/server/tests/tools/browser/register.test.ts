@@ -6,6 +6,7 @@ import {
   realpathSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -27,6 +28,7 @@ import {
 import { createBrowserOutputFileAccess } from '../../../src/tools/browser/output-file'
 import { registerBrowserTools } from '../../../src/tools/browser/register'
 import { BROWSER_TOOLS } from '../../../src/tools/browser/registry'
+import { createReadTool } from '../../../src/tools/filesystem/read'
 
 type RegisteredHandler = (args: Record<string, unknown>) => Promise<{
   content: unknown
@@ -1390,6 +1392,80 @@ describe('buildBrowserToolSet', () => {
       expect(savedPath).toBeTruthy()
       await expectBrowserToolOutputPath(savedPath)
       expect(outputFileAccess.paths.has(savedPath ?? '')).toBe(true)
+    })
+  })
+
+  it('allows no-workspace filesystem readback for AI SDK downloads', async () => {
+    await withBrowserosDir(async () => {
+      const outputFileAccess = createBrowserOutputFileAccess()
+      const behaviors: string[] = []
+      const clicks: string[] = []
+      let downloadDir = ''
+      type DownloadHandler = (params: Record<string, unknown>) => void
+      const handlers: Record<string, DownloadHandler> = {}
+      const session = {
+        input: () => ({
+          click: async (ref: string) => {
+            clicks.push(ref)
+            writeFileSync(
+              join(downloadDir, 'report.csv'),
+              'name,value\nbrowseros,1\n',
+            )
+            handlers.downloadWillBegin?.({
+              guid: 'g1',
+              suggestedFilename: 'report.csv',
+            })
+            handlers.downloadProgress?.({ guid: 'g1', state: 'completed' })
+          },
+        }),
+        pages: {
+          getSession: async () => ({
+            session: {
+              Page: {
+                setDownloadBehavior: async (params: {
+                  behavior: string
+                  downloadPath?: string
+                }) => {
+                  behaviors.push(params.behavior)
+                  if (params.downloadPath) downloadDir = params.downloadPath
+                },
+                on: (event: string, handler: DownloadHandler) => {
+                  handlers[event] = handler
+                  return () => {
+                    delete handlers[event]
+                  }
+                },
+              },
+            },
+          }),
+        },
+      } as unknown as BrowserSession
+      const tools = buildBrowserToolSet(session, { outputFileAccess })
+      const readTool = createReadTool(undefined, {
+        allowedOutputPaths: outputFileAccess.paths,
+      }) as unknown as {
+        execute(params: Record<string, unknown>): Promise<{ text: string }>
+      }
+
+      const downloadResult = await tools.download.execute?.(
+        { page: 1, ref: 'e12' },
+        { abortSignal: new AbortController().signal } as never,
+      )
+      const text =
+        (
+          downloadResult as { content?: Array<{ type: string; text: string }> }
+        ).content
+          ?.filter((item) => item.type === 'text')
+          .map((item) => item.text)
+          .join('\n') ?? ''
+      const savedPath = text.match(/to: (.+report\.csv)/)?.[1]
+      const readResult = await readTool.execute({ path: savedPath })
+
+      expect(clicks).toEqual(['e12'])
+      expect(behaviors).toEqual(['allow', 'default'])
+      expect(savedPath).toBeTruthy()
+      expect(outputFileAccess.paths.has(savedPath ?? '')).toBe(true)
+      expect(readResult.text).toContain('browseros,1')
     })
   })
 

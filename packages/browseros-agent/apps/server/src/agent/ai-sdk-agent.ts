@@ -49,6 +49,7 @@ export interface AiSdkAgentConfig {
   klavisRef?: KlavisProxyRef
   browserosId?: string
   aiSdkDevtoolsEnabled?: boolean
+  outputFileAccess?: BrowserOutputFileAccess
 }
 
 /** Builds filesystem tools for model-backed sessions, with output-only reads before workspace selection. */
@@ -124,7 +125,8 @@ export class AiSdkAgent {
     // (and any user-configured MCP servers) directly via the
     // mcpServers config on ResolvedAgentConfig.
     const useMcpBoundaryOnly = isAcpProvider(config.resolvedConfig.provider)
-    const outputFileAccess = createBrowserOutputFileAccess()
+    const outputFileAccess =
+      config.outputFileAccess ?? createBrowserOutputFileAccess()
 
     const allBrowserTools = useMcpBoundaryOnly
       ? {}
