@@ -248,7 +248,6 @@ export class ChatService {
 
       const agent = await AiSdkAgent.create({
         resolvedConfig: agentConfig,
-        browser: this.deps.browser,
         browserSession: this.deps.browserSession,
         browserContext,
         klavisRef: this.deps.klavisRef,
@@ -454,7 +453,6 @@ export class ChatService {
         )
     const agent = await AiSdkAgent.create({
       resolvedConfig: agentConfig,
-      browser: this.deps.browser,
       browserSession: this.deps.browserSession,
       browserContext,
       klavisRef: this.deps.klavisRef,
