@@ -23,6 +23,7 @@ import type { BrowserSession } from '../browser/core/session'
 import { logger } from '../lib/logger'
 import { metrics } from '../lib/metrics'
 import { buildFilesystemToolSet } from '../tools/filesystem/build-toolset'
+import { createReadTool } from '../tools/filesystem/read'
 import { isAcpProvider } from './acp-providers'
 import { CHAT_MODE_ALLOWED_TOOLS } from './chat-mode'
 import { createCompactionPrepareStep, type StepWithUsage } from './compaction'
@@ -46,16 +47,15 @@ export interface AiSdkAgentConfig {
   aiSdkDevtoolsEnabled?: boolean
 }
 
-/** Builds filesystem tools only for model-backed agent sessions with an explicit workspace. */
+/** Builds filesystem tools for model-backed sessions, with output-only reads before workspace selection. */
 export function buildAgentFilesystemToolSet(
   resolvedConfig: ResolvedAgentConfig,
 ): ToolSet {
-  if (
-    isAcpProvider(resolvedConfig.provider) ||
-    resolvedConfig.chatMode ||
-    !resolvedConfig.workingDir
-  ) {
+  if (isAcpProvider(resolvedConfig.provider) || resolvedConfig.chatMode) {
     return {}
+  }
+  if (!resolvedConfig.workingDir) {
+    return { filesystem_read: createReadTool() }
   }
   return buildFilesystemToolSet(resolvedConfig.workingDir)
 }

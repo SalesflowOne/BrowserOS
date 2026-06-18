@@ -15,9 +15,9 @@ function agentConfig(
 }
 
 describe('buildAgentFilesystemToolSet', () => {
-  it('omits filesystem tools when no workspace is selected', () => {
+  it('includes only generated-output read access when no workspace is selected', () => {
     const tools = buildAgentFilesystemToolSet(agentConfig())
-    expect(Object.keys(tools)).toEqual([])
+    expect(Object.keys(tools)).toEqual(['filesystem_read'])
   })
 
   it('includes filesystem tools when a workspace is selected', () => {

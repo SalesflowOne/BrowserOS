@@ -98,10 +98,22 @@ function formatReadResult(args: {
   return { text }
 }
 
+const NO_WORKSPACE_READ_ERROR =
+  'No workspace selected. filesystem_read can only read BrowserOS-generated tool output files by absolute path.'
+
+async function resolveGeneratedOutputPath(inputPath: string): Promise<string> {
+  if (!(await isBrowserosStatePath(inputPath))) {
+    throw new Error(NO_WORKSPACE_READ_ERROR)
+  }
+  return await resolveBrowserToolOutputPath(inputPath)
+}
+
 async function resolveReadPath(
-  cwd: string,
+  cwd: string | undefined,
   inputPath: string,
 ): Promise<string> {
+  if (!cwd) return await resolveGeneratedOutputPath(inputPath)
+
   try {
     return await resolveWorkspacePath(cwd, inputPath)
   } catch (error) {
@@ -112,11 +124,20 @@ async function resolveReadPath(
   }
 }
 
-export function createReadTool(cwd: string) {
+/** Creates the read tool for workspace files, or generated browser outputs when no workspace exists. */
+export function createReadTool(cwd?: string) {
   return tool({
-    description: `Read a file from the filesystem. Returns text content with line numbers, or image data for image files. Text reads are limited to ${MAX_READ_LINES} lines and ${MAX_READ_CHARS} characters per call. Use offset and limit to paginate through large files.`,
+    description: cwd
+      ? `Read a file from the filesystem. Returns text content with line numbers, or image data for image files. Text reads are limited to ${MAX_READ_LINES} lines and ${MAX_READ_CHARS} characters per call. Use offset and limit to paginate through large files.`
+      : `Read BrowserOS-generated tool output files by absolute path. Returns text content with line numbers, or image data for image files. Text reads are limited to ${MAX_READ_LINES} lines and ${MAX_READ_CHARS} characters per call. Use offset and limit to paginate through large files.`,
     inputSchema: z.object({
-      path: z.string().describe('File path relative to the selected workspace'),
+      path: z
+        .string()
+        .describe(
+          cwd
+            ? 'File path relative to the selected workspace'
+            : 'Absolute BrowserOS-generated tool output path returned by a browser tool',
+        ),
       offset: z
         .number()
         .optional()

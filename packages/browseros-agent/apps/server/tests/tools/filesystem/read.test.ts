@@ -15,6 +15,15 @@ let browserosDir: string
 let previousBrowserosDir: string | undefined
 let exec: (params: Record<string, unknown>) => Promise<FilesystemToolResult>
 
+type ReadToolExecutor = {
+  execute(params: Record<string, unknown>): Promise<FilesystemToolResult>
+}
+
+function createReadExec(cwd?: string) {
+  const tool = createReadTool(cwd) as unknown as ReadToolExecutor
+  return (params: Record<string, unknown>) => tool.execute(params)
+}
+
 beforeEach(async () => {
   previousBrowserosDir = process.env.BROWSEROS_DIR
   browserosDir = join(
@@ -27,9 +36,7 @@ beforeEach(async () => {
     `fs-read-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
   )
   await mkdir(tmpDir, { recursive: true })
-  const tool = createReadTool(tmpDir)
-  // biome-ignore lint/suspicious/noExplicitAny: test helper
-  exec = (params) => (tool as any).execute(params)
+  exec = createReadExec(tmpDir)
 })
 
 afterEach(async () => {
@@ -175,6 +182,40 @@ describe('filesystem_read', () => {
     await writeFile(statePath, '{}')
 
     const result = await exec({ path: statePath })
+    expect(result.isError).toBe(true)
+    expect(result.text).toContain('outside BrowserOS tool output')
+  })
+
+  it('reads BrowserOS-generated output files without a workspace', async () => {
+    const noWorkspaceExec = createReadExec()
+    const outputDir = await getToolOutputDir()
+    const outputPath = join(outputDir, 'snapshot.md')
+    await writeFile(outputPath, 'generated snapshot without workspace')
+
+    const result = await noWorkspaceExec({ path: outputPath })
+
+    expect(result.isError).toBeUndefined()
+    expect(result.text).toContain('generated snapshot without workspace')
+  })
+
+  it('rejects relative paths without a workspace', async () => {
+    const noWorkspaceExec = createReadExec()
+
+    const result = await noWorkspaceExec({ path: 'notes.txt' })
+
+    expect(result.isError).toBe(true)
+    expect(result.text).toContain('No workspace selected')
+    expect(result.text).toContain('BrowserOS-generated tool output')
+  })
+
+  it('rejects BrowserOS state paths outside generated outputs without a workspace', async () => {
+    await getToolOutputDir()
+    const statePath = join(browserosDir, 'config.json')
+    await writeFile(statePath, '{}')
+    const noWorkspaceExec = createReadExec()
+
+    const result = await noWorkspaceExec({ path: statePath })
+
     expect(result.isError).toBe(true)
     expect(result.text).toContain('outside BrowserOS tool output')
   })
