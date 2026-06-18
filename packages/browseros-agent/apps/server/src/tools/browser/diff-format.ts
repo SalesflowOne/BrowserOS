@@ -34,8 +34,11 @@ export function formatDiffResult(
   }
 
   if (wordCount > MAX_INLINE_DIFF_WORDS) {
+    const text = diff.urlChanged
+      ? `URL changed; full current snapshot is ${wordCount} words, over the ${MAX_INLINE_DIFF_WORDS}-word inline limit. Run snapshot on page ${page} for full details.`
+      : `Diff is ${wordCount} words, over the ${MAX_INLINE_DIFF_WORDS}-word inline limit. Run snapshot on page ${page} for full details.`
     return {
-      text: `Diff is ${wordCount} words, over the ${MAX_INLINE_DIFF_WORDS}-word inline limit. Run snapshot on page ${page} for full details.`,
+      text,
       structured: {
         ...structured,
         truncated: true,

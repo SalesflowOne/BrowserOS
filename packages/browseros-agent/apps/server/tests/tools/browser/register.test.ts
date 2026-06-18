@@ -559,6 +559,76 @@ return 'late'
     expect(calls).toEqual(['click'])
   })
 
+  it('caps large URL-change act readbacks with URL guidance', async () => {
+    const fake = createFakeServer()
+    const largeSnapshot = Array.from(
+      { length: 2001 },
+      (_, i) => `destination-${i}`,
+    ).join(' ')
+    const session = {
+      input: () => ({
+        click: async () => undefined,
+      }),
+      observe: () => ({
+        diff: async () => ({
+          changed: true,
+          text: largeSnapshot,
+          added: 0,
+          removed: 0,
+          urlChanged: true,
+          beforeUrl: 'https://example.com/start',
+          afterUrl: 'https://example.com/destination',
+        }),
+      }),
+      pages: {
+        getInfo: () => ({ url: 'https://example.com/destination' }),
+      },
+    } as unknown as BrowserSession
+
+    registerBrowserTools(fake.server as never, session)
+
+    const result = await fake.handlers.get('act')?.({
+      page: 1,
+      kind: 'click',
+      ref: 'e1',
+    })
+
+    expect(result?.isError).toBeFalsy()
+    expect(result?.structuredContent).toEqual({
+      kind: 'click',
+      changed: true,
+      urlChanged: true,
+      beforeUrl: 'https://example.com/start',
+      afterUrl: 'https://example.com/destination',
+    })
+    expect(result?.content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining('URL changed'),
+        }),
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining('full current snapshot is 2001 words'),
+        }),
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining(
+            'Run snapshot on page 1 for full details',
+          ),
+        }),
+      ]),
+    )
+    expect(result?.content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'text',
+          text: expect.not.stringContaining('destination-2000'),
+        }),
+      ]),
+    )
+  })
+
   it('appends diff output after successful act mutations', async () => {
     const fake = createFakeServer()
     const calls: string[] = []

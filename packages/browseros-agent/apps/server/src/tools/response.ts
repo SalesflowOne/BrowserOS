@@ -1,6 +1,7 @@
 import { TIMEOUTS } from '@browseros/shared/constants/timeouts'
 import type { Browser } from '../browser/browser'
 import type { BrowserSession } from '../browser/core/session'
+import type { SnapshotDiff } from '../browser/core/snapshot/diff'
 import { formatDiffResult } from './browser/diff-format'
 import { wrapUntrusted } from './browser/trust-boundary'
 
@@ -11,8 +12,14 @@ export type ContentItem =
 type PostAction =
   | { type: 'snapshot'; page: number }
   | { type: 'screenshot'; page: number }
-  | { type: 'diff'; page: number; includeStructured?: boolean }
+  | DiffPostAction
   | { type: 'pages' }
+
+type DiffPostAction = {
+  type: 'diff'
+  page: number
+  includeStructured?: boolean
+}
 
 export interface ToolResultMetadata {
   tabId?: number
@@ -122,8 +129,13 @@ export class ToolResponse {
         this.image(result.data, result.mimeType)
         return
       }
-      case 'diff':
+      case 'diff': {
+        const d = await browser.session.observe(action.page).diff()
+        const origin =
+          d.afterUrl ?? browser.getPageInfo(action.page)?.url ?? 'unknown'
+        this.appendDiffPostAction(action, d, origin)
         return
+      }
       case 'pages': {
         const pages = await browser.listPages()
         if (pages.length === 0) {
@@ -169,18 +181,7 @@ export class ToolResponse {
         const d = await session.observe(action.page).diff()
         const origin =
           d.afterUrl ?? session.pages.getInfo(action.page)?.url ?? 'unknown'
-        const formatted = formatDiffResult(d, origin, action.page)
-        this.text(`[Page ${action.page} diff]\n${formatted.text}`)
-        if (action.includeStructured) {
-          this.data({
-            changed: d.changed,
-            ...(d.urlChanged && {
-              urlChanged: true,
-              beforeUrl: d.beforeUrl,
-              afterUrl: d.afterUrl,
-            }),
-          })
-        }
+        this.appendDiffPostAction(action, d, origin)
         return
       }
       case 'pages': {
@@ -196,6 +197,25 @@ export class ToolResponse {
         }
         return
       }
+    }
+  }
+
+  private appendDiffPostAction(
+    action: DiffPostAction,
+    diff: SnapshotDiff,
+    origin: string,
+  ): void {
+    const formatted = formatDiffResult(diff, origin, action.page)
+    this.text(`[Page ${action.page} diff]\n${formatted.text}`)
+    if (action.includeStructured) {
+      this.data({
+        changed: diff.changed,
+        ...(diff.urlChanged && {
+          urlChanged: true,
+          beforeUrl: diff.beforeUrl,
+          afterUrl: diff.afterUrl,
+        }),
+      })
     }
   }
 
