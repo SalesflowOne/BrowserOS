@@ -1,6 +1,7 @@
 import { TIMEOUTS } from '@browseros/shared/constants/timeouts'
 import type { Browser } from '../browser/browser'
 import type { BrowserSession } from '../browser/core/session'
+import { formatDiffResult } from './browser/diff-format'
 import { wrapUntrusted } from './browser/trust-boundary'
 
 export type ContentItem =
@@ -10,6 +11,7 @@ export type ContentItem =
 type PostAction =
   | { type: 'snapshot'; page: number }
   | { type: 'screenshot'; page: number }
+  | { type: 'diff'; page: number; includeStructured?: boolean }
   | { type: 'pages' }
 
 export interface ToolResultMetadata {
@@ -86,6 +88,17 @@ export class ToolResponse {
     this.postActions.push({ type: 'screenshot', page })
   }
 
+  includeDiff(
+    page: number,
+    options: { includeStructured?: boolean } = {},
+  ): void {
+    this.postActions.push({
+      type: 'diff',
+      page,
+      includeStructured: options.includeStructured,
+    })
+  }
+
   includePages(): void {
     this.postActions.push({ type: 'pages' })
   }
@@ -109,6 +122,8 @@ export class ToolResponse {
         this.image(result.data, result.mimeType)
         return
       }
+      case 'diff':
+        return
       case 'pages': {
         const pages = await browser.listPages()
         if (pages.length === 0) {
@@ -148,6 +163,24 @@ export class ToolResponse {
         })
         this.text(`[Page ${action.page} screenshot]`)
         this.image(result.data, 'image/png')
+        return
+      }
+      case 'diff': {
+        const d = await session.observe(action.page).diff()
+        const origin =
+          d.afterUrl ?? session.pages.getInfo(action.page)?.url ?? 'unknown'
+        const formatted = formatDiffResult(d, origin, action.page)
+        this.text(`[Page ${action.page} diff]\n${formatted.text}`)
+        if (action.includeStructured) {
+          this.data({
+            changed: d.changed,
+            ...(d.urlChanged && {
+              urlChanged: true,
+              beforeUrl: d.beforeUrl,
+              afterUrl: d.afterUrl,
+            }),
+          })
+        }
         return
       }
       case 'pages': {

@@ -434,6 +434,59 @@ return 'late'
     ])
   })
 
+  it('caps large direct diffs with snapshot guidance', async () => {
+    const fake = createFakeServer()
+    const largeDiff = Array.from({ length: 2001 }, (_, i) => `word-${i}`).join(
+      ' ',
+    )
+    const session = {
+      observe: () => ({
+        diff: async () => ({
+          changed: true,
+          text: largeDiff,
+          added: 2001,
+          removed: 0,
+          afterUrl: 'https://example.com/large',
+        }),
+      }),
+      pages: {
+        getInfo: () => ({ url: 'https://example.com/large' }),
+      },
+    } as unknown as BrowserSession
+
+    registerBrowserTools(fake.server as never, session)
+
+    const result = await fake.handlers.get('diff')?.({ page: 1 })
+
+    expect(result?.isError).toBeFalsy()
+    expect(result?.structuredContent).toEqual({
+      added: 2001,
+      removed: 0,
+      truncated: true,
+      wordCount: 2001,
+    })
+    expect(result?.content).toEqual([
+      expect.objectContaining({
+        type: 'text',
+        text: expect.stringContaining('Diff is 2001 words'),
+      }),
+    ])
+    expect(result?.content).toEqual([
+      expect.objectContaining({
+        type: 'text',
+        text: expect.stringContaining(
+          'Run snapshot on page 1 for full details',
+        ),
+      }),
+    ])
+    expect(result?.content).toEqual([
+      expect.objectContaining({
+        type: 'text',
+        text: expect.not.stringContaining('word-2000'),
+      }),
+    ])
+  })
+
   it('returns a full snapshot when act readback sees a URL change', async () => {
     const fake = createFakeServer()
     const calls: string[] = []
