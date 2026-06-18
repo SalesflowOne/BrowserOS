@@ -46,6 +46,11 @@ const legacyOnlyToolNames = [
   'take_snapshot',
   'group_tabs',
   'list_windows',
+  'create_window',
+  'create_hidden_window',
+  'close_window',
+  'activate_window',
+  'set_window_visibility',
 ]
 
 describe('browser tool boundary', () => {

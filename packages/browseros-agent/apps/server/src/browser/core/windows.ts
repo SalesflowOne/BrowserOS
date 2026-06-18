@@ -1,10 +1,7 @@
-import type {
-  WindowInfo,
-  WindowType,
-} from '@browseros/cdp-protocol/domains/browser'
+import type { WindowInfo } from '@browseros/cdp-protocol/domains/browser'
 import type { CdpConnection } from './connection'
 
-export type { WindowInfo, WindowType }
+export type { WindowInfo }
 
 export interface SetWindowVisibilityResult {
   window: WindowInfo
