@@ -113,6 +113,7 @@ function checkFeatureSupport(
 
 let prefValues = new Map<string, unknown>()
 let setPrefCalls: Array<{ name: string; value: unknown }> = []
+let getPrefError: Error | null = null
 let sidePanelPerWindowValue = false
 let sidePanelPerWindowWrites: boolean[] = []
 let sentRuntimeMessages: Array<{ type: string; data: unknown }> = []
@@ -127,6 +128,9 @@ const browserOSAdapter = {
   getBrowserosVersion: async () => null,
   getPref: async (name: string) =>
     new Promise<{ value: unknown } | null>((resolve) => {
+      if (getPrefError) {
+        throw getPrefError
+      }
       if (prefValues.has(name)) {
         resolve({ value: prefValues.get(name) })
         return
@@ -219,15 +223,18 @@ mock.module('@/lib/messaging/runtime/runtimeMessages', () => ({
 }))
 
 let ToolbarSettingsCard: FC
+let loadToolbarSettingsState: typeof import('./ToolbarSettingsCard').loadToolbarSettingsState
 
 beforeAll(async () => {
-  ToolbarSettingsCard = (await import('./ToolbarSettingsCard'))
-    .ToolbarSettingsCard
+  const module = await import('./ToolbarSettingsCard')
+  ToolbarSettingsCard = module.ToolbarSettingsCard
+  loadToolbarSettingsState = module.loadToolbarSettingsState
 })
 
 beforeEach(() => {
   prefValues = new Map()
   setPrefCalls = []
+  getPrefError = null
   sidePanelPerWindowValue = false
   sidePanelPerWindowWrites = []
   sentRuntimeMessages = []
@@ -249,6 +256,27 @@ function getRenderedSwitch(id: string) {
 }
 
 describe('ToolbarSettingsCard', () => {
+  it('loads side panel scope from extension storage', async () => {
+    sidePanelPerWindowValue = true
+
+    const state = await loadToolbarSettingsState()
+
+    expect(state.sidePanelPerWindow).toBe(true)
+  })
+
+  it('keeps side panel scope when native prefs fail', async () => {
+    sidePanelPerWindowValue = true
+    getPrefError = new Error('native prefs unavailable')
+
+    const state = await loadToolbarSettingsState()
+
+    expect(state.sidePanelPerWindow).toBe(true)
+    expect(state.showLlmChat).toBe(true)
+    expect(state.showToolbarLabels).toBe(true)
+    expect(state.supportsVerticalTabs).toBe(false)
+    expect(state.verticalTabsEnabled).toBe(true)
+  })
+
   it('renders supported toolbar settings without the unsupported Hub control', () => {
     const html = renderCard()
 
