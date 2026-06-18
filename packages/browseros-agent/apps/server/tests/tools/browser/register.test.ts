@@ -103,7 +103,7 @@ describe('registerBrowserTools', () => {
     registerBrowserTools(fake.server as never, session)
 
     expect([...fake.handlers.keys()]).toEqual(BROWSER_TOOLS.map((t) => t.name))
-    expect(fake.handlers.size).toBe(11)
+    expect(fake.handlers.size).toBe(13)
     expect(fake.configs.get('tabs')?.inputSchema).toBeDefined()
   })
 
@@ -577,6 +577,110 @@ return 'late'
       const data = result?.structuredContent as { path?: string } | undefined
       await expectBrowserToolOutputPath(data?.path)
       expect(readFileSync(data?.path ?? '', 'utf8')).toBe(largeText)
+    })
+  })
+
+  it('prints a page to a BrowserOS output PDF file', async () => {
+    await withBrowserosDir(async () => {
+      const fake = createFakeServer()
+      const pdfBytes = Buffer.from('%PDF-1.4 fake pdf', 'utf8')
+      const printCalls: Array<Record<string, unknown>> = []
+      const session = {
+        pages: {
+          getSession: async () => ({
+            session: {
+              Page: {
+                printToPDF: async (params: Record<string, unknown>) => {
+                  printCalls.push(params)
+                  return { data: pdfBytes.toString('base64') }
+                },
+              },
+            },
+          }),
+        },
+      } as unknown as BrowserSession
+
+      registerBrowserTools(fake.server as never, session)
+
+      const result = await fake.handlers.get('pdf')?.({
+        page: 1,
+        landscape: true,
+        background: false,
+      })
+
+      expect(result?.isError).toBeFalsy()
+      expect(printCalls).toEqual([{ landscape: true, printBackground: false }])
+      const data = result?.structuredContent as
+        | { page?: number; path?: string; bytes?: number }
+        | undefined
+      expect(data).toMatchObject({ page: 1, bytes: pdfBytes.length })
+      const savedPath = data?.path
+      await expectBrowserToolOutputPath(savedPath)
+      expect(savedPath?.endsWith('.pdf')).toBe(true)
+      expect(readFileSync(savedPath ?? '')).toEqual(pdfBytes)
+    })
+  })
+
+  it('downloads a file via a ref click into the BrowserOS output dir', async () => {
+    await withBrowserosDir(async () => {
+      const fake = createFakeServer()
+      const behaviors: string[] = []
+      const clicks: string[] = []
+      type DownloadHandler = (params: Record<string, unknown>) => void
+      const handlers: Record<string, DownloadHandler> = {}
+      const session = {
+        input: () => ({
+          click: async (ref: string) => {
+            clicks.push(ref)
+            handlers.downloadWillBegin?.({
+              guid: 'g1',
+              suggestedFilename: 'report.csv',
+            })
+            handlers.downloadProgress?.({ guid: 'g1', state: 'completed' })
+          },
+        }),
+        pages: {
+          getSession: async () => ({
+            session: {
+              Page: {
+                setDownloadBehavior: async (params: { behavior: string }) => {
+                  behaviors.push(params.behavior)
+                },
+                on: (event: string, handler: DownloadHandler) => {
+                  handlers[event] = handler
+                  return () => {
+                    delete handlers[event]
+                  }
+                },
+              },
+            },
+          }),
+        },
+      } as unknown as BrowserSession
+
+      registerBrowserTools(fake.server as never, session)
+
+      const result = await fake.handlers.get('download')?.({
+        page: 1,
+        ref: 'e12',
+      })
+
+      expect(result?.isError).toBeFalsy()
+      expect(clicks).toEqual(['e12'])
+      expect(behaviors).toEqual(['allow', 'default'])
+      const data = result?.structuredContent as
+        | { page?: number; ref?: string; path?: string; filename?: string }
+        | undefined
+      expect(data).toMatchObject({
+        page: 1,
+        ref: 'e12',
+        filename: 'report.csv',
+      })
+      const outputDir = await getToolOutputDir()
+      expect(realpathSync(dirname(data?.path ?? ''))).toContain(
+        realpathSync(outputDir),
+      )
+      expect(data?.path?.endsWith('report.csv')).toBe(true)
     })
   })
 
