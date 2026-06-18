@@ -52,7 +52,7 @@ export interface AiSdkAgentConfig {
   outputFileAccess?: BrowserOutputFileAccess
 }
 
-/** Builds filesystem tools for model-backed sessions, with output-only reads before workspace selection. */
+/** Builds filesystem tools for model-backed sessions, with scoped readback outside full workspace mode. */
 export function buildAgentFilesystemToolSet(
   resolvedConfig: ResolvedAgentConfig,
   options: { outputFileAccess?: BrowserOutputFileAccess } = {},
@@ -214,8 +214,8 @@ export class AiSdkAgent {
       }
     }
 
-    // ACP providers and chat mode do not receive AI SDK filesystem tools.
-    // Regular no-workspace sessions get only output-file reads for browser-generated files.
+    // ACP providers skip AI SDK filesystem tools. Chat and no-workspace sessions
+    // get only output-file reads for browser-generated files.
     const filesystemTools = buildAgentFilesystemToolSet(config.resolvedConfig, {
       outputFileAccess,
     })
