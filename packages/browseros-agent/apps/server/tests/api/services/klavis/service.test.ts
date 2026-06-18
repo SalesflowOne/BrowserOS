@@ -135,6 +135,42 @@ describe('KlavisService', () => {
     })
   })
 
+  it('maps null MCP results into JSON model output', async () => {
+    const handle = createHandle({
+      tools: [
+        {
+          name: 'notion_lookup',
+          description: 'Lookup Notion',
+          inputSchema: { type: 'object' },
+        } as never,
+      ],
+      inputSchemas: new Map([['notion_lookup', {} as never]]),
+      callTool: mock(async () => null as never),
+    })
+    const service = new KlavisService({
+      browserosId: 'browseros-1',
+      client: asClient(new StubKlavisClient()),
+      connect: async () => handle,
+    })
+
+    service.start()
+    await nextTick()
+
+    const toolSet = service.buildAiSdkToolSet()
+    const lookupTool = toolSet.notion_lookup
+    const output = await lookupTool.execute?.({})
+    const modelOutput = await lookupTool.toModelOutput?.({
+      toolCallId: 'call-2',
+      input: {},
+      output,
+    })
+
+    expect(modelOutput).toEqual({
+      type: 'json',
+      value: null,
+    })
+  })
+
   it('returns an auth URL for an unconnected requested connector', async () => {
     const client = new StubKlavisClient()
     const service = new KlavisService({

@@ -60,6 +60,10 @@ function connectorInputSchema(catalog: readonly ConnectorCatalogItem[]) {
   } as unknown as Record<string, never>
 }
 
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
 async function buildConnectorToolPayload(
   deps: KlavisToolAdapterDeps,
   args: Record<string, unknown>,
@@ -100,14 +104,14 @@ async function buildConnectorToolPayload(
 }
 
 function klavisResultToModelOutput(output: unknown) {
-  const result = output as CallToolResult
-
-  if (!('content' in result) || !Array.isArray(result.content)) {
+  if (!isObjectRecord(output) || !Array.isArray(output.content)) {
     return {
       type: 'json' as const,
-      value: (result as JSONValue | undefined) ?? null,
+      value: (output as JSONValue | undefined) ?? null,
     }
   }
+
+  const result = output as CallToolResult
 
   return {
     type: 'content' as const,
