@@ -576,57 +576,77 @@ return 'late'
     ])
   })
 
-  it('caps large direct diffs with snapshot guidance', async () => {
-    const fake = createFakeServer()
-    const largeDiff = Array.from({ length: 2001 }, (_, i) => `word-${i}`).join(
-      ' ',
-    )
-    const session = {
-      observe: () => ({
-        diff: async () => ({
-          changed: true,
-          text: largeDiff,
-          added: 2001,
-          removed: 0,
-          afterUrl: 'https://example.com/large',
+  it('writes large direct diffs to a BrowserOS output markdown file', async () => {
+    await withBrowserosDir(async () => {
+      const fake = createFakeServer()
+      const largeDiff = Array.from(
+        { length: 2001 },
+        (_, i) => `word-${i}`,
+      ).join(' ')
+      const session = {
+        observe: () => ({
+          diff: async () => ({
+            changed: true,
+            text: largeDiff,
+            added: 2001,
+            removed: 0,
+            afterUrl: 'https://example.com/large',
+          }),
         }),
-      }),
-      pages: {
-        getInfo: () => ({ url: 'https://example.com/large' }),
-      },
-    } as unknown as BrowserSession
+        pages: {
+          getInfo: () => ({ url: 'https://example.com/large' }),
+        },
+      } as unknown as BrowserSession
 
-    registerBrowserTools(fake.server as never, session)
+      registerBrowserTools(fake.server as never, session)
 
-    const result = await fake.handlers.get('diff')?.({ page: 1 })
+      const result = await fake.handlers.get('diff')?.({ page: 1 })
 
-    expect(result?.isError).toBeFalsy()
-    expect(result?.structuredContent).toEqual({
-      added: 2001,
-      removed: 0,
-      truncated: true,
-      wordCount: 2001,
+      expect(result?.isError).toBeFalsy()
+      const data = result?.structuredContent as
+        | {
+            added: number
+            removed: number
+            truncated: boolean
+            wordCount: number
+            path: string
+            contentLength: number
+            writtenToFile: boolean
+          }
+        | undefined
+      expect(data).toMatchObject({
+        added: 2001,
+        removed: 0,
+        truncated: true,
+        wordCount: 2001,
+        writtenToFile: true,
+      })
+      const savedPath = data?.path
+      await expectBrowserToolOutputPath(savedPath)
+      expect(savedPath?.endsWith('.md')).toBe(true)
+      expect(result?.content).toEqual([
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining('Diff is 2001 words'),
+        }),
+      ])
+      expect(result?.content).toEqual([
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining(savedPath ?? ''),
+        }),
+      ])
+      expect(result?.content).toEqual([
+        expect.objectContaining({
+          type: 'text',
+          text: expect.not.stringContaining('word-2000'),
+        }),
+      ])
+      const savedContent = readFileSync(savedPath ?? '', 'utf8')
+      expect(savedContent).toContain('[UNTRUSTED_PAGE_CONTENT')
+      expect(savedContent).toContain('word-2000')
+      expect(data?.contentLength).toBe(savedContent.length)
     })
-    expect(result?.content).toEqual([
-      expect.objectContaining({
-        type: 'text',
-        text: expect.stringContaining('Diff is 2001 words'),
-      }),
-    ])
-    expect(result?.content).toEqual([
-      expect.objectContaining({
-        type: 'text',
-        text: expect.stringContaining(
-          'Run snapshot on page 1 for full details',
-        ),
-      }),
-    ])
-    expect(result?.content).toEqual([
-      expect.objectContaining({
-        type: 'text',
-        text: expect.not.stringContaining('word-2000'),
-      }),
-    ])
   })
 
   it('returns a full snapshot when act readback sees a URL change', async () => {
@@ -701,74 +721,76 @@ return 'late'
     expect(calls).toEqual(['click'])
   })
 
-  it('caps large URL-change act readbacks with URL guidance', async () => {
-    const fake = createFakeServer()
-    const largeSnapshot = Array.from(
-      { length: 2001 },
-      (_, i) => `destination-${i}`,
-    ).join(' ')
-    const session = {
-      input: () => ({
-        click: async () => undefined,
-      }),
-      observe: () => ({
-        diff: async () => ({
-          changed: true,
-          text: largeSnapshot,
-          added: 0,
-          removed: 0,
-          urlChanged: true,
-          beforeUrl: 'https://example.com/start',
-          afterUrl: 'https://example.com/destination',
+  it('writes large URL-change act readbacks to a BrowserOS output file', async () => {
+    await withBrowserosDir(async () => {
+      const fake = createFakeServer()
+      const largeSnapshot = Array.from(
+        { length: 2001 },
+        (_, i) => `destination-${i}`,
+      ).join(' ')
+      const session = {
+        input: () => ({
+          click: async () => undefined,
         }),
-      }),
-      pages: {
-        getInfo: () => ({ url: 'https://example.com/destination' }),
-      },
-    } as unknown as BrowserSession
+        observe: () => ({
+          diff: async () => ({
+            changed: true,
+            text: largeSnapshot,
+            added: 0,
+            removed: 0,
+            urlChanged: true,
+            beforeUrl: 'https://example.com/start',
+            afterUrl: 'https://example.com/destination',
+          }),
+        }),
+        pages: {
+          getInfo: () => ({ url: 'https://example.com/destination' }),
+        },
+      } as unknown as BrowserSession
 
-    registerBrowserTools(fake.server as never, session)
+      registerBrowserTools(fake.server as never, session)
 
-    const result = await fake.handlers.get('act')?.({
-      page: 1,
-      kind: 'click',
-      ref: 'e1',
+      const result = await fake.handlers.get('act')?.({
+        page: 1,
+        kind: 'click',
+        ref: 'e1',
+      })
+
+      expect(result?.isError).toBeFalsy()
+      expect(result?.structuredContent).toEqual({
+        kind: 'click',
+        changed: true,
+        urlChanged: true,
+        beforeUrl: 'https://example.com/start',
+        afterUrl: 'https://example.com/destination',
+      })
+      expect(result?.content).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'text',
+            text: expect.stringContaining('URL changed'),
+          }),
+          expect.objectContaining({
+            type: 'text',
+            text: expect.stringContaining(
+              'full current snapshot is 2001 words',
+            ),
+          }),
+          expect.objectContaining({
+            type: 'text',
+            text: expect.stringContaining('saved to:'),
+          }),
+        ]),
+      )
+      expect(result?.content).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'text',
+            text: expect.not.stringContaining('destination-2000'),
+          }),
+        ]),
+      )
     })
-
-    expect(result?.isError).toBeFalsy()
-    expect(result?.structuredContent).toEqual({
-      kind: 'click',
-      changed: true,
-      urlChanged: true,
-      beforeUrl: 'https://example.com/start',
-      afterUrl: 'https://example.com/destination',
-    })
-    expect(result?.content).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: 'text',
-          text: expect.stringContaining('URL changed'),
-        }),
-        expect.objectContaining({
-          type: 'text',
-          text: expect.stringContaining('full current snapshot is 2001 words'),
-        }),
-        expect.objectContaining({
-          type: 'text',
-          text: expect.stringContaining(
-            'Run snapshot on page 1 for full details',
-          ),
-        }),
-      ]),
-    )
-    expect(result?.content).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: 'text',
-          text: expect.not.stringContaining('destination-2000'),
-        }),
-      ]),
-    )
   })
 
   it('appends diff output after successful act mutations', async () => {

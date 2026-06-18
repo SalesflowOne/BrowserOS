@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'bun:test'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { z } from 'zod'
 import type { BrowserSession } from '../../../src/browser/core/session'
 import {
@@ -45,6 +48,22 @@ function textOf(result: { content?: unknown }): string {
     )
     .map((item) => item.text)
     .join('\n')
+}
+
+async function withBrowserosDir<T>(run: () => Promise<T>): Promise<T> {
+  const previous = process.env.BROWSEROS_DIR
+  const browserosDir = mkdtempSync(join(tmpdir(), 'browseros-framework-test-'))
+  process.env.BROWSEROS_DIR = browserosDir
+  try {
+    return await run()
+  } finally {
+    if (previous === undefined) {
+      delete process.env.BROWSEROS_DIR
+    } else {
+      process.env.BROWSEROS_DIR = previous
+    }
+    rmSync(browserosDir, { recursive: true, force: true })
+  }
 }
 
 describe('browser tool framework post-actions', () => {
@@ -139,43 +158,48 @@ describe('browser tool framework post-actions', () => {
     expect(text).not.toContain('origin=https://example.com/stale')
   })
 
-  it('caps large diff post-actions with snapshot guidance', async () => {
-    const largeDiff = Array.from({ length: 2001 }, (_, i) => `word-${i}`).join(
-      ' ',
-    )
-    const postActionTool = defineTool({
-      name: 'large_diff_post_action_test',
-      description: 'Test large diff post-action execution.',
-      input: z.object({ page: z.number().int() }),
-      handler: async (args, _ctx, response) => {
-        response.includeDiff(args.page)
-      },
-    })
-    const session = {
-      observe: () => ({
-        diff: async () => ({
-          changed: true,
-          text: largeDiff,
-          added: 2001,
-          removed: 0,
-          afterUrl: 'https://example.com/large',
+  it('writes large diff post-actions to a BrowserOS output file', async () => {
+    await withBrowserosDir(async () => {
+      const largeDiff = Array.from(
+        { length: 2001 },
+        (_, i) => `word-${i}`,
+      ).join(' ')
+      const postActionTool = defineTool({
+        name: 'large_diff_post_action_test',
+        description: 'Test large diff post-action execution.',
+        input: z.object({ page: z.number().int() }),
+        handler: async (args, _ctx, response) => {
+          response.includeDiff(args.page)
+        },
+      })
+      const session = {
+        observe: () => ({
+          diff: async () => ({
+            changed: true,
+            text: largeDiff,
+            added: 2001,
+            removed: 0,
+            afterUrl: 'https://example.com/large',
+          }),
         }),
-      }),
-      pages: {
-        getInfo: () => ({ url: 'https://example.com/large' }),
-        getTabId: () => undefined,
-      },
-    } as unknown as BrowserSession
+        pages: {
+          getInfo: () => ({ url: 'https://example.com/large' }),
+          getTabId: () => undefined,
+        },
+      } as unknown as BrowserSession
 
-    const result = await executeTool(postActionTool, { page: 4 }, { session })
-    const text = textOf(result)
+      const result = await executeTool(postActionTool, { page: 4 }, { session })
+      const text = textOf(result)
+      const savedPath = text.match(/saved to: (.+\.md)/)?.[1]
 
-    expect(result.isError).toBeFalsy()
-    expect(text).toContain('[Page 4 diff]')
-    expect(text).toContain('Diff is 2001 words')
-    expect(text).toContain('Run snapshot on page 4 for full details')
-    expect(text).not.toContain('word-2000')
-    expect(text).not.toContain('[UNTRUSTED_PAGE_CONTENT')
+      expect(result.isError).toBeFalsy()
+      expect(text).toContain('[Page 4 diff]')
+      expect(text).toContain('Diff is 2001 words')
+      expect(savedPath).toBeTruthy()
+      expect(text).not.toContain('word-2000')
+      expect(text).not.toContain('[UNTRUSTED_PAGE_CONTENT')
+      expect(readFileSync(savedPath ?? '', 'utf8')).toContain('word-2000')
+    })
   })
 
   it('keeps compact error results from running undeclared post-actions', async () => {

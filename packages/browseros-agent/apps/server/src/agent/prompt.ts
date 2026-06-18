@@ -150,6 +150,11 @@ For connected apps, you can read and write data via direct API access (faster an
 
 ### Filesystem
 You have a session workspace for reading, writing, and executing files. See the Workspace section for tools and guidance.`
+  } else {
+    capabilities += `
+
+### Browser Output Files
+Browser tools may save large snapshots, page reads, or diffs to BrowserOS-generated output files. Use \`filesystem_read\` only with those absolute saved paths to inspect them. This is not general workspace access.`
   }
 
   capabilities += '\n</capabilities>'
@@ -521,7 +526,7 @@ This is essential because the user can't see the background tabs — chat is the
 
   if (!hasWorkspace) {
     style += `
-- You have no filesystem workspace. Return all output directly in chat. If the user needs file output, suggest: "To save this to a file, select a working directory from the chat toolbar."`
+- You have no filesystem workspace. Return user-requested output directly in chat. If a browser tool says full content was saved to an absolute BrowserOS-generated output file, use \`filesystem_read\` with that exact path. If the user needs you to create or edit files, suggest: "To save this to a file, select a working directory from the chat toolbar."`
   }
 
   style += '\n</style_rules>'

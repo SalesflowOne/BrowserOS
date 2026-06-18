@@ -210,6 +210,14 @@ describe('workspace gating (P11)', () => {
       expect(prompt).not.toContain('### Filesystem')
     })
 
+    it('documents output-only reads for BrowserOS-generated files', () => {
+      const prompt = buildRegular({ workspaceDir: undefined })
+      expect(prompt).toContain('### Browser Output Files')
+      expect(prompt).toContain('filesystem_read')
+      expect(prompt).toContain('BrowserOS-generated output files')
+      expect(prompt).not.toContain('filesystem_write')
+    })
+
     it('omits filesystem error recovery patterns', () => {
       const prompt = buildRegular({ workspaceDir: undefined })
       expect(prompt).not.toContain('### Filesystem errors')
