@@ -130,6 +130,44 @@ describe('browser tool framework post-actions', () => {
     expect(text).toContain('[END_UNTRUSTED_PAGE_CONTENT')
   })
 
+  it('writes large snapshot post-actions to a BrowserOS output file', async () => {
+    await withBrowserosDir(async () => {
+      const largeSnapshot = Array.from(
+        { length: 5001 },
+        (_, i) => `node-${i}`,
+      ).join(' ')
+      const postActionTool = defineTool({
+        name: 'large_snapshot_post_action_test',
+        description: 'Test large snapshot post-action execution.',
+        input: z.object({ page: z.number().int() }),
+        handler: async (args, _ctx, response) => {
+          response.includeSnapshot(args.page)
+        },
+      })
+      const session = {
+        observe: () => ({
+          snapshot: async () => ({ text: largeSnapshot }),
+        }),
+        pages: {
+          getInfo: () => ({ url: 'https://example.com/large-snapshot' }),
+          getTabId: () => undefined,
+        },
+      } as unknown as BrowserSession
+
+      const result = await executeTool(postActionTool, { page: 8 }, { session })
+      const text = textOf(result)
+      const savedPath = text.match(/saved to: (.+\.md)/)?.[1]
+
+      expect(result.isError).toBeFalsy()
+      expect(text).toContain('[Page 8 snapshot]')
+      expect(text).toContain('Large snapshot (5001 words')
+      expect(savedPath).toBeTruthy()
+      expect(text).not.toContain('node-5000')
+      expect(text).not.toContain('[UNTRUSTED_PAGE_CONTENT')
+      expect(readFileSync(savedPath ?? '', 'utf8')).toContain('node-5000')
+    })
+  })
+
   it('runs diff post-actions through ToolResponse', async () => {
     const events: string[] = []
     const postActionTool = defineTool({
