@@ -218,7 +218,7 @@ describe('side panel scope routing', () => {
 
   it('keeps a newer explicit setting change over a stale refresh result', async () => {
     let resolvePref: (pref: { value: unknown } | null) => void = () => {}
-    getPrefOverride = async () =>
+    getPrefOverride = async (_name: string) =>
       new Promise<{ value: unknown } | null>((resolve) => {
         resolvePref = resolve
       })
