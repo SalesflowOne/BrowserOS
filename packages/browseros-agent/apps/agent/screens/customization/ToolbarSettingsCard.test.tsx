@@ -193,6 +193,10 @@ mock.module('@/lib/browseros/sidePanelOpenStateStorage', () => ({
       sidePanelPerWindowValue = value
     },
   },
+  openWindowSidePanelIdsStorage: {
+    getValue: async () => [],
+    setValue: async () => {},
+  },
 }))
 
 mock.module('@/lib/browseros/capabilities', () => ({
