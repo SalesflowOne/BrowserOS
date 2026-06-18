@@ -1230,10 +1230,11 @@ return 'late'
   it('writes very large snapshots to a BrowserOS output markdown file', async () => {
     await withBrowserosDir(async () => {
       const fake = createFakeServer()
-      const largeSnapshot = Array.from(
-        { length: 15001 },
-        (_, i) => `node-${i}`,
-      ).join(' ')
+      const largeSnapshot = [
+        ...Array.from({ length: 15000 }, () => 'x'),
+        'last-node',
+      ].join(' ')
+      expect(largeSnapshot.length).toBeLessThan(50_000)
       const session = {
         observe: () => ({
           snapshot: async () => ({ text: largeSnapshot }),
@@ -1281,8 +1282,7 @@ return 'late'
       const savedContent = readFileSync(savedPath ?? '', 'utf8')
       expect(savedContent).toContain('[UNTRUSTED_PAGE_CONTENT')
       expect(savedContent).toContain('[END_UNTRUSTED_PAGE_CONTENT')
-      expect(savedContent).toContain('node-0')
-      expect(savedContent).toContain('node-15000')
+      expect(savedContent).toContain('last-node')
       expect(data?.contentLength).toBe(savedContent.length)
     })
   })
