@@ -16,14 +16,6 @@ const onClosedListeners: Array<
   (info: chrome.sidePanel.PanelClosedInfo) => void
 > = []
 
-mock.module('./adapter', () => ({
-  getBrowserOSAdapter: () => ({
-    getPref: async () => {
-      throw new Error('side panel scope should use extension storage')
-    },
-  }),
-}))
-
 mock.module('./sidePanelOpenStateStorage', () => ({
   sidePanelPerWindowStorage: {
     getValue: async () => {
