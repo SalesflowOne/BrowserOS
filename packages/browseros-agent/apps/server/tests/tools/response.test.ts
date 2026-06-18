@@ -97,10 +97,10 @@ describe('ToolResponse', () => {
   it('writes large legacy snapshot post-actions to a BrowserOS output file', async () => {
     await withBrowserosDir(async () => {
       const response = new ToolResponse({ postActionTimeoutMs: 200 })
-      const largeSnapshot = Array.from(
-        { length: 5001 },
-        (_, i) => `node-${i}`,
-      ).join(' ')
+      const largeSnapshot = [
+        ...Array.from({ length: 15000 }, () => 'x'),
+        'last-node',
+      ].join(' ')
       response.text('ok')
       response.includeSnapshot(1)
 
@@ -116,10 +116,10 @@ describe('ToolResponse', () => {
       assert.ok(!result.isError)
       assert.ok(text.includes('ok'))
       assert.ok(text.includes('[Page 1 snapshot]'))
-      assert.ok(text.includes('Large snapshot (5001 words'))
+      assert.ok(text.includes('Large snapshot (15001 words'))
       assert.ok(savedPath)
-      assert.ok(!text.includes('node-5000'))
-      assert.ok(readFileSync(savedPath ?? '', 'utf8').includes('node-5000'))
+      assert.ok(!text.includes('last-node'))
+      assert.ok(readFileSync(savedPath ?? '', 'utf8').includes('last-node'))
     })
   })
 
