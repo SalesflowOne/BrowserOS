@@ -193,6 +193,11 @@ export class BrowserOSAppManager {
       BROWSEROS_CDP_PORT: String(cdp),
       BROWSEROS_SERVER_PORT: String(server),
       BROWSEROS_EXTENSION_PORT: String(extension),
+      // The agisdk grader reads /finish via the MCP `navigate`/`run` tools,
+      // which only exist on the new compact tool surface. Match the in-process
+      // agent (browserUseNewTools: true) so the server's MCP endpoint exposes
+      // them; otherwise grading fails with "Unexpected identifier MCP".
+      BROWSER_USE_NEW_TOOLS: 'true',
     }
 
     // Capture both stdout and stderr to a per-worker file so we can

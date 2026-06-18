@@ -32,6 +32,14 @@ export class SingleAgentEvaluator implements AgentEvaluator {
     if (config.agent.type !== 'single') {
       throw new Error('SingleAgentEvaluator only supports single agent config')
     }
+    if (config.gui_evals && !config.molmo_endpoint) {
+      throw new Error(
+        'gui_evals requires molmo_endpoint to be set in the config',
+      )
+    }
+    const guiTools = config.gui_evals
+      ? { molmoEndpoint: config.molmo_endpoint as string }
+      : undefined
     const providerConfig = await resolveProviderConfig(config.agent)
     const supportsImages = config.agent.supportsImages
 
@@ -95,6 +103,7 @@ export class SingleAgentEvaluator implements AgentEvaluator {
         browserSession,
         browserContext,
         browserUseNewTools: true,
+        guiTools,
       })
 
       let finalText: string | null = null

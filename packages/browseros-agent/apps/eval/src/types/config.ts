@@ -50,6 +50,10 @@ export const EvalConfigSchema = z.object({
   }),
   graders: z.array(z.string()).optional(),
   timeout_ms: z.number().int().min(30000).max(3600000).optional(),
+  // GUI (vision) eval mode: the agent uses MolmoPoint-backed pointing tools
+  // instead of element-ID/DOM tools. molmo_endpoint is required when enabled.
+  gui_evals: z.boolean().optional().default(false),
+  molmo_endpoint: z.string().url().optional(),
   captcha: z
     .object({
       api_key_env: z.string().default('NOPECHA_API_KEY'),

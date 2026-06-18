@@ -29,6 +29,7 @@ export async function callMcpTool(
   serverUrl: string,
   name: string,
   args: Record<string, unknown> = {},
+  timeoutMs: number = MCP_TOOL_TIMEOUT_MS,
 ): Promise<McpToolResult> {
   const client = new Client({
     name: 'browseros-eval',
@@ -44,19 +45,20 @@ export async function callMcpTool(
   try {
     await client.connect(transport)
 
-    const toolCallPromise = client.callTool({
-      name,
-      arguments: args,
-    })
+    const toolCallPromise = client.callTool(
+      {
+        name,
+        arguments: args,
+      },
+      undefined,
+      { timeout: timeoutMs },
+    )
 
     let timeoutId: ReturnType<typeof setTimeout> | null = null
     const timeoutPromise = new Promise<never>((_, reject) => {
       timeoutId = setTimeout(
-        () =>
-          reject(
-            new Error(`MCP tool call timed out after ${MCP_TOOL_TIMEOUT_MS}ms`),
-          ),
-        MCP_TOOL_TIMEOUT_MS,
+        () => reject(new Error(`MCP tool call timed out after ${timeoutMs}ms`)),
+        timeoutMs,
       )
     })
 

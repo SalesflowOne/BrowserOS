@@ -7,8 +7,8 @@
     "baseUrl": "https://openrouter.ai/api/v1",
     "supportsImages": true
   },
-  "dataset": "../../data/agisdk-real.jsonl",
-  "num_workers": 3,
+  "dataset": "../../data/agisdk-real-smoke.jsonl",
+  "num_workers": 1,
   "restart_server_per_task": true,
   "browseros": {
     "server_url": "http://127.0.0.1:9110",
@@ -22,5 +22,7 @@
     "api_key_env": "NOPECHA_API_KEY"
   },
   "graders": ["agisdk_state_diff"],
-  "timeout_ms": 1800000
+  "timeout_ms": 1800000,
+  "gui_evals": true,
+  "molmo_endpoint": "https://browseros--predict.modal.run"
 }

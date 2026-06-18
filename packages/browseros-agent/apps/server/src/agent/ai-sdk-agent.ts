@@ -50,6 +50,11 @@ export interface AiSdkAgentConfig {
   browserosId?: string
   aiSdkDevtoolsEnabled?: boolean
   browserUseNewTools: boolean
+  /**
+   * When set, the agent runs in GUI (vision) mode: element-ID/DOM tools are
+   * replaced by MolmoPoint-backed pointing tools. Overrides browserUseNewTools.
+   */
+  guiTools?: { molmoEndpoint: string }
 }
 
 /** Builds filesystem tools only for model-backed agent sessions with an explicit workspace. */
@@ -121,7 +126,10 @@ export class AiSdkAgent {
     // (and any user-configured MCP servers) directly via the
     // mcpServers config on ResolvedAgentConfig.
     const useMcpBoundaryOnly = isAcpProvider(config.resolvedConfig.provider)
-    const useCompactBrowserTools = config.browserUseNewTools === true
+    // GUI mode forces the legacy surface (pointing tools live there) regardless
+    // of browserUseNewTools.
+    const useCompactBrowserTools =
+      config.browserUseNewTools === true && !config.guiTools
 
     const allBrowserTools = useMcpBoundaryOnly
       ? {}
@@ -133,6 +141,7 @@ export class AiSdkAgent {
             workingDir: config.resolvedConfig.workingDir,
             origin: config.resolvedConfig.origin,
             originPageId: config.browserContext?.activeTab?.pageId,
+            gui: config.guiTools,
           })
     const reservedBrowserToolNames = new Set(Object.keys(allBrowserTools))
     const chatModeAllowedTools = useCompactBrowserTools
@@ -245,6 +254,11 @@ export class AiSdkAgent {
     ) {
       excludeSections.push('nudges')
     }
+    // GUI mode replaces the default capabilities list (which describes the
+    // non-GUI tool surface) with the gui-browser-control section.
+    if (config.guiTools) {
+      excludeSections.push('capabilities')
+    }
     const instructions = buildSystemPrompt({
       userSystemPrompt: config.resolvedConfig.userSystemPrompt,
       exclude: excludeSections,
@@ -255,6 +269,7 @@ export class AiSdkAgent {
       connectedApps: config.browserContext?.enabledMcpServers,
       declinedApps: config.resolvedConfig.declinedApps,
       origin: config.resolvedConfig.origin,
+      guiOnly: config.guiTools !== undefined,
     })
 
     // Configure compaction for context window management

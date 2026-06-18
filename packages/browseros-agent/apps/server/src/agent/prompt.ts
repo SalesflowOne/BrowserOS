@@ -155,6 +155,38 @@ You have a session workspace for reading, writing, and executing files. See the 
 }
 
 // -----------------------------------------------------------------------------
+// section: gui-browser-control (only rendered when guiOnly is true)
+// -----------------------------------------------------------------------------
+
+function getGuiBrowserControl(
+  _exclude: Set<string>,
+  options?: BuildSystemPromptOptions,
+): string {
+  if (!options?.guiOnly) return ''
+  return `<gui_browser_control>
+## Browser Control — GUI (vision) mode
+
+You operate the browser by LOOKING at it. There are no element IDs, accessibility snapshots, or DOM trees in this mode — you act by visually describing targets.
+
+**Acting (describe the target visually):**
+- \`click\` — click a visible target. Pass \`prompt\` with a short visual description (e.g. "the blue Sign in button", "the search box"). A vision model locates it on screen and clicks the coordinates.
+- \`hover\` — hover a visible target (same \`prompt\` style).
+- \`type\` — type into a visible field: \`prompt\` describes the field, \`text\` is what to type. The field is clicked to focus, then the text is typed.
+- \`scroll\` — move the viewport (up/down/left/right) to bring off-screen content into view.
+- \`press_key\` — send a keyboard key (e.g. Enter to submit, Tab to move focus) to the focused element.
+- \`handle_dialog\` — accept or dismiss native browser dialogs (alert/confirm/prompt).
+
+**Perceiving the page:**
+- \`take_screenshot\` — your primary way to see the page. Take one before acting when unsure, and after an action to confirm the result.
+- \`get_page_content\` / \`get_page_links\` — read the page's text and links.
+
+**Navigating:** \`navigate_page\`, \`new_page\`, \`close_page\`, \`list_pages\`, \`get_active_page\`.
+
+Loop: screenshot → decide → click/type with a clear visual description → screenshot to verify. Keep visual prompts short and unambiguous. If a click misses, take a screenshot, refine the description, and retry. Scroll to reveal targets that aren't currently visible.
+</gui_browser_control>`
+}
+
+// -----------------------------------------------------------------------------
 // section: acp-tool-namespace (only rendered when acpMode is true)
 // -----------------------------------------------------------------------------
 
@@ -624,6 +656,7 @@ const promptSections: Record<string, PromptSectionFn> = {
   'role-and-mode': getRoleAndMode,
   security: getSecurity,
   capabilities: getCapabilities,
+  'gui-browser-control': getGuiBrowserControl,
   'acp-tool-namespace': getAcpToolNamespace,
   execution: getExecution,
   'tool-selection': (
@@ -661,6 +694,12 @@ export interface BuildSystemPromptOptions {
    * path so the section stays out of those prompts.
    */
   acpMode?: boolean
+  /**
+   * GUI (vision) mode: the agent acts via MolmoPoint-backed pointing tools
+   * and screenshots, with no element IDs or DOM snapshots. Renders the
+   * gui-browser-control section and replaces the default capabilities list.
+   */
+  guiOnly?: boolean
 }
 
 export function buildSystemPrompt(options?: BuildSystemPromptOptions): string {

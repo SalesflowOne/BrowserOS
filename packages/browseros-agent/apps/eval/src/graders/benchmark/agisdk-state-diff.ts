@@ -153,26 +153,35 @@ export class AgisdkStateDiffGrader implements Grader {
     mcpEndpoint: string,
   ): Promise<Record<string, unknown>> {
     const finishUrl = `${origin}/finish`
+    // /finish on a state-laden page can be slow to navigate/snapshot; give the
+    // MCP calls plenty of headroom above the 65s default.
+    const finishTimeoutMs = 180_000
 
     // Navigate browser to /finish page (state diff is rendered client-side)
-    await callMcpTool(mcpEndpoint, 'navigate', {
-      url: finishUrl,
-      page: 1,
-      action: 'url',
-    })
+    await callMcpTool(
+      mcpEndpoint,
+      'navigate',
+      { url: finishUrl, page: 1, action: 'url' },
+      finishTimeoutMs,
+    )
 
-    // Wait for the page to render, then extract JSON from <pre> element
-    const result = await callMcpTool(mcpEndpoint, 'run', {
-      page: 1,
-      code: `
-        return await new Promise((resolve, reject) => {
+    // Wait for the page to render, then extract JSON from <pre> element.
+    const result = await callMcpTool(
+      mcpEndpoint,
+      'run',
+      {
+        page: 1,
+        code: `
+        return await new Promise((resolve) => {
           let attempts = 0;
           const check = () => {
             const pre = document.querySelector('pre');
             if (pre && pre.textContent.trim().startsWith('{')) {
               resolve(pre.textContent);
-            } else if (++attempts > 20) {
-              reject(new Error('Timed out waiting for <pre> JSON on /finish'));
+            } else if (++attempts > 60) {
+              resolve('NO_FINISH_JSON readyState=' + document.readyState +
+                ' title=' + document.title +
+                ' bodyLen=' + (document.body ? document.body.innerText.length : 0));
             } else {
               setTimeout(check, 500);
             }
@@ -180,7 +189,9 @@ export class AgisdkStateDiffGrader implements Grader {
           check();
         })
       `,
-    })
+      },
+      finishTimeoutMs,
+    )
 
     const textContent = result.content?.find(
       (c: { type: string }) => c.type === 'text',
@@ -189,7 +200,15 @@ export class AgisdkStateDiffGrader implements Grader {
       throw new Error('No text content returned from /finish page')
     }
 
-    return JSON.parse(textContent.text) as Record<string, unknown>
+    // The new `run` tool wraps output in [UNTRUSTED_PAGE_CONTENT ...] markers,
+    // so the JSON payload is embedded, not the whole string. Extract it.
+    const raw = textContent.text
+    const start = raw.indexOf('{')
+    const end = raw.lastIndexOf('}')
+    if (start === -1 || end === -1 || end < start) {
+      throw new Error(`/finish returned no JSON: ${raw.slice(0, 300)}`)
+    }
+    return JSON.parse(raw.slice(start, end + 1)) as Record<string, unknown>
   }
 
   private runPythonEvaluator(
