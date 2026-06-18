@@ -103,7 +103,7 @@ describe('registerBrowserTools', () => {
     registerBrowserTools(fake.server as never, session)
 
     expect([...fake.handlers.keys()]).toEqual(BROWSER_TOOLS.map((t) => t.name))
-    expect(fake.handlers.size).toBe(11)
+    expect(fake.handlers.size).toBe(12)
     expect(fake.configs.get('tabs')?.inputSchema).toBeDefined()
   })
 
