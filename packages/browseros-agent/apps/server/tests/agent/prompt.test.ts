@@ -211,11 +211,20 @@ describe('workspace gating (P11)', () => {
     })
 
     it('documents output-only reads for BrowserOS-generated files', () => {
-      const prompt = buildRegular({ workspaceDir: undefined })
+      const prompt = buildRegular({
+        workspaceDir: undefined,
+        generatedOutputReadAvailable: true,
+      })
       expect(prompt).toContain('### Browser Output Files')
       expect(prompt).toContain('filesystem_read')
       expect(prompt).toContain('BrowserOS-generated output files')
       expect(prompt).not.toContain('filesystem_write')
+    })
+
+    it('omits output-only read guidance when the tool is unavailable', () => {
+      const prompt = buildRegular({ workspaceDir: undefined })
+      expect(prompt).not.toContain('### Browser Output Files')
+      expect(prompt).not.toContain('filesystem_read')
     })
 
     it('omits filesystem error recovery patterns', () => {
@@ -296,6 +305,12 @@ describe('mode-aware framing', () => {
     // because it can only observe, not navigate or manage pages
     const prompt = buildChatMode()
     expect(prompt).not.toContain('<page_context>')
+  })
+
+  it('chat mode omits generated-output read guidance', () => {
+    const prompt = buildChatMode()
+    expect(prompt).not.toContain('### Browser Output Files')
+    expect(prompt).not.toContain('filesystem_read')
   })
 
   it('scheduled task includes starting pageId in page context', () => {
@@ -1053,6 +1068,12 @@ describe('acp tool namespace section', () => {
     expect(capsEnd).toBeGreaterThan(-1)
     expect(namespaceStart).toBeGreaterThan(capsEnd)
     expect(executionStart).toBeGreaterThan(namespaceStart)
+  })
+
+  it('omits output-only read guidance when no ACP filesystem tool is registered', () => {
+    const prompt = buildRegular({ acpMode: true, workspaceDir: undefined })
+    expect(prompt).not.toContain('### Browser Output Files')
+    expect(prompt).not.toContain('filesystem_read')
   })
 })
 

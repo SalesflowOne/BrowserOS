@@ -122,6 +122,7 @@ function getCapabilities(
   options?: BuildSystemPromptOptions,
 ): string {
   const hasWorkspace = !!options?.workspaceDir
+  const hasGeneratedOutputRead = !!options?.generatedOutputReadAvailable
 
   let capabilities = `<capabilities>
 ## Your Capabilities
@@ -150,7 +151,7 @@ For connected apps, you can read and write data via direct API access (faster an
 
 ### Filesystem
 You have a session workspace for reading, writing, and executing files. See the Workspace section for tools and guidance.`
-  } else {
+  } else if (hasGeneratedOutputRead) {
     capabilities += `
 
 ### Browser Output Files
@@ -502,6 +503,7 @@ function getStyle(
   options?: BuildSystemPromptOptions,
 ): string {
   const hasWorkspace = !!options?.workspaceDir
+  const hasGeneratedOutputRead = !!options?.generatedOutputReadAvailable
 
   let style = `<style_rules>
 ## Style
@@ -524,9 +526,12 @@ This is essential because the user can't see the background tabs — chat is the
 - Report outcomes, not step-by-step process.
 - For data-rich responses (emails, calendar events, file contents, memory recalls), present the data clearly — don't over-summarize it.`
 
-  if (!hasWorkspace) {
+  if (!hasWorkspace && hasGeneratedOutputRead) {
     style += `
 - You have no filesystem workspace. Return user-requested output directly in chat. If a browser tool says full content was saved to an absolute BrowserOS-generated output file, use \`filesystem_read\` with that exact path. If the user needs you to create or edit files, suggest: "To save this to a file, select a working directory from the chat toolbar."`
+  } else if (!hasWorkspace) {
+    style += `
+- You have no filesystem workspace. Return user-requested output directly in chat. If the user needs you to create or edit files, suggest: "To save this to a file, select a working directory from the chat toolbar."`
   }
 
   style += '\n</style_rules>'
@@ -661,6 +666,8 @@ export interface BuildSystemPromptOptions {
   declinedApps?: string[]
   /** Where the chat session originates from — determines navigation behavior. */
   origin?: 'sidepanel' | 'newtab'
+  /** Whether this prompt's tool set includes output-only filesystem_read. */
+  generatedOutputReadAvailable?: boolean
   /**
    * Render the ACP-only tool-namespace addendum. Set to true when the
    * prompt is being written into a CLAUDE.md / AGENTS.md workspace file

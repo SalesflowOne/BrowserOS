@@ -923,7 +923,10 @@ return 'late'
       )
       const data = result?.structuredContent as { path?: string } | undefined
       await expectBrowserToolOutputPath(data?.path)
-      expect(readFileSync(data?.path ?? '', 'utf8')).toBe(largeText)
+      const savedContent = readFileSync(data?.path ?? '', 'utf8')
+      expect(savedContent).toContain('[UNTRUSTED_PAGE_CONTENT')
+      expect(savedContent).toContain('[END_UNTRUSTED_PAGE_CONTENT')
+      expect(savedContent).toContain(largeText)
     })
   })
 

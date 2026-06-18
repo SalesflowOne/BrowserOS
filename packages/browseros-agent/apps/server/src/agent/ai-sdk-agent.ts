@@ -201,10 +201,8 @@ export class AiSdkAgent {
       }
     }
 
-    // Add filesystem tools — skip in chat mode (read-only), when no
-    // workspace is selected, and for ACP providers (Claude Code and
-    // Codex ship their own filesystem tools; double-registering would
-    // collide on tool names and yield stale-snapshot behaviour).
+    // ACP providers and chat mode do not receive AI SDK filesystem tools.
+    // Regular no-workspace sessions get only output-file reads for browser-generated files.
     const filesystemTools = buildAgentFilesystemToolSet(config.resolvedConfig)
     const tools = {
       ...browserTools,
@@ -239,6 +237,7 @@ export class AiSdkAgent {
       connectedApps: config.browserContext?.enabledMcpServers,
       declinedApps: config.resolvedConfig.declinedApps,
       origin: config.resolvedConfig.origin,
+      generatedOutputReadAvailable: 'filesystem_read' in filesystemTools,
     })
 
     // Configure compaction for context window management
