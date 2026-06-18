@@ -197,10 +197,11 @@ export const ToolbarSettingsCard: FC = () => {
               htmlFor="side-panel-per-window"
               className="font-medium text-sm"
             >
-              One Side Panel Per Window
+              Share Side Panel Across Tabs
             </Label>
             <p className="text-muted-foreground text-xs">
-              Share the side panel across tabs in this window
+              Use one side panel for the whole window instead of a separate one
+              for each tab
             </p>
           </div>
           <Switch

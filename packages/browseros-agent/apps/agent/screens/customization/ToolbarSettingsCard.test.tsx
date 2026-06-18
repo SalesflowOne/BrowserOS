@@ -293,8 +293,10 @@ describe('ToolbarSettingsCard', () => {
   it('renders the side panel scope toggle in the default per-tab state', () => {
     const html = renderCard()
 
-    expect(html).toContain('One Side Panel Per Window')
-    expect(html).toContain('Share the side panel across tabs in this window')
+    expect(html).toContain('Share Side Panel Across Tabs')
+    expect(html).toContain(
+      'Use one side panel for the whole window instead of a separate one for each tab',
+    )
     expect(html).toContain('id="side-panel-per-window"')
     expect(getRenderedSwitch('side-panel-per-window').checked).toBe(false)
   })
