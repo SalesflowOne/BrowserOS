@@ -101,21 +101,22 @@ export function createApiRoutes(deps: CreateApiRoutesDeps) {
       }),
     )
     .route('/screencast', createScreencastRoute({ browser }))
-    .route('/agents', agentRoutes ?? protectedAgentRoutes(config))
+    .route('/agents', protectedAgentRoutes(config, agentRoutes))
     .route(
       '/remote-hermes',
       createRemoteHermesRoutes({ service: remoteHermes }),
     )
 }
 
-function protectedAgentRoutes(config: HttpServerConfig) {
+function protectedAgentRoutes(config: HttpServerConfig, routes?: Hono<Env>) {
   return new Hono<Env>().use('/*', requireTrustedAppOrigin()).route(
     '/',
-    createAgentRoutes({
-      browserosServerPort: config.port,
-      resourcesDir: config.resourcesDir,
-      browser: config.browser,
-    }),
+    routes ??
+      createAgentRoutes({
+        browserosServerPort: config.port,
+        resourcesDir: config.resourcesDir,
+        browser: config.browser,
+      }),
   )
 }
 

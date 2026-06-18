@@ -33,9 +33,9 @@ function createTestConfig() {
   } as never
 }
 
-function createTestApp() {
+function createTestApp(agentRoutes = new Hono<Env>()) {
   return createApiRoutes({
-    agentRoutes: new Hono<Env>(),
+    agentRoutes,
     config: createTestConfig(),
     klavisRef: { handle: null },
     remoteHermes: null,
@@ -69,5 +69,26 @@ describe('createApiRoutes', () => {
 
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({ agents: [] })
+  })
+
+  it('keeps injected agent routes behind app-origin auth', async () => {
+    const agentRoutes = new Hono<Env>().post('/guard-check', (c) =>
+      c.json({ ok: true }),
+    )
+    const app = createTestApp(agentRoutes)
+
+    const blocked = await app.request('/agents/guard-check', {
+      method: 'POST',
+    })
+    expect(blocked.status).toBe(403)
+
+    const allowed = await app.request('/agents/guard-check', {
+      method: 'POST',
+      headers: {
+        Origin: 'chrome-extension://bflpfmnmnokmjhmgnolecpppdbdophmk',
+      },
+    })
+    expect(allowed.status).toBe(200)
+    await expect(allowed.json()).resolves.toEqual({ ok: true })
   })
 })
