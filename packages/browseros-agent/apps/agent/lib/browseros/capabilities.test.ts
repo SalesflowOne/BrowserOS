@@ -156,13 +156,14 @@ describe('checkFeatureSupport — QWEN_CODE_SUPPORT', () => {
       Feature.QWEN_CODE_SUPPORT,
     )
 
-  it('hides API-key Qwen below server 0.0.117 or when version is unknown', () => {
+  it('hides API-key Qwen below server 0.0.118 or when version is unknown', () => {
     expect(at(null)).toBe(false)
     expect(at([0, 0, 116])).toBe(false)
+    expect(at([0, 0, 117])).toBe(false)
   })
 
-  it('shows API-key Qwen at or above server 0.0.117', () => {
-    expect(at([0, 0, 117])).toBe(true)
+  it('shows API-key Qwen at or above server 0.0.118', () => {
     expect(at([0, 0, 118])).toBe(true)
+    expect(at([0, 0, 119])).toBe(true)
   })
 })
