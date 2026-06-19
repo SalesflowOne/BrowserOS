@@ -1,9 +1,9 @@
 diff --git a/chrome/common/extensions/api/browser_os.idl b/chrome/common/extensions/api/browser_os.idl
 new file mode 100644
-index 0000000000000..c822c34a0d1cf
+index 0000000000000..baeb98959b39a
 --- /dev/null
 +++ b/chrome/common/extensions/api/browser_os.idl
-@@ -0,0 +1,128 @@
+@@ -0,0 +1,138 @@
 +// Copyright 2024 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -68,6 +68,9 @@ index 0000000000000..c822c34a0d1cf
 +  // |shown|: True if the toast was displayed, false if it was suppressed.
 +  callback ShowToastCallback = void(boolean shown);
 +
++  // Callback for showInfoBar.
++  callback ShowInfoBarCallback = void(boolean shown);
++
 +  interface Functions {
 +    // Settings API functions - compatible with chrome.settingsPrivate
 +    // Gets a specific preference value
@@ -130,5 +133,12 @@ index 0000000000000..c822c34a0d1cf
 +        DOMString message,
 +        optional long durationMs,
 +        ShowToastCallback callback);
++
++    // Shows a simple alert infobar in the active browser tab.
++    // |message|: Text to display.
++    // |callback|: Called with whether the infobar was shown.
++    static void showInfoBar(
++        DOMString message,
++        ShowInfoBarCallback callback);
 +  };
 +};

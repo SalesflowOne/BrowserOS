@@ -1,9 +1,9 @@
 diff --git a/chrome/browser/extensions/api/browser_os/browser_os_api.cc b/chrome/browser/extensions/api/browser_os/browser_os_api.cc
 new file mode 100644
-index 0000000000000..a136ab744a9e6
+index 0000000000000..62fdae9e171ae
 --- /dev/null
 +++ b/chrome/browser/extensions/api/browser_os/browser_os_api.cc
-@@ -0,0 +1,291 @@
+@@ -0,0 +1,333 @@
 +// Copyright 2024 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -23,15 +23,19 @@ index 0000000000000..a136ab744a9e6
 +#include "base/version_info/version_info.h"
 +#include "chrome/browser/browser_process.h"
 +#include "chrome/browser/browseros/metrics/browseros_metrics.h"
++#include "chrome/browser/infobars/simple_alert_infobar_creator.h"
 +#include "chrome/browser/platform_util.h"
 +#include "chrome/browser/profiles/profile.h"
 +#include "chrome/browser/ui/browser.h"
 +#include "chrome/browser/ui/browser_finder.h"
 +#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 +#include "chrome/browser/ui/select_file_policy/chrome_select_file_policy.h"
++#include "chrome/browser/ui/tabs/tab_strip_model.h"
 +#include "chrome/browser/ui/toasts/api/toast_id.h"
 +#include "chrome/browser/ui/toasts/toast_controller.h"
 +#include "chrome/common/extensions/api/browser_os.h"
++#include "components/infobars/content/content_infobar_manager.h"
++#include "components/infobars/core/infobar_delegate.h"
 +#include "components/prefs/pref_service.h"
 +#include "content/public/browser/web_contents.h"
 +#include "ui/shell_dialogs/selected_file_info.h"
@@ -291,6 +295,44 @@ index 0000000000000..a136ab744a9e6
 +  const bool shown = toast_controller->MaybeShowToast(std::move(toast_params));
 +  return RespondNow(
 +      ArgumentList(browser_os::ShowToast::Results::Create(shown)));
++}
++
++// Bridges chrome.browserOS.showInfoBar to Chrome's tab-scoped alert infobar.
++ExtensionFunction::ResponseAction BrowserOSShowInfoBarFunction::Run() {
++  std::optional<browser_os::ShowInfoBar::Params> params =
++      browser_os::ShowInfoBar::Params::Create(args());
++  EXTENSION_FUNCTION_VALIDATE(params);
++
++  if (params->message.empty()) {
++    return RespondNow(Error("InfoBar message must not be empty"));
++  }
++
++  Profile* profile = Profile::FromBrowserContext(browser_context());
++  Browser* browser = chrome::FindLastActiveWithProfile(profile);
++  if (!browser) {
++    return RespondNow(Error("No active browser window"));
++  }
++
++  content::WebContents* contents =
++      browser->tab_strip_model()->GetActiveWebContents();
++  if (!contents) {
++    return RespondNow(Error("No active tab"));
++  }
++
++  infobars::ContentInfoBarManager* infobar_manager =
++      infobars::ContentInfoBarManager::FromWebContents(contents);
++  if (!infobar_manager) {
++    return RespondNow(Error("InfoBar manager unavailable"));
++  }
++
++  CreateSimpleAlertInfoBar(
++      infobar_manager,
++      infobars::InfoBarDelegate::BROWSEROS_EXTENSION_INFOBAR_DELEGATE, nullptr,
++      base::UTF8ToUTF16(params->message), /*auto_expire=*/true,
++      /*should_animate=*/true, /*closeable=*/true);
++
++  return RespondNow(
++      ArgumentList(browser_os::ShowInfoBar::Results::Create(true)));
 +}
 +
 +}  // namespace api
