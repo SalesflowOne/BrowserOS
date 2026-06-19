@@ -1,5 +1,4 @@
 import { TIMEOUTS } from '@browseros/shared/constants/timeouts'
-import type { Browser } from '../browser/browser'
 import type { BrowserSession } from '../browser/core/session'
 import type { SnapshotDiff } from '../browser/core/snapshot/diff'
 import { formatDiffResult } from './browser/diff-format'
@@ -115,49 +114,6 @@ export class ToolResponse {
     this.postActions.push({ type: 'pages' })
   }
 
-  private async runPostAction(
-    action: PostAction,
-    browser: Browser,
-  ): Promise<void> {
-    switch (action.type) {
-      case 'snapshot': {
-        const tree = await browser.snapshot(action.page)
-        const origin = browser.getPageInfo(action.page)?.url ?? 'unknown'
-        await this.appendSnapshotPostAction(action, tree, origin)
-        return
-      }
-      case 'screenshot': {
-        const result = await browser.screenshot(action.page, {
-          format: 'png',
-          fullPage: false,
-        })
-        this.text(`[Page ${action.page} screenshot]`)
-        this.image(result.data, result.mimeType)
-        return
-      }
-      case 'diff': {
-        const d = await browser.session.observe(action.page).diff()
-        const origin =
-          d.afterUrl ?? browser.getPageInfo(action.page)?.url ?? 'unknown'
-        await this.appendDiffPostAction(action, d, origin)
-        return
-      }
-      case 'pages': {
-        const pages = await browser.listPages()
-        if (pages.length === 0) {
-          this.text('[Open pages] None')
-        } else {
-          const lines = pages.map(
-            (p) =>
-              `  ${p.pageId}. ${p.title || '(untitled)'} — ${p.url}${p.isActive ? ' [ACTIVE]' : ''}`,
-          )
-          this.text(`[Open pages]\n${lines.join('\n')}`)
-        }
-        return
-      }
-    }
-  }
-
   private async runSessionPostAction(
     action: PostAction,
     session: BrowserSession,
@@ -246,21 +202,6 @@ export class ToolResponse {
     } finally {
       if (timeoutId !== undefined) clearTimeout(timeoutId)
     }
-  }
-
-  async build(browser: Browser): Promise<ToolResult> {
-    if (this.postActions.length > 0) {
-      this.text('\n--- Additional context (auto-included) ---')
-    }
-
-    for (const action of this.postActions) {
-      try {
-        await this.withTimeout(this.runPostAction(action, browser))
-      } catch {
-        // Post-action failure doesn't fail the tool
-      }
-    }
-    return this.toResult()
   }
 
   /** Builds a compact browser-tool result after running BrowserSession post-actions. */

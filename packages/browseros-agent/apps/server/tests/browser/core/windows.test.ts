@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'bun:test'
-import { Browser } from '../../../src/browser/browser'
 import type { CdpConnection } from '../../../src/browser/core/connection'
 import {
   type WindowInfo,
@@ -96,36 +95,6 @@ describe('WindowManager', () => {
       {
         method: 'setWindowVisibility',
         params: { windowId: 9, visible: true, activate: false },
-      },
-    ])
-  })
-})
-
-describe('Browser window facade', () => {
-  it('uses the browser-core window manager', async () => {
-    const { connection, calls } = createConnection()
-    const browser = new Browser(connection as never)
-
-    await browser.listWindows()
-    await browser.createWindow({ hidden: true })
-    await browser.closeWindow(4)
-    await browser.activateWindow(5)
-    await expect(
-      browser.setWindowVisibility(6, { visible: false }),
-    ).resolves.toMatchObject({
-      previousWindowId: 6,
-      newWindowId: 3,
-      window: { isVisible: false },
-    })
-
-    expect(calls).toEqual([
-      { method: 'getWindows' },
-      { method: 'createWindow', params: { hidden: true } },
-      { method: 'closeWindow', params: { windowId: 4 } },
-      { method: 'activateWindow', params: { windowId: 5 } },
-      {
-        method: 'setWindowVisibility',
-        params: { windowId: 6, visible: false },
       },
     ])
   })

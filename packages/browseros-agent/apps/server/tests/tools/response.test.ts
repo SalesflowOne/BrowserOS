@@ -3,7 +3,7 @@ import assert from 'node:assert'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Browser } from '../../src/browser/browser'
+import type { BrowserSession } from '../../src/browser/core/session'
 import { ToolResponse } from '../../src/tools/response'
 
 function textOf(result: {
@@ -29,6 +29,16 @@ async function withBrowserosDir<T>(run: () => Promise<T>): Promise<T> {
     }
     rmSync(browserosDir, { recursive: true, force: true })
   }
+}
+
+function createSession(overrides: {
+  observe?: unknown
+  pages?: unknown
+}): BrowserSession {
+  return {
+    observe: overrides.observe,
+    pages: overrides.pages,
+  } as unknown as BrowserSession
 }
 
 describe('ToolResponse', () => {
@@ -60,12 +70,14 @@ describe('ToolResponse', () => {
     response.text('ok')
     response.includeSnapshot(1)
 
-    const browser = {
-      snapshot: async () => await new Promise<string>(() => {}),
-    } as unknown as Browser
+    const session = createSession({
+      observe: () => ({
+        snapshot: async () => await new Promise(() => {}),
+      }),
+    })
 
     const start = Date.now()
-    const result = await response.build(browser)
+    const result = await response.buildForSession(session)
     const elapsed = Date.now() - start
 
     assert.ok(elapsed < 250, `Expected fast timeout, got ${elapsed}ms`)
@@ -81,12 +93,16 @@ describe('ToolResponse', () => {
     response.text('ok')
     response.includeSnapshot(1)
 
-    const browser = {
-      snapshot: async () => '[42] button "Submit"',
-      getPageInfo: () => ({ url: 'https://example.com/small' }),
-    } as unknown as Browser
+    const session = createSession({
+      observe: () => ({
+        snapshot: async () => ({ text: '[42] button "Submit"', refs: {} }),
+      }),
+      pages: {
+        getInfo: () => ({ url: 'https://example.com/small' }),
+      },
+    })
 
-    const result = await response.build(browser)
+    const result = await response.buildForSession(session)
     const text = textOf(result)
 
     assert.ok(text.includes('ok'))
@@ -94,7 +110,7 @@ describe('ToolResponse', () => {
     assert.ok(text.includes('[42] button "Submit"'))
   })
 
-  it('writes large legacy snapshot post-actions to a BrowserOS output file', async () => {
+  it('writes large snapshot post-actions to a BrowserOS output file', async () => {
     await withBrowserosDir(async () => {
       const response = new ToolResponse({ postActionTimeoutMs: 200 })
       const largeSnapshot = [
@@ -104,12 +120,16 @@ describe('ToolResponse', () => {
       response.text('ok')
       response.includeSnapshot(1)
 
-      const browser = {
-        snapshot: async () => largeSnapshot,
-        getPageInfo: () => ({ url: 'https://example.com/legacy-large' }),
-      } as unknown as Browser
+      const session = createSession({
+        observe: () => ({
+          snapshot: async () => ({ text: largeSnapshot, refs: {} }),
+        }),
+        pages: {
+          getInfo: () => ({ url: 'https://example.com/large' }),
+        },
+      })
 
-      const result = await response.build(browser)
+      const result = await response.buildForSession(session)
       const text = textOf(result)
       const savedPath = text.match(/saved to: (.+\.md)/)?.[1]
 
@@ -123,27 +143,27 @@ describe('ToolResponse', () => {
     })
   })
 
-  it('includes diff output when legacy build receives a diff post-action', async () => {
+  it('includes diff output when buildForSession receives a diff post-action', async () => {
     const response = new ToolResponse({ postActionTimeoutMs: 200 })
     response.text('ok')
     response.includeDiff(1)
 
-    const browser = {
-      session: {
-        observe: () => ({
-          diff: async () => ({
-            changed: true,
-            text: '+   button "Saved" [ref=e1]\n1 added, 0 removed',
-            added: 1,
-            removed: 0,
-            afterUrl: 'https://example.com/current',
-          }),
+    const session = createSession({
+      observe: () => ({
+        diff: async () => ({
+          changed: true,
+          text: '+   button "Saved" [ref=e1]\n1 added, 0 removed',
+          added: 1,
+          removed: 0,
+          afterUrl: 'https://example.com/current',
         }),
+      }),
+      pages: {
+        getInfo: () => ({ url: 'https://example.com/stale' }),
       },
-      getPageInfo: () => ({ url: 'https://example.com/stale' }),
-    } as unknown as Browser
+    })
 
-    const result = await response.build(browser)
+    const result = await response.buildForSession(session)
     const text = textOf(result)
 
     assert.ok(text.includes('ok'))
