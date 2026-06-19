@@ -43,9 +43,7 @@ export const AgentCommandHome: FC = () => {
   const { adapters } = useAgentAdapters()
   const { supports, isLoading: capabilitiesLoading } = useCapabilities()
   const hermesAgentSupported = supports(Feature.HERMES_AGENT_SUPPORT)
-  const supportsInlineChat =
-    supports(Feature.ALPHA_FEATURES_SUPPORT) &&
-    supports(Feature.NEWTAB_CHAT_SUPPORT)
+  const supportsInlineChat = supports(Feature.NEWTAB_CHAT_SUPPORT)
   const llmRoutingMode = resolveHomeLlmRoutingMode({
     capabilitiesLoading,
     supportsInlineChat,
