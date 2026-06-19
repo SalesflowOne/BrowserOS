@@ -35,6 +35,19 @@ const providers: LlmProviderConfig[] = [
   },
 ]
 
+const unconfiguredQwenProvider: LlmProviderConfig = {
+  id: 'qwen-oauth',
+  type: 'qwen-code',
+  name: 'Qwen Code',
+  baseUrl: 'https://coding.dashscope.aliyuncs.com/v1',
+  modelId: 'qwen3-coder-plus',
+  supportsImages: true,
+  contextWindow: 1000000,
+  temperature: 0.2,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+}
+
 const agents = [{ id: 'agent-cc-1' }, { id: 'agent-codex-1' }]
 
 describe('resolveEffectiveDefaultTarget', () => {
@@ -82,6 +95,17 @@ describe('resolveEffectiveDefaultTarget', () => {
     ).toEqual({ kind: 'llm', id: 'browseros' })
   })
 
+  it('falls back when the llm selection needs Qwen reconfiguration', () => {
+    expect(
+      resolveEffectiveDefaultTarget({
+        providers: [unconfiguredQwenProvider, ...providers],
+        agents,
+        selection: { kind: 'llm', id: 'qwen-oauth' },
+        defaultProviderId: 'anthropic-sonnet',
+      }),
+    ).toEqual({ kind: 'llm', id: 'anthropic-sonnet' })
+  })
+
   it('resolves a null selection to the default provider', () => {
     expect(
       resolveEffectiveDefaultTarget({
@@ -100,6 +124,17 @@ describe('resolveEffectiveDefaultTarget', () => {
         agents,
         selection: null,
         defaultProviderId: 'provider-deleted',
+      }),
+    ).toEqual({ kind: 'llm', id: 'browseros' })
+  })
+
+  it('repairs a Qwen default provider id that still needs an API key', () => {
+    expect(
+      resolveEffectiveDefaultTarget({
+        providers: [unconfiguredQwenProvider, ...providers],
+        agents,
+        selection: null,
+        defaultProviderId: 'qwen-oauth',
       }),
     ).toEqual({ kind: 'llm', id: 'browseros' })
   })

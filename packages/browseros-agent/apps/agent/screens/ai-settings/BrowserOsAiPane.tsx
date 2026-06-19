@@ -77,6 +77,16 @@ const OAUTH_PROVIDERS_CONFIG: Record<string, OAuthProviderFlowConfig> = {
   },
 }
 
+/** Deletes tokens left by the removed Qwen OAuth flow. */
+async function deleteLegacyQwenOAuthTokens(
+  agentServerUrl: string | undefined,
+): Promise<void> {
+  if (!agentServerUrl) return
+  await fetch(`${agentServerUrl}/oauth/qwen-code`, { method: 'DELETE' }).catch(
+    () => undefined,
+  )
+}
+
 /**
  * BrowserOS AI pane — manage LLM providers and the default model.
  */
@@ -264,6 +274,8 @@ export const BrowserOsAiPane: FC = () => {
     if (oauthFlow) {
       await oauthFlow.disconnect()
       track(oauthFlow.disconnectedEvent)
+    } else if (providerToDelete.type === 'qwen-code') {
+      await deleteLegacyQwenOAuthTokens(agentServerUrl ?? undefined)
     }
 
     const wasLastRemoteHermes =

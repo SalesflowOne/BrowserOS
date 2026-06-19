@@ -11,6 +11,7 @@ import {
   isChatProviderType,
   resolveChatProvider,
 } from '../../lib/llm-providers/provider-runtime'
+import { isSelectableDefaultProvider } from '../../lib/llm-providers/provider-selection'
 
 export type SidepanelChatTarget =
   | {
@@ -84,7 +85,11 @@ export function buildSidepanelChatTargets({
 }: BuildSidepanelChatTargetsInput): SidepanelChatTarget[] {
   return [
     ...providers
-      .filter((provider) => isChatProviderType(provider.type))
+      .filter(
+        (provider) =>
+          isChatProviderType(provider.type) &&
+          isSelectableDefaultProvider(provider),
+      )
       .map(toLlmTarget),
     ...visibleHarnessAgents(agents, hermesAgentSupported).map((agent) =>
       toAcpTargetForAgent(agent, adapters),

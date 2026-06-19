@@ -69,6 +69,19 @@ const localRuntimeProviders: LlmProviderConfig[] = [
   },
 ]
 
+const unconfiguredQwenProvider: LlmProviderConfig = {
+  id: 'qwen-oauth',
+  type: 'qwen-code',
+  name: 'Qwen Code',
+  baseUrl: 'https://coding.dashscope.aliyuncs.com/v1',
+  modelId: 'qwen3-coder-plus',
+  supportsImages: true,
+  contextWindow: 1000000,
+  temperature: 0.2,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+}
+
 const adapters: HarnessAdapterDescriptor[] = [
   {
     id: 'claude',
@@ -188,6 +201,19 @@ describe('buildSidepanelChatTargets', () => {
       'agent-codex',
     ])
   })
+
+  it('does not emit Qwen targets that still need an API key', () => {
+    const targets = buildSidepanelChatTargets({
+      providers: [unconfiguredQwenProvider, ...providers],
+      adapters,
+      agents: [],
+    })
+
+    expect(targets.map((target) => target.id)).toEqual([
+      'browseros',
+      'anthropic-sonnet',
+    ])
+  })
 })
 
 describe('resolveSidepanelChatTarget', () => {
@@ -252,6 +278,25 @@ describe('resolveSidepanelChatTarget', () => {
     ).toMatchObject({
       kind: 'llm',
       id: 'codex-provider',
+    })
+  })
+
+  it('falls back when a persisted Qwen target still needs an API key', () => {
+    const targets = buildSidepanelChatTargets({
+      providers: [unconfiguredQwenProvider, ...providers],
+      adapters,
+      agents: [],
+    })
+
+    expect(
+      resolveSidepanelChatTarget({
+        targets,
+        defaultProviderId: 'anthropic-sonnet',
+        selection: { kind: 'llm', id: 'qwen-oauth' },
+      }),
+    ).toMatchObject({
+      kind: 'llm',
+      id: 'anthropic-sonnet',
     })
   })
 })

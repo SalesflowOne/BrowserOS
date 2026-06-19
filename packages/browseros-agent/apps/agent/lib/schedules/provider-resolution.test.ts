@@ -125,6 +125,42 @@ describe('scheduled provider resolution', () => {
       model: 'claude-sonnet-4-6',
     })
   })
+
+  it('falls back from an unconfigured Qwen default provider', async () => {
+    storageValues.set('providers', [unconfiguredQwenProvider, ...providers])
+    storageValues.set('defaultProviderId', 'qwen-oauth')
+
+    const { getChatServerResponse } = await import('./getChatServerResponse')
+
+    await getChatServerResponse({
+      message: 'Run my schedule',
+    })
+
+    expect(fetchBodies[0]).toMatchObject({
+      provider: 'browseros',
+      providerName: 'BrowserOS',
+      model: 'browseros-auto',
+    })
+  })
+
+  it('keeps an explicit unconfigured Qwen scheduled provider so the server returns the credential error', async () => {
+    storageValues.set('providers', [unconfiguredQwenProvider, ...providers])
+
+    const { getChatServerResponse } = await import('./getChatServerResponse')
+
+    await getChatServerResponse({
+      message: 'Run my schedule',
+      providerId: 'qwen-oauth',
+    })
+
+    expect(fetchBodies[0]).toMatchObject({
+      provider: 'qwen-code',
+      providerName: 'Qwen Code',
+      model: 'qwen3-coder-plus',
+      baseUrl: 'https://coding.dashscope.aliyuncs.com/v1',
+    })
+    expect(fetchBodies[0].apiKey).toBeUndefined()
+  })
 })
 
 const timestamp = 1000
@@ -165,3 +201,16 @@ const providers: LlmProviderConfig[] = [
     updatedAt: timestamp,
   },
 ]
+
+const unconfiguredQwenProvider: LlmProviderConfig = {
+  id: 'qwen-oauth',
+  type: 'qwen-code',
+  name: 'Qwen Code',
+  baseUrl: 'https://coding.dashscope.aliyuncs.com/v1',
+  modelId: 'qwen3-coder-plus',
+  supportsImages: true,
+  contextWindow: 1000000,
+  temperature: 0.2,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+}

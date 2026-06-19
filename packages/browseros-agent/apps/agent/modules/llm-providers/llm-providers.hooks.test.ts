@@ -1,6 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test'
 import type { LlmProviderConfig } from '@/lib/llm-providers/types'
 import {
+  isSelectableDefaultProvider,
   resolveDefaultProviderId,
   resolveSelectedProvider,
 } from '../../lib/llm-providers/provider-selection'
@@ -133,6 +134,19 @@ const providers: LlmProviderConfig[] = [
   },
 ]
 
+const unconfiguredQwenProvider: LlmProviderConfig = {
+  id: 'qwen-oauth',
+  type: 'qwen-code',
+  name: 'Qwen Code',
+  baseUrl: 'https://coding.dashscope.aliyuncs.com/v1',
+  modelId: 'qwen3-coder-plus',
+  supportsImages: true,
+  contextWindow: 1000000,
+  temperature: 0.2,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+}
+
 let persistDefaultProviderId: (providerId: string) => Promise<void>
 
 beforeAll(async () => {
@@ -154,6 +168,27 @@ describe('resolveSelectedProvider', () => {
     expect(resolveSelectedProvider(providers, 'claude-code-provider')).toEqual(
       providers[2],
     )
+  })
+
+  it('skips migrated Qwen providers that still need an API key', () => {
+    expect(
+      resolveSelectedProvider(
+        [unconfiguredQwenProvider, ...providers],
+        'qwen-oauth',
+      ),
+    ).toEqual(providers[0])
+  })
+})
+
+describe('isSelectableDefaultProvider', () => {
+  it('requires endpoint credentials for Qwen default selection', () => {
+    expect(isSelectableDefaultProvider(unconfiguredQwenProvider)).toBe(false)
+    expect(
+      isSelectableDefaultProvider({
+        ...unconfiguredQwenProvider,
+        apiKey: 'sk-test',
+      }),
+    ).toBe(true)
   })
 })
 
@@ -192,5 +227,14 @@ describe('resolveDefaultProviderId', () => {
     expect(resolveDefaultProviderId(providers, 'missing-provider')).toBe(
       'browseros',
     )
+  })
+
+  it('repairs a Qwen default id that still needs an API key', () => {
+    expect(
+      resolveDefaultProviderId(
+        [unconfiguredQwenProvider, ...providers],
+        'qwen-oauth',
+      ),
+    ).toBe('browseros')
   })
 })

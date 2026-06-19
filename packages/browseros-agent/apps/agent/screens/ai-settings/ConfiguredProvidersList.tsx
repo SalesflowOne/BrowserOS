@@ -1,4 +1,5 @@
 import type { FC } from 'react'
+import { isSelectableDefaultProvider } from '@/lib/llm-providers/provider-selection'
 import type { LlmProviderConfig } from '@/lib/llm-providers/types'
 import { ProviderCard } from './ProviderCard'
 
@@ -28,6 +29,7 @@ export const ConfiguredProvidersList: FC<ConfiguredProvidersListProps> = ({
     <div className="space-y-3">
       {providers.map((provider) => {
         const isBuiltIn = provider.id === 'browseros'
+        const canSelect = isSelectableDefaultProvider(provider)
 
         return (
           <ProviderCard
@@ -35,6 +37,7 @@ export const ConfiguredProvidersList: FC<ConfiguredProvidersListProps> = ({
             provider={provider}
             isSelected={selectedProviderId === provider.id}
             isBuiltIn={isBuiltIn}
+            canSelect={canSelect}
             isTesting={testingProviderId === provider.id}
             onSelect={() => onSelectProvider(provider.id)}
             onTest={() => onTestProvider(provider)}

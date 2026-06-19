@@ -2,7 +2,10 @@ import type { LlmProviderConfig } from '@/lib/llm-providers/types'
 import type { SidepanelChatTargetSelection } from '@/modules/chat/sidepanel-chat-targets'
 // Relative (not `@/`) so this module stays loadable under `bun test`, which
 // resolves tsconfig `@/` aliases for erased type imports only, not values.
-import { resolveDefaultProviderId } from '../../lib/llm-providers/provider-selection'
+import {
+  isSelectableDefaultProvider,
+  resolveDefaultProviderId,
+} from '../../lib/llm-providers/provider-selection'
 
 export interface ResolveEffectiveDefaultTargetInput {
   providers: LlmProviderConfig[]
@@ -31,7 +34,10 @@ export function resolveEffectiveDefaultTarget({
   }
   if (
     selection?.kind === 'llm' &&
-    providers.some((provider) => provider.id === selection.id)
+    providers.some(
+      (provider) =>
+        provider.id === selection.id && isSelectableDefaultProvider(provider),
+    )
   ) {
     return { kind: 'llm', id: selection.id }
   }

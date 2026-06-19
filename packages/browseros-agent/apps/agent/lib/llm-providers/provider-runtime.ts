@@ -1,3 +1,4 @@
+import { isSelectableDefaultProvider } from './provider-selection'
 import type { LlmProviderConfig, ProviderType } from './types'
 
 const localRuntimeProviderTypes: ReadonlySet<ProviderType> = new Set([
@@ -46,8 +47,10 @@ export function resolveChatProvider(
   providers: LlmProviderConfig[],
   preferredProviderId?: string | null,
 ): LlmProviderConfig | null {
-  const chatProviders = providers.filter((provider) =>
-    isChatProviderType(provider.type),
+  const chatProviders = providers.filter(
+    (provider) =>
+      isChatProviderType(provider.type) &&
+      isSelectableDefaultProvider(provider),
   )
   if (preferredProviderId) {
     const preferred = findChatProviderById(chatProviders, preferredProviderId)
@@ -79,7 +82,9 @@ export function resolveCloudChatProvider(
   preferredProviderId?: string | null,
 ): LlmProviderConfig | null {
   const cloudProviders = providers.filter(
-    (provider) => !isLocalRuntimeProviderType(provider.type),
+    (provider) =>
+      !isLocalRuntimeProviderType(provider.type) &&
+      isSelectableDefaultProvider(provider),
   )
   if (preferredProviderId) {
     const preferred = findCloudChatProviderById(

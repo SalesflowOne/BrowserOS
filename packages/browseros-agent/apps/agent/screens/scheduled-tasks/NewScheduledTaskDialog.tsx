@@ -41,6 +41,7 @@ import {
   isChatProviderType,
   resolveChatProvider,
 } from '@/lib/llm-providers/provider-runtime'
+import { isSelectableDefaultProvider } from '@/lib/llm-providers/provider-selection'
 import { BrowserOSIcon, ProviderIcon } from '@/lib/llm-providers/providerIcons'
 import {
   defaultProviderIdStorage,
@@ -187,7 +188,11 @@ export const NewScheduledTaskDialog: FC<NewScheduledTaskDialogProps> = ({
   })()
 
   const providerOptions: Provider[] = providers
-    .filter((provider) => isChatProviderType(provider.type))
+    .filter(
+      (provider) =>
+        isChatProviderType(provider.type) &&
+        isSelectableDefaultProvider(provider),
+    )
     .map((p) => ({
       kind: 'llm',
       id: p.id,

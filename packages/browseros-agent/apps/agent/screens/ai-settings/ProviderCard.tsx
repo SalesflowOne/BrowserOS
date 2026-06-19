@@ -11,6 +11,7 @@ export interface ProviderCardProps {
   provider: LlmProviderConfig
   isSelected: boolean
   isBuiltIn: boolean
+  canSelect?: boolean
   onSelect: () => void
   onTest?: () => void
   onEdit?: () => void
@@ -22,6 +23,7 @@ export const ProviderCard: FC<ProviderCardProps> = ({
   provider,
   isSelected,
   isBuiltIn,
+  canSelect = true,
   onSelect,
   onTest,
   onEdit,
@@ -35,7 +37,8 @@ export const ProviderCard: FC<ProviderCardProps> = ({
     <label
       htmlFor={inputId}
       className={cn(
-        'group flex w-full cursor-pointer items-center gap-4 rounded-xl border p-4 text-left transition-all',
+        'group flex w-full items-center gap-4 rounded-xl border p-4 text-left transition-all',
+        canSelect ? 'cursor-pointer' : 'cursor-default',
         isSelected
           ? 'border-[var(--accent-orange)] bg-[var(--accent-orange)]/5 shadow-md'
           : 'border-border bg-card hover:border-[var(--accent-orange)]/50 hover:shadow-sm',
@@ -47,7 +50,10 @@ export const ProviderCard: FC<ProviderCardProps> = ({
         name="default-provider"
         className="sr-only"
         checked={isSelected}
-        onChange={() => onSelect()}
+        disabled={!canSelect}
+        onChange={() => {
+          if (canSelect) onSelect()
+        }}
       />
       <div
         className={cn(
