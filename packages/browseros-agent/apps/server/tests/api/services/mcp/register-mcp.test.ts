@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { registerTools } from '../../../../src/api/services/mcp/register-mcp'
 import type { BrowserSession } from '../../../../src/browser/core/session'
+import { logger } from '../../../../src/lib/logger'
 import { BROWSER_TOOLS } from '../../../../src/tools/browser/registry'
+import { resetToolRegistrationLogSamplingForTests } from '../../../../src/tools/registration-log-sampling'
 
 type RegisteredHandler = (
   args: Record<string, unknown>,
@@ -36,92 +38,112 @@ function createFakeServer() {
 }
 
 describe('registerTools', () => {
-  it('registers the legacy browser tools by default', () => {
-    const fake = createFakeServer()
+  const originalInfo = logger.info
+  let infoMessages: unknown[] = []
 
-    registerTools(fake.server as never, {
-      browser: {} as never,
-      browserSession: { pages: {} } as unknown as BrowserSession,
-    })
-
-    expect(fake.handlers.has('tabs')).toBe(false)
-    expect(fake.handlers.has('new_page')).toBe(true)
-    expect(fake.handlers.has('get_bookmarks')).toBe(true)
-    expect(fake.handlers.has('browseros_info')).toBe(true)
+  beforeEach(() => {
+    resetToolRegistrationLogSamplingForTests()
+    infoMessages = []
+    logger.info = ((message: string) => {
+      infoMessages.push(message)
+    }) as typeof logger.info
   })
 
-  it('registers the new compact browser tools when explicitly enabled', () => {
+  afterEach(() => {
+    logger.info = originalInfo
+    resetToolRegistrationLogSamplingForTests()
+  })
+
+  it('registers the browser tools', () => {
     const fake = createFakeServer()
 
     registerTools(fake.server as never, {
-      browser: {} as never,
       browserSession: { pages: {} } as unknown as BrowserSession,
-      useNewTools: true,
     })
 
     expect([...fake.handlers.keys()]).toEqual(BROWSER_TOOLS.map((t) => t.name))
-    expect(fake.handlers.size).toBe(10)
+    expect(fake.handlers.size).toBe(BROWSER_TOOLS.length)
   })
 
-  it('registers the legacy browser tools when the switch is disabled', () => {
-    const fake = createFakeServer()
+  it('samples repeated registration info logs without skipping tool registration', () => {
+    for (let i = 0; i < 20; i++) {
+      const fake = createFakeServer()
+      registerTools(fake.server as never, {
+        browserSession: { pages: {} } as unknown as BrowserSession,
+      })
 
-    registerTools(fake.server as never, {
-      browser: {} as never,
-      browserSession: { pages: {} } as unknown as BrowserSession,
-      useNewTools: false,
-    })
+      if (i === 1) {
+        expect([...fake.handlers.keys()]).toEqual(
+          BROWSER_TOOLS.map((t) => t.name),
+        )
+      }
+      if (i === 2) {
+        expect(fake.handlers.has('tabs')).toBe(true)
+        expect(fake.handlers.has('new_page')).toBe(false)
+      }
+    }
 
-    expect(fake.handlers.has('tabs')).toBe(false)
-    expect(fake.handlers.has('new_page')).toBe(true)
-    expect(fake.handlers.has('get_bookmarks')).toBe(true)
-    expect(fake.handlers.has('browseros_info')).toBe(true)
+    expect(infoMessages).toHaveLength(2)
+    expect(infoMessages).toEqual([
+      expect.stringContaining(
+        `Registered ${BROWSER_TOOLS.length} browser tools`,
+      ),
+      expect.stringContaining(
+        `Registered ${BROWSER_TOOLS.length} browser tools`,
+      ),
+    ])
   })
 
-  it('applies scoped defaults to legacy page creation tools', async () => {
+  it('applies scoped defaults to tab creation', async () => {
     const fake = createFakeServer()
     const newPageCalls: Array<{
       url: string
-      opts?: { windowId?: number; background?: boolean; hidden?: boolean }
-    }> = []
-    const groupCalls: Array<{
-      pageIds: number[]
-      opts: { groupId?: string }
+      opts?: {
+        background?: boolean
+        hidden?: boolean
+        tabGroupId?: string
+        windowId?: number
+      }
     }> = []
 
     registerTools(fake.server as never, {
-      browser: {
-        newPage: async (
-          url: string,
-          opts?: { windowId?: number; background?: boolean; hidden?: boolean },
-        ) => {
-          newPageCalls.push({ url, opts })
-          return 42
+      browserSession: {
+        pages: {
+          newPage: async (
+            url: string,
+            opts?: {
+              background?: boolean
+              hidden?: boolean
+              tabGroupId?: string
+              windowId?: number
+            },
+          ) => {
+            newPageCalls.push({ url, opts })
+            return 42
+          },
         },
-        groupTabs: async (pageIds: number[], opts: { groupId?: string }) => {
-          groupCalls.push({ pageIds, opts })
-        },
-        listPages: async () => [],
-      } as never,
-      browserSession: { pages: {} } as unknown as BrowserSession,
-      useNewTools: false,
+      } as unknown as BrowserSession,
       defaultWindowId: 7,
       defaultTabGroupId: 'group-a',
     })
 
-    const result = await fake.handlers.get('new_page')?.({
+    const result = await fake.handlers.get('tabs')?.({
+      action: 'new',
       url: 'https://example.com',
     })
 
     expect(result?.isError).toBeFalsy()
+    expect(result?.structuredContent).toEqual({ page: 42 })
     expect(newPageCalls).toEqual([
       {
         url: 'https://example.com',
-        opts: { hidden: undefined, background: true, windowId: 7 },
+        opts: {
+          background: true,
+          hidden: false,
+          tabGroupId: 'group-a',
+          windowId: 7,
+        },
       },
-    ])
-    expect(groupCalls).toEqual([
-      { pageIds: [42], opts: { groupId: 'group-a' } },
     ])
   })
 })

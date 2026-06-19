@@ -19,13 +19,14 @@ import type { BrowserSession } from '../../browser/core/session'
 import { buildAcpMcpServers } from '../../lib/agents/acpx-provider/buildAcpMcpServers'
 import { resolveLLMConfig } from '../../lib/clients/llm/config'
 import { logger } from '../../lib/logger'
-import type { KlavisProxyRef } from '../services/klavis/strata-proxy'
+import { createBrowserOutputFileAccess } from '../../tools/browser/output-file'
+import type { KlavisService } from '../services/klavis'
 import type { BrowserContext, ChatRequest } from '../types'
 import { resolveBrowserContextPageIds } from '../utils/resolve-browser-context-page-ids'
 
 export interface ChatServiceDeps {
   sessionStore: SessionStore
-  klavisRef?: KlavisProxyRef
+  klavis?: KlavisService
   browser: Browser
   browserSession: BrowserSession
   browserosId?: string
@@ -42,6 +43,7 @@ export interface ChatServiceDeps {
 export class ChatService {
   constructor(private deps: ChatServiceDeps) {}
 
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: chat request orchestration; refactor tracked separately
   async processMessage(
     request: ChatRequest,
     abortSignal: AbortSignal,
@@ -92,6 +94,7 @@ export class ChatService {
             conversationId: request.conversationId,
             providerId: llmConfig.provider,
             defaultWindowId: request.browserContext?.windowId,
+            enabledMcpServers: request.browserContext?.enabledMcpServers,
             customMcpServers: request.browserContext?.customMcpServers,
           })
         : undefined,
@@ -146,8 +149,8 @@ export class ChatService {
       }
       if (parts.length === 0) {
         if (
-          oldKlavisState === 'klavis:pending' &&
-          newKlavisState === 'klavis:connected' &&
+          oldKlavisState !== 'klavis:ready' &&
+          newKlavisState === 'klavis:ready' &&
           newServers.size > 0
         ) {
           parts.push(
@@ -179,16 +182,40 @@ export class ChatService {
 
       if (!request.userWorkingDir) {
         contextChanges.push(
-          'The user disconnected the workspace during this conversation. Filesystem tools (filesystem_read, filesystem_write, filesystem_edit, filesystem_bash, filesystem_grep, filesystem_find, filesystem_ls) are no longer available. Return all output directly in chat. If the user asks for file operations, suggest they select a working directory from the chat toolbar.',
+          [
+            'The user disconnected the workspace during this conversation.',
+            'Workspace filesystem tools (filesystem_write, filesystem_edit, filesystem_bash, filesystem_grep, filesystem_find, filesystem_ls, and workspace file reads) are no longer available.',
+            'filesystem_read can only read BrowserOS-generated output files returned in this session.',
+            'Return other output directly in chat.',
+            'If the user asks for file operations, suggest they select a working directory from the chat toolbar.',
+          ].join(' '),
         )
       } else if (!previousWorkingDir) {
-        contextChanges.push(
-          `The user connected a workspace during this conversation. Filesystem tools are now available. Working directory: ${request.userWorkingDir}`,
-        )
+        if (agentConfig.chatMode) {
+          contextChanges.push(
+            [
+              'The user connected a workspace during this conversation, but read-only chat mode cannot use workspace filesystem tools.',
+              'filesystem_read can only read BrowserOS-generated output files returned in this session.',
+            ].join(' '),
+          )
+        } else {
+          contextChanges.push(
+            `The user connected a workspace during this conversation. Filesystem tools are now available. Working directory: ${request.userWorkingDir}`,
+          )
+        }
       } else {
-        contextChanges.push(
-          `The user switched workspace during this conversation. Filesystem tools now use the new working directory: ${request.userWorkingDir}`,
-        )
+        if (agentConfig.chatMode) {
+          contextChanges.push(
+            [
+              'The user switched workspace during this conversation, but read-only chat mode cannot use workspace filesystem tools.',
+              'filesystem_read can only read BrowserOS-generated output files returned in this session.',
+            ].join(' '),
+          )
+        } else {
+          contextChanges.push(
+            `The user switched workspace during this conversation. Filesystem tools now use the new working directory: ${request.userWorkingDir}`,
+          )
+        }
       }
     }
 
@@ -245,13 +272,15 @@ export class ChatService {
         }
       }
 
+      const outputFileAccess = createBrowserOutputFileAccess()
       const agent = await AiSdkAgent.create({
         resolvedConfig: agentConfig,
         browserSession: this.deps.browserSession,
         browserContext,
-        klavisRef: this.deps.klavisRef,
+        klavis: this.deps.klavis,
         browserosId: this.deps.browserosId,
         aiSdkDevtoolsEnabled: this.deps.aiSdkDevtoolsEnabled,
+        outputFileAccess,
       })
       session = {
         agent,
@@ -259,6 +288,7 @@ export class ChatService {
         browserContext,
         mcpServerKey,
         workingDir: request.userWorkingDir,
+        outputFileAccess,
       }
       sessionStore.set(request.conversationId, session)
     }
@@ -311,15 +341,35 @@ export class ChatService {
     const wrappedUserMessageId =
       session.agent.messages[session.agent.messages.length - 1]?.id
 
-    const promptUiMessages = filterValidMessages(session.agent.messages).map(
-      (msg) =>
-        msg.id === wrappedUserMessageId && msg.role === 'user'
-          ? {
-              ...msg,
-              parts: [{ type: 'text' as const, text: promptUserText }],
-            }
-          : msg,
-    )
+    // ACP-backed providers run against a persistent acpx session that
+    // owns the agent's conversation memory natively on disk under
+    // <stateDir>/<sessionKey>/. Re-feeding the full UIMessage history
+    // doubles bookkeeping and, worse, trips the AI SDK validator when
+    // it walks phantom tool-<name> parts emitted by acpx-ai-provider
+    // under freshly-generated "acpx-N" ids (acpx#37). For ACP turns
+    // we send only the new user message — acpx's session/load reads
+    // prior turns from disk transparently. The UI continues to see
+    // the growing transcript via session.agent.messages.
+    //
+    // LLM-API providers are stateless and need the full history on
+    // each turn, so they keep the existing shape verbatim.
+    const isAcp = isAcpProvider(agentConfig.provider)
+    const promptUiMessages: UIMessage[] = isAcp
+      ? [
+          {
+            id: wrappedUserMessageId ?? crypto.randomUUID(),
+            role: 'user',
+            parts: [{ type: 'text', text: promptUserText }],
+          },
+        ]
+      : filterValidMessages(session.agent.messages).map((msg) =>
+          msg.id === wrappedUserMessageId && msg.role === 'user'
+            ? {
+                ...msg,
+                parts: [{ type: 'text' as const, text: promptUserText }],
+              }
+            : msg,
+        )
 
     return createAgentUIStreamResponse({
       agent: session.agent.toolLoopAgent,
@@ -330,18 +380,52 @@ export class ChatService {
         // wrapped user text. Restore the raw form before persisting
         // so subsequent turns see the clean text and the client's
         // local UIMessage matches what was originally typed.
-        const restored = messages.map((msg) =>
-          msg.id === wrappedUserMessageId && msg.role === 'user'
-            ? {
-                ...msg,
-                parts: [{ type: 'text' as const, text: request.message }],
-              }
-            : msg,
-        )
-        session.agent.messages = filterValidMessages(restored)
+        //
+        // ACP path: `messages` is the single user msg we sent plus
+        // the assistant's new reply. The user msg already lives in
+        // session.agent.messages via appendUserMessage; we only need
+        // to restore its raw text and append the new assistant
+        // entries from this turn.
+        //
+        // LLM-API path: `messages` is the full conversation as the
+        // AI SDK reconstructed it. Restore the wrapped user message
+        // and replace the entire session history with the result.
+        if (isAcp) {
+          // Invariant: an id in both `messages` and session means the
+          // AI SDK handed us back something we already have. With the
+          // single-user-msg input shape that means our own user msg —
+          // the only collision we expect. Any new id is a fresh
+          // assistant entry from this turn. acpx never re-emits prior
+          // turns into the AI SDK stream, so this filter cannot drop a
+          // legitimately new message.
+          const existingIds = new Set(session.agent.messages.map((m) => m.id))
+          const newMessages = messages.filter((m) => !existingIds.has(m.id))
+          const updated = session.agent.messages.map((m) =>
+            m.id === wrappedUserMessageId && m.role === 'user'
+              ? {
+                  ...m,
+                  parts: [{ type: 'text' as const, text: request.message }],
+                }
+              : m,
+          )
+          session.agent.messages = filterValidMessages([
+            ...updated,
+            ...newMessages,
+          ])
+        } else {
+          const restored = messages.map((msg) =>
+            msg.id === wrappedUserMessageId && msg.role === 'user'
+              ? {
+                  ...msg,
+                  parts: [{ type: 'text' as const, text: request.message }],
+                }
+              : msg,
+          )
+          session.agent.messages = filterValidMessages(restored)
+        }
         logger.info('Agent execution complete', {
           conversationId: request.conversationId,
-          totalMessages: restored.length,
+          totalMessages: session.agent.messages.length,
         })
 
         if (session?.hiddenPageId) {
@@ -396,13 +480,16 @@ export class ChatService {
           this.deps.browser,
           request.browserContext,
         )
+    const outputFileAccess =
+      session.outputFileAccess ?? createBrowserOutputFileAccess()
     const agent = await AiSdkAgent.create({
       resolvedConfig: agentConfig,
       browserSession: this.deps.browserSession,
       browserContext,
-      klavisRef: this.deps.klavisRef,
+      klavis: this.deps.klavis,
       browserosId: this.deps.browserosId,
       aiSdkDevtoolsEnabled: this.deps.aiSdkDevtoolsEnabled,
+      outputFileAccess,
     })
     const newSession: AgentSession = {
       agent,
@@ -410,6 +497,7 @@ export class ChatService {
       browserContext,
       mcpServerKey,
       workingDir: request.userWorkingDir,
+      outputFileAccess,
     }
     newSession.agent.messages = sanitizeMessagesForToolset(
       previousMessages,
@@ -425,9 +513,7 @@ export class ChatService {
       browserContext?.customMcpServers?.map((s) => s.url).sort() ?? []
     const klavisState =
       managed.length > 0
-        ? this.deps.klavisRef?.handle
-          ? 'klavis:connected'
-          : 'klavis:pending'
+        ? `klavis:${this.deps.klavis?.getProxyStatus().state ?? 'disabled'}`
         : null
     return [klavisState, ...managed, ...custom].filter(Boolean).join(',')
   }

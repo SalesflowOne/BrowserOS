@@ -29,12 +29,12 @@ export interface ActiveTurnInfo {
   prompt: string | null
 }
 
-interface Subscriber {
+export interface Subscriber {
   push(frame: TurnFrame): void
   end(): void
 }
 
-interface ActiveTurn {
+export interface ActiveTurn {
   turnId: string
   agentId: string
   sessionId: AgentSessionId
@@ -327,8 +327,10 @@ export class TurnRegistry {
         const pump = async () => {
           try {
             while (true) {
-              while (pendingFrames.length > 0) {
-                controller.enqueue(pendingFrames.shift()!)
+              let nextFrame = pendingFrames.shift()
+              while (nextFrame !== undefined) {
+                controller.enqueue(nextFrame)
+                nextFrame = pendingFrames.shift()
               }
               if (turn.status !== 'running' && pendingFrames.length === 0) {
                 break

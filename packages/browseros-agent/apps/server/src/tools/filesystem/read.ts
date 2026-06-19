@@ -1,18 +1,26 @@
 import { readFile } from 'node:fs/promises'
-import { extname, resolve } from 'node:path'
+import { extname } from 'node:path'
 import { tool } from 'ai'
 import { z } from 'zod'
+import { wrapUntrusted } from '../browser/trust-boundary'
 import {
   executeWithMetrics,
   type FilesystemToolResult,
   IMAGE_EXTENSIONS,
   IMAGE_MIME_TYPES,
+  isBrowserosStatePath,
   MAX_READ_CHARS,
   MAX_READ_LINES,
+  resolveBrowserToolOutputPath,
+  resolveWorkspacePath,
   toModelOutput,
 } from './utils'
 
 const TOOL_NAME = 'filesystem_read'
+
+export interface ReadToolOptions {
+  allowedOutputPaths?: ReadonlySet<string>
+}
 
 function createImageResult(
   path: string,
@@ -95,13 +103,66 @@ function formatReadResult(args: {
   return { text }
 }
 
-export function createReadTool(cwd: string) {
+const NO_WORKSPACE_READ_ERROR =
+  'No workspace selected. filesystem_read can only read BrowserOS-generated tool output files by absolute path.'
+
+function assertAllowedGeneratedOutputPath(
+  resolvedPath: string,
+  allowedOutputPaths: ReadonlySet<string>,
+): void {
+  if (!allowedOutputPaths.has(resolvedPath)) {
+    throw new Error(
+      'filesystem_read can only read BrowserOS-generated tool output files returned in this session.',
+    )
+  }
+}
+
+async function resolveGeneratedOutputPath(
+  inputPath: string,
+  allowedOutputPaths: ReadonlySet<string>,
+): Promise<string> {
+  if (!(await isBrowserosStatePath(inputPath))) {
+    throw new Error(NO_WORKSPACE_READ_ERROR)
+  }
+  const resolved = await resolveBrowserToolOutputPath(inputPath)
+  assertAllowedGeneratedOutputPath(resolved, allowedOutputPaths)
+  return resolved
+}
+
+async function resolveReadPath(
+  cwd: string | undefined,
+  inputPath: string,
+  allowedOutputPaths: ReadonlySet<string>,
+): Promise<string> {
+  if (!cwd)
+    return await resolveGeneratedOutputPath(inputPath, allowedOutputPaths)
+
+  try {
+    return await resolveWorkspacePath(cwd, inputPath)
+  } catch (error) {
+    if (error instanceof Error && (await isBrowserosStatePath(inputPath))) {
+      return await resolveBrowserToolOutputPath(inputPath)
+    }
+    throw error
+  }
+}
+
+/** Creates the read tool for workspace files, or generated browser outputs when no workspace exists. */
+export function createReadTool(cwd?: string, options: ReadToolOptions = {}) {
+  const allowedOutputPaths = options.allowedOutputPaths ?? new Set<string>()
+
   return tool({
-    description: `Read a file from the filesystem. Returns text content with line numbers, or image data for image files. Text reads are limited to ${MAX_READ_LINES} lines and ${MAX_READ_CHARS} characters per call. Use offset and limit to paginate through large files.`,
+    description: cwd
+      ? `Read a file from the filesystem. Returns text content with line numbers, or image data for image files. Text reads are limited to ${MAX_READ_LINES} lines and ${MAX_READ_CHARS} characters per call. Use offset and limit to paginate through large files.`
+      : `Read BrowserOS-generated tool output files by absolute path. Returns text content with line numbers, or image data for image files. Text reads are limited to ${MAX_READ_LINES} lines and ${MAX_READ_CHARS} characters per call. Use offset and limit to paginate through large files.`,
     inputSchema: z.object({
       path: z
         .string()
-        .describe('File path (relative to working directory or absolute)'),
+        .describe(
+          cwd
+            ? 'File path relative to the selected workspace'
+            : 'Absolute BrowserOS-generated tool output path returned by a browser tool',
+        ),
       offset: z
         .number()
         .optional()
@@ -115,7 +176,11 @@ export function createReadTool(cwd: string) {
     }),
     execute: (params) =>
       executeWithMetrics(TOOL_NAME, async () => {
-        const resolved = resolve(cwd, params.path)
+        const resolved = await resolveReadPath(
+          cwd,
+          params.path,
+          allowedOutputPaths,
+        )
         const ext = extname(resolved).toLowerCase()
 
         if (IMAGE_EXTENSIONS.has(ext)) {
@@ -136,12 +201,19 @@ export function createReadTool(cwd: string) {
 
         const selected = getSelectedLines(allLines, startIdx, params.limit)
         validateSelectedRange(selected, startIdx)
-        return formatReadResult({
+        const result = formatReadResult({
           selected,
           startIdx,
           totalLines,
           limit: params.limit,
         })
+        if (!cwd) {
+          return {
+            ...result,
+            text: wrapUntrusted(result.text, params.path),
+          }
+        }
+        return result
       }),
     toModelOutput,
   })
