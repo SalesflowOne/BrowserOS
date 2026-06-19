@@ -1,8 +1,12 @@
 import type { ProtocolApi } from '@browseros/cdp-protocol/protocol-api'
 import type { Observer } from './observer/observer'
+import {
+  createOverlayToken,
+  injectAnnotationOverlay,
+  removeAnnotationOverlay,
+} from './screenshot-overlay'
 import type { RefEntry } from './snapshot/refs'
 
-const ANNOTATION_OVERLAY_ATTR = 'data-browseros-screenshot-annotation'
 const OBJECT_GROUP = 'browseros-screenshot-annotations'
 
 export type ScreenshotFormat = 'png' | 'jpeg' | 'webp'
@@ -277,79 +281,6 @@ function parseRect(value: unknown): Rect | undefined {
   return { x, y, width, height }
 }
 
-async function injectAnnotationOverlay(
-  session: ProtocolApi,
-  token: string,
-  annotations: RawAnnotation[],
-): Promise<void> {
-  const items = JSON.stringify(
-    annotations.map((annotation) => ({
-      number: annotation.number,
-      x: round(annotation.rect.x),
-      y: round(annotation.rect.y),
-      width: round(annotation.rect.width),
-      height: round(annotation.rect.height),
-    })),
-  )
-  const overlayAttr = JSON.stringify(ANNOTATION_OVERLAY_ATTR)
-  const overlayToken = JSON.stringify(token)
-
-  await session.Runtime.evaluate({
-    expression: `(() => {
-      var items = ${items};
-      var attr = ${overlayAttr};
-      var token = ${overlayToken};
-      var existing = document.querySelectorAll('[' + attr + ']');
-      for (var j = 0; j < existing.length; j++) {
-        if (existing[j].getAttribute(attr) === token) existing[j].remove();
-      }
-      var sx = window.scrollX || 0;
-      var sy = window.scrollY || 0;
-      var c = document.createElement('div');
-      c.setAttribute(attr, token);
-      c.style.cssText = 'position:absolute;top:0;left:0;width:0;height:0;pointer-events:none;z-index:2147483647;';
-      for (var i = 0; i < items.length; i++) {
-        var it = items[i];
-        var dx = it.x + sx;
-        var dy = it.y + sy;
-        var b = document.createElement('div');
-        b.style.cssText = 'position:absolute;left:' + dx + 'px;top:' + dy + 'px;width:' + it.width + 'px;height:' + it.height + 'px;border:2px solid rgba(255,0,0,0.8);box-sizing:border-box;pointer-events:none;';
-        var l = document.createElement('div');
-        l.textContent = String(it.number);
-        var labelTop = dy < 14 ? '2px' : '-14px';
-        l.style.cssText = 'position:absolute;top:' + labelTop + ';left:-2px;background:rgba(255,0,0,0.9);color:#fff;font:bold 11px/14px monospace;padding:0 4px;border-radius:2px;white-space:nowrap;';
-        b.appendChild(l);
-        c.appendChild(b);
-      }
-      document.documentElement.appendChild(c);
-      return true;
-    })()`,
-    returnByValue: true,
-    awaitPromise: false,
-  })
-}
-
-async function removeAnnotationOverlay(
-  session: ProtocolApi,
-  token: string,
-): Promise<void> {
-  const overlayAttr = JSON.stringify(ANNOTATION_OVERLAY_ATTR)
-  const overlayToken = JSON.stringify(token)
-  await session.Runtime.evaluate({
-    expression: `(() => {
-      var attr = ${overlayAttr};
-      var token = ${overlayToken};
-      var existing = document.querySelectorAll('[' + attr + ']');
-      for (var i = 0; i < existing.length; i++) {
-        if (existing[i].getAttribute(attr) === token) existing[i].remove();
-      }
-      return true;
-    })()`,
-    returnByValue: true,
-    awaitPromise: false,
-  })
-}
-
 async function readViewportRect(session: ProtocolApi): Promise<Rect> {
   const result = await session.Runtime.evaluate({
     expression:
@@ -450,10 +381,6 @@ async function releaseObjectGroup(sessions: Set<ProtocolApi>): Promise<void> {
       ),
     ),
   )
-}
-
-function createOverlayToken(): string {
-  return `browseros-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
 function annotationNumber(ref: string): number {
