@@ -1,9 +1,9 @@
 diff --git a/chrome/browser/extensions/api/browser_os/browser_os_api.cc b/chrome/browser/extensions/api/browser_os/browser_os_api.cc
 new file mode 100644
-index 0000000000000..62fdae9e171ae
+index 0000000000000..ea477521a09d7
 --- /dev/null
 +++ b/chrome/browser/extensions/api/browser_os/browser_os_api.cc
-@@ -0,0 +1,333 @@
+@@ -0,0 +1,341 @@
 +// Copyright 2024 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -11,6 +11,7 @@ index 0000000000000..62fdae9e171ae
 +#include "chrome/browser/extensions/api/browser_os/browser_os_api.h"
 +
 +#include <algorithm>
++#include <memory>
 +#include <optional>
 +#include <string>
 +#include <utility>
@@ -23,7 +24,7 @@ index 0000000000000..62fdae9e171ae
 +#include "base/version_info/version_info.h"
 +#include "chrome/browser/browser_process.h"
 +#include "chrome/browser/browseros/metrics/browseros_metrics.h"
-+#include "chrome/browser/infobars/simple_alert_infobar_creator.h"
++#include "chrome/browser/infobars/confirm_infobar_creator.h"
 +#include "chrome/browser/platform_util.h"
 +#include "chrome/browser/profiles/profile.h"
 +#include "chrome/browser/ui/browser.h"
@@ -35,7 +36,9 @@ index 0000000000000..62fdae9e171ae
 +#include "chrome/browser/ui/toasts/toast_controller.h"
 +#include "chrome/common/extensions/api/browser_os.h"
 +#include "components/infobars/content/content_infobar_manager.h"
++#include "components/infobars/core/infobar.h"
 +#include "components/infobars/core/infobar_delegate.h"
++#include "components/infobars/core/simple_alert_infobar_delegate.h"
 +#include "components/prefs/pref_service.h"
 +#include "content/public/browser/web_contents.h"
 +#include "ui/shell_dialogs/selected_file_info.h"
@@ -325,14 +328,19 @@ index 0000000000000..62fdae9e171ae
 +    return RespondNow(Error("InfoBar manager unavailable"));
 +  }
 +
-+  CreateSimpleAlertInfoBar(
-+      infobar_manager,
-+      infobars::InfoBarDelegate::BROWSEROS_EXTENSION_INFOBAR_DELEGATE, nullptr,
-+      base::UTF8ToUTF16(params->message), /*auto_expire=*/true,
-+      /*should_animate=*/true, /*closeable=*/true);
++  const bool shown =
++      infobar_manager
++          ->AddInfoBar(CreateConfirmInfoBar(
++              std::make_unique<SimpleAlertInfoBarDelegate>(
++                  infobars::InfoBarDelegate::
++                      BROWSEROS_EXTENSION_INFOBAR_DELEGATE,
++                  nullptr, base::UTF8ToUTF16(params->message),
++                  /*auto_expire=*/true, /*should_animate=*/true,
++                  /*closeable=*/true)))
++          != nullptr;
 +
 +  return RespondNow(
-+      ArgumentList(browser_os::ShowInfoBar::Results::Create(true)));
++      ArgumentList(browser_os::ShowInfoBar::Results::Create(shown)));
 +}
 +
 +}  // namespace api
