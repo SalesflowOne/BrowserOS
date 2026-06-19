@@ -55,7 +55,7 @@ function buildInlineEnv(
   const inlineEnv: Record<string, string> = {}
   for (const key of INLINED_ENV_VARS) {
     const value = process.env[key] ?? fileEnv[key]
-    if (value !== undefined) {
+    if (value !== undefined && value.trim().length > 0) {
       inlineEnv[key] = value
     }
   }

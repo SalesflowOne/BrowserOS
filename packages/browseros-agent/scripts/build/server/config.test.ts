@@ -92,6 +92,18 @@ describe('server build config', () => {
     expect(config.envVars.AGENT_RUNNER_JWT_SECRET).toBeUndefined()
   })
 
+  it('treats an empty AGENT_RUNNER_JWT_SECRET as absent', async () => {
+    const rootDir = await writeProdRoot({
+      ...REQUIRED_INLINE_ENV,
+      ...R2_ENV,
+      AGENT_RUNNER_JWT_SECRET: '',
+    })
+
+    const config = loadBuildConfig(rootDir)
+
+    expect(config.envVars.AGENT_RUNNER_JWT_SECRET).toBeUndefined()
+  })
+
   async function writeProdRoot(env: Record<string, string>): Promise<string> {
     tempRoot = await mkdtemp(join(tmpdir(), 'browseros-build-config-test-'))
     const serverDir = join(tempRoot, 'apps/server')
