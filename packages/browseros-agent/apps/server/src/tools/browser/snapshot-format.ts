@@ -1,9 +1,12 @@
 import { writeTempToolOutputFile } from './output-file'
-import { estimateTextTokens } from './token-estimate'
+import {
+  estimateTextTokens,
+  sliceTextByEstimatedTokens,
+} from './token-estimate'
 import { wrapUntrusted } from './trust-boundary'
 
 const LARGE_SNAPSHOT_TOKEN_THRESHOLD = 15_000
-const MAX_SAVE_FAILURE_EXCERPT_CHARS = 4_000
+const MAX_INLINE_EXCERPT_TOKENS = 5_000
 
 export interface FormattedSnapshot {
   text: string
@@ -21,6 +24,10 @@ export async function formatSnapshotResult(
   const tokenEstimate = estimateTextTokens(wrappedSnapshot)
 
   if (tokenEstimate > LARGE_SNAPSHOT_TOKEN_THRESHOLD) {
+    const excerpt = sliceTextByEstimatedTokens(
+      snapshotText,
+      MAX_INLINE_EXCERPT_TOKENS,
+    )
     try {
       const path = await writeTempToolOutputFile({
         toolName: 'snapshot',
@@ -32,6 +39,8 @@ export async function formatSnapshotResult(
         text: [
           `Large snapshot (${tokenEstimate} estimated tokens, ${contentLength} chars) saved to: ${path}`,
           'Read the file for the full snapshot and refs.',
+          `Showing the first ${MAX_INLINE_EXCERPT_TOKENS} estimated tokens inline:`,
+          wrapUntrusted(excerpt, origin),
         ].join('\n'),
         structured: {
           path,
@@ -42,11 +51,10 @@ export async function formatSnapshotResult(
       }
     } catch (error) {
       const saveError = error instanceof Error ? error.message : String(error)
-      const excerpt = snapshotText.slice(0, MAX_SAVE_FAILURE_EXCERPT_CHARS)
       return {
         text: [
           `Large snapshot (${tokenEstimate} estimated tokens, ${contentLength} chars) could not be saved to a BrowserOS output file: ${saveError}`,
-          `Showing the first ${excerpt.length} chars instead:`,
+          `Showing the first ${MAX_INLINE_EXCERPT_TOKENS} estimated tokens instead:`,
           wrapUntrusted(excerpt, origin),
         ].join('\n'),
         structured: {
