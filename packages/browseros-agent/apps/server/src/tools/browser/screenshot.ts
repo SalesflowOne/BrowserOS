@@ -8,16 +8,26 @@ export const screenshot = defineTool({
   input: z.object({
     page: z.number().int(),
     fullPage: z.boolean().optional().describe('Capture beyond the viewport.'),
+    annotate: z
+      .boolean()
+      .optional()
+      .describe('Overlay numbered refs from a fresh snapshot. Defaults true.'),
   }),
   annotations: { readOnlyHint: true },
   handler: async (args, ctx) => {
-    const { session } = await ctx.session.pages.getSession(args.page)
-    const result = await session.Page.captureScreenshot({
+    const result = await ctx.session.screenshot(args.page, {
       format: 'png',
-      captureBeyondViewport: args.fullPage ?? false,
+      fullPage: args.fullPage ?? false,
+      annotate: args.annotate ?? true,
     })
     return {
       content: [{ type: 'image', data: result.data, mimeType: 'image/png' }],
+      ...(result.annotations.length > 0 && {
+        structuredContent: {
+          page: args.page,
+          annotations: result.annotations,
+        },
+      }),
     }
   },
 })

@@ -1472,6 +1472,11 @@ return 'late'
         },
       }),
       input: () => input,
+      screenshot: async () => ({
+        data: 'png-data',
+        mimeType: 'image/png',
+        annotations: [],
+      }),
       pages: {
         getInfo: () => ({ url: 'https://example.com' }),
         refresh: async () => ({ url: 'https://example.com' }),

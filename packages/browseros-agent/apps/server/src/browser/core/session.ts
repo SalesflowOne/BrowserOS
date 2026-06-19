@@ -4,6 +4,11 @@ import { Navigation } from './navigation'
 import { FrameRegistry } from './observer/frames'
 import { Observer } from './observer/observer'
 import { PageManager, type PageManagerHooks } from './pages'
+import {
+  captureScreenshotWithAnnotations,
+  type ScreenshotCaptureOptions,
+  type ScreenshotCaptureResult,
+} from './screenshot'
 import { WindowManager } from './windows'
 
 export interface BrowserSessionHooks extends PageManagerHooks {}
@@ -51,6 +56,19 @@ export class BrowserSession {
   /** Navigation (url/back/forward/reload) for a page. */
   nav(pageId: number): Navigation {
     return new Navigation(this.pages, pageId)
+  }
+
+  /** Captures a page screenshot, optionally overlaying current snapshot refs. */
+  async screenshot(
+    pageId: number,
+    options: ScreenshotCaptureOptions = {},
+  ): Promise<ScreenshotCaptureResult> {
+    const { session } = await this.pages.getSession(pageId)
+    return captureScreenshotWithAnnotations({
+      pageSession: session,
+      observer: this.observe(pageId),
+      options,
+    })
   }
 
   /** Raw CDP escape hatch for `run` code, e.g. cdp("Page.navigate", { url }). */
