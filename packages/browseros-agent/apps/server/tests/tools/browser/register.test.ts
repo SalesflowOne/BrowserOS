@@ -59,6 +59,22 @@ function createFakeServer() {
   }
 }
 
+function textOf(result: { content?: unknown } | undefined): string {
+  if (!Array.isArray(result?.content)) return ''
+  return result.content
+    .filter(
+      (item): item is { type: 'text'; text: string } =>
+        typeof item === 'object' &&
+        item !== null &&
+        'type' in item &&
+        item.type === 'text' &&
+        'text' in item &&
+        typeof item.text === 'string',
+    )
+    .map((item) => item.text)
+    .join('\n')
+}
+
 async function withBrowserosDir<T>(run: () => Promise<T>): Promise<T> {
   const previous = process.env.BROWSEROS_DIR
   const browserosDir = mkdtempSync(join(tmpdir(), 'browseros-output-test-'))
@@ -812,6 +828,8 @@ return 'late'
       })
 
       expect(result?.isError).toBeFalsy()
+      const text = textOf(result)
+      const savedPath = text.match(/saved to: (.+\.md)/)?.[1]
       expect(result?.structuredContent).toEqual({
         kind: 'click',
         changed: true,
@@ -839,14 +857,9 @@ return 'late'
           }),
         ]),
       )
-      expect(result?.content).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            type: 'text',
-            text: expect.not.stringContaining(lastMarker),
-          }),
-        ]),
-      )
+      expect(text).not.toContain(lastMarker)
+      await expectBrowserToolOutputPath(savedPath)
+      expect(readFileSync(savedPath ?? '', 'utf8')).toContain(lastMarker)
     })
   })
 
@@ -1180,13 +1193,10 @@ return 'late'
     expect(JSON.stringify(result?.structuredContent)).not.toContain('path')
   })
 
-  it('returns below-token-threshold snapshots inline', async () => {
+  it('returns word-threshold-only snapshots inline', async () => {
     await withBrowserosDir(async () => {
       const fake = createFakeServer()
-      const inlineSnapshot = Array.from(
-        { length: 4500 },
-        (_, i) => `node-${i}`,
-      ).join(' ')
+      const inlineSnapshot = `${'x '.repeat(15_001)}last-node`
       const session = {
         observe: () => ({
           snapshot: async () => ({ text: inlineSnapshot }),
@@ -1212,7 +1222,7 @@ return 'late'
       expect(result?.content).toEqual([
         expect.objectContaining({
           type: 'text',
-          text: expect.stringContaining('node-4499'),
+          text: expect.stringContaining('last-node'),
         }),
       ])
       expect(result?.content).toEqual([
