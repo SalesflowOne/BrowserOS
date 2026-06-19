@@ -2,7 +2,8 @@ import type { ProtocolApi } from '@browseros/cdp-protocol/protocol-api'
 import type { Observer } from './observer/observer'
 import type { RefEntry } from './snapshot/refs'
 
-const ANNOTATION_OVERLAY_ID = '__browseros_screenshot_annotations__'
+const ANNOTATION_OVERLAY_ATTR = 'data-browseros-screenshot-annotation'
+const OBJECT_GROUP = 'browseros-screenshot-annotations'
 
 export type ScreenshotFormat = 'png' | 'jpeg' | 'webp'
 
@@ -55,6 +56,11 @@ interface RawAnnotation {
   rect: Rect
 }
 
+interface FrameTreeNode {
+  frame: { id: string }
+  childFrames?: FrameTreeNode[]
+}
+
 /** Captures a screenshot, optionally painting current snapshot refs into a temporary page overlay. */
 export async function captureScreenshotWithAnnotations({
   pageSession,
@@ -63,14 +69,23 @@ export async function captureScreenshotWithAnnotations({
 }: CaptureInput): Promise<ScreenshotCaptureResult> {
   const format = options.format ?? 'png'
   const fullPage = options.fullPage ?? false
+  const annotate = options.annotate ?? true
   let annotations: RawAnnotation[] = []
   let overlayInjected = false
+  const overlayToken = createOverlayToken()
+  const objectSessions = new Set<ProtocolApi>()
 
   try {
-    if (options.annotate) {
-      annotations = await collectAnnotations(pageSession, observer)
+    if (annotate) {
+      const captureArea = fullPage
+        ? undefined
+        : await readViewportRect(pageSession).catch(() => undefined)
+      annotations = clipAnnotations(
+        await collectAnnotations(pageSession, observer, objectSessions),
+        captureArea,
+      )
       if (annotations.length > 0) {
-        await injectAnnotationOverlay(pageSession, annotations)
+        await injectAnnotationOverlay(pageSession, overlayToken, annotations)
         overlayInjected = true
       }
     }
@@ -93,21 +108,25 @@ export async function captureScreenshotWithAnnotations({
     }
   } finally {
     if (overlayInjected) {
-      await removeAnnotationOverlay(pageSession).catch(() => {})
+      await removeAnnotationOverlay(pageSession, overlayToken).catch(() => {})
     }
+    await releaseObjectGroup(objectSessions)
   }
 }
 
 async function collectAnnotations(
   pageSession: ProtocolApi,
   observer: Observer,
+  objectSessions: Set<ProtocolApi>,
 ): Promise<RawAnnotation[]> {
   const snapshot = await observer.snapshot()
   const entries = [...snapshot.refs.byRef.values()].sort(
     (left, right) => annotationNumber(left.ref) - annotationNumber(right.ref),
   )
   const annotations = await Promise.all(
-    entries.map((entry) => collectAnnotation(pageSession, observer, entry)),
+    entries.map((entry) =>
+      collectAnnotation(pageSession, observer, objectSessions, entry),
+    ),
   )
   return annotations.filter((item): item is RawAnnotation => item !== undefined)
 }
@@ -115,6 +134,7 @@ async function collectAnnotations(
 async function collectAnnotation(
   pageSession: ProtocolApi,
   observer: Observer,
+  objectSessions: Set<ProtocolApi>,
   entry: RefEntry,
 ): Promise<RawAnnotation | undefined> {
   try {
@@ -122,13 +142,19 @@ async function collectAnnotation(
     const localRect = await readElementRect(
       resolved.session,
       resolved.backendNodeId,
+      objectSessions,
     )
     if (!localRect) return undefined
 
     const rect =
       entry.frameId === undefined
         ? localRect
-        : await projectFrameRect(pageSession, entry.frameId, localRect)
+        : await projectFrameRect(
+            pageSession,
+            objectSessions,
+            entry.frameId,
+            localRect,
+          )
     if (!rect) return undefined
 
     return {
@@ -145,14 +171,17 @@ async function collectAnnotation(
 
 async function projectFrameRect(
   pageSession: ProtocolApi,
+  objectSessions: Set<ProtocolApi>,
   frameId: string,
   rect: Rect,
 ): Promise<Rect | undefined> {
   try {
+    if ((await frameDepth(pageSession, frameId)) !== 1) return undefined
     const owner = await pageSession.DOM.getFrameOwner({ frameId })
     const offset = await readFrameContentOffset(
       pageSession,
       owner.backendNodeId,
+      objectSessions,
     )
     if (!offset) return undefined
     return {
@@ -169,8 +198,9 @@ async function projectFrameRect(
 async function readElementRect(
   session: ProtocolApi,
   backendNodeId: number,
+  objectSessions: Set<ProtocolApi>,
 ): Promise<Rect | undefined> {
-  const objectId = await resolveObjectId(session, backendNodeId)
+  const objectId = await resolveObjectId(session, backendNodeId, objectSessions)
   if (!objectId) return undefined
 
   const result = await session.Runtime.callFunctionOn({
@@ -187,8 +217,9 @@ async function readElementRect(
 async function readFrameContentOffset(
   session: ProtocolApi,
   backendNodeId: number,
+  objectSessions: Set<ProtocolApi>,
 ): Promise<{ x: number; y: number } | undefined> {
-  const objectId = await resolveObjectId(session, backendNodeId)
+  const objectId = await resolveObjectId(session, backendNodeId, objectSessions)
   if (!objectId) return undefined
 
   const result = await session.Runtime.callFunctionOn({
@@ -209,13 +240,16 @@ async function readFrameContentOffset(
 async function resolveObjectId(
   session: ProtocolApi,
   backendNodeId: number,
+  objectSessions: Set<ProtocolApi>,
 ): Promise<string | undefined> {
   try {
     const resolved = await session.DOM.resolveNode({
       backendNodeId,
-      objectGroup: 'browseros-screenshot-annotations',
+      objectGroup: OBJECT_GROUP,
     })
-    return resolved.object?.objectId
+    const objectId = resolved.object?.objectId
+    if (objectId) objectSessions.add(session)
+    return objectId
   } catch {
     return undefined
   }
@@ -245,6 +279,7 @@ function parseRect(value: unknown): Rect | undefined {
 
 async function injectAnnotationOverlay(
   session: ProtocolApi,
+  token: string,
   annotations: RawAnnotation[],
 ): Promise<void> {
   const items = JSON.stringify(
@@ -256,18 +291,22 @@ async function injectAnnotationOverlay(
       height: round(annotation.rect.height),
     })),
   )
-  const overlayId = JSON.stringify(ANNOTATION_OVERLAY_ID)
+  const overlayAttr = JSON.stringify(ANNOTATION_OVERLAY_ATTR)
+  const overlayToken = JSON.stringify(token)
 
   await session.Runtime.evaluate({
     expression: `(() => {
       var items = ${items};
-      var id = ${overlayId};
-      var existing = document.getElementById(id);
-      if (existing) existing.remove();
+      var attr = ${overlayAttr};
+      var token = ${overlayToken};
+      var existing = document.querySelectorAll('[' + attr + ']');
+      for (var j = 0; j < existing.length; j++) {
+        if (existing[j].getAttribute(attr) === token) existing[j].remove();
+      }
       var sx = window.scrollX || 0;
       var sy = window.scrollY || 0;
       var c = document.createElement('div');
-      c.id = id;
+      c.setAttribute(attr, token);
       c.style.cssText = 'position:absolute;top:0;left:0;width:0;height:0;pointer-events:none;z-index:2147483647;';
       for (var i = 0; i < items.length; i++) {
         var it = items[i];
@@ -290,17 +329,42 @@ async function injectAnnotationOverlay(
   })
 }
 
-async function removeAnnotationOverlay(session: ProtocolApi): Promise<void> {
-  const overlayId = JSON.stringify(ANNOTATION_OVERLAY_ID)
+async function removeAnnotationOverlay(
+  session: ProtocolApi,
+  token: string,
+): Promise<void> {
+  const overlayAttr = JSON.stringify(ANNOTATION_OVERLAY_ATTR)
+  const overlayToken = JSON.stringify(token)
   await session.Runtime.evaluate({
     expression: `(() => {
-      var el = document.getElementById(${overlayId});
-      if (el) el.remove();
+      var attr = ${overlayAttr};
+      var token = ${overlayToken};
+      var existing = document.querySelectorAll('[' + attr + ']');
+      for (var i = 0; i < existing.length; i++) {
+        if (existing[i].getAttribute(attr) === token) existing[i].remove();
+      }
       return true;
     })()`,
     returnByValue: true,
     awaitPromise: false,
   })
+}
+
+async function readViewportRect(session: ProtocolApi): Promise<Rect> {
+  const result = await session.Runtime.evaluate({
+    expression:
+      '({x:0,y:0,width:window.innerWidth||0,height:window.innerHeight||0})',
+    returnByValue: true,
+    awaitPromise: false,
+  })
+  return (
+    parseRect(result.result?.value) ?? {
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0,
+    }
+  )
 }
 
 async function readScrollOffsets(
@@ -336,6 +400,60 @@ function projectAnnotations(
       height: round(annotation.rect.height),
     },
   }))
+}
+
+function clipAnnotations(
+  annotations: RawAnnotation[],
+  captureArea: Rect | undefined,
+): RawAnnotation[] {
+  if (!captureArea || captureArea.width <= 0 || captureArea.height <= 0) {
+    return annotations
+  }
+  return annotations.flatMap((annotation) => {
+    const rect = intersectRects(annotation.rect, captureArea)
+    return rect ? [{ ...annotation, rect }] : []
+  })
+}
+
+function intersectRects(left: Rect, right: Rect): Rect | undefined {
+  const x1 = Math.max(left.x, right.x)
+  const y1 = Math.max(left.y, right.y)
+  const x2 = Math.min(left.x + left.width, right.x + right.width)
+  const y2 = Math.min(left.y + left.height, right.y + right.height)
+  if (x2 <= x1 || y2 <= y1) return undefined
+  return { x: x1, y: y1, width: x2 - x1, height: y2 - y1 }
+}
+
+async function frameDepth(
+  pageSession: ProtocolApi,
+  frameId: string,
+): Promise<number | undefined> {
+  const result = await pageSession.Page.getFrameTree()
+
+  function visit(node: FrameTreeNode): number | undefined {
+    if (node.frame.id === frameId) return 0
+    for (const child of node.childFrames ?? []) {
+      const depth = visit(child)
+      if (depth !== undefined) return depth + 1
+    }
+    return undefined
+  }
+
+  return visit(result.frameTree as FrameTreeNode)
+}
+
+async function releaseObjectGroup(sessions: Set<ProtocolApi>): Promise<void> {
+  await Promise.all(
+    [...sessions].map((session) =>
+      session.Runtime.releaseObjectGroup({ objectGroup: OBJECT_GROUP }).catch(
+        () => {},
+      ),
+    ),
+  )
+}
+
+function createOverlayToken(): string {
+  return `browseros-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
 function annotationNumber(ref: string): number {

@@ -19,7 +19,12 @@ function createRefs(): RefMap {
   return refs
 }
 
-function createHarness(options: { rejectCapture?: boolean } = {}) {
+function createHarness(
+  options: {
+    rect?: { x: number; y: number; width: number; height: number }
+    rejectCapture?: boolean
+  } = {},
+) {
   const events: string[] = []
   const expressions: string[] = []
   const refs = createRefs()
@@ -35,7 +40,12 @@ function createHarness(options: { rejectCapture?: boolean } = {}) {
         events.push(`bounds:${objectId}`)
         return {
           result: {
-            value: { x: 10.6, y: 20.5, width: 40.2, height: 15.4 },
+            value: options.rect ?? {
+              x: 10.6,
+              y: 20.5,
+              width: 40.2,
+              height: 15.4,
+            },
           },
         }
       },
@@ -45,14 +55,23 @@ function createHarness(options: { rejectCapture?: boolean } = {}) {
           events.push('scroll')
           return { result: { value: { x: 5, y: 100 } } }
         }
+        if (expression.trim().startsWith('({x:0,y:0,width:')) {
+          events.push('viewport')
+          return {
+            result: { value: { x: 0, y: 0, width: 800, height: 600 } },
+          }
+        }
         if (expression.includes('createElement')) {
           events.push('inject')
-        } else if (expression.includes('document.getElementById')) {
+        } else if (expression.includes('querySelectorAll')) {
           events.push('remove')
         } else {
           events.push('evaluate')
         }
         return { result: { value: true } }
+      },
+      releaseObjectGroup: async () => {
+        events.push('release')
       },
     },
     Page: {
@@ -90,10 +109,11 @@ describe('captureScreenshotWithAnnotations', () => {
     const result = await captureScreenshotWithAnnotations({
       pageSession: harness.pageSession as never,
       observer: harness.observer as never,
-      options: { format: 'png', fullPage: false, annotate: true },
+      options: { format: 'png', fullPage: false },
     })
 
     expect(harness.events).toEqual([
+      'viewport',
       'snapshot',
       'ref:e1',
       'resolve:101',
@@ -101,11 +121,13 @@ describe('captureScreenshotWithAnnotations', () => {
       'inject',
       'capture:false',
       'remove',
+      'release',
     ])
-    expect(harness.expressions[0]).toContain(
-      '__browseros_screenshot_annotations__',
+    expect(harness.expressions[1]).toContain(
+      'data-browseros-screenshot-annotation',
     )
-    expect(harness.expressions[0]).toContain('"number":1')
+    expect(harness.expressions[1]).not.toContain('getElementById')
+    expect(harness.expressions[1]).toContain('"number":1')
     expect(result).toEqual({
       data: 'png-data',
       mimeType: 'image/png',
@@ -153,6 +175,7 @@ describe('captureScreenshotWithAnnotations', () => {
     ).rejects.toThrow('capture failed')
 
     expect(harness.events).toEqual([
+      'viewport',
       'snapshot',
       'ref:e1',
       'resolve:101',
@@ -160,6 +183,7 @@ describe('captureScreenshotWithAnnotations', () => {
       'inject',
       'capture:false',
       'remove',
+      'release',
     ])
   })
 
@@ -181,12 +205,32 @@ describe('captureScreenshotWithAnnotations', () => {
       'capture:true',
       'scroll',
       'remove',
+      'release',
     ])
     expect(result.annotations[0]?.box).toEqual({
       x: 16,
       y: 121,
       width: 40,
       height: 15,
+    })
+  })
+
+  it('clips viewport annotations to the visible screenshot area', async () => {
+    const harness = createHarness({
+      rect: { x: -5, y: 10, width: 20, height: 20 },
+    })
+
+    const result = await captureScreenshotWithAnnotations({
+      pageSession: harness.pageSession as never,
+      observer: harness.observer as never,
+      options: { format: 'png', fullPage: false },
+    })
+
+    expect(result.annotations[0]?.box).toEqual({
+      x: 0,
+      y: 10,
+      width: 15,
+      height: 20,
     })
   })
 })
