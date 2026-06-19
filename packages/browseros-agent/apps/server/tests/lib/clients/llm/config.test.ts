@@ -31,13 +31,14 @@ describe('resolveLLMConfig', () => {
   })
 
   it('defaults ChatGPT Plus/Pro OAuth providers to GPT-5.5', async () => {
+    const browserosId = 'browseros-id'
     const dir = mkdtempSync(join(tmpdir(), 'browseros-llm-config-test-'))
     tempDirs.push(dir)
     const handle = initializeDb({
       dbPath: join(dir, 'db', 'browseros.sqlite'),
     })
-    initializeOAuth(handle.db, 'browseros-id')
-    new OAuthTokenStore(handle.db).upsertTokens('browseros-id', 'chatgpt-pro', {
+    initializeOAuth(handle.db, browserosId)
+    new OAuthTokenStore(handle.db).upsertTokens(browserosId, 'chatgpt-pro', {
       accessToken: 'access-token',
       refreshToken: 'refresh-token',
       expiresAt: Date.now() + 3600_000,
@@ -46,7 +47,7 @@ describe('resolveLLMConfig', () => {
 
     const resolved = await resolveLLMConfig(
       { provider: LLM_PROVIDERS.CHATGPT_PRO },
-      'browseros-id',
+      browserosId,
     )
 
     expect(resolved).toMatchObject({

@@ -132,7 +132,9 @@ describe('browser tool framework post-actions', () => {
 
   it('writes large snapshot post-actions to a BrowserOS output file', async () => {
     await withBrowserosDir(async () => {
-      const largeSnapshot = `${'x '.repeat(23_000)}last-node`
+      const firstMarker = 'first-node'
+      const lastMarker = 'last-node'
+      const largeSnapshot = `${firstMarker}\n${'x '.repeat(23_000)}${lastMarker}`
       const postActionTool = defineTool({
         name: 'large_snapshot_post_action_test',
         description: 'Test large snapshot post-action execution.',
@@ -159,15 +161,19 @@ describe('browser tool framework post-actions', () => {
       expect(text).toContain('[Page 8 snapshot]')
       expect(text).toContain('estimated tokens')
       expect(savedPath).toBeTruthy()
-      expect(text).not.toContain('last-node')
-      expect(text).not.toContain('[UNTRUSTED_PAGE_CONTENT')
-      expect(readFileSync(savedPath ?? '', 'utf8')).toContain('last-node')
+      expect(text).toContain('Showing the first 5000 estimated tokens inline')
+      expect(text).toContain('[UNTRUSTED_PAGE_CONTENT')
+      expect(text).toContain(firstMarker)
+      expect(text).not.toContain(lastMarker)
+      expect(readFileSync(savedPath ?? '', 'utf8')).toContain(lastMarker)
     })
   })
 
   it('keeps large snapshot post-actions visible when output file writes fail', async () => {
     await withBrowserosFile(async () => {
-      const largeSnapshot = `${'x '.repeat(23_000)}last-node`
+      const firstMarker = 'first-node'
+      const lastMarker = 'last-node'
+      const largeSnapshot = `${firstMarker}\n${'x '.repeat(23_000)}${lastMarker}`
       const postActionTool = defineTool({
         name: 'large_snapshot_post_action_failure_test',
         description: 'Test failed large snapshot post-action output.',
@@ -194,8 +200,9 @@ describe('browser tool framework post-actions', () => {
       expect(text).toContain('could not be saved to a BrowserOS output file')
       expect(text).toContain('Showing the first')
       expect(text).toContain('[UNTRUSTED_PAGE_CONTENT')
+      expect(text).toContain(firstMarker)
       expect(text).toContain('x x x')
-      expect(text).not.toContain('last-node')
+      expect(text).not.toContain(lastMarker)
     })
   })
 
@@ -247,8 +254,9 @@ describe('browser tool framework post-actions', () => {
 
   it('writes large diff post-actions to a BrowserOS output file', async () => {
     await withBrowserosDir(async () => {
+      const firstMarker = 'first-diff-node'
       const lastMarker = 'last-diff-node'
-      const largeDiff = `${'x'.repeat(30_001)}\n${lastMarker}`
+      const largeDiff = `${firstMarker}\n${'x'.repeat(30_001)}\n${lastMarker}`
       const postActionTool = defineTool({
         name: 'large_diff_post_action_test',
         description: 'Test large diff post-action execution.',
@@ -281,16 +289,19 @@ describe('browser tool framework post-actions', () => {
       expect(text).toContain('[Page 4 diff]')
       expect(text).toContain('estimated tokens')
       expect(savedPath).toBeTruthy()
+      expect(text).toContain('Showing the first 5000 estimated tokens inline')
+      expect(text).toContain('[UNTRUSTED_PAGE_CONTENT')
+      expect(text).toContain(firstMarker)
       expect(text).not.toContain(lastMarker)
-      expect(text).not.toContain('[UNTRUSTED_PAGE_CONTENT')
       expect(readFileSync(savedPath ?? '', 'utf8')).toContain(lastMarker)
     })
   })
 
   it('keeps large diff post-actions visible when output file writes fail', async () => {
     await withBrowserosFile(async () => {
+      const firstMarker = 'first-diff-node'
       const lastMarker = 'last-diff-node'
-      const largeDiff = `${'x'.repeat(30_001)}\n${lastMarker}`
+      const largeDiff = `${firstMarker}\n${'x'.repeat(30_001)}\n${lastMarker}`
       const postActionTool = defineTool({
         name: 'large_diff_post_action_failure_test',
         description: 'Test failed large diff post-action output.',
@@ -323,6 +334,7 @@ describe('browser tool framework post-actions', () => {
       expect(text).toContain('saving it to a BrowserOS output file failed')
       expect(text).toContain('Showing the first')
       expect(text).toContain('[UNTRUSTED_PAGE_CONTENT')
+      expect(text).toContain(firstMarker)
       expect(text).toContain('xxx')
       expect(text).not.toContain(lastMarker)
     })

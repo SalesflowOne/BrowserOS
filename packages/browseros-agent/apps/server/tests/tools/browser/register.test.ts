@@ -873,8 +873,9 @@ return 'late'
   it('writes large direct diffs to a BrowserOS output markdown file', async () => {
     await withBrowserosDir(async () => {
       const fake = createFakeServer()
+      const firstMarker = 'first-diff-node'
       const lastMarker = 'last-diff-node'
-      const largeDiff = `${'x'.repeat(30_001)}\n${lastMarker}`
+      const largeDiff = `${firstMarker}\n${'x'.repeat(30_001)}\n${lastMarker}`
       const session = {
         observe: () => ({
           diff: async () => ({
@@ -893,6 +894,7 @@ return 'late'
       registerBrowserTools(fake.server as never, session)
 
       const result = await fake.handlers.get('diff')?.({ page: 1 })
+      const text = textOf(result)
 
       expect(result?.isError).toBeFalsy()
       const data = result?.structuredContent as
@@ -935,6 +937,9 @@ return 'late'
           text: expect.not.stringContaining(lastMarker),
         }),
       ])
+      expect(text).toContain('Showing the first 5000 estimated tokens inline')
+      expect(text).toContain('[UNTRUSTED_PAGE_CONTENT')
+      expect(text).toContain(firstMarker)
       const savedContent = readFileSync(savedPath ?? '', 'utf8')
       expect(savedContent).toContain('[UNTRUSTED_PAGE_CONTENT')
       expect(savedContent).toContain(lastMarker)
@@ -1018,8 +1023,9 @@ return 'late'
   it('writes large URL-change act readbacks to a BrowserOS output file', async () => {
     await withBrowserosDir(async () => {
       const fake = createFakeServer()
+      const firstMarker = 'destination-first-node'
       const lastMarker = 'destination-final-node'
-      const largeSnapshot = `${'x'.repeat(30_001)}\n${lastMarker}`
+      const largeSnapshot = `${firstMarker}\n${'x'.repeat(30_001)}\n${lastMarker}`
       const session = {
         input: () => ({
           click: async () => undefined,
@@ -1079,6 +1085,9 @@ return 'late'
         ]),
       )
       expect(text).not.toContain(lastMarker)
+      expect(text).toContain('Showing the first 5000 estimated tokens inline')
+      expect(text).toContain('[UNTRUSTED_PAGE_CONTENT')
+      expect(text).toContain(firstMarker)
       await expectBrowserToolOutputPath(savedPath)
       expect(readFileSync(savedPath ?? '', 'utf8')).toContain(lastMarker)
     })
@@ -1466,7 +1475,9 @@ return 'late'
   it('writes very large snapshots to a BrowserOS output markdown file', async () => {
     await withBrowserosDir(async () => {
       const fake = createFakeServer()
-      const largeSnapshot = `${'x '.repeat(23_000)}last-node`
+      const firstMarker = 'first-node'
+      const lastMarker = 'last-node'
+      const largeSnapshot = `${firstMarker}\n${'x '.repeat(23_000)}${lastMarker}`
       expect(largeSnapshot.length).toBeLessThan(50_000)
       const session = {
         observe: () => ({
@@ -1479,6 +1490,7 @@ return 'late'
       registerBrowserTools(fake.server as never, session)
 
       const result = await fake.handlers.get('snapshot')?.({ page: 4 })
+      const text = textOf(result)
 
       expect(result?.isError).toBeFalsy()
       const data = result?.structuredContent as
@@ -1511,12 +1523,16 @@ return 'late'
           text: expect.stringContaining(savedPath ?? ''),
         }),
       ])
+      expect(text).toContain('Showing the first 5000 estimated tokens inline')
+      expect(text).toContain('[UNTRUSTED_PAGE_CONTENT')
+      expect(text).toContain(firstMarker)
+      expect(text).not.toContain(lastMarker)
       expect(existsSync(savedPath ?? '')).toBe(true)
 
       const savedContent = readFileSync(savedPath ?? '', 'utf8')
       expect(savedContent).toContain('[UNTRUSTED_PAGE_CONTENT')
       expect(savedContent).toContain('[END_UNTRUSTED_PAGE_CONTENT')
-      expect(savedContent).toContain('last-node')
+      expect(savedContent).toContain(lastMarker)
       expect(data?.snapshot).toBe(savedContent)
       expect(data?.contentLength).toBe(savedContent.length)
     })
