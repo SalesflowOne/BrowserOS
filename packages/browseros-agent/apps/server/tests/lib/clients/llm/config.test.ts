@@ -4,38 +4,51 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import { beforeEach, describe, expect, it, mock } from 'bun:test'
+import { afterEach, describe, expect, it } from 'bun:test'
+import { mkdtempSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { LLM_PROVIDERS } from '@browseros/shared/schemas/llm'
-
-const tokenManager = {
-  refreshIfExpired: mock(async () => ({
-    accessToken: 'access-token',
-    refreshToken: 'refresh-token',
-    expiresAt: Date.now() + 3600_000,
-    accountId: 'account-id',
-  })),
-}
-
-mock.module('../../../../src/lib/clients/oauth', () => ({
-  getOAuthTokenManager: () => tokenManager,
-}))
-
-const { resolveLLMConfig } = await import(
-  '../../../../src/lib/clients/llm/config'
-)
+import { resolveLLMConfig } from '../../../../src/lib/clients/llm/config'
+import {
+  initializeOAuth,
+  shutdownOAuth,
+} from '../../../../src/lib/clients/oauth'
+import { OAuthTokenStore } from '../../../../src/lib/clients/oauth/token-store'
+import { closeDb, initializeDb } from '../../../../src/lib/db'
 
 describe('resolveLLMConfig', () => {
-  beforeEach(() => {
-    tokenManager.refreshIfExpired.mockClear()
+  const tempDirs: string[] = []
+
+  afterEach(async () => {
+    shutdownOAuth()
+    closeDb()
+    await Promise.all(
+      tempDirs.map((dir) => rm(dir, { recursive: true, force: true })),
+    )
+    tempDirs.length = 0
   })
 
   it('defaults ChatGPT Plus/Pro OAuth providers to GPT-5.5', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'browseros-llm-config-test-'))
+    tempDirs.push(dir)
+    const handle = initializeDb({
+      dbPath: join(dir, 'db', 'browseros.sqlite'),
+    })
+    initializeOAuth(handle.db, 'browseros-id')
+    new OAuthTokenStore(handle.db).upsertTokens('browseros-id', 'chatgpt-pro', {
+      accessToken: 'access-token',
+      refreshToken: 'refresh-token',
+      expiresAt: Date.now() + 3600_000,
+      accountId: 'account-id',
+    })
+
     const resolved = await resolveLLMConfig(
       { provider: LLM_PROVIDERS.CHATGPT_PRO },
       'browseros-id',
     )
 
-    expect(tokenManager.refreshIfExpired).toHaveBeenCalledWith('chatgpt-pro')
     expect(resolved).toMatchObject({
       provider: LLM_PROVIDERS.CHATGPT_PRO,
       model: 'gpt-5.5',
