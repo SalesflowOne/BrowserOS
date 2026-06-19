@@ -60,22 +60,19 @@ export async function saveOAuthProviderFromStatus({
     createdAt: now,
     updatedAt: now,
   }
+  if (config.providerType === 'chatgpt-pro') {
+    provider.reasoningEffort = 'medium'
+    provider.reasoningSummary = 'auto'
+  }
 
   await saveProvider(provider)
   return provider
 }
 
-export function hasOAuthProvider(
-  providers: LlmProviderConfig[],
-  providerType: ProviderType,
-): boolean {
-  return providers.some((provider) => provider.type === providerType)
-}
-
 /** Coordinates OAuth launch, status polling, and local provider creation. */
 export function useOAuthProviderFlow(
   config: OAuthProviderFlowConfig,
-  providers: LlmProviderConfig[],
+  _providers: LlmProviderConfig[],
   saveProvider: (provider: LlmProviderConfig) => Promise<void> | void,
 ): OAuthProviderFlowReturn {
   const { status, startPolling, disconnect } = useOAuthStatus(
@@ -90,11 +87,6 @@ export function useOAuthProviderFlow(
     if (!status?.authenticated) return
     if (!flowStartedRef.current) return
     if (providerSaveRef.current) return
-    if (hasOAuthProvider(providers, config.providerType)) {
-      flowStartedRef.current = false
-      setPendingDeviceCode(null)
-      return
-    }
 
     providerSaveRef.current = saveOAuthProviderFromStatus({
       config,
@@ -121,7 +113,7 @@ export function useOAuthProviderFlow(
       .finally(() => {
         providerSaveRef.current = null
       })
-  }, [config, providers, saveProvider, status])
+  }, [config, saveProvider, status])
 
   async function startOAuthFlow(agentServerUrl: string | undefined) {
     if (!agentServerUrl) {

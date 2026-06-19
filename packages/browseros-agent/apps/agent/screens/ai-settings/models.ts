@@ -18,7 +18,6 @@ const CUSTOM_PROVIDER_MODELS: Partial<Record<ProviderType, ModelInfo[]>> = {
   ollama: [],
   'chatgpt-pro': [
     { modelId: 'gpt-5.5', contextLength: 1050000 },
-    { modelId: 'gpt-5.5-pro', contextLength: 1050000 },
     { modelId: 'gpt-5.4', contextLength: 1050000 },
     { modelId: 'gpt-5.4-mini', contextLength: 400000 },
     { modelId: 'gpt-5.4-nano', contextLength: 400000 },

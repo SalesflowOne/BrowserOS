@@ -49,10 +49,9 @@ const chatgptConfig: OAuthProviderFlowConfig = {
 }
 
 let saveOAuthProviderFromStatus: typeof import('./oauth-provider-flow.hooks').saveOAuthProviderFromStatus
-let hasOAuthProvider: typeof import('./oauth-provider-flow.hooks').hasOAuthProvider
 
 beforeAll(async () => {
-  ;({ saveOAuthProviderFromStatus, hasOAuthProvider } = await import(
+  ;({ saveOAuthProviderFromStatus } = await import(
     './oauth-provider-flow.hooks'
   ))
 })
@@ -92,6 +91,8 @@ describe('saveOAuthProviderFromStatus', () => {
       name: 'ChatGPT Plus/Pro (user@example.com)',
       modelId: 'gpt-5.5',
       contextWindow: 1050000,
+      reasoningEffort: 'medium',
+      reasoningSummary: 'auto',
     })
 
     resolveSave?.()
@@ -113,28 +114,5 @@ describe('saveOAuthProviderFromStatus', () => {
         },
       }),
     ).rejects.toThrow('storage failed')
-  })
-})
-
-describe('hasOAuthProvider', () => {
-  it('detects an existing provider of the same OAuth type', () => {
-    expect(
-      hasOAuthProvider(
-        [
-          {
-            id: 'chatgpt-pro-existing',
-            type: 'chatgpt-pro',
-            name: 'ChatGPT Plus/Pro',
-            modelId: 'gpt-5.5',
-            supportsImages: true,
-            contextWindow: 1050000,
-            temperature: 0.2,
-            createdAt: 1,
-            updatedAt: 1,
-          },
-        ],
-        'chatgpt-pro',
-      ),
-    ).toBe(true)
   })
 })
