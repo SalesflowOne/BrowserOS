@@ -6,7 +6,10 @@ import { useSearchParams } from 'react-router'
 import useDeepCompareEffect from 'use-deep-compare-effect'
 import type { Provider } from '@/components/chat/chatComponentTypes'
 import { Capabilities, Feature } from '@/lib/browseros/capabilities'
-import { perWindowConversationStorage } from '@/lib/browseros/perWindowConversationStorage'
+import {
+  getWindowConversation,
+  setWindowConversation,
+} from '@/lib/browseros/perWindowConversationStorage'
 import { sidePanelPerWindowStorage } from '@/lib/browseros/sidePanelOpenStateStorage'
 import type { ChatAction } from '@/lib/chat-actions/types'
 import {
@@ -536,15 +539,12 @@ export const useChatSession = (options?: ChatSessionOptions) => {
       const windowId = tab?.windowId
       if (windowId == null || cancelled) return
       windowIdRef.current = windowId
-      const map = await perWindowConversationStorage.getValue()
-      const stored = map[windowId]
+      const stored = await getWindowConversation(windowId)
+      if (cancelled) return
       if (stored && stored !== conversationIdRef.current) {
         setSearchParams({ conversationId: stored })
       } else if (!stored) {
-        await perWindowConversationStorage.setValue({
-          ...map,
-          [windowId]: conversationIdRef.current,
-        })
+        await setWindowConversation(windowId, conversationIdRef.current)
       }
     })()
     return () => {
@@ -558,12 +558,7 @@ export const useChatSession = (options?: ChatSessionOptions) => {
     if (windowId == null) return
     ;(async () => {
       if (!(await sidePanelPerWindowStorage.getValue())) return
-      const map = await perWindowConversationStorage.getValue()
-      if (map[windowId] === conversationId) return
-      await perWindowConversationStorage.setValue({
-        ...map,
-        [windowId]: conversationId,
-      })
+      await setWindowConversation(windowId, conversationId)
     })()
   }, [conversationId])
 
