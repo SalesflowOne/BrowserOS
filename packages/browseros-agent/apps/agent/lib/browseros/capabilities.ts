@@ -61,7 +61,19 @@ const FEATURE_CONFIG: { [K in Feature]: FeatureConfig } = {
   [Feature.QWEN_CODE_SUPPORT]: { minServerVersion: '0.0.77' },
   [Feature.CREDITS_SUPPORT]: { minServerVersion: '0.0.78' },
   [Feature.AGENT_HARNESS_SUPPORT]: { minBrowserOSVersion: '0.46.0.0' },
-  [Feature.HERMES_AGENT_SUPPORT]: { requiresAlphaFlag: true },
+  [Feature.HERMES_AGENT_SUPPORT]: {
+    requiresAlphaFlag: true,
+    minServerVersion: '0.0.116',
+  },
+}
+
+function hasVersionConstraints(config: FeatureConfig): boolean {
+  return Boolean(
+    config.minBrowserOSVersion ||
+      config.maxBrowserOSVersion ||
+      config.minServerVersion ||
+      config.maxServerVersion,
+  )
 }
 
 function parseVersion(version: string): number[] {
@@ -126,7 +138,7 @@ export function resolveStaticFeatureSupport({
   return null
 }
 
-/** Applies configured static gates with caller-provided environment flags. */
+/** Applies static gates, falling through when version gates still need evaluation. */
 export function resolveFeatureStaticSupport({
   feature,
   isDevelopment,
@@ -138,12 +150,15 @@ export function resolveFeatureStaticSupport({
 }): boolean | null {
   const config = FEATURE_CONFIG[feature]
   if (!config) return false
-  return resolveStaticFeatureSupport({
+  const staticSupport = resolveStaticFeatureSupport({
     isDevelopment,
     alphaFeaturesEnabled,
     requiresDevelopmentFlag: config.requiresDevelopmentFlag,
     requiresAlphaFlag: config.requiresAlphaFlag,
   })
+  if (staticSupport !== true) return staticSupport
+  if (hasVersionConstraints(config) && !isDevelopment) return null
+  return true
 }
 
 export type CapabilitiesState = {
