@@ -16,7 +16,7 @@ modules:
   # Phase 1: Setup
   - clean
   - git_setup
-  #- winsparkle_setup
+  - winsparkle_setup
 
   # Phase 2: Patches & Resources
   - download_resources
