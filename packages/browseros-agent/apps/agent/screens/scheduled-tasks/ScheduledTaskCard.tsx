@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/collapsible'
 import { Switch } from '@/components/ui/switch'
 import { BrowserOSIcon, ProviderIcon } from '@/lib/llm-providers/providerIcons'
-import { providersStorage } from '@/lib/llm-providers/storage'
+import { loadProviders } from '@/lib/llm-providers/storage'
 import type { ProviderType } from '@/lib/llm-providers/types'
 import { useScheduledJobRuns } from '@/lib/schedules/scheduleStorage'
 import type { ScheduledJob, ScheduledJobRun } from './types'
@@ -90,14 +90,13 @@ export const ScheduledTaskCard: FC<ScheduledTaskCardProps> = ({
 
   const { jobRuns } = useScheduledJobRuns()
 
-  // Load provider info for display
   useEffect(() => {
     if (!job.providerId) {
       setProviderInfo(null)
       return
     }
-    providersStorage.getValue().then((providers) => {
-      const match = providers?.find((p) => p.id === job.providerId)
+    loadProviders().then((providers) => {
+      const match = providers.find((p) => p.id === job.providerId)
       setProviderInfo(match ? { name: match.name, type: match.type } : null)
     })
   }, [job.providerId])

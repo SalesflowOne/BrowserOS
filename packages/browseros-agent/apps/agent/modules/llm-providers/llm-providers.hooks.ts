@@ -93,7 +93,7 @@ export function useLlmProviders(): UseLlmProvidersReturn {
   }, [])
 
   const saveProvider = async (provider: LlmProviderConfig) => {
-    const currentProviders = (await providersStorage.getValue()) || []
+    const currentProviders = await loadProviders()
     const existingIndex = currentProviders.findIndex(
       (p) => p.id === provider.id,
     )
@@ -129,7 +129,7 @@ export function useLlmProviders(): UseLlmProvidersReturn {
       return
     }
 
-    const currentProviders = (await providersStorage.getValue()) || []
+    const currentProviders = await loadProviders()
     const updatedProviders = currentProviders.filter((p) => p.id !== providerId)
 
     if (defaultProviderId === providerId) {

@@ -14,7 +14,7 @@ export { DEFAULT_PROVIDER_ID } from './provider-selection'
 export const providersStorage = storage.defineItem<LlmProviderConfig[]>(
   'local:llm-providers',
   {
-    version: 2,
+    version: 3,
     migrations: {
       2: (
         providers: LlmProviderConfig[] | null,
@@ -29,6 +29,12 @@ export const providersStorage = storage.defineItem<LlmProviderConfig[]>(
           }
           return provider
         })
+      },
+      3: (
+        providers: LlmProviderConfig[] | null,
+      ): LlmProviderConfig[] | null => {
+        if (!providers) return providers
+        return normalizeStoredProviders(providers)
       },
     },
   },
@@ -122,28 +128,31 @@ function normalizeStoredProviders(
   providers: LlmProviderConfig[],
 ): LlmProviderConfig[] {
   return providers.flatMap((provider) => {
-    if (isLegacyQwenOAuthProvider(provider)) return []
+    const normalizedQwen = normalizeQwenProvider(provider)
+    if (!normalizedQwen) return []
     if (
-      provider.id === DEFAULT_PROVIDER_ID &&
-      provider.type === 'browseros' &&
-      provider.name !== DEFAULT_PROVIDER_NAME
+      normalizedQwen.id === DEFAULT_PROVIDER_ID &&
+      normalizedQwen.type === 'browseros' &&
+      normalizedQwen.name !== DEFAULT_PROVIDER_NAME
     ) {
       return {
-        ...provider,
+        ...normalizedQwen,
         name: DEFAULT_PROVIDER_NAME,
       }
     }
-    return [provider]
+    return [normalizedQwen]
   })
 }
 
-function isLegacyQwenOAuthProvider(provider: LlmProviderConfig): boolean {
-  return (
-    provider.type === 'qwen-code' &&
-    (!provider.baseUrl ||
-      !provider.apiKey ||
-      provider.modelId === 'coder-model')
-  )
+function normalizeQwenProvider(
+  provider: LlmProviderConfig,
+): LlmProviderConfig | null {
+  if (provider.type !== 'qwen-code') return provider
+  if (!provider.baseUrl || !provider.apiKey) return null
+  if (!provider.modelId || provider.modelId === 'coder-model') {
+    return { ...provider, modelId: 'qwen3-coder-plus' }
+  }
+  return provider
 }
 
 export const defaultProviderIdStorage = storage.defineItem<string>(

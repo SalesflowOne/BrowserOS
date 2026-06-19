@@ -100,4 +100,31 @@ describe('loadProviders', () => {
       apiKeyQwen,
     ])
   })
+
+  it('repairs Qwen API-key providers saved with the removed OAuth model id', async () => {
+    const repairableQwen: LlmProviderConfig = {
+      id: 'qwen-api-key',
+      type: 'qwen-code',
+      name: 'Qwen Code',
+      baseUrl: 'https://coding.dashscope.aliyuncs.com/v1',
+      apiKey: 'sk-test',
+      modelId: 'coder-model',
+      supportsImages: true,
+      contextWindow: 1000000,
+      temperature: 0.2,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }
+    await providersStorage.setValue([browserOSProvider, repairableQwen])
+
+    const providers = await loadProviders()
+
+    expect(providers[1]).toMatchObject({
+      id: 'qwen-api-key',
+      modelId: 'qwen3-coder-plus',
+      apiKey: 'sk-test',
+      baseUrl: 'https://coding.dashscope.aliyuncs.com/v1',
+    })
+    expect(await providersStorage.getValue()).toEqual(providers)
+  })
 })

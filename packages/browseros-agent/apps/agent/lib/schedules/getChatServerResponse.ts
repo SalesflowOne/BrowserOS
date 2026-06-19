@@ -3,7 +3,7 @@ import { getAgentServerUrl } from '@/lib/browseros/helpers'
 import {
   createDefaultBrowserOSProvider,
   defaultProviderIdStorage,
-  providersStorage,
+  loadProviders,
 } from '@/lib/llm-providers/storage'
 import type { LlmProviderConfig } from '@/lib/llm-providers/types'
 import { mcpServerStorage } from '@/lib/mcp/mcpServerStorage'
@@ -73,8 +73,8 @@ interface StreamParseState {
 }
 
 const getDefaultProvider = async (): Promise<LlmProviderConfig | null> => {
-  const providers = await providersStorage.getValue()
-  if (!providers?.length) return null
+  const providers = await loadProviders()
+  if (!providers.length) return null
 
   const defaultProviderId = await defaultProviderIdStorage.getValue()
   return resolveCloudChatProvider(providers, defaultProviderId)
@@ -84,8 +84,8 @@ const resolveProvider = async (
   providerId?: string,
 ): Promise<LlmProviderConfig> => {
   if (providerId) {
-    const providers = await providersStorage.getValue()
-    const match = findCloudChatProviderById(providers ?? [], providerId)
+    const providers = await loadProviders()
+    const match = findCloudChatProviderById(providers, providerId)
     if (match) return match
   }
   return (await getDefaultProvider()) ?? createDefaultBrowserOSProvider()
