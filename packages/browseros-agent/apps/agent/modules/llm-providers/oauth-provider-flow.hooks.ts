@@ -34,7 +34,7 @@ export interface OAuthProviderFlowReturn {
   clearDeviceCode: () => void
 }
 
-interface SaveOAuthProviderInput {
+export interface SaveOAuthProviderInput {
   config: OAuthProviderFlowConfig
   status: { email?: string }
   saveProvider: (provider: LlmProviderConfig) => Promise<void> | void

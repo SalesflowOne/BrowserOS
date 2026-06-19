@@ -98,6 +98,7 @@ describe('saveOAuthProviderFromStatus', () => {
     const provider = await promise
 
     expect(settled).toBe(true)
+    if (!savedProvider) throw new Error('Provider was not saved')
     expect(provider).toEqual(savedProvider)
   })
 
