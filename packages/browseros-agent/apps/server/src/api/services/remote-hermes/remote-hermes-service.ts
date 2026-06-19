@@ -158,7 +158,7 @@ export class RemoteHermesService {
         }),
       )
     }
-    if (!initial || initial.status !== 'running') {
+    if (initial?.status !== 'running') {
       const started = await this.ensureStarted(initial?.status, writer, signal)
       if (!started) return null
     }

@@ -9,6 +9,7 @@ type FeatureConfig = {
   minServerVersion?: string
   maxServerVersion?: string
   requiresAlphaFlag?: boolean
+  requiresDevelopmentFlag?: boolean
 }
 
 /**
@@ -16,7 +17,7 @@ type FeatureConfig = {
  * Add new features here with corresponding config in FEATURE_CONFIG.
  *
  * Note: In development mode, all features are enabled regardless of version
- * or alpha flag.
+ * or alpha flag. Development-only gates resolve false outside development.
  * @public
  */
 export enum Feature {
@@ -81,7 +82,7 @@ const FEATURE_CONFIG: { [K in Feature]: FeatureConfig } = {
   [Feature.QWEN_CODE_SUPPORT]: { minServerVersion: '0.0.77' },
   [Feature.CREDITS_SUPPORT]: { minServerVersion: '0.0.78' },
   [Feature.AGENT_HARNESS_SUPPORT]: { minBrowserOSVersion: '0.46.0.0' },
-  [Feature.HERMES_AGENT_SUPPORT]: { requiresAlphaFlag: true },
+  [Feature.HERMES_AGENT_SUPPORT]: { requiresDevelopmentFlag: true },
 }
 
 function parseVersion(version: string): number[] {
@@ -122,15 +123,21 @@ function checkVersionConstraints(
   return true
 }
 
+/** Resolves static environment gates before version checks. */
 export function resolveStaticFeatureSupport({
   isDevelopment,
   alphaFeaturesEnabled,
+  requiresDevelopmentFlag = false,
   requiresAlphaFlag = false,
 }: {
   isDevelopment: boolean
   alphaFeaturesEnabled: boolean
+  requiresDevelopmentFlag?: boolean
   requiresAlphaFlag?: boolean
 }): boolean | null {
+  if (requiresDevelopmentFlag) {
+    return isDevelopment
+  }
   if (isDevelopment) {
     return true
   }
@@ -140,7 +147,27 @@ export function resolveStaticFeatureSupport({
   return null
 }
 
-type CapabilitiesState = {
+/** Applies configured static gates with caller-provided environment flags. */
+export function resolveFeatureStaticSupport({
+  feature,
+  isDevelopment,
+  alphaFeaturesEnabled,
+}: {
+  feature: Feature
+  isDevelopment: boolean
+  alphaFeaturesEnabled: boolean
+}): boolean | null {
+  const config = FEATURE_CONFIG[feature]
+  if (!config) return false
+  return resolveStaticFeatureSupport({
+    isDevelopment,
+    alphaFeaturesEnabled,
+    requiresDevelopmentFlag: config.requiresDevelopmentFlag,
+    requiresAlphaFlag: config.requiresAlphaFlag,
+  })
+}
+
+export type CapabilitiesState = {
   browserOSVersion: number[] | null
   serverVersion: number[] | null
 }
@@ -148,12 +175,10 @@ type CapabilitiesState = {
 let initPromise: Promise<CapabilitiesState> | null = null
 
 function getStaticFeatureSupport(feature: Feature): boolean | null {
-  const config = FEATURE_CONFIG[feature]
-  if (!config) return false
-  return resolveStaticFeatureSupport({
+  return resolveFeatureStaticSupport({
+    feature,
     isDevelopment: import.meta.env.DEV,
     alphaFeaturesEnabled: env.VITE_ALPHA_FEATURES,
-    requiresAlphaFlag: config.requiresAlphaFlag,
   })
 }
 

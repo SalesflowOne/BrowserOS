@@ -42,9 +42,10 @@ import { useWorkspace } from '@/modules/workspace/workspace.hooks'
 export interface ConversationInputSendInput {
   text: string
   attachments: StagedAttachment[]
+  selectedTabs: chrome.tabs.Tab[]
 }
 
-interface ConversationInputProps {
+export interface ConversationInputProps {
   onSend: (input: ConversationInputSendInput) => void
   /**
    * Merged provider/agent picker shown only on the `home` variant. Lets the
@@ -460,9 +461,10 @@ export const ConversationInput: FC<ConversationInputProps> = ({
     if (disabled || isStaging) return
     if (streaming && !queueAware) return
     if (!text && attachments.length === 0) return
-    onSend({ text, attachments })
+    onSend({ text, attachments, selectedTabs })
     setInput('')
     setAttachments([])
+    setSelectedTabs([])
     setAttachmentError(null)
   }
 

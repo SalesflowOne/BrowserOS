@@ -42,7 +42,7 @@ const providerIconMap: Record<ProviderType, IconComponent | null> = {
   'remote-hermes': Sparkles,
 }
 
-interface ProviderIconProps {
+export interface ProviderIconProps {
   type: ProviderType
   size?: number
   className?: string

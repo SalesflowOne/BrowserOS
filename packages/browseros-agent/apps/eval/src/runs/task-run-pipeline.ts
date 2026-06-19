@@ -39,7 +39,7 @@ class TaskExecutionError extends Error {
 // Task Executor
 // ============================================================================
 
-interface TaskRunPipelineDeps {
+export interface TaskRunPipelineDeps {
   onEvent?: (taskId: string, event: Record<string, unknown>) => void
 }
 
@@ -79,6 +79,7 @@ class TaskRunPipeline {
     return 1
   }
 
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: task-run orchestration; refactor tracked separately
   async execute(task: Task): Promise<TaskResult> {
     const startTime = Date.now()
     const mcpUrl = `${this.config.browseros.server_url}/mcp`
@@ -311,6 +312,8 @@ class TaskRunPipeline {
     }
   }
 }
+
+export type { TaskRunPipeline }
 
 // ============================================================================
 // Factory

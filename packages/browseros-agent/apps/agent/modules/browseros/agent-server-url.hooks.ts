@@ -1,19 +1,15 @@
 import { useEffect, useState } from 'react'
-import { getAgentServerUrl } from '@/lib/browseros/helpers'
+import { getAgentServerUrl } from '../../lib/browseros/helpers'
 
 const MAX_AGENT_SERVER_URL_ATTEMPTS = 3
 const AGENT_SERVER_URL_RETRY_DELAY_MS = 500
 
-type UseAgentServerUrlResult =
+export type UseAgentServerUrlResult =
   | { baseUrl: string; isLoading: false; error: null }
   | { baseUrl?: never; isLoading: true; error: null }
   | { baseUrl?: never; isLoading: false; error: Error }
 
-/**
- * Resolves the local BrowserOS server URL used by React surfaces.
- * The host is always loopback; retries cover startup races while BrowserOS
- * publishes the port preference.
- */
+/** Resolves the local BrowserOS server URL used by React surfaces. */
 export function useAgentServerUrl(): UseAgentServerUrlResult {
   const [state, setState] = useState<UseAgentServerUrlResult>({
     isLoading: true,

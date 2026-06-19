@@ -38,6 +38,7 @@ import {
   toProviderOption,
 } from './chat-session-request'
 import type { ChatMode } from './chat-types'
+import { addContentFilterNotice } from './content-filter-notice'
 import { useExecutionHistoryTracker } from './execution-history-tracker.hooks'
 import { useNotifyActiveTab } from './notify-active-tab.hooks'
 import { useRemoteConversationSave } from './remote-conversation-save.hooks'
@@ -423,10 +424,20 @@ export const useChatSession = (options?: ChatSessionOptions) => {
         progress: data?.progress,
       })
     },
-    onFinish: async ({ message, isAbort, isError }) => {
+    onFinish: async ({ message, messages, isAbort, isError, finishReason }) => {
       setVmStatus(null)
+      const nextMessages = addContentFilterNotice(
+        messages,
+        message,
+        finishReason,
+      )
+      if (nextMessages !== messages) {
+        setMessages(nextMessages)
+      }
+      const responseMessage =
+        nextMessages.find((each) => each.id === message.id) ?? message
       await finishExecutionTask({
-        responseText: getLastMessageText([message]),
+        responseText: getLastMessageText([responseMessage]),
         isAbort,
         isError,
       })
