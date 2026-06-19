@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import type { ToolContext } from '../../../src/tools/browser/framework'
 import {
-  DEFAULT_TIME_WAIT_MS,
+  DEFAULT_PAUSE_MS,
   parseWaitMs,
   wait,
 } from '../../../src/tools/browser/wait'
@@ -22,22 +22,22 @@ describe('wait schema', () => {
 
 describe('parseWaitMs', () => {
   it('falls back to the default when value is missing or empty', () => {
-    expect(parseWaitMs(undefined, DEFAULT_TIME_WAIT_MS)).toBe(2000)
-    expect(parseWaitMs('', DEFAULT_TIME_WAIT_MS)).toBe(2000)
-    expect(parseWaitMs('   ', DEFAULT_TIME_WAIT_MS)).toBe(2000)
+    expect(parseWaitMs(undefined, DEFAULT_PAUSE_MS)).toBe(2000)
+    expect(parseWaitMs('', DEFAULT_PAUSE_MS)).toBe(2000)
+    expect(parseWaitMs('   ', DEFAULT_PAUSE_MS)).toBe(2000)
   })
 
   it('falls back to the default on garbage instead of erroring', () => {
     // The screenshot bug: a model sent ">" and the tool rejected it.
-    expect(parseWaitMs('>', DEFAULT_TIME_WAIT_MS)).toBe(2000)
-    expect(parseWaitMs('abc', DEFAULT_TIME_WAIT_MS)).toBe(2000)
-    expect(parseWaitMs('-5', DEFAULT_TIME_WAIT_MS)).toBe(2000)
+    expect(parseWaitMs('>', DEFAULT_PAUSE_MS)).toBe(2000)
+    expect(parseWaitMs('abc', DEFAULT_PAUSE_MS)).toBe(2000)
+    expect(parseWaitMs('-5', DEFAULT_PAUSE_MS)).toBe(2000)
   })
 
   it('parses a valid millisecond value', () => {
-    expect(parseWaitMs('3000', DEFAULT_TIME_WAIT_MS)).toBe(3000)
-    expect(parseWaitMs('1500', DEFAULT_TIME_WAIT_MS)).toBe(1500)
-    expect(parseWaitMs('0', DEFAULT_TIME_WAIT_MS)).toBe(0)
+    expect(parseWaitMs('3000', DEFAULT_PAUSE_MS)).toBe(3000)
+    expect(parseWaitMs('1500', DEFAULT_PAUSE_MS)).toBe(1500)
+    expect(parseWaitMs('0', DEFAULT_PAUSE_MS)).toBe(0)
   })
 })
 

@@ -59,6 +59,22 @@ function createFakeServer() {
   }
 }
 
+function textOf(result: { content?: unknown } | undefined): string {
+  if (!Array.isArray(result?.content)) return ''
+  return result.content
+    .filter(
+      (item): item is { type: 'text'; text: string } =>
+        typeof item === 'object' &&
+        item !== null &&
+        'type' in item &&
+        item.type === 'text' &&
+        'text' in item &&
+        typeof item.text === 'string',
+    )
+    .map((item) => item.text)
+    .join('\n')
+}
+
 async function withBrowserosDir<T>(run: () => Promise<T>): Promise<T> {
   const previous = process.env.BROWSEROS_DIR
   const browserosDir = mkdtempSync(join(tmpdir(), 'browseros-output-test-'))
@@ -358,6 +374,50 @@ describe('registerBrowserTools', () => {
     )
   })
 
+  it('defaults wait timeouts to two seconds', async () => {
+    const fake = createFakeServer()
+    const session = {
+      pages: {
+        getSession: async () => ({
+          session: {
+            Runtime: {
+              evaluate: async () => ({ result: { value: false } }),
+            },
+          },
+        }),
+      },
+    } as unknown as BrowserSession
+
+    registerBrowserTools(fake.server as never, session)
+
+    const originalNow = Date.now
+    let nowCalls = 0
+    Date.now = () => (nowCalls++ === 0 ? 0 : Number.MAX_SAFE_INTEGER)
+    try {
+      const result = await fake.handlers.get('wait')?.({
+        page: 3,
+        for: 'text',
+        value: 'ready',
+      })
+
+      expect(result?.isError).toBeFalsy()
+      expect(result?.structuredContent).toEqual({ matched: false })
+      expect(result?.content).toEqual([
+        expect.objectContaining({
+          type: 'text',
+          text: 'timed out after 2000ms waiting for text',
+        }),
+      ])
+    } finally {
+      Date.now = originalNow
+    }
+
+    const inputSchema = fake.configs.get('wait')?.inputSchema as
+      | { timeout?: { description?: string } }
+      | undefined
+    expect(inputSchema?.timeout?.description).toContain('default 2000')
+  })
+
   it('runs server-runtime JavaScript against the browser session', async () => {
     const fake = createFakeServer()
     const session = {
@@ -610,7 +670,6 @@ return 'late'
         | {
             added: number
             removed: number
-            wordCount: number
           }
         | undefined
       expect(data).toMatchObject({
@@ -639,16 +698,14 @@ return 'late'
   it('writes large direct diffs to a BrowserOS output markdown file', async () => {
     await withBrowserosDir(async () => {
       const fake = createFakeServer()
-      const largeDiff = Array.from(
-        { length: 10001 },
-        (_, i) => `word-${i}`,
-      ).join(' ')
+      const lastMarker = 'last-diff-node'
+      const largeDiff = `${'x'.repeat(30_001)}\n${lastMarker}`
       const session = {
         observe: () => ({
           diff: async () => ({
             changed: true,
             text: largeDiff,
-            added: 10001,
+            added: 1,
             removed: 0,
             afterUrl: 'https://example.com/large',
           }),
@@ -668,26 +725,26 @@ return 'late'
             added: number
             removed: number
             truncated: boolean
-            wordCount: number
+            tokenEstimate: number
             path: string
             contentLength: number
             writtenToFile: boolean
           }
         | undefined
       expect(data).toMatchObject({
-        added: 10001,
+        added: 1,
         removed: 0,
         truncated: true,
-        wordCount: 10001,
         writtenToFile: true,
       })
+      expect(data?.tokenEstimate).toBeGreaterThan(10_000)
       const savedPath = data?.path
       await expectBrowserToolOutputPath(savedPath)
       expect(savedPath?.endsWith('.md')).toBe(true)
       expect(result?.content).toEqual([
         expect.objectContaining({
           type: 'text',
-          text: expect.stringContaining('Diff is 10001 words'),
+          text: expect.stringContaining('estimated tokens'),
         }),
       ])
       expect(result?.content).toEqual([
@@ -699,12 +756,12 @@ return 'late'
       expect(result?.content).toEqual([
         expect.objectContaining({
           type: 'text',
-          text: expect.not.stringContaining('word-10000'),
+          text: expect.not.stringContaining(lastMarker),
         }),
       ])
       const savedContent = readFileSync(savedPath ?? '', 'utf8')
       expect(savedContent).toContain('[UNTRUSTED_PAGE_CONTENT')
-      expect(savedContent).toContain('word-10000')
+      expect(savedContent).toContain(lastMarker)
       expect(data?.contentLength).toBe(savedContent.length)
     })
   })
@@ -784,10 +841,8 @@ return 'late'
   it('writes large URL-change act readbacks to a BrowserOS output file', async () => {
     await withBrowserosDir(async () => {
       const fake = createFakeServer()
-      const largeSnapshot = Array.from(
-        { length: 10001 },
-        (_, i) => `destination-${i}`,
-      ).join(' ')
+      const lastMarker = 'destination-final-node'
+      const largeSnapshot = `${'x'.repeat(30_001)}\n${lastMarker}`
       const session = {
         input: () => ({
           click: async () => undefined,
@@ -817,6 +872,8 @@ return 'late'
       })
 
       expect(result?.isError).toBeFalsy()
+      const text = textOf(result)
+      const savedPath = text.match(/saved to: (.+\.md)/)?.[1]
       expect(result?.structuredContent).toEqual({
         kind: 'click',
         changed: true,
@@ -832,9 +889,11 @@ return 'late'
           }),
           expect.objectContaining({
             type: 'text',
-            text: expect.stringContaining(
-              'full current snapshot is 10001 words',
-            ),
+            text: expect.stringContaining('full current snapshot is'),
+          }),
+          expect.objectContaining({
+            type: 'text',
+            text: expect.stringContaining('estimated tokens'),
           }),
           expect.objectContaining({
             type: 'text',
@@ -842,14 +901,9 @@ return 'late'
           }),
         ]),
       )
-      expect(result?.content).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            type: 'text',
-            text: expect.not.stringContaining('destination-10000'),
-          }),
-        ]),
-      )
+      expect(text).not.toContain(lastMarker)
+      await expectBrowserToolOutputPath(savedPath)
+      expect(readFileSync(savedPath ?? '', 'utf8')).toContain(lastMarker)
     })
   })
 
@@ -1183,13 +1237,10 @@ return 'late'
     expect(JSON.stringify(result?.structuredContent)).not.toContain('path')
   })
 
-  it('returns old-threshold-sized snapshots inline', async () => {
+  it('returns word-threshold-only snapshots inline', async () => {
     await withBrowserosDir(async () => {
       const fake = createFakeServer()
-      const inlineSnapshot = Array.from(
-        { length: 5001 },
-        (_, i) => `node-${i}`,
-      ).join(' ')
+      const inlineSnapshot = `${'x '.repeat(15_001)}last-node`
       const session = {
         observe: () => ({
           snapshot: async () => ({ text: inlineSnapshot }),
@@ -1215,7 +1266,7 @@ return 'late'
       expect(result?.content).toEqual([
         expect.objectContaining({
           type: 'text',
-          text: expect.stringContaining('node-5000'),
+          text: expect.stringContaining('last-node'),
         }),
       ])
       expect(result?.content).toEqual([
@@ -1230,10 +1281,7 @@ return 'late'
   it('writes very large snapshots to a BrowserOS output markdown file', async () => {
     await withBrowserosDir(async () => {
       const fake = createFakeServer()
-      const largeSnapshot = [
-        ...Array.from({ length: 15000 }, () => 'x'),
-        'last-node',
-      ].join(' ')
+      const largeSnapshot = `${'x '.repeat(23_000)}last-node`
       expect(largeSnapshot.length).toBeLessThan(50_000)
       const session = {
         observe: () => ({
@@ -1253,15 +1301,15 @@ return 'late'
             page: number
             path: string
             contentLength: number
-            wordCount: number
+            tokenEstimate: number
             writtenToFile: boolean
           }
         | undefined
       expect(data).toMatchObject({
         page: 4,
-        wordCount: 15001,
         writtenToFile: true,
       })
+      expect(data?.tokenEstimate).toBeGreaterThan(15_000)
       const savedPath = data?.path
       await expectBrowserToolOutputPath(savedPath)
       expect(savedPath?.endsWith('.md')).toBe(true)
@@ -1290,7 +1338,7 @@ return 'late'
   it('writes very long unbroken snapshots to a BrowserOS output markdown file', async () => {
     await withBrowserosDir(async () => {
       const fake = createFakeServer()
-      const largeSnapshot = 'x'.repeat(50_001)
+      const largeSnapshot = 'x'.repeat(45_001)
       const session = {
         observe: () => ({
           snapshot: async () => ({ text: largeSnapshot }),
@@ -1305,16 +1353,16 @@ return 'late'
       const data = result?.structuredContent as
         | {
             path: string
-            wordCount: number
+            tokenEstimate: number
             writtenToFile: boolean
           }
         | undefined
 
       expect(result?.isError).toBeFalsy()
       expect(data).toMatchObject({
-        wordCount: 1,
         writtenToFile: true,
       })
+      expect(data?.tokenEstimate).toBeGreaterThan(15_000)
       const savedPath = data?.path
       expect(result?.content).toEqual([
         expect.objectContaining({

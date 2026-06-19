@@ -8,8 +8,11 @@ import {
   throwIfAborted,
 } from './framework'
 
-export const DEFAULT_TIME_WAIT_MS = 2_000
-const DEFAULT_WAIT_TIMEOUT_MS = 10_000
+// Default pause for for="time"; kept separate from the timeout so a large
+// timeout can't balloon a no-value pause (a model that crams the duration
+// into timeout still only pauses this long by default).
+export const DEFAULT_PAUSE_MS = 2_000
+const DEFAULT_WAIT_TIMEOUT_MS = 2_000
 const MAX_WAIT_TIMEOUT_MS = 30_000
 
 export const wait = defineTool({
@@ -31,7 +34,7 @@ export const wait = defineTool({
     timeout: z
       .number()
       .optional()
-      .describe('Max wait in ms before giving up (default 10000).'),
+      .describe('Max wait in ms before giving up (default 2000).'),
   }),
   annotations: { readOnlyHint: true },
   handler: async (args, ctx) => {
@@ -43,7 +46,7 @@ export const wait = defineTool({
     const value = args.value === undefined ? undefined : String(args.value)
 
     if (args.for === 'time') {
-      const waitMs = Math.min(parseWaitMs(value, DEFAULT_TIME_WAIT_MS), timeout)
+      const waitMs = Math.min(parseWaitMs(value, DEFAULT_PAUSE_MS), timeout)
       await abortableDelay(waitMs, ctx.signal)
       return textResult(`waited ${waitMs}ms`, {
         matched: true,
