@@ -59,7 +59,7 @@ describe('loadProviders', () => {
     storageValues.clear()
   })
 
-  it('drops legacy Qwen OAuth providers that cannot be repaired locally', async () => {
+  it('preserves legacy Qwen OAuth providers as needing an API key', async () => {
     const legacyQwen: LlmProviderConfig = {
       id: 'qwen-oauth',
       type: 'qwen-code',
@@ -75,8 +75,14 @@ describe('loadProviders', () => {
 
     const providers = await loadProviders()
 
-    expect(providers).toEqual([browserOSProvider])
-    expect(await providersStorage.getValue()).toEqual([browserOSProvider])
+    expect(providers[1]).toMatchObject({
+      id: 'qwen-oauth',
+      type: 'qwen-code',
+      baseUrl: 'https://coding.dashscope.aliyuncs.com/v1',
+      modelId: 'qwen3-coder-plus',
+    })
+    expect(providers[1]?.apiKey).toBeUndefined()
+    expect(await providersStorage.getValue()).toEqual(providers)
   })
 
   it('keeps Qwen API-key providers with endpoint credentials', async () => {

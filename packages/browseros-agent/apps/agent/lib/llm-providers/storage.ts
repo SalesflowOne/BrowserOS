@@ -89,7 +89,7 @@ export function setupLlmProvidersSyncToBackend(): () => void {
   return unsubscribe
 }
 
-/** Loads providers after removing records the current UI cannot safely use. */
+/** Loads providers after applying compatibility migrations. */
 export async function loadProviders(): Promise<LlmProviderConfig[]> {
   const providers = (await providersStorage.getValue()) || []
   const normalizedProviders = normalizeProvidersForStorage(providers)
@@ -132,7 +132,6 @@ export function normalizeProvidersForStorage(
 ): LlmProviderConfig[] {
   return providers.flatMap((provider) => {
     const normalizedQwen = normalizeQwenProvider(provider)
-    if (!normalizedQwen) return []
     if (
       normalizedQwen.id === DEFAULT_PROVIDER_ID &&
       normalizedQwen.type === 'browseros' &&
@@ -147,14 +146,13 @@ export function normalizeProvidersForStorage(
   })
 }
 
-function normalizeQwenProvider(
-  provider: LlmProviderConfig,
-): LlmProviderConfig | null {
+function normalizeQwenProvider(provider: LlmProviderConfig): LlmProviderConfig {
   if (provider.type !== 'qwen-code') return provider
-  if (!provider.baseUrl || !provider.apiKey) return null
-  const baseUrl = isLegacyQwenBaseUrl(provider.baseUrl)
+  const baseUrl = !provider.baseUrl
     ? QWEN_CODE_BASE_URL
-    : provider.baseUrl
+    : isLegacyQwenBaseUrl(provider.baseUrl)
+      ? QWEN_CODE_BASE_URL
+      : provider.baseUrl
   const modelId =
     !provider.modelId || provider.modelId === 'coder-model'
       ? 'qwen3-coder-plus'
