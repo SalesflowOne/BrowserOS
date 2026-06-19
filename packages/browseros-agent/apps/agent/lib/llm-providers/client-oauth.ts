@@ -1,8 +1,5 @@
 /**
- * Client-side OAuth Device Code flow.
- * Used for providers where server-side fetch is blocked by WAF (e.g. Qwen).
- * The extension makes requests using Chrome's network stack which bypasses
- * TLS fingerprint-based WAF detection.
+ * Client-side OAuth Device Code flow for providers that authenticate from the extension.
  */
 
 export interface ClientAuthConfig {

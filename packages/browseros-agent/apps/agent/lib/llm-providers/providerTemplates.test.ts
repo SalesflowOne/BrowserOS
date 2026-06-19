@@ -12,4 +12,17 @@ describe('providerTemplates', () => {
       contextWindow: 1050000,
     })
   })
+
+  it('uses the Qwen Code API-key endpoint for new Qwen providers', () => {
+    const template = providerTemplates.find(
+      (provider) => provider.id === 'qwen-code',
+    )
+
+    expect(template).toMatchObject({
+      defaultBaseUrl: 'https://coding.dashscope.aliyuncs.com/v1',
+      defaultModelId: 'qwen3-coder-plus',
+      contextWindow: 1000000,
+      apiKeyUrl: 'https://modelstudio.console.alibabacloud.com/',
+    })
+  })
 })

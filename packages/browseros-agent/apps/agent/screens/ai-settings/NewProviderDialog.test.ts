@@ -43,6 +43,22 @@ describe('providerFormSchema', () => {
 
     expect(result.success).toBe(false)
   })
+
+  it('requires endpoint credentials for Qwen Code configs', () => {
+    const missingCredentials = providerFormSchema.safeParse({
+      ...baseProviderValues,
+      type: 'qwen-code',
+    })
+    const withCredentials = providerFormSchema.safeParse({
+      ...baseProviderValues,
+      type: 'qwen-code',
+      baseUrl: 'https://coding.dashscope.aliyuncs.com/v1',
+      apiKey: 'sk-test',
+    })
+
+    expect(missingCredentials.success).toBe(false)
+    expect(withCredentials.success).toBe(true)
+  })
 })
 
 describe('normalizeProviderFormValues', () => {
@@ -96,6 +112,16 @@ describe('normalizeProviderFormValues', () => {
     expect(values.baseUrl).toBe('https://api.openai.com/v1')
     expect(values.apiKey).toBe('secret')
   })
+
+  it('leaves Qwen Code endpoint credentials intact', () => {
+    const values = normalizeProviderFormValues({
+      ...staleCredentialValues,
+      type: 'qwen-code',
+    })
+
+    expect(values.baseUrl).toBe('https://api.openai.com/v1')
+    expect(values.apiKey).toBe('secret')
+  })
 })
 
 describe('provider type options', () => {
@@ -110,5 +136,11 @@ describe('provider type options', () => {
     })
     expect(getDefaultBaseUrlForProviders('codex')).toBe('')
     expect(getDefaultBaseUrlForProviders('claude-code')).toBe('')
+  })
+
+  it('sets a Qwen Code API-key endpoint by default', () => {
+    expect(getDefaultBaseUrlForProviders('qwen-code')).toBe(
+      'https://coding.dashscope.aliyuncs.com/v1',
+    )
   })
 })

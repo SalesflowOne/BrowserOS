@@ -31,7 +31,7 @@ export enum Feature {
   CHATGPT_PRO_SUPPORT = 'CHATGPT_PRO_SUPPORT',
   // GitHub Copilot OAuth LLM provider
   GITHUB_COPILOT_SUPPORT = 'GITHUB_COPILOT_SUPPORT',
-  // Qwen Code OAuth LLM provider
+  // Qwen Code LLM provider
   QWEN_CODE_SUPPORT = 'QWEN_CODE_SUPPORT',
   // Credit-based usage tracking
   CREDITS_SUPPORT = 'CREDITS_SUPPORT',

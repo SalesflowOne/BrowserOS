@@ -47,17 +47,6 @@ export const GITHUB_COPILOT_OAUTH_DISCONNECTED_EVENT =
   'settings.github_copilot.oauth_disconnected'
 
 /** @public */
-export const QWEN_CODE_OAUTH_STARTED_EVENT = 'settings.qwen_code.oauth_started'
-
-/** @public */
-export const QWEN_CODE_OAUTH_COMPLETED_EVENT =
-  'settings.qwen_code.oauth_completed'
-
-/** @public */
-export const QWEN_CODE_OAUTH_DISCONNECTED_EVENT =
-  'settings.qwen_code.oauth_disconnected'
-
-/** @public */
 export const HUB_PROVIDER_ADDED_EVENT = 'settings.hub_provider.added'
 
 /** @public */

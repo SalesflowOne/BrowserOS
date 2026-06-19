@@ -160,11 +160,7 @@ function isProviderTestable(input: {
     return input.type !== 'acp-custom' || Boolean(input.acpCommand)
   }
 
-  if (
-    input.type === 'chatgpt-pro' ||
-    input.type === 'github-copilot' ||
-    input.type === 'qwen-code'
-  ) {
+  if (input.type === 'chatgpt-pro' || input.type === 'github-copilot') {
     return true
   }
 
@@ -507,11 +503,9 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
       const name =
         watchedType === 'github-copilot'
           ? 'GitHub'
-          : watchedType === 'qwen-code'
-            ? 'Qwen Code'
-            : watchedType === 'codex'
-              ? 'Codex'
-              : 'Claude Code'
+          : watchedType === 'codex'
+            ? 'Codex'
+            : 'Claude Code'
       const message =
         watchedType === 'codex' || watchedType === 'claude-code'
           ? `Credentials are managed by the local ${name} runtime. No API key needed.`

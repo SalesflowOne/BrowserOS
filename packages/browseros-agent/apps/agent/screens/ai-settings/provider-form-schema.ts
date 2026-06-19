@@ -27,7 +27,6 @@ const credentiallessProviderTypes: ReadonlySet<
 > = new Set([
   'chatgpt-pro',
   'github-copilot',
-  'qwen-code',
   'codex',
   'claude-code',
   'acp-custom',
@@ -93,6 +92,27 @@ export const providerFormSchema = z
           code: z.ZodIssueCode.custom,
           message: 'Region is required',
           path: ['region'],
+        })
+      }
+    } else if (data.type === 'qwen-code') {
+      if (!data.baseUrl) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Base URL is required for Qwen Code',
+          path: ['baseUrl'],
+        })
+      } else if (!/^https?:\/\/.+/.test(data.baseUrl)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Must be a valid URL',
+          path: ['baseUrl'],
+        })
+      }
+      if (!data.apiKey) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'API Key is required for Qwen Code',
+          path: ['apiKey'],
         })
       }
     } else if (credentiallessProviderTypes.has(data.type)) {

@@ -19,9 +19,6 @@ import {
   GITHUB_COPILOT_OAUTH_COMPLETED_EVENT,
   GITHUB_COPILOT_OAUTH_DISCONNECTED_EVENT,
   GITHUB_COPILOT_OAUTH_STARTED_EVENT,
-  QWEN_CODE_OAUTH_COMPLETED_EVENT,
-  QWEN_CODE_OAUTH_DISCONNECTED_EVENT,
-  QWEN_CODE_OAUTH_STARTED_EVENT,
 } from '@/lib/constants/analyticsEvents'
 import { GetProfileIdByUserIdDocument } from '@/lib/conversations/graphql/uploadConversationDocument'
 import { getQueryKeyFromDocument } from '@/lib/graphql/getQueryKeyFromDocument'
@@ -55,7 +52,6 @@ import { McpPromoBanner } from './McpPromoBanner'
 import { NewProviderDialog } from './NewProviderDialog'
 import { ProviderTemplatesSection } from './ProviderTemplatesSection'
 
-// All OAuth providers share the same flow via useOAuthProviderFlow
 const OAUTH_PROVIDERS_CONFIG: Record<string, OAuthProviderFlowConfig> = {
   'chatgpt-pro': {
     providerType: 'chatgpt-pro',
@@ -77,21 +73,6 @@ const OAUTH_PROVIDERS_CONFIG: Record<string, OAuthProviderFlowConfig> = {
       scopes: 'read:user',
       requiresPKCE: false,
       contentType: 'json',
-    },
-  },
-  'qwen-code': {
-    providerType: 'qwen-code',
-    displayName: 'Qwen Code',
-    startedEvent: QWEN_CODE_OAUTH_STARTED_EVENT,
-    completedEvent: QWEN_CODE_OAUTH_COMPLETED_EVENT,
-    disconnectedEvent: QWEN_CODE_OAUTH_DISCONNECTED_EVENT,
-    clientAuth: {
-      deviceCodeEndpoint: 'https://chat.qwen.ai/api/v1/oauth2/device/code',
-      tokenEndpoint: 'https://chat.qwen.ai/api/v1/oauth2/token',
-      clientId: 'f0304373b74a44d2b584a3fb70ca9e56',
-      scopes: 'openid profile email model.completion',
-      requiresPKCE: true,
-      contentType: 'form',
     },
   },
 }
@@ -174,7 +155,6 @@ export const BrowserOsAiPane: FC = () => {
     null,
   )
 
-  // OAuth flows — shared hook eliminates per-provider duplication
   const chatgptPro = useOAuthProviderFlow(
     OAUTH_PROVIDERS_CONFIG['chatgpt-pro'],
     providers,
@@ -185,20 +165,12 @@ export const BrowserOsAiPane: FC = () => {
     providers,
     saveProvider,
   )
-  const qwenCode = useOAuthProviderFlow(
-    OAUTH_PROVIDERS_CONFIG['qwen-code'],
-    providers,
-    saveProvider,
-  )
 
   const activeDeviceCode =
-    chatgptPro.pendingDeviceCode ??
-    copilot.pendingDeviceCode ??
-    qwenCode.pendingDeviceCode
+    chatgptPro.pendingDeviceCode ?? copilot.pendingDeviceCode
   const clearActiveDeviceCode = () => {
     chatgptPro.clearDeviceCode()
     copilot.clearDeviceCode()
-    qwenCode.clearDeviceCode()
   }
 
   const oauthFlows: Record<
@@ -219,11 +191,6 @@ export const BrowserOsAiPane: FC = () => {
       disconnect: copilot.disconnect,
       disconnectedEvent: GITHUB_COPILOT_OAUTH_DISCONNECTED_EVENT,
     },
-    'qwen-code': {
-      startOAuthFlow: qwenCode.startOAuthFlow,
-      disconnect: qwenCode.disconnect,
-      disconnectedEvent: QWEN_CODE_OAUTH_DISCONNECTED_EVENT,
-    },
   }
 
   const handleAddProvider = () => {
@@ -232,7 +199,6 @@ export const BrowserOsAiPane: FC = () => {
   }
 
   const handleUseTemplate = (template: ProviderTemplate) => {
-    // OAuth providers: trigger OAuth flow
     const oauthFlow = oauthFlows[template.id]
     if (oauthFlow) {
       oauthFlow.startOAuthFlow(agentServerUrl ?? undefined)

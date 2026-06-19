@@ -74,11 +74,13 @@ export const providerTemplates: ProviderTemplate[] = [
   {
     id: 'qwen-code',
     name: 'Qwen Code',
-    defaultBaseUrl: 'https://portal.qwen.ai/v1',
-    defaultModelId: 'coder-model',
+    defaultBaseUrl: 'https://coding.dashscope.aliyuncs.com/v1',
+    defaultModelId: 'qwen3-coder-plus',
     supportsImages: true,
     contextWindow: 1000000,
-    setupGuideUrl: 'https://docs.browseros.com/features/qwen-code-oauth',
+    apiKeyUrl: 'https://modelstudio.console.alibabacloud.com/',
+    setupGuideUrl:
+      'https://qwenlm.github.io/qwen-code-docs/en/users/configuration/auth/',
   },
   {
     id: 'moonshot',
@@ -192,7 +194,7 @@ const DEFAULT_BASE_URLS: Record<ProviderType, string> = {
   'remote-hermes': '',
   'chatgpt-pro': 'https://chatgpt.com/backend-api',
   'github-copilot': 'https://api.githubcopilot.com',
-  'qwen-code': 'https://portal.qwen.ai/v1',
+  'qwen-code': 'https://coding.dashscope.aliyuncs.com/v1',
   codex: '',
   'claude-code': '',
   'acp-custom': '',
