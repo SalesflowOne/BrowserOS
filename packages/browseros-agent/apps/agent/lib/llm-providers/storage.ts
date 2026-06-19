@@ -11,7 +11,6 @@ import { uploadLlmProvidersToGraphql } from './uploadLlmProvidersToGraphql'
 
 export { DEFAULT_PROVIDER_ID } from './provider-selection'
 
-/** Storage key for LLM providers array */
 export const providersStorage = storage.defineItem<LlmProviderConfig[]>(
   'local:llm-providers',
   {
@@ -35,7 +34,7 @@ export const providersStorage = storage.defineItem<LlmProviderConfig[]>(
   },
 )
 
-/** Backup providers to BrowserOS prefs (write-only, best-effort) */
+/** Mirrors provider metadata into BrowserOS prefs without blocking settings writes. */
 async function backupToBrowserOS(backup: LlmProvidersBackup): Promise<void> {
   try {
     const adapter = getBrowserOSAdapter()
@@ -45,10 +44,7 @@ async function backupToBrowserOS(backup: LlmProvidersBackup): Promise<void> {
   }
 }
 
-/**
- * Setup one-way sync of LLM providers to BrowserOS prefs
- * @public
- */
+/** Starts one-way provider sync to BrowserOS prefs. */
 export function setupLlmProvidersBackupToBrowserOS(): () => void {
   const unsubscribe = providersStorage.watch(async (providers) => {
     if (providers) {
@@ -70,11 +66,7 @@ export async function syncLlmProviders(): Promise<void> {
   await uploadLlmProvidersToGraphql(providers, userId)
 }
 
-/**
- * Setup one-way sync of LLM providers to GraphQL backend
- * Watches for storage changes and uploads non-sensitive provider data
- * @public
- */
+/** Starts one-way provider sync of non-sensitive metadata to the backend. */
 export function setupLlmProvidersSyncToBackend(): () => void {
   syncLlmProviders().catch(() => {})
 
@@ -88,13 +80,13 @@ export function setupLlmProvidersSyncToBackend(): () => void {
   return unsubscribe
 }
 
-/** Load providers from storage */
+/** Loads providers after removing records the current UI cannot safely use. */
 export async function loadProviders(): Promise<LlmProviderConfig[]> {
   const providers = (await providersStorage.getValue()) || []
-  const normalizedProviders = normalizeProviderNames(providers)
+  const normalizedProviders = normalizeStoredProviders(providers)
 
-  // Keep storage consistent so every consumer sees the same provider name.
   if (
+    normalizedProviders.length !== providers.length ||
     normalizedProviders.some((provider, index) => provider !== providers[index])
   ) {
     await providersStorage.setValue(normalizedProviders)
@@ -103,7 +95,7 @@ export async function loadProviders(): Promise<LlmProviderConfig[]> {
   return normalizedProviders
 }
 
-/** Creates the default BrowserOS provider configuration */
+/** Creates the default BrowserOS provider configuration. */
 export function createDefaultBrowserOSProvider(): LlmProviderConfig {
   const timestamp = Date.now()
   return {
@@ -125,14 +117,12 @@ export function createDefaultProvidersConfig(): LlmProviderConfig[] {
   return [createDefaultBrowserOSProvider()]
 }
 
-/**
- * Normalize built-in provider names back to "BrowserOS" (e.g. from "Kimi K2.5"
- * which was set during a previous partnership launch).
- */
-function normalizeProviderNames(
+/** Normalizes stored providers before any settings or chat consumer sees them. */
+function normalizeStoredProviders(
   providers: LlmProviderConfig[],
 ): LlmProviderConfig[] {
-  return providers.map((provider) => {
+  return providers.flatMap((provider) => {
+    if (isLegacyQwenOAuthProvider(provider)) return []
     if (
       provider.id === DEFAULT_PROVIDER_ID &&
       provider.type === 'browseros' &&
@@ -143,11 +133,19 @@ function normalizeProviderNames(
         name: DEFAULT_PROVIDER_NAME,
       }
     }
-    return provider
+    return [provider]
   })
 }
 
-/** Storage key for the default provider ID */
+function isLegacyQwenOAuthProvider(provider: LlmProviderConfig): boolean {
+  return (
+    provider.type === 'qwen-code' &&
+    (!provider.baseUrl ||
+      !provider.apiKey ||
+      provider.modelId === 'coder-model')
+  )
+}
+
 export const defaultProviderIdStorage = storage.defineItem<string>(
   'local:default-provider-id',
   {
