@@ -116,6 +116,160 @@ describe('registerBrowserTools', () => {
     expect(fake.configs.get('tabs')?.inputSchema).toBeDefined()
   })
 
+  it('captures JPEG screenshots with default and custom quality', async () => {
+    const fake = createFakeServer()
+    const captureParams: unknown[] = []
+    const session = {
+      pages: {
+        getSession: async () => ({
+          session: {
+            Page: {
+              getLayoutMetrics: async () => ({
+                layoutViewport: {
+                  pageX: 0,
+                  pageY: 0,
+                  clientWidth: 2048,
+                  clientHeight: 1536,
+                },
+                cssLayoutViewport: {
+                  pageX: 5,
+                  pageY: 7,
+                  clientWidth: 2048,
+                  clientHeight: 1536,
+                },
+              }),
+              captureScreenshot: async (params: unknown) => {
+                captureParams.push(params)
+                return { data: 'jpeg-data' }
+              },
+            },
+          },
+        }),
+      },
+    } as unknown as BrowserSession
+
+    registerBrowserTools(fake.server as never, session)
+
+    await expect(
+      fake.handlers.get('screenshot')?.({ page: 1 }),
+    ).resolves.toEqual({
+      content: [{ type: 'image', data: 'jpeg-data', mimeType: 'image/jpeg' }],
+    })
+    await expect(
+      fake.handlers.get('screenshot')?.({
+        page: 1,
+        quality: 60,
+        size: { width: 512, height: 384 },
+      }),
+    ).resolves.toEqual({
+      content: [{ type: 'image', data: 'jpeg-data', mimeType: 'image/jpeg' }],
+    })
+    expect(captureParams).toEqual([
+      {
+        format: 'jpeg',
+        quality: 80,
+        fromSurface: true,
+        captureBeyondViewport: false,
+        clip: {
+          x: 5,
+          y: 7,
+          width: 2048,
+          height: 1536,
+          scale: 0.5,
+        },
+      },
+      {
+        format: 'jpeg',
+        quality: 60,
+        fromSurface: true,
+        captureBeyondViewport: false,
+        clip: {
+          x: 5,
+          y: 7,
+          width: 2048,
+          height: 1536,
+          scale: 0.25,
+        },
+      },
+    ])
+  })
+
+  it('omits quality for PNG screenshots and skips size clips for full page', async () => {
+    const fake = createFakeServer()
+    const captureParams: unknown[] = []
+    let layoutMetricCalls = 0
+    const session = {
+      pages: {
+        getSession: async () => ({
+          session: {
+            Page: {
+              getLayoutMetrics: async () => {
+                layoutMetricCalls += 1
+                return {
+                  layoutViewport: {
+                    pageX: 0,
+                    pageY: 0,
+                    clientWidth: 800,
+                    clientHeight: 600,
+                  },
+                  cssLayoutViewport: {
+                    pageX: 0,
+                    pageY: 0,
+                    clientWidth: 800,
+                    clientHeight: 600,
+                  },
+                }
+              },
+              captureScreenshot: async (params: unknown) => {
+                captureParams.push(params)
+                return { data: 'png-data' }
+              },
+            },
+          },
+        }),
+      },
+    } as unknown as BrowserSession
+
+    registerBrowserTools(fake.server as never, session)
+
+    await expect(
+      fake.handlers.get('screenshot')?.({
+        page: 1,
+        format: 'png',
+        quality: 25,
+      }),
+    ).resolves.toEqual({
+      content: [{ type: 'image', data: 'png-data', mimeType: 'image/png' }],
+    })
+    await expect(
+      fake.handlers.get('screenshot')?.({ page: 1, fullPage: true }),
+    ).resolves.toEqual({
+      content: [{ type: 'image', data: 'png-data', mimeType: 'image/jpeg' }],
+    })
+
+    expect(layoutMetricCalls).toBe(1)
+    expect(captureParams).toEqual([
+      {
+        format: 'png',
+        fromSurface: true,
+        captureBeyondViewport: false,
+        clip: {
+          x: 0,
+          y: 0,
+          width: 800,
+          height: 600,
+          scale: 1,
+        },
+      },
+      {
+        format: 'jpeg',
+        quality: 80,
+        fromSurface: true,
+        captureBeyondViewport: true,
+      },
+    ])
+  })
+
   it('manages windows through the compact windows tool', async () => {
     const fake = createFakeServer()
     const calls: Array<{ method: string; args?: unknown }> = []
@@ -1481,7 +1635,21 @@ return 'late'
               evaluate: async () => ({ result: { value: true } }),
             },
             Page: {
-              captureScreenshot: async () => ({ data: 'png-data' }),
+              getLayoutMetrics: async () => ({
+                layoutViewport: {
+                  pageX: 0,
+                  pageY: 0,
+                  clientWidth: 1024,
+                  clientHeight: 768,
+                },
+                cssLayoutViewport: {
+                  pageX: 0,
+                  pageY: 0,
+                  clientWidth: 1024,
+                  clientHeight: 768,
+                },
+              }),
+              captureScreenshot: async () => ({ data: 'image-data' }),
             },
           },
         }),
@@ -1511,7 +1679,7 @@ return 'late'
       }),
     ).toMatchObject({ structuredContent: { count: 1 } })
     expect(await fake.handlers.get('screenshot')?.({ page: 1 })).toMatchObject({
-      content: [{ type: 'image', data: 'png-data', mimeType: 'image/png' }],
+      content: [{ type: 'image', data: 'image-data', mimeType: 'image/jpeg' }],
     })
     expect(
       await fake.handlers.get('wait')?.({
