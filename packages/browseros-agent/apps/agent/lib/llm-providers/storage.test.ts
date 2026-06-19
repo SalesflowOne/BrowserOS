@@ -127,4 +127,30 @@ describe('loadProviders', () => {
     })
     expect(await providersStorage.getValue()).toEqual(providers)
   })
+
+  it('repairs Qwen API-key providers saved with the legacy OAuth base URL', async () => {
+    const repairableQwen: LlmProviderConfig = {
+      id: 'qwen-api-key',
+      type: 'qwen-code',
+      name: 'Qwen Code',
+      baseUrl: 'https://portal.qwen.ai/v1',
+      apiKey: 'sk-test',
+      modelId: 'qwen3-coder-plus',
+      supportsImages: true,
+      contextWindow: 1000000,
+      temperature: 0.2,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }
+    await providersStorage.setValue([browserOSProvider, repairableQwen])
+
+    const providers = await loadProviders()
+
+    expect(providers[1]).toMatchObject({
+      id: 'qwen-api-key',
+      baseUrl: 'https://coding.dashscope.aliyuncs.com/v1',
+      apiKey: 'sk-test',
+    })
+    expect(await providersStorage.getValue()).toEqual(providers)
+  })
 })

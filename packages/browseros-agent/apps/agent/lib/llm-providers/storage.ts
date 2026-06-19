@@ -11,6 +11,9 @@ import { uploadLlmProvidersToGraphql } from './uploadLlmProvidersToGraphql'
 
 export { DEFAULT_PROVIDER_ID } from './provider-selection'
 
+const QWEN_CODE_BASE_URL = 'https://coding.dashscope.aliyuncs.com/v1'
+const QWEN_CODE_LEGACY_BASE_URL = 'https://portal.qwen.ai/v1'
+
 export const providersStorage = storage.defineItem<LlmProviderConfig[]>(
   'local:llm-providers',
   {
@@ -34,7 +37,7 @@ export const providersStorage = storage.defineItem<LlmProviderConfig[]>(
         providers: LlmProviderConfig[] | null,
       ): LlmProviderConfig[] | null => {
         if (!providers) return providers
-        return normalizeStoredProviders(providers)
+        return normalizeProvidersForStorage(providers)
       },
     },
   },
@@ -89,7 +92,7 @@ export function setupLlmProvidersSyncToBackend(): () => void {
 /** Loads providers after removing records the current UI cannot safely use. */
 export async function loadProviders(): Promise<LlmProviderConfig[]> {
   const providers = (await providersStorage.getValue()) || []
-  const normalizedProviders = normalizeStoredProviders(providers)
+  const normalizedProviders = normalizeProvidersForStorage(providers)
 
   if (
     normalizedProviders.length !== providers.length ||
@@ -123,8 +126,8 @@ export function createDefaultProvidersConfig(): LlmProviderConfig[] {
   return [createDefaultBrowserOSProvider()]
 }
 
-/** Normalizes stored providers before any settings or chat consumer sees them. */
-function normalizeStoredProviders(
+/** Normalizes provider arrays before persistence and consumption. */
+export function normalizeProvidersForStorage(
   providers: LlmProviderConfig[],
 ): LlmProviderConfig[] {
   return providers.flatMap((provider) => {
@@ -149,10 +152,21 @@ function normalizeQwenProvider(
 ): LlmProviderConfig | null {
   if (provider.type !== 'qwen-code') return provider
   if (!provider.baseUrl || !provider.apiKey) return null
-  if (!provider.modelId || provider.modelId === 'coder-model') {
-    return { ...provider, modelId: 'qwen3-coder-plus' }
+  const baseUrl = isLegacyQwenBaseUrl(provider.baseUrl)
+    ? QWEN_CODE_BASE_URL
+    : provider.baseUrl
+  const modelId =
+    !provider.modelId || provider.modelId === 'coder-model'
+      ? 'qwen3-coder-plus'
+      : provider.modelId
+  if (baseUrl !== provider.baseUrl || modelId !== provider.modelId) {
+    return { ...provider, baseUrl, modelId }
   }
   return provider
+}
+
+function isLegacyQwenBaseUrl(baseUrl: string): boolean {
+  return baseUrl.replace(/\/+$/, '') === QWEN_CODE_LEGACY_BASE_URL
 }
 
 export const defaultProviderIdStorage = storage.defineItem<string>(

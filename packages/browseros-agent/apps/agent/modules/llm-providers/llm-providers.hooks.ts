@@ -9,6 +9,7 @@ import {
   DEFAULT_PROVIDER_ID,
   defaultProviderIdStorage,
   loadProviders,
+  normalizeProvidersForStorage,
   providersStorage,
 } from '../../lib/llm-providers/storage'
 
@@ -116,7 +117,9 @@ export function useLlmProviders(): UseLlmProvidersReturn {
       ]
     }
 
-    await providersStorage.setValue(updatedProviders)
+    await providersStorage.setValue(
+      normalizeProvidersForStorage(updatedProviders),
+    )
   }
 
   const setDefaultProviderFn = async (providerId: string) => {
