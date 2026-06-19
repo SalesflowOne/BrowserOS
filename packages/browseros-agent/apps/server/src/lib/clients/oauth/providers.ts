@@ -47,18 +47,6 @@ const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
     upstreamLLMProvider: 'github-copilot',
     authFlow: 'device-code',
   },
-  'qwen-code': {
-    id: 'qwen-code',
-    name: 'Qwen Code',
-    clientId: 'f0304373b74a44d2b584a3fb70ca9e56',
-    authEndpoint: EXTERNAL_URLS.QWEN_DEVICE_CODE,
-    tokenEndpoint: EXTERNAL_URLS.QWEN_OAUTH_TOKEN,
-    scopes: ['openid', 'profile', 'email', 'model.completion'],
-    upstreamLLMProvider: 'qwen-code',
-    authFlow: 'device-code',
-    deviceCodeContentType: 'form',
-    deviceCodeRequiresPKCE: true,
-  },
 }
 
 export function getOAuthProvider(

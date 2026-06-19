@@ -153,10 +153,11 @@ function createMoonshotModel(config: ResolvedLLMConfig): LanguageModel {
 }
 
 function createQwenCodeModel(config: ResolvedLLMConfig): LanguageModel {
-  if (!config.apiKey) throw new Error('Qwen Code requires OAuth authentication')
+  if (!config.baseUrl) throw new Error('Qwen Code provider requires baseUrl')
+  if (!config.apiKey) throw new Error('Qwen Code provider requires apiKey')
   return createOpenAICompatible({
     name: 'qwen-code',
-    baseURL: EXTERNAL_URLS.QWEN_CODE_API,
+    baseURL: config.baseUrl,
     apiKey: config.apiKey,
   })(config.model)
 }

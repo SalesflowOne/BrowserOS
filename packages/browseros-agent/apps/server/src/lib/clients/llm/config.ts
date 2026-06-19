@@ -42,14 +42,6 @@ export async function resolveLLMConfig(
       useRefresh: false,
     })
   }
-  if (config.provider === LLM_PROVIDERS.QWEN_CODE) {
-    return resolveOAuthConfig(config, browserosId, {
-      providerId: 'qwen-code',
-      displayName: 'Qwen Code',
-      defaultModel: 'coder-model',
-      useRefresh: true,
-    })
-  }
 
   // BrowserOS gateway: fetch config from remote service
   if (config.provider === LLM_PROVIDERS.BROWSEROS) {

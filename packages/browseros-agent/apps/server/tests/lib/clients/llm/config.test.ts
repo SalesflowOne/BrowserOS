@@ -44,4 +44,21 @@ describe('resolveLLMConfig', () => {
       accountId: 'account-id',
     })
   })
+
+  it('passes Qwen Code API-key configs through without OAuth resolution', async () => {
+    const resolved = await resolveLLMConfig({
+      provider: LLM_PROVIDERS.QWEN_CODE,
+      model: 'qwen3-coder-plus',
+      baseUrl: 'https://coding.dashscope.aliyuncs.com/v1',
+      apiKey: 'sk-test',
+    })
+
+    expect(tokenManager.refreshIfExpired).not.toHaveBeenCalled()
+    expect(resolved).toMatchObject({
+      provider: LLM_PROVIDERS.QWEN_CODE,
+      model: 'qwen3-coder-plus',
+      baseUrl: 'https://coding.dashscope.aliyuncs.com/v1',
+      apiKey: 'sk-test',
+    })
+  })
 })
