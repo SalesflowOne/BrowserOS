@@ -12,8 +12,15 @@ describe('ChatGPT Plus/Pro models', () => {
     expect(getModelContextLength('chatgpt-pro', 'gpt-5.5')).toBe(1050000)
   })
 
-  it('includes current GPT-5.4 low-latency variants', () => {
+  it('includes current GPT-5.5 Pro and GPT-5.4 options', () => {
+    expect(getModelContextLength('chatgpt-pro', 'gpt-5.5-pro')).toBe(1050000)
+    expect(getModelContextLength('chatgpt-pro', 'gpt-5.4')).toBe(1050000)
     expect(getModelContextLength('chatgpt-pro', 'gpt-5.4-mini')).toBe(400000)
     expect(getModelContextLength('chatgpt-pro', 'gpt-5.4-nano')).toBe(400000)
+  })
+
+  it('uses current context windows for older GPT-5 frontier models', () => {
+    expect(getModelContextLength('chatgpt-pro', 'gpt-5.2')).toBe(400000)
+    expect(getModelContextLength('chatgpt-pro', 'gpt-5.1')).toBe(400000)
   })
 })
