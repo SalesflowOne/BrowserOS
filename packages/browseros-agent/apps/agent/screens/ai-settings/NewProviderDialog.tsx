@@ -105,6 +105,10 @@ function showsStandardModelField(type: ProviderType): boolean {
   return !isAcpProviderType(type) && !isRemoteHermesType(type)
 }
 
+function defaultReasoningEffort(type?: ProviderType) {
+  return type === 'chatgpt-pro' ? 'medium' : 'high'
+}
+
 const EFFORT_LABEL: Record<string, string> = {
   none: 'None',
   low: 'Low',
@@ -217,7 +221,9 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
       secretAccessKey: initialValues?.secretAccessKey || '',
       region: initialValues?.region || '',
       sessionToken: initialValues?.sessionToken || '',
-      reasoningEffort: initialValues?.reasoningEffort || 'high',
+      reasoningEffort:
+        initialValues?.reasoningEffort ||
+        defaultReasoningEffort(initialValues?.type),
       reasoningSummary: initialValues?.reasoningSummary || 'auto',
     },
   })
@@ -311,6 +317,7 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
       if (!form.getValues('name')) form.setValue('name', 'Remote Hermes')
       return
     }
+    form.setValue('reasoningEffort', defaultReasoningEffort(newType))
     form.setValue('modelId', '')
   }
 
@@ -346,7 +353,9 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
         secretAccessKey: initialValues.secretAccessKey || '',
         region: initialValues.region || '',
         sessionToken: initialValues.sessionToken || '',
-        reasoningEffort: initialValues.reasoningEffort || 'high',
+        reasoningEffort:
+          initialValues.reasoningEffort ||
+          defaultReasoningEffort(initialValues.type),
         reasoningSummary: initialValues.reasoningSummary || 'auto',
       })
     }
@@ -369,7 +378,7 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
         secretAccessKey: '',
         region: '',
         sessionToken: '',
-        reasoningEffort: 'high',
+        reasoningEffort: defaultReasoningEffort(defaultType),
         reasoningSummary: 'auto',
       })
     }
@@ -679,7 +688,7 @@ export const NewProviderDialog: FC<NewProviderDialogProps> = ({
                   <FormLabel>Reasoning Effort</FormLabel>
                   <Select
                     onValueChange={field.onChange}
-                    value={field.value || 'high'}
+                    value={field.value || 'medium'}
                   >
                     <FormControl>
                       <SelectTrigger className="w-full">
