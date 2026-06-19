@@ -134,9 +134,6 @@ function isProviderTypeOptionSupported(
   if (value === 'github-copilot')
     return supports(Feature.GITHUB_COPILOT_SUPPORT)
   if (value === 'qwen-code') return supports(Feature.QWEN_CODE_SUPPORT)
-  if (value === 'openai-compatible') {
-    return supports(Feature.OPENAI_COMPATIBLE_SUPPORT)
-  }
   return true
 }
 

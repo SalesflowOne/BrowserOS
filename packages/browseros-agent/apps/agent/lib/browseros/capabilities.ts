@@ -23,20 +23,6 @@ type FeatureConfig = {
 export enum Feature {
   // Unfinished UI surfaces behind an explicit alpha opt-in
   ALPHA_FEATURES_SUPPORT = 'ALPHA_FEATURES_SUPPORT',
-  // support for OpenAI-compatible provider
-  OPENAI_COMPATIBLE_SUPPORT = 'OPENAI_COMPATIBLE_SUPPORT',
-  // Managed MCP servers integration
-  MANAGED_MCP_SUPPORT = 'MANAGED_MCP_SUPPORT',
-  // Chat personalization via system prompt
-  PERSONALIZATION_SUPPORT = 'PERSONALIZATION_SUPPORT',
-  // Toolbar customization settings
-  CUSTOMIZATION_SUPPORT = 'CUSTOMIZATION_SUPPORT',
-  // Workspace folder selection with full path support requires new browserOS.choosePath API
-  WORKSPACE_FOLDER_SUPPORT = 'WORKSPACE_FOLDER_SUPPORT',
-  // Proxy server support
-  PROXY_SUPPORT = 'PROXY_SUPPORT',
-  // previousConversation as structured array (older servers only accept string)
-  PREVIOUS_CONVERSATION_ARRAY = 'PREVIOUS_CONVERSATION_ARRAY',
   // Inline chat in the new tab page
   NEWTAB_CHAT_SUPPORT = 'NEWTAB_CHAT_SUPPORT',
   // Vertical tabs preference and customization
@@ -68,13 +54,6 @@ export enum Feature {
  */
 const FEATURE_CONFIG: { [K in Feature]: FeatureConfig } = {
   [Feature.ALPHA_FEATURES_SUPPORT]: { requiresAlphaFlag: true },
-  [Feature.OPENAI_COMPATIBLE_SUPPORT]: { minBrowserOSVersion: '0.33.0.1' },
-  [Feature.MANAGED_MCP_SUPPORT]: { minBrowserOSVersion: '0.34.0.0' },
-  [Feature.PERSONALIZATION_SUPPORT]: { minBrowserOSVersion: '0.36.1.0' },
-  [Feature.CUSTOMIZATION_SUPPORT]: { minBrowserOSVersion: '0.36.1.0' },
-  [Feature.WORKSPACE_FOLDER_SUPPORT]: { minBrowserOSVersion: '0.36.4.0' },
-  [Feature.PROXY_SUPPORT]: { minBrowserOSVersion: '0.46.0.0' },
-  [Feature.PREVIOUS_CONVERSATION_ARRAY]: { minServerVersion: '0.0.64' },
   [Feature.NEWTAB_CHAT_SUPPORT]: { minBrowserOSVersion: '0.40.0.0' },
   [Feature.VERTICAL_TABS_SUPPORT]: { minBrowserOSVersion: '0.42.0.0' },
   [Feature.CHATGPT_PRO_SUPPORT]: { minServerVersion: '0.0.77' },
