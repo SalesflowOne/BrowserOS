@@ -2,7 +2,10 @@ import { storage } from '@wxt-dev/storage'
 import { sessionStorage } from '@/lib/auth/sessionStorage'
 import { getBrowserOSAdapter } from '@/lib/browseros/adapter'
 import { BROWSEROS_PREFS } from '@/lib/browseros/prefs'
-import { CHATGPT_PROVIDER_DISPLAY_NAME } from './provider-display-names'
+import {
+  migrateLlmProvidersToV3,
+  normalizeProviderNames,
+} from './provider-name-normalization'
 import {
   DEFAULT_PROVIDER_ID,
   DEFAULT_PROVIDER_NAME,
@@ -34,8 +37,7 @@ export const providersStorage = storage.defineItem<LlmProviderConfig[]>(
       3: (
         providers: LlmProviderConfig[] | null,
       ): LlmProviderConfig[] | null => {
-        if (!providers) return providers
-        return normalizeProviderNames(providers)
+        return migrateLlmProvidersToV3(providers)
       },
     },
   },
@@ -123,37 +125,6 @@ export function createDefaultBrowserOSProvider(): LlmProviderConfig {
 /** Creates the default providers configuration. Only call when storage is empty. */
 export function createDefaultProvidersConfig(): LlmProviderConfig[] {
   return [createDefaultBrowserOSProvider()]
-}
-
-function normalizeProviderNames(
-  providers: LlmProviderConfig[],
-): LlmProviderConfig[] {
-  return providers.map((provider) => {
-    if (
-      provider.id === DEFAULT_PROVIDER_ID &&
-      provider.type === 'browseros' &&
-      provider.name !== DEFAULT_PROVIDER_NAME
-    ) {
-      return {
-        ...provider,
-        name: DEFAULT_PROVIDER_NAME,
-      }
-    }
-    if (
-      provider.type === 'chatgpt-pro' &&
-      isLegacyChatGPTProviderName(provider.name)
-    ) {
-      return {
-        ...provider,
-        name: CHATGPT_PROVIDER_DISPLAY_NAME,
-      }
-    }
-    return provider
-  })
-}
-
-function isLegacyChatGPTProviderName(name: string): boolean {
-  return /^ChatGPT Plus\/Pro(?: \([^@\s()]+@[^@\s()]+\))?$/.test(name)
 }
 
 export const defaultProviderIdStorage = storage.defineItem<string>(
