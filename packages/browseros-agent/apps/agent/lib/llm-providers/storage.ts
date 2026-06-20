@@ -154,7 +154,7 @@ function normalizeProviderNames(
 }
 
 function isLegacyChatGPTProviderName(name: string): boolean {
-  return /^ChatGPT Plus\/Pro(?: \([^)]+\))?$/.test(name)
+  return /^ChatGPT Plus\/Pro(?: \([^@\s()]+@[^@\s()]+\))?$/.test(name)
 }
 
 /** Storage key for the default provider ID */

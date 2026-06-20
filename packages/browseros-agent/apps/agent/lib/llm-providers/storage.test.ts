@@ -99,12 +99,20 @@ describe('loadProviders', () => {
         type: 'chatgpt-pro',
         name: 'Work ChatGPT',
       }),
+      providerConfig({
+        id: 'chatgpt-pro-parenthetical-custom',
+        type: 'chatgpt-pro',
+        name: 'ChatGPT Plus/Pro (Work)',
+      }),
     ]
     storageValues.set('local:llm-providers', storedProviders)
 
     const providers = await loadProviders()
 
-    expect(providers[0]?.name).toBe('Work ChatGPT')
+    expect(providers.map((provider) => provider.name)).toEqual([
+      'Work ChatGPT',
+      'ChatGPT Plus/Pro (Work)',
+    ])
     expect(storageValues.get('local:llm-providers')).toBe(storedProviders)
   })
 })
