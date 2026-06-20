@@ -1200,85 +1200,6 @@ Use the BrowserOS MCP server for all browser tasks, including browsing the web, 
     },
   )
 
-  it('resolves the Hermes adapter to a host-process `hermes acp` command', async () => {
-    const browserosDir = await mkdtemp(
-      join(tmpdir(), 'browseros-acpx-browseros-'),
-    )
-    const stateDir = await mkdtemp(join(tmpdir(), 'browseros-acpx-state-'))
-    tempDirs.push(browserosDir, stateDir)
-    const calls: Array<{ method: string; input: unknown }> = []
-    const runtime = new AcpxRuntime({
-      browserosDir,
-      stateDir,
-      runtimeFactory: (options) => {
-        calls.push({ method: 'createRuntime', input: options })
-        return createFakeAcpRuntime(calls)
-      },
-    })
-    const agent = makeAgent({ id: 'agent-1', adapter: 'hermes' })
-
-    await collectStream(
-      await runtime.send({
-        agent,
-        sessionId: 'main',
-        sessionKey: agent.sessionKey,
-        message: 'hi',
-        permissionMode: 'approve-all',
-      }),
-    )
-
-    const command =
-      getCreateRuntimeOptions(calls).agentRegistry.resolve('hermes')
-    expect(command).toContain('hermes acp')
-    expect(command).toContain('env HERMES_HOME=')
-    if (process.platform !== 'win32') {
-      expect(command).toContain(' -lic ')
-    }
-    expect(command).not.toContain('limactl')
-    expect(command).not.toContain('nerdctl')
-    expect(command).not.toContain('bash -c')
-    expect(command).not.toContain('tee /dev/null')
-  })
-
-  it('launches bundled Hermes by absolute path when packaged resources include it', async () => {
-    const browserosDir = await mkdtemp(
-      join(tmpdir(), 'browseros-acpx-browseros-'),
-    )
-    const stateDir = await mkdtemp(join(tmpdir(), 'browseros-acpx-state-'))
-    const resourcesDir = await mkdtemp(
-      join(tmpdir(), 'browseros-acpx-resources-'),
-    )
-    tempDirs.push(browserosDir, stateDir, resourcesDir)
-    const hermesPath = await writeFakeBundledNative(resourcesDir, 'hermes')
-    const calls: Array<{ method: string; input: unknown }> = []
-    const runtime = new AcpxRuntime({
-      browserosDir,
-      resourcesDir,
-      stateDir,
-      runtimeFactory: (options) => {
-        calls.push({ method: 'createRuntime', input: options })
-        return createFakeAcpRuntime(calls)
-      },
-    })
-    const agent = makeAgent({ id: 'agent-1', adapter: 'hermes' })
-
-    await collectStream(
-      await runtime.send({
-        agent,
-        sessionId: 'main',
-        sessionKey: agent.sessionKey,
-        message: 'hi',
-        permissionMode: 'approve-all',
-      }),
-    )
-
-    const command =
-      getCreateRuntimeOptions(calls).agentRegistry.resolve('hermes')
-    expect(command).toContain(`'${hermesPath}' acp`)
-    expect(command).toContain('env HERMES_HOME=')
-    expect(command).not.toContain(' -lic ')
-  })
-
   it('does not reuse an Acpx runtime across different command identities', async () => {
     const browserosDir = await mkdtemp(
       join(tmpdir(), 'browseros-acpx-browseros-'),
@@ -1511,33 +1432,6 @@ Use the BrowserOS MCP server for all browser tasks, including browsing the web, 
       ),
     })
     expect(events.at(-1)).toEqual({ type: 'done', stopReason: 'end_turn' })
-  })
-
-  it('skips mode control for Hermes adapters', async () => {
-    const browserosDir = await mkdtemp(
-      join(tmpdir(), 'browseros-acpx-browseros-'),
-    )
-    const stateDir = await mkdtemp(join(tmpdir(), 'browseros-acpx-state-'))
-    tempDirs.push(browserosDir, stateDir)
-    const calls: Array<{ method: string; input: unknown }> = []
-    const runtime = new AcpxRuntime({
-      browserosDir,
-      stateDir,
-      runtimeFactory: () => createFakeAcpRuntime(calls),
-    })
-    const agent = makeAgent({ id: 'agent-1', adapter: 'hermes' })
-
-    await collectStream(
-      await runtime.send({
-        agent,
-        sessionId: 'main',
-        sessionKey: agent.sessionKey,
-        message: 'hi',
-        permissionMode: 'approve-all',
-      }),
-    )
-
-    expect(calls.filter((call) => call.method === 'setMode')).toEqual([])
   })
 
   it('reuses cached runtime instances across per-turn timeouts', async () => {

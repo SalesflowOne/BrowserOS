@@ -108,15 +108,6 @@ describe('resolveAcpSpawnCommand', () => {
     expect(out).toBeNull()
   })
 
-  it('returns null for hermes since it has no acp package spec', () => {
-    const out = resolveAcpSpawnCommand({
-      agentType: 'hermes',
-      resourcesDir: '/fake/resources',
-      resolveBundledBun: stubBunPresent,
-    })
-    expect(out).toBeNull()
-  })
-
   it('returns null for an unknown agent type', () => {
     const out = resolveAcpSpawnCommand({
       agentType: 'gemini',

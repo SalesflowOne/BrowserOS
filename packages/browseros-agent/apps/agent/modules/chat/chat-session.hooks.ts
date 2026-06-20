@@ -5,7 +5,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import useDeepCompareEffect from 'use-deep-compare-effect'
 import type { Provider } from '@/components/chat/chatComponentTypes'
-import { Capabilities, Feature } from '@/lib/browseros/capabilities'
 import {
   getWindowConversation,
   setWindowConversation,
@@ -349,20 +348,12 @@ export const useChatSession = (options?: ChatSessionOptions) => {
         })
 
         const declinedApps = await declinedAppsStorage.getValue()
-        const supportsArrayConversation = await Capabilities.supports(
-          Feature.PREVIOUS_CONVERSATION_ARRAY,
-        )
-
         const previousMessages = messagesRef.current
         const history =
           previousMessages.length > 0
             ? formatConversationHistory(previousMessages)
             : undefined
-        const previousConversation = history?.length
-          ? supportsArrayConversation
-            ? history
-            : history.map((m) => `${m.role}: ${m.content}`).join('\n')
-          : undefined
+        const previousConversation = history?.length ? history : undefined
 
         const userSystemPrompt = getUserSystemPrompt(
           options?.origin,

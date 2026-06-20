@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 
 const MCP_PORT_PREF = 'browseros.server.mcp_port'
+const PROXY_PORT_PREF = 'browseros.server.proxy_port'
 let originalChrome: typeof globalThis.chrome | undefined
 
 function readPref(name: string): { value: unknown } {
-  return name === MCP_PORT_PREF ? { value: 9105 } : { value: null }
+  if (name === MCP_PORT_PREF) return { value: 9105 }
+  if (name === PROXY_PORT_PREF) return { value: 9106 }
+  return { value: null }
 }
 
 mock.module('./prefs', () => ({
@@ -12,7 +15,7 @@ mock.module('./prefs', () => ({
     MCP_PORT: MCP_PORT_PREF,
     PROVIDERS: 'browseros.providers',
     THIRD_PARTY_LLM_PROVIDERS: 'browseros.third_party_llm.providers',
-    PROXY_PORT: 'browseros.server.proxy_port',
+    PROXY_PORT: PROXY_PORT_PREF,
     SERVER_PORT: 'browseros.server.server_port',
     ALLOW_REMOTE_MCP: 'browseros.server.allow_remote_in_mcp',
     RESTART_SERVER: 'browseros.server.restart_requested',
@@ -35,7 +38,7 @@ mock.module('./adapter', () => ({
   }),
 }))
 
-describe('getAgentServerUrl', () => {
+describe('BrowserOS helper URLs', () => {
   beforeEach(() => {
     originalChrome = globalThis.chrome
     Object.assign(globalThis, {
@@ -66,5 +69,19 @@ describe('getAgentServerUrl', () => {
     const { getAgentServerUrl } = await import('./helpers')
 
     await expect(getAgentServerUrl()).resolves.toBe('http://127.0.0.1:9105')
+  })
+
+  it('uses the BrowserOS proxy port for MCP requests', async () => {
+    const { getMcpServerUrl } = await import('./helpers')
+
+    await expect(getMcpServerUrl()).resolves.toBe('http://127.0.0.1:9106/mcp')
+  })
+
+  it('uses the BrowserOS proxy port for health checks', async () => {
+    const { getHealthCheckUrl } = await import('./helpers')
+
+    await expect(getHealthCheckUrl()).resolves.toBe(
+      'http://127.0.0.1:9106/health',
+    )
   })
 })
