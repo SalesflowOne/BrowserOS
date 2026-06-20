@@ -79,9 +79,6 @@ export const MCP_SERVER_RESTARTED_EVENT = 'settings.mcp_server.restarted'
 export const MCP_PROXY_PORT_CHANGED_EVENT = 'settings.mcp_proxy_port.changed'
 
 /** @public */
-export const AGENT_CREATED_EVENT = 'agents.agent.created'
-
-/** @public */
 export const AGENT_DELETED_EVENT = 'agents.agent.deleted'
 
 /** @public */

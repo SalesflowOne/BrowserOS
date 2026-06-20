@@ -39,7 +39,6 @@ import {
   useOAuthProviderFlow,
 } from '@/modules/llm-providers/oauth-provider-flow.hooks'
 import { CodingAgentsList } from './CodingAgentsList'
-import { CodingAgentsManager } from './CodingAgentsManager'
 import { ConfiguredProvidersList } from './ConfiguredProvidersList'
 import { useCodingAgents } from './coding-agents.hooks'
 import { DeviceCodeDialog } from './DeviceCodeDialog'
@@ -438,8 +437,6 @@ export const BrowserOsAiPane: FC = () => {
         onAddKeys={handleAddKeysToIncomplete}
         onDelete={handleDeleteIncompleteProvider}
       />
-
-      <CodingAgentsManager controller={coding} />
 
       <NewProviderDialog
         open={isNewDialogOpen}

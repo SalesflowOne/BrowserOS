@@ -137,13 +137,6 @@ export interface HarnessAdapterDescriptor {
   health?: HarnessAdapterHealth
 }
 
-export interface CreateHarnessAgentInput {
-  name: string
-  adapter: HarnessAgentAdapter
-  modelId?: string
-  reasoningEffort?: string
-}
-
 export interface HarnessHistoryReasoning {
   text: string
   durationMs?: number

@@ -1,7 +1,3 @@
-import type { HarnessAgentAdapter } from './agent-harness-types'
-
-export type CreateAgentRuntime = HarnessAgentAdapter
-
 export interface AgentListItem {
   key: string
   agentId: string
