@@ -12,11 +12,10 @@ import { uploadLlmProvidersToGraphql } from './uploadLlmProvidersToGraphql'
 
 export { DEFAULT_PROVIDER_ID } from './provider-selection'
 
-/** Storage key for LLM providers array */
 export const providersStorage = storage.defineItem<LlmProviderConfig[]>(
   'local:llm-providers',
   {
-    version: 2,
+    version: 3,
     migrations: {
       2: (
         providers: LlmProviderConfig[] | null,
@@ -32,11 +31,17 @@ export const providersStorage = storage.defineItem<LlmProviderConfig[]>(
           return provider
         })
       },
+      3: (
+        providers: LlmProviderConfig[] | null,
+      ): LlmProviderConfig[] | null => {
+        if (!providers) return providers
+        return normalizeProviderNames(providers)
+      },
     },
   },
 )
 
-/** Backup providers to BrowserOS prefs (write-only, best-effort) */
+/** Mirrors provider data into BrowserOS prefs without blocking local writes. */
 async function backupToBrowserOS(backup: LlmProvidersBackup): Promise<void> {
   try {
     const adapter = getBrowserOSAdapter()
@@ -46,10 +51,7 @@ async function backupToBrowserOS(backup: LlmProvidersBackup): Promise<void> {
   }
 }
 
-/**
- * Setup one-way sync of LLM providers to BrowserOS prefs
- * @public
- */
+/** Sets up one-way sync of LLM providers to BrowserOS prefs. */
 export function setupLlmProvidersBackupToBrowserOS(): () => void {
   const unsubscribe = providersStorage.watch(async (providers) => {
     if (providers) {
@@ -60,6 +62,7 @@ export function setupLlmProvidersBackupToBrowserOS(): () => void {
   return unsubscribe
 }
 
+/** Uploads provider metadata for signed-in users. */
 export async function syncLlmProviders(): Promise<void> {
   const providers = await providersStorage.getValue()
   if (!providers || providers.length === 0) return
@@ -71,11 +74,7 @@ export async function syncLlmProviders(): Promise<void> {
   await uploadLlmProvidersToGraphql(providers, userId)
 }
 
-/**
- * Setup one-way sync of LLM providers to GraphQL backend
- * Watches for storage changes and uploads non-sensitive provider data
- * @public
- */
+/** Sets up one-way sync of LLM providers to the GraphQL backend. */
 export function setupLlmProvidersSyncToBackend(): () => void {
   syncLlmProviders().catch(() => {})
 
@@ -89,7 +88,7 @@ export function setupLlmProvidersSyncToBackend(): () => void {
   return unsubscribe
 }
 
-/** Load providers from storage */
+/** Returns provider configs after applying display-name compatibility fixes. */
 export async function loadProviders(): Promise<LlmProviderConfig[]> {
   const providers = (await providersStorage.getValue()) || []
   const normalizedProviders = normalizeProviderNames(providers)
@@ -157,7 +156,6 @@ function isLegacyChatGPTProviderName(name: string): boolean {
   return /^ChatGPT Plus\/Pro(?: \([^@\s()]+@[^@\s()]+\))?$/.test(name)
 }
 
-/** Storage key for the default provider ID */
 export const defaultProviderIdStorage = storage.defineItem<string>(
   'local:default-provider-id',
   {

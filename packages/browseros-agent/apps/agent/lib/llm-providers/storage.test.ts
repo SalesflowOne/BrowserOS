@@ -2,14 +2,41 @@ import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test'
 import type { LlmProviderConfig } from './types'
 
 const storageValues = new Map<string, unknown>()
+const storageVersions = new Map<string, number>()
 
 mock.module('@wxt-dev/storage', () => ({
   storage: {
-    defineItem: <T>(key: string, options?: { fallback?: T }) => ({
-      getValue: async () =>
-        storageValues.has(key) ? storageValues.get(key) : options?.fallback,
+    defineItem: <T>(
+      key: string,
+      options?: {
+        fallback?: T
+        version?: number
+        migrations?: Record<number, (value: T | null) => T | null>
+      },
+    ) => ({
+      getValue: async () => {
+        if (!storageValues.has(key)) return options?.fallback
+
+        const currentVersion = options?.version
+        let value = storageValues.get(key) as T | null
+        if (currentVersion && options?.migrations) {
+          const storedVersion = storageVersions.get(key) ?? 1
+          for (
+            let version = storedVersion + 1;
+            version <= currentVersion;
+            version++
+          ) {
+            const migrate = options.migrations[version]
+            if (migrate) value = migrate(value)
+          }
+          storageValues.set(key, value)
+          storageVersions.set(key, currentVersion)
+        }
+        return value
+      },
       setValue: async (value: T) => {
         storageValues.set(key, value)
+        if (options?.version) storageVersions.set(key, options.version)
       },
       watch: () => () => {},
     }),
@@ -39,13 +66,15 @@ mock.module('./uploadLlmProvidersToGraphql', () => ({
 }))
 
 let loadProviders: typeof import('./storage').loadProviders
+let providersStorage: typeof import('./storage').providersStorage
 
 beforeAll(async () => {
-  ;({ loadProviders } = await import('./storage'))
+  ;({ loadProviders, providersStorage } = await import('./storage'))
 })
 
 beforeEach(() => {
   storageValues.clear()
+  storageVersions.clear()
 })
 
 function providerConfig(
@@ -78,6 +107,7 @@ describe('loadProviders', () => {
         name: 'ChatGPT Plus/Pro (user@example.com)',
       }),
     ])
+    storageVersions.set('local:llm-providers', 3)
 
     const providers = await loadProviders()
 
@@ -106,6 +136,7 @@ describe('loadProviders', () => {
       }),
     ]
     storageValues.set('local:llm-providers', storedProviders)
+    storageVersions.set('local:llm-providers', 3)
 
     const providers = await loadProviders()
 
@@ -114,5 +145,28 @@ describe('loadProviders', () => {
       'ChatGPT Plus/Pro (Work)',
     ])
     expect(storageValues.get('local:llm-providers')).toBe(storedProviders)
+  })
+})
+
+describe('providersStorage', () => {
+  it('migrates legacy ChatGPT display names for direct storage reads', async () => {
+    storageValues.set('local:llm-providers', [
+      providerConfig({
+        id: 'chatgpt-pro-1',
+        type: 'chatgpt-pro',
+        name: 'ChatGPT Plus/Pro (user@example.com)',
+      }),
+    ])
+    storageVersions.set('local:llm-providers', 2)
+
+    const providers = await providersStorage.getValue()
+
+    expect(providers?.map((provider) => provider.name)).toEqual(['ChatGPT'])
+    expect(
+      (storageValues.get('local:llm-providers') as LlmProviderConfig[]).map(
+        (provider) => provider.name,
+      ),
+    ).toEqual(['ChatGPT'])
+    expect(storageVersions.get('local:llm-providers')).toBe(3)
   })
 })
