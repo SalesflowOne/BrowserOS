@@ -191,6 +191,11 @@ const currentMigrationHistory = [
     hash: '02b11bf1dc34a5a289efd216233a48f0b7b950cfc33eaa7ebe6dcbb15d07f75c',
     createdAt: 1777902205667,
   },
+  {
+    tag: '0003_scrub_hermes_credentials',
+    hash: '34387e59aa1f0d6dc44c95836d2363b72982663c50d05d0c67ee58c211209f52',
+    createdAt: 1781916712443,
+  },
 ]
 
 // TODO(nikhil): Remove this fallback once Windows/Linux packaging always includes Drizzle migrations.
@@ -272,6 +277,11 @@ const currentSchemaStatements = [
   `
     CREATE INDEX IF NOT EXISTS produced_files_session_idx
     ON produced_files (session_key)
+  `,
+  `
+    UPDATE agent_definitions
+    SET adapter_config_json = NULL
+    WHERE adapter = 'hermes' AND adapter_config_json IS NOT NULL
   `,
   `
     CREATE TABLE IF NOT EXISTS __drizzle_migrations (
