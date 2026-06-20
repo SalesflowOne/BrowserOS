@@ -113,7 +113,9 @@ describe('ToolResponse', () => {
   it('writes large snapshot post-actions to a BrowserOS output file', async () => {
     await withBrowserosDir(async () => {
       const response = new ToolResponse({ postActionTimeoutMs: 200 })
-      const largeSnapshot = `${'x '.repeat(23_000)}last-node`
+      const firstMarker = 'first-node'
+      const lastMarker = 'last-node'
+      const largeSnapshot = `${firstMarker}\n${'x '.repeat(23_000)}${lastMarker}`
       response.text('ok')
       response.includeSnapshot(1)
 
@@ -136,8 +138,11 @@ describe('ToolResponse', () => {
       assert.ok(text.includes('Large snapshot ('))
       assert.ok(text.includes('estimated tokens'))
       assert.ok(savedPath)
-      assert.ok(!text.includes('last-node'))
-      assert.ok(readFileSync(savedPath ?? '', 'utf8').includes('last-node'))
+      assert.ok(text.includes('Showing the first 5000 estimated tokens inline'))
+      assert.ok(text.includes('[UNTRUSTED_PAGE_CONTENT'))
+      assert.ok(text.includes(firstMarker))
+      assert.ok(!text.includes(lastMarker))
+      assert.ok(readFileSync(savedPath ?? '', 'utf8').includes(lastMarker))
     })
   })
 

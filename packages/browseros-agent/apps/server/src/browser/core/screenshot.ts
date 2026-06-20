@@ -1,3 +1,4 @@
+import type { Viewport } from '@browseros/cdp-protocol/domains/page'
 import type { ProtocolApi } from '@browseros/cdp-protocol/protocol-api'
 import type { Observer } from './observer/observer'
 import { frameDepth } from './screenshot-frame'
@@ -25,6 +26,7 @@ export interface ScreenshotCaptureOptions {
   quality?: number
   fullPage?: boolean
   annotate?: boolean
+  clip?: Viewport
 }
 
 export interface ScreenshotAnnotationBox {
@@ -78,9 +80,11 @@ async function capturePlainScreenshot(
 
   const result = await pageSession.Page.captureScreenshot({
     format,
+    fromSurface: true,
     ...(format !== 'png' &&
       options.quality !== undefined && { quality: options.quality }),
     captureBeyondViewport: fullPage,
+    ...(!fullPage && options.clip && { clip: options.clip }),
   })
 
   return {
@@ -106,7 +110,9 @@ async function captureAnnotatedScreenshot({
   try {
     const captureArea = fullPage
       ? undefined
-      : await readViewportRect(pageSession).catch(() => undefined)
+      : options.clip
+        ? { x: 0, y: 0, width: options.clip.width, height: options.clip.height }
+        : await readViewportRect(pageSession).catch(() => undefined)
     annotations = clipAnnotations(
       await collectAnnotations(
         pageSession,
@@ -128,9 +134,11 @@ async function captureAnnotatedScreenshot({
 
     const result = await pageSession.Page.captureScreenshot({
       format,
+      fromSurface: true,
       ...(format !== 'png' &&
         options.quality !== undefined && { quality: options.quality }),
       captureBeyondViewport: fullPage,
+      ...(!fullPage && options.clip && { clip: options.clip }),
     })
     const scroll =
       fullPage && annotations.length > 0
@@ -140,7 +148,11 @@ async function captureAnnotatedScreenshot({
     return {
       data: result.data,
       mimeType: `image/${format}`,
-      annotations: projectAnnotations(annotations, scroll),
+      annotations: projectAnnotations(
+        annotations,
+        scroll,
+        fullPage ? undefined : options.clip?.scale,
+      ),
     }
   } finally {
     if (overlayInjected) {

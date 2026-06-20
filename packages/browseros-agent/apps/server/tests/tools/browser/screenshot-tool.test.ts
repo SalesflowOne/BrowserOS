@@ -8,7 +8,7 @@ import { executeTool } from '../../../src/tools/browser/framework'
 import { screenshot } from '../../../src/tools/browser/screenshot'
 
 describe('screenshot tool', () => {
-  it('defaults annotate to true and returns inline PNG content', async () => {
+  it('defaults annotate to true and returns inline JPEG content', async () => {
     let captured:
       | { page: number; options: ScreenshotCaptureOptions }
       | undefined
@@ -16,8 +16,8 @@ describe('screenshot tool', () => {
       screenshot: async (page: number, options: ScreenshotCaptureOptions) => {
         captured = { page, options }
         return {
-          data: 'png-data',
-          mimeType: 'image/png',
+          data: 'jpeg-data',
+          mimeType: `image/${options.format}`,
           annotations: [
             {
               ref: 'e1',
@@ -30,7 +30,26 @@ describe('screenshot tool', () => {
         } satisfies ScreenshotCaptureResult
       },
       pages: {
-        getTabId: () => undefined,
+        getSession: async () => ({
+          session: {
+            Page: {
+              getLayoutMetrics: async () => ({
+                layoutViewport: {
+                  pageX: 0,
+                  pageY: 0,
+                  clientWidth: 2048,
+                  clientHeight: 1536,
+                },
+                cssLayoutViewport: {
+                  pageX: 5,
+                  pageY: 7,
+                  clientWidth: 2048,
+                  clientHeight: 1536,
+                },
+              }),
+            },
+          },
+        }),
       },
     } as unknown as BrowserSession
 
@@ -38,10 +57,16 @@ describe('screenshot tool', () => {
 
     expect(captured).toEqual({
       page: 3,
-      options: { format: 'png', fullPage: false, annotate: true },
+      options: {
+        format: 'jpeg',
+        quality: 80,
+        fullPage: false,
+        annotate: true,
+        clip: { x: 5, y: 7, width: 2048, height: 1536, scale: 0.5 },
+      },
     })
     expect(result.content).toEqual([
-      { type: 'image', data: 'png-data', mimeType: 'image/png' },
+      { type: 'image', data: 'jpeg-data', mimeType: 'image/jpeg' },
     ])
     expect(result.structuredContent).toEqual({
       page: 3,
@@ -65,14 +90,12 @@ describe('screenshot tool', () => {
       screenshot: async (page: number, options: ScreenshotCaptureOptions) => {
         captured = { page, options }
         return {
-          data: 'png-data',
-          mimeType: 'image/png',
+          data: 'jpeg-data',
+          mimeType: `image/${options.format}`,
           annotations: [],
         } satisfies ScreenshotCaptureResult
       },
-      pages: {
-        getTabId: () => undefined,
-      },
+      pages: {},
     } as unknown as BrowserSession
 
     const result = await executeTool(
@@ -83,10 +106,15 @@ describe('screenshot tool', () => {
 
     expect(captured).toEqual({
       page: 3,
-      options: { format: 'png', fullPage: true, annotate: false },
+      options: {
+        format: 'jpeg',
+        quality: 80,
+        fullPage: true,
+        annotate: false,
+      },
     })
     expect(result.content).toEqual([
-      { type: 'image', data: 'png-data', mimeType: 'image/png' },
+      { type: 'image', data: 'jpeg-data', mimeType: 'image/jpeg' },
     ])
     expect(result.structuredContent).toBeUndefined()
   })

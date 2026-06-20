@@ -23,6 +23,7 @@ function createHarness(
   const events: string[] = []
   const expressions: string[] = []
   const objectGroups: string[] = []
+  const captureParams: unknown[] = []
   const refs = createRefs()
   let captureCount = 0
   const pageSession = {
@@ -83,6 +84,7 @@ function createHarness(
       captureScreenshot: async (params: {
         captureBeyondViewport?: boolean
       }) => {
+        captureParams.push(params)
         events.push(`capture:${params.captureBeyondViewport}`)
         captureCount += 1
         await options.onCapture?.(captureCount)
@@ -106,7 +108,14 @@ function createHarness(
     },
   }
 
-  return { events, expressions, objectGroups, observer, pageSession }
+  return {
+    captureParams,
+    events,
+    expressions,
+    objectGroups,
+    observer,
+    pageSession,
+  }
 }
 
 function deferred() {
@@ -252,6 +261,30 @@ describe('captureScreenshotWithAnnotations', () => {
       y: 10,
       width: 15,
       height: 20,
+    })
+  })
+
+  it('scales viewport annotation metadata for clipped screenshots', async () => {
+    const harness = createHarness()
+    const clip = { x: 0, y: 0, width: 800, height: 600, scale: 0.5 }
+
+    const result = await captureScreenshotWithAnnotations({
+      pageSession: harness.pageSession as never,
+      observer: harness.observer as never,
+      options: { format: 'jpeg', fullPage: false, clip },
+    })
+
+    expect(harness.captureParams[0]).toEqual({
+      format: 'jpeg',
+      fromSurface: true,
+      captureBeyondViewport: false,
+      clip,
+    })
+    expect(result.annotations[0]?.box).toEqual({
+      x: 5,
+      y: 10,
+      width: 20,
+      height: 8,
     })
   })
 

@@ -52,6 +52,7 @@ export async function readScrollOffsets(
 export function projectAnnotations(
   annotations: RawAnnotation[],
   scroll?: { x: number; y: number },
+  scale = 1,
 ): Array<{
   ref: string
   number: number
@@ -65,10 +66,10 @@ export function projectAnnotations(
     role: annotation.role,
     ...(annotation.name && { name: annotation.name }),
     box: {
-      x: round(annotation.rect.x + (scroll?.x ?? 0)),
-      y: round(annotation.rect.y + (scroll?.y ?? 0)),
-      width: round(annotation.rect.width),
-      height: round(annotation.rect.height),
+      x: round((annotation.rect.x + (scroll?.x ?? 0)) * scale),
+      y: round((annotation.rect.y + (scroll?.y ?? 0)) * scale),
+      width: round(annotation.rect.width * scale),
+      height: round(annotation.rect.height * scale),
     },
   }))
 }
