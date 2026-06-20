@@ -16,7 +16,7 @@ import {
   injectAnnotationOverlay,
   removeAnnotationOverlay,
 } from './screenshot-overlay'
-import { runExclusiveAnnotatedCapture } from './screenshot-queue'
+import { runExclusiveScreenshotCapture } from './screenshot-queue'
 import type { RefEntry } from './snapshot/refs'
 
 export type ScreenshotFormat = 'png' | 'jpeg' | 'webp'
@@ -63,10 +63,12 @@ export async function captureScreenshotWithAnnotations({
   options,
 }: CaptureInput): Promise<ScreenshotCaptureResult> {
   if ((options.annotate ?? true) === false) {
-    return capturePlainScreenshot(pageSession, options)
+    return runExclusiveScreenshotCapture(pageSession, () =>
+      capturePlainScreenshot(pageSession, options),
+    )
   }
 
-  return runExclusiveAnnotatedCapture(pageSession, () =>
+  return runExclusiveScreenshotCapture(pageSession, () =>
     captureAnnotatedScreenshot({ pageSession, observer, options }),
   )
 }
@@ -102,6 +104,7 @@ async function captureAnnotatedScreenshot({
   const format = options.format ?? 'png'
   const fullPage = options.fullPage ?? false
   let annotations: RawAnnotation[] = []
+  let scroll: { x: number; y: number } | undefined
   let overlayInjected = false
   const overlayToken = createOverlayToken()
   const objectGroup = overlayToken
@@ -123,11 +126,15 @@ async function captureAnnotatedScreenshot({
       captureArea,
     )
     if (annotations.length > 0) {
+      scroll = fullPage
+        ? await readScrollOffsets(pageSession).catch(() => undefined)
+        : undefined
       await injectAnnotationOverlay(
         pageSession,
         overlayToken,
         fullPage,
         annotations,
+        scroll,
       )
       overlayInjected = true
     }
@@ -140,11 +147,6 @@ async function captureAnnotatedScreenshot({
       captureBeyondViewport: fullPage,
       ...(!fullPage && options.clip && { clip: options.clip }),
     })
-    const scroll =
-      fullPage && annotations.length > 0
-        ? await readScrollOffsets(pageSession).catch(() => undefined)
-        : undefined
-
     return {
       data: result.data,
       mimeType: `image/${format}`,

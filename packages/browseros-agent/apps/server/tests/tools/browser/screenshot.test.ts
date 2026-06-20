@@ -231,9 +231,9 @@ describe('captureScreenshotWithAnnotations', () => {
       'ref:e1',
       'resolve:101',
       'bounds:node-101',
+      'scroll',
       'inject',
       'capture:true',
-      'scroll',
       'remove',
       'release',
     ])
@@ -310,15 +310,8 @@ describe('captureScreenshotWithAnnotations', () => {
     const second = captureScreenshotWithAnnotations(input)
     await Promise.resolve()
 
-    expect(harness.events).toEqual([
-      'viewport',
-      'snapshot',
-      'ref:e1',
-      'resolve:101',
-      'bounds:node-101',
-      'inject',
-      'capture:false',
-    ])
+    expect(harness.events).toHaveLength(7)
+    expect(harness.events.at(-1)).toBe('capture:false')
 
     releaseFirstCapture.resolve()
     await Promise.all([first, second])
@@ -352,5 +345,50 @@ describe('captureScreenshotWithAnnotations', () => {
     expect(resolveGroups).toHaveLength(2)
     expect(releaseGroups).toEqual(resolveGroups)
     expect(resolveGroups[0]).not.toBe(resolveGroups[1])
+  })
+
+  it('keeps plain screenshots out of an in-flight annotated overlay window', async () => {
+    const firstCaptureStarted = deferred()
+    const releaseFirstCapture = deferred()
+    const harness = createHarness({
+      onCapture: async (count) => {
+        if (count === 1) {
+          firstCaptureStarted.resolve()
+          await releaseFirstCapture.promise
+        }
+      },
+    })
+
+    const annotated = captureScreenshotWithAnnotations({
+      pageSession: harness.pageSession as never,
+      observer: harness.observer as never,
+      options: { format: 'png', fullPage: false },
+    })
+    await firstCaptureStarted.promise
+    const plain = captureScreenshotWithAnnotations({
+      pageSession: harness.pageSession as never,
+      observer: harness.observer as never,
+      options: { format: 'png', fullPage: false, annotate: false },
+    })
+    await Promise.resolve()
+
+    expect(harness.events).toHaveLength(7)
+    expect(harness.events.at(-1)).toBe('capture:false')
+
+    releaseFirstCapture.resolve()
+    await Promise.all([annotated, plain])
+
+    expect(harness.events).toEqual([
+      'viewport',
+      'snapshot',
+      'ref:e1',
+      'resolve:101',
+      'bounds:node-101',
+      'inject',
+      'capture:false',
+      'remove',
+      'release',
+      'capture:false',
+    ])
   })
 })

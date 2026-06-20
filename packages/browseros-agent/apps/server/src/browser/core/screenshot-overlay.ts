@@ -21,6 +21,7 @@ export async function injectAnnotationOverlay(
   token: string,
   fullPage: boolean,
   annotations: OverlayAnnotation[],
+  scroll?: { x: number; y: number },
 ): Promise<void> {
   const items = JSON.stringify(
     annotations.map((annotation) => ({
@@ -34,6 +35,7 @@ export async function injectAnnotationOverlay(
   const overlayAttr = JSON.stringify(ANNOTATION_OVERLAY_ATTR)
   const overlayToken = JSON.stringify(token)
   const useDocumentSpaceLabels = JSON.stringify(fullPage)
+  const scrollData = JSON.stringify(scroll ?? null)
 
   await session.Runtime.evaluate({
     expression: `(() => {
@@ -41,12 +43,9 @@ export async function injectAnnotationOverlay(
       var attr = ${overlayAttr};
       var token = ${overlayToken};
       var useDocumentSpaceLabels = ${useDocumentSpaceLabels};
-      var existing = document.querySelectorAll('[' + attr + ']');
-      for (var j = 0; j < existing.length; j++) {
-        if (existing[j].getAttribute(attr) === token) existing[j].remove();
-      }
-      var sx = window.scrollX || 0;
-      var sy = window.scrollY || 0;
+      var scroll = ${scrollData};
+      var sx = scroll && typeof scroll.x === 'number' ? scroll.x : window.scrollX || 0;
+      var sy = scroll && typeof scroll.y === 'number' ? scroll.y : window.scrollY || 0;
       var c = document.createElement('div');
       c.setAttribute(attr, token);
       c.style.cssText = 'position:absolute;top:0;left:0;width:0;height:0;pointer-events:none;z-index:2147483647;';
