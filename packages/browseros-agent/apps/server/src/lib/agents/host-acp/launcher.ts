@@ -3,8 +3,7 @@
  * Copyright 2025 BrowserOS
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * Constructs the spawn command for a built-in ACP adapter (claude /
- * codex). Prefers the BrowserOS-shipped Bun at
+ * Constructs the spawn command for a built-in ACP adapter. Prefers the BrowserOS-shipped Bun at
  * <resourcesDir>/bin/third_party/bun so end-user installs without Node
  * still have a working launcher; falls back to the existing
  * `npx -y …` command when the bundled binary is unavailable
@@ -40,8 +39,7 @@ export interface ResolveAcpSpawnCommandInput {
  * Returns null when:
  *   - the agent type is not a known built-in (e.g. acp-custom; caller
  *     uses the user-supplied command instead), OR
- *   - the registry entry has no package spec (hermes today, which
- *     spawns from a host CLI).
+ *   - the registry entry has no package spec.
  */
 export function resolveAcpSpawnCommand(
   input: ResolveAcpSpawnCommandInput,
