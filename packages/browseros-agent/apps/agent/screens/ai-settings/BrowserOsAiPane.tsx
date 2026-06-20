@@ -25,6 +25,7 @@ import {
 } from '@/lib/constants/analyticsEvents'
 import { GetProfileIdByUserIdDocument } from '@/lib/conversations/graphql/uploadConversationDocument'
 import { getQueryKeyFromDocument } from '@/lib/graphql/getQueryKeyFromDocument'
+import { CHATGPT_PROVIDER_DISPLAY_NAME } from '@/lib/llm-providers/provider-display-names'
 import type { ProviderTemplate } from '@/lib/llm-providers/providerTemplates'
 import { testProvider } from '@/lib/llm-providers/testProvider'
 import type { LlmProviderConfig } from '@/lib/llm-providers/types'
@@ -58,7 +59,7 @@ import { ProviderTemplatesSection } from './ProviderTemplatesSection'
 const OAUTH_PROVIDERS_CONFIG: Record<string, OAuthProviderFlowConfig> = {
   'chatgpt-pro': {
     providerType: 'chatgpt-pro',
-    displayName: 'ChatGPT Plus/Pro',
+    displayName: CHATGPT_PROVIDER_DISPLAY_NAME,
     startedEvent: CHATGPT_PRO_OAUTH_STARTED_EVENT,
     completedEvent: CHATGPT_PRO_OAUTH_COMPLETED_EVENT,
     disconnectedEvent: CHATGPT_PRO_OAUTH_DISCONNECTED_EVENT,

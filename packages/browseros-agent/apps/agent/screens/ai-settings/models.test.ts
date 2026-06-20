@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import { getModelContextLength, getModelsForProvider } from './models'
 
-describe('ChatGPT Plus/Pro models', () => {
+describe('ChatGPT models', () => {
   it('offers GPT-5.5 as the default first choice', () => {
     const models = getModelsForProvider('chatgpt-pro')
 

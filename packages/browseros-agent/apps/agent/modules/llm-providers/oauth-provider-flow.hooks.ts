@@ -5,6 +5,7 @@ import {
   requestDeviceCode,
   startTokenPolling,
 } from '@/lib/llm-providers/client-oauth'
+import { CHATGPT_PROVIDER_DISPLAY_NAME } from '@/lib/llm-providers/provider-display-names'
 import { getProviderTemplate } from '@/lib/llm-providers/providerTemplates'
 import type { LlmProviderConfig, ProviderType } from '@/lib/llm-providers/types'
 import { track } from '@/lib/metrics/track'
@@ -49,10 +50,14 @@ export async function saveOAuthProviderFromStatus({
   now = Date.now(),
 }: SaveOAuthProviderInput): Promise<LlmProviderConfig> {
   const template = getProviderTemplate(config.providerType)
+  const providerName =
+    config.providerType === 'chatgpt-pro'
+      ? CHATGPT_PROVIDER_DISPLAY_NAME
+      : `${config.displayName}${status.email ? ` (${status.email})` : ''}`
   const provider: LlmProviderConfig = {
     id: `${config.providerType}-${now}`,
     type: config.providerType,
-    name: `${config.displayName}${status.email ? ` (${status.email})` : ''}`,
+    name: providerName,
     modelId: template?.defaultModelId ?? '',
     supportsImages: template?.supportsImages ?? true,
     contextWindow: template?.contextWindow ?? 128000,

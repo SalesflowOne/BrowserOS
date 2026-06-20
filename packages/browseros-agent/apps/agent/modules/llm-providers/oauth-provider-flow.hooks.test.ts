@@ -21,6 +21,10 @@ mock.module('@/lib/llm-providers/client-oauth', () => ({
   startTokenPolling: () => {},
 }))
 
+mock.module('@/lib/llm-providers/provider-display-names', () => ({
+  CHATGPT_PROVIDER_DISPLAY_NAME: 'ChatGPT',
+}))
+
 mock.module('@/lib/llm-providers/providerTemplates', () => ({
   getProviderTemplate: (providerType: string) =>
     providerType === 'chatgpt-pro'
@@ -42,7 +46,7 @@ mock.module('@/modules/llm-providers/oauth-status.hooks', () => ({
 
 const chatgptConfig: OAuthProviderFlowConfig = {
   providerType: 'chatgpt-pro',
-  displayName: 'ChatGPT Plus/Pro',
+  displayName: 'ChatGPT',
   startedEvent: 'settings.chatgpt_pro.oauth_started',
   completedEvent: 'settings.chatgpt_pro.oauth_completed',
   disconnectedEvent: 'settings.chatgpt_pro.oauth_disconnected',
@@ -88,7 +92,7 @@ describe('saveOAuthProviderFromStatus', () => {
     expect(savedProvider).toMatchObject({
       id: 'chatgpt-pro-1234',
       type: 'chatgpt-pro',
-      name: 'ChatGPT Plus/Pro (user@example.com)',
+      name: 'ChatGPT',
       modelId: 'gpt-5.5',
       contextWindow: 1050000,
       reasoningEffort: 'medium',

@@ -30,7 +30,7 @@ describe('resolveLLMConfig', () => {
     tempDirs.length = 0
   })
 
-  it('defaults ChatGPT Plus/Pro OAuth providers to GPT-5.5', async () => {
+  it('defaults ChatGPT OAuth providers to GPT-5.5', async () => {
     const browserosId = 'browseros-id'
     const dir = mkdtempSync(join(tmpdir(), 'browseros-llm-config-test-'))
     tempDirs.push(dir)

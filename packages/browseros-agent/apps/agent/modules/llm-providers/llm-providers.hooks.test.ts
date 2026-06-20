@@ -207,7 +207,7 @@ describe('upsertProviderConfig', () => {
     const incoming = providerConfig({
       id: 'chatgpt-pro-9999',
       type: 'chatgpt-pro',
-      name: 'ChatGPT Plus/Pro (user@example.com)',
+      name: 'ChatGPT',
       modelId: 'gpt-5.5',
       contextWindow: 1050000,
     })
@@ -222,7 +222,7 @@ describe('upsertProviderConfig', () => {
     expect(result[1]).toMatchObject({
       id: 'chatgpt-pro-existing',
       type: 'chatgpt-pro',
-      name: 'ChatGPT Plus/Pro (user@example.com)',
+      name: 'ChatGPT',
       modelId: 'gpt-5.5',
       contextWindow: 1050000,
       createdAt: 1111,

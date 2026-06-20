@@ -2,6 +2,7 @@ import { storage } from '@wxt-dev/storage'
 import { sessionStorage } from '@/lib/auth/sessionStorage'
 import { getBrowserOSAdapter } from '@/lib/browseros/adapter'
 import { BROWSEROS_PREFS } from '@/lib/browseros/prefs'
+import { CHATGPT_PROVIDER_DISPLAY_NAME } from './provider-display-names'
 import {
   DEFAULT_PROVIDER_ID,
   DEFAULT_PROVIDER_NAME,
@@ -125,10 +126,6 @@ export function createDefaultProvidersConfig(): LlmProviderConfig[] {
   return [createDefaultBrowserOSProvider()]
 }
 
-/**
- * Normalize built-in provider names back to "BrowserOS" (e.g. from "Kimi K2.5"
- * which was set during a previous partnership launch).
- */
 function normalizeProviderNames(
   providers: LlmProviderConfig[],
 ): LlmProviderConfig[] {
@@ -143,8 +140,21 @@ function normalizeProviderNames(
         name: DEFAULT_PROVIDER_NAME,
       }
     }
+    if (
+      provider.type === 'chatgpt-pro' &&
+      isLegacyChatGPTProviderName(provider.name)
+    ) {
+      return {
+        ...provider,
+        name: CHATGPT_PROVIDER_DISPLAY_NAME,
+      }
+    }
     return provider
   })
+}
+
+function isLegacyChatGPTProviderName(name: string): boolean {
+  return /^ChatGPT Plus\/Pro(?: \([^)]+\))?$/.test(name)
 }
 
 /** Storage key for the default provider ID */
