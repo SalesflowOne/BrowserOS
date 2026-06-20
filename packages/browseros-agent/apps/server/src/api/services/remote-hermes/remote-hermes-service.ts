@@ -432,15 +432,25 @@ function extractDataLine(record: string): string | null {
 }
 
 function buildTurnPayload(input: StreamTurnInput): PostTurnInput {
-  const wrappedMessage = formatUserMessage(
-    input.message,
-    input.browserContext,
-    input.selectedText,
-    input.selectedTextSource,
-  )
+  // Only wrap when there's real context to embed. Without this guard
+  // every remote-hermes turn would gain `<USER_QUERY>` framing
+  // post-upgrade, changing the wire format for conversations that
+  // don't attach tabs or selected text.
+  const hasContext =
+    Boolean(input.browserContext?.activeTab) ||
+    Boolean(input.browserContext?.selectedTabs?.length) ||
+    Boolean(input.selectedText)
+  const message = hasContext
+    ? formatUserMessage(
+        input.message,
+        input.browserContext,
+        input.selectedText,
+        input.selectedTextSource,
+      )
+    : input.message
   return {
     conversationId: input.conversationId,
-    message: wrappedMessage,
+    message,
     modelId: input.modelId,
   }
 }
