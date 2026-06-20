@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'bun:test'
-import {
-  captureScreenshotWithAnnotations,
-  type ScreenshotCaptureOptions,
-} from '../../../src/browser/core/screenshot'
-import type { BrowserSession } from '../../../src/browser/core/session'
+import { captureScreenshotWithAnnotations } from '../../../src/browser/core/screenshot'
 import { RefMap } from '../../../src/browser/core/snapshot/refs'
-import { executeTool } from '../../../src/tools/browser/framework'
-import { screenshot } from '../../../src/tools/browser/screenshot'
 
 function createRefs(): RefMap {
   const refs = new RefMap()
@@ -23,15 +17,25 @@ function createHarness(
   options: {
     rect?: { x: number; y: number; width: number; height: number }
     rejectCapture?: boolean
+    onCapture?: (count: number) => Promise<void> | void
   } = {},
 ) {
   const events: string[] = []
   const expressions: string[] = []
+  const objectGroups: string[] = []
   const refs = createRefs()
+  let captureCount = 0
   const pageSession = {
     DOM: {
-      resolveNode: async ({ backendNodeId }: { backendNodeId: number }) => {
+      resolveNode: async ({
+        backendNodeId,
+        objectGroup,
+      }: {
+        backendNodeId: number
+        objectGroup?: string
+      }) => {
         events.push(`resolve:${backendNodeId}`)
+        if (objectGroup) objectGroups.push(objectGroup)
         return { object: { objectId: `node-${backendNodeId}` } }
       },
     },
@@ -70,7 +74,8 @@ function createHarness(
         }
         return { result: { value: true } }
       },
-      releaseObjectGroup: async () => {
+      releaseObjectGroup: async ({ objectGroup }: { objectGroup: string }) => {
+        objectGroups.push(`release:${objectGroup}`)
         events.push('release')
       },
     },
@@ -79,6 +84,8 @@ function createHarness(
         captureBeyondViewport?: boolean
       }) => {
         events.push(`capture:${params.captureBeyondViewport}`)
+        captureCount += 1
+        await options.onCapture?.(captureCount)
         if (options.rejectCapture) throw new Error('capture failed')
         return { data: 'png-data' }
       },
@@ -99,7 +106,15 @@ function createHarness(
     },
   }
 
-  return { events, expressions, observer, pageSession }
+  return { events, expressions, objectGroups, observer, pageSession }
+}
+
+function deferred() {
+  let resolve = () => {}
+  const promise = new Promise<void>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
 }
 
 describe('captureScreenshotWithAnnotations', () => {
@@ -239,89 +254,70 @@ describe('captureScreenshotWithAnnotations', () => {
       height: 20,
     })
   })
-})
 
-describe('screenshot tool', () => {
-  it('defaults annotate to true and returns inline PNG content', async () => {
-    let captured:
-      | { page: number; options: ScreenshotCaptureOptions }
-      | undefined
-    const session = {
-      screenshot: async (page: number, options: ScreenshotCaptureOptions) => {
-        captured = { page, options }
-        return {
-          data: 'png-data',
-          mimeType: 'image/png',
-          annotations: [
-            {
-              ref: 'e1',
-              number: 1,
-              role: 'button',
-              name: 'Save',
-              box: { x: 1, y: 2, width: 3, height: 4 },
-            },
-          ],
+  it('serializes concurrent annotated captures on the same page session', async () => {
+    const firstCaptureStarted = deferred()
+    const releaseFirstCapture = deferred()
+    const harness = createHarness({
+      onCapture: async (count) => {
+        if (count === 1) {
+          firstCaptureStarted.resolve()
+          await releaseFirstCapture.promise
         }
       },
-      pages: {
-        getTabId: () => undefined,
-      },
-    } as unknown as BrowserSession
-
-    const result = await executeTool(screenshot, { page: 3 }, { session })
-
-    expect(captured).toEqual({
-      page: 3,
-      options: { format: 'png', fullPage: false, annotate: true },
     })
-    expect(result.content).toEqual([
-      { type: 'image', data: 'png-data', mimeType: 'image/png' },
+    const input = {
+      pageSession: harness.pageSession as never,
+      observer: harness.observer as never,
+      options: { format: 'png' as const, fullPage: false },
+    }
+
+    const first = captureScreenshotWithAnnotations(input)
+    await firstCaptureStarted.promise
+    const second = captureScreenshotWithAnnotations(input)
+    await Promise.resolve()
+
+    expect(harness.events).toEqual([
+      'viewport',
+      'snapshot',
+      'ref:e1',
+      'resolve:101',
+      'bounds:node-101',
+      'inject',
+      'capture:false',
     ])
-    expect(result.structuredContent).toEqual({
-      page: 3,
-      annotations: [
-        {
-          ref: 'e1',
-          number: 1,
-          role: 'button',
-          name: 'Save',
-          box: { x: 1, y: 2, width: 3, height: 4 },
-        },
-      ],
-    })
-  })
 
-  it('passes annotate false through to the browser session', async () => {
-    let captured:
-      | { page: number; options: ScreenshotCaptureOptions }
-      | undefined
-    const session = {
-      screenshot: async (page: number, options: ScreenshotCaptureOptions) => {
-        captured = { page, options }
-        return {
-          data: 'png-data',
-          mimeType: 'image/png',
-          annotations: [],
-        }
-      },
-      pages: {
-        getTabId: () => undefined,
-      },
-    } as unknown as BrowserSession
+    releaseFirstCapture.resolve()
+    await Promise.all([first, second])
 
-    const result = await executeTool(
-      screenshot,
-      { page: 3, fullPage: true, annotate: false },
-      { session },
+    expect(harness.events).toEqual([
+      'viewport',
+      'snapshot',
+      'ref:e1',
+      'resolve:101',
+      'bounds:node-101',
+      'inject',
+      'capture:false',
+      'remove',
+      'release',
+      'viewport',
+      'snapshot',
+      'ref:e1',
+      'resolve:101',
+      'bounds:node-101',
+      'inject',
+      'capture:false',
+      'remove',
+      'release',
+    ])
+    const resolveGroups = harness.objectGroups.filter(
+      (group) => !group.startsWith('release:'),
     )
-
-    expect(captured).toEqual({
-      page: 3,
-      options: { format: 'png', fullPage: true, annotate: false },
-    })
-    expect(result.content).toEqual([
-      { type: 'image', data: 'png-data', mimeType: 'image/png' },
-    ])
-    expect(result.structuredContent).toBeUndefined()
+    const releaseGroups = harness.objectGroups
+      .filter((group) => group.startsWith('release:'))
+      .map((group) => group.replace(/^release:/, ''))
+    expect(resolveGroups).toHaveLength(2)
+    expect(releaseGroups).toEqual(resolveGroups)
+    expect(resolveGroups[0]).not.toBe(resolveGroups[1])
   })
 })

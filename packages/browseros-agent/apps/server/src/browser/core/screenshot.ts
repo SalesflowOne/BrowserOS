@@ -2,13 +2,21 @@ import type { ProtocolApi } from '@browseros/cdp-protocol/protocol-api'
 import type { Observer } from './observer/observer'
 import { frameDepth } from './screenshot-frame'
 import {
+  clipAnnotations,
+  parseRect,
+  projectAnnotations,
+  type RawAnnotation,
+  type Rect,
+  readScrollOffsets,
+  readViewportRect,
+} from './screenshot-geometry'
+import {
   createOverlayToken,
   injectAnnotationOverlay,
   removeAnnotationOverlay,
 } from './screenshot-overlay'
+import { runExclusiveAnnotatedCapture } from './screenshot-queue'
 import type { RefEntry } from './snapshot/refs'
-
-const OBJECT_GROUP = 'browseros-screenshot-annotations'
 
 export type ScreenshotFormat = 'png' | 'jpeg' | 'webp'
 
@@ -46,53 +54,76 @@ interface CaptureInput {
   options: ScreenshotCaptureOptions
 }
 
-interface Rect {
-  x: number
-  y: number
-  width: number
-  height: number
-}
-
-interface RawAnnotation {
-  ref: string
-  number: number
-  role: string
-  name?: string
-  rect: Rect
-}
-
 /** Captures a screenshot, optionally painting current snapshot refs into a temporary page overlay. */
 export async function captureScreenshotWithAnnotations({
   pageSession,
   observer,
   options,
 }: CaptureInput): Promise<ScreenshotCaptureResult> {
+  if ((options.annotate ?? true) === false) {
+    return capturePlainScreenshot(pageSession, options)
+  }
+
+  return runExclusiveAnnotatedCapture(pageSession, () =>
+    captureAnnotatedScreenshot({ pageSession, observer, options }),
+  )
+}
+
+async function capturePlainScreenshot(
+  pageSession: ProtocolApi,
+  options: ScreenshotCaptureOptions,
+): Promise<ScreenshotCaptureResult> {
   const format = options.format ?? 'png'
   const fullPage = options.fullPage ?? false
-  const annotate = options.annotate ?? true
+
+  const result = await pageSession.Page.captureScreenshot({
+    format,
+    ...(format !== 'png' &&
+      options.quality !== undefined && { quality: options.quality }),
+    captureBeyondViewport: fullPage,
+  })
+
+  return {
+    data: result.data,
+    mimeType: `image/${format}`,
+    annotations: [],
+  }
+}
+
+async function captureAnnotatedScreenshot({
+  pageSession,
+  observer,
+  options,
+}: CaptureInput): Promise<ScreenshotCaptureResult> {
+  const format = options.format ?? 'png'
+  const fullPage = options.fullPage ?? false
   let annotations: RawAnnotation[] = []
   let overlayInjected = false
   const overlayToken = createOverlayToken()
+  const objectGroup = overlayToken
   const objectSessions = new Set<ProtocolApi>()
 
   try {
-    if (annotate) {
-      const captureArea = fullPage
-        ? undefined
-        : await readViewportRect(pageSession).catch(() => undefined)
-      annotations = clipAnnotations(
-        await collectAnnotations(pageSession, observer, objectSessions),
-        captureArea,
+    const captureArea = fullPage
+      ? undefined
+      : await readViewportRect(pageSession).catch(() => undefined)
+    annotations = clipAnnotations(
+      await collectAnnotations(
+        pageSession,
+        observer,
+        objectGroup,
+        objectSessions,
+      ),
+      captureArea,
+    )
+    if (annotations.length > 0) {
+      await injectAnnotationOverlay(
+        pageSession,
+        overlayToken,
+        fullPage,
+        annotations,
       )
-      if (annotations.length > 0) {
-        await injectAnnotationOverlay(
-          pageSession,
-          overlayToken,
-          fullPage,
-          annotations,
-        )
-        overlayInjected = true
-      }
+      overlayInjected = true
     }
 
     const result = await pageSession.Page.captureScreenshot({
@@ -115,13 +146,14 @@ export async function captureScreenshotWithAnnotations({
     if (overlayInjected) {
       await removeAnnotationOverlay(pageSession, overlayToken).catch(() => {})
     }
-    await releaseObjectGroup(objectSessions)
+    await releaseObjectGroup(objectSessions, objectGroup)
   }
 }
 
 async function collectAnnotations(
   pageSession: ProtocolApi,
   observer: Observer,
+  objectGroup: string,
   objectSessions: Set<ProtocolApi>,
 ): Promise<RawAnnotation[]> {
   const snapshot = await observer.snapshot()
@@ -130,7 +162,13 @@ async function collectAnnotations(
   )
   const annotations = await Promise.all(
     entries.map((entry) =>
-      collectAnnotation(pageSession, observer, objectSessions, entry),
+      collectAnnotation(
+        pageSession,
+        observer,
+        objectGroup,
+        objectSessions,
+        entry,
+      ),
     ),
   )
   return annotations.filter((item): item is RawAnnotation => item !== undefined)
@@ -139,6 +177,7 @@ async function collectAnnotations(
 async function collectAnnotation(
   pageSession: ProtocolApi,
   observer: Observer,
+  objectGroup: string,
   objectSessions: Set<ProtocolApi>,
   entry: RefEntry,
 ): Promise<RawAnnotation | undefined> {
@@ -147,6 +186,7 @@ async function collectAnnotation(
     const localRect = await readElementRect(
       resolved.session,
       resolved.backendNodeId,
+      objectGroup,
       objectSessions,
     )
     if (!localRect) return undefined
@@ -156,6 +196,7 @@ async function collectAnnotation(
         ? localRect
         : await projectFrameRect(
             pageSession,
+            objectGroup,
             objectSessions,
             entry.frameId,
             localRect,
@@ -176,6 +217,7 @@ async function collectAnnotation(
 
 async function projectFrameRect(
   pageSession: ProtocolApi,
+  objectGroup: string,
   objectSessions: Set<ProtocolApi>,
   frameId: string,
   rect: Rect,
@@ -186,6 +228,7 @@ async function projectFrameRect(
     const offset = await readFrameContentOffset(
       pageSession,
       owner.backendNodeId,
+      objectGroup,
       objectSessions,
     )
     if (!offset) return undefined
@@ -203,9 +246,15 @@ async function projectFrameRect(
 async function readElementRect(
   session: ProtocolApi,
   backendNodeId: number,
+  objectGroup: string,
   objectSessions: Set<ProtocolApi>,
 ): Promise<Rect | undefined> {
-  const objectId = await resolveObjectId(session, backendNodeId, objectSessions)
+  const objectId = await resolveObjectId(
+    session,
+    backendNodeId,
+    objectGroup,
+    objectSessions,
+  )
   if (!objectId) return undefined
 
   const result = await session.Runtime.callFunctionOn({
@@ -222,9 +271,15 @@ async function readElementRect(
 async function readFrameContentOffset(
   session: ProtocolApi,
   backendNodeId: number,
+  objectGroup: string,
   objectSessions: Set<ProtocolApi>,
 ): Promise<{ x: number; y: number } | undefined> {
-  const objectId = await resolveObjectId(session, backendNodeId, objectSessions)
+  const objectId = await resolveObjectId(
+    session,
+    backendNodeId,
+    objectGroup,
+    objectSessions,
+  )
   if (!objectId) return undefined
 
   const result = await session.Runtime.callFunctionOn({
@@ -245,12 +300,13 @@ async function readFrameContentOffset(
 async function resolveObjectId(
   session: ProtocolApi,
   backendNodeId: number,
+  objectGroup: string,
   objectSessions: Set<ProtocolApi>,
 ): Promise<string | undefined> {
   try {
     const resolved = await session.DOM.resolveNode({
       backendNodeId,
-      objectGroup: OBJECT_GROUP,
+      objectGroup,
     })
     const objectId = resolved.object?.objectId
     if (objectId) objectSessions.add(session)
@@ -260,108 +316,13 @@ async function resolveObjectId(
   }
 }
 
-function parseRect(value: unknown): Rect | undefined {
-  if (!isRecord(value)) return undefined
-  const { x, y, width, height } = value
-  if (
-    typeof x !== 'number' ||
-    typeof y !== 'number' ||
-    typeof width !== 'number' ||
-    typeof height !== 'number'
-  ) {
-    return undefined
-  }
-  if (
-    !Number.isFinite(x) ||
-    !Number.isFinite(y) ||
-    !Number.isFinite(width) ||
-    !Number.isFinite(height)
-  ) {
-    return undefined
-  }
-  return { x, y, width, height }
-}
-
-async function readViewportRect(session: ProtocolApi): Promise<Rect> {
-  const result = await session.Runtime.evaluate({
-    expression:
-      '({x:0,y:0,width:window.innerWidth||0,height:window.innerHeight||0})',
-    returnByValue: true,
-    awaitPromise: false,
-  })
-  return (
-    parseRect(result.result?.value) ?? {
-      x: 0,
-      y: 0,
-      width: 0,
-      height: 0,
-    }
-  )
-}
-
-async function readScrollOffsets(
-  session: ProtocolApi,
-): Promise<{ x: number; y: number }> {
-  const result = await session.Runtime.evaluate({
-    expression: '({x: window.scrollX || 0, y: window.scrollY || 0})',
-    returnByValue: true,
-    awaitPromise: false,
-  })
-  const value = result.result?.value
-  if (!isRecord(value)) return { x: 0, y: 0 }
-  const x =
-    typeof value.x === 'number' && Number.isFinite(value.x) ? value.x : 0
-  const y =
-    typeof value.y === 'number' && Number.isFinite(value.y) ? value.y : 0
-  return { x, y }
-}
-
-function projectAnnotations(
-  annotations: RawAnnotation[],
-  scroll?: { x: number; y: number },
-): ScreenshotAnnotation[] {
-  return annotations.map((annotation) => ({
-    ref: annotation.ref,
-    number: annotation.number,
-    role: annotation.role,
-    ...(annotation.name && { name: annotation.name }),
-    box: {
-      x: round(annotation.rect.x + (scroll?.x ?? 0)),
-      y: round(annotation.rect.y + (scroll?.y ?? 0)),
-      width: round(annotation.rect.width),
-      height: round(annotation.rect.height),
-    },
-  }))
-}
-
-function clipAnnotations(
-  annotations: RawAnnotation[],
-  captureArea: Rect | undefined,
-): RawAnnotation[] {
-  if (!captureArea || captureArea.width <= 0 || captureArea.height <= 0) {
-    return annotations
-  }
-  return annotations.flatMap((annotation) => {
-    const rect = intersectRects(annotation.rect, captureArea)
-    return rect ? [{ ...annotation, rect }] : []
-  })
-}
-
-function intersectRects(left: Rect, right: Rect): Rect | undefined {
-  const x1 = Math.max(left.x, right.x)
-  const y1 = Math.max(left.y, right.y)
-  const x2 = Math.min(left.x + left.width, right.x + right.width)
-  const y2 = Math.min(left.y + left.height, right.y + right.height)
-  if (x2 <= x1 || y2 <= y1) return undefined
-  return { x: x1, y: y1, width: x2 - x1, height: y2 - y1 }
-}
-
-async function releaseObjectGroup(sessions: Set<ProtocolApi>): Promise<void> {
+async function releaseObjectGroup(
+  sessions: Set<ProtocolApi>,
+  objectGroup: string,
+): Promise<void> {
   await Promise.all(
     [...sessions].map((session) =>
-      session.Runtime.releaseObjectGroup({ objectGroup: OBJECT_GROUP }).catch(
-        () => {},
-      ),
+      session.Runtime.releaseObjectGroup({ objectGroup }).catch(() => {}),
     ),
   )
 }
@@ -369,10 +330,6 @@ async function releaseObjectGroup(sessions: Set<ProtocolApi>): Promise<void> {
 function annotationNumber(ref: string): number {
   const number = Number.parseInt(ref.replace(/^e/, ''), 10)
   return Number.isFinite(number) ? number : 0
-}
-
-function round(value: number): number {
-  return Math.round(value)
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
