@@ -1,5 +1,6 @@
 import type { ProtocolApi } from '@browseros/cdp-protocol/protocol-api'
 import type { Observer } from './observer/observer'
+import { frameDepth } from './screenshot-frame'
 import {
   createOverlayToken,
   injectAnnotationOverlay,
@@ -60,11 +61,6 @@ interface RawAnnotation {
   rect: Rect
 }
 
-interface FrameTreeNode {
-  frame: { id: string }
-  childFrames?: FrameTreeNode[]
-}
-
 /** Captures a screenshot, optionally painting current snapshot refs into a temporary page overlay. */
 export async function captureScreenshotWithAnnotations({
   pageSession,
@@ -89,7 +85,12 @@ export async function captureScreenshotWithAnnotations({
         captureArea,
       )
       if (annotations.length > 0) {
-        await injectAnnotationOverlay(pageSession, overlayToken, annotations)
+        await injectAnnotationOverlay(
+          pageSession,
+          overlayToken,
+          fullPage,
+          annotations,
+        )
         overlayInjected = true
       }
     }
@@ -353,24 +354,6 @@ function intersectRects(left: Rect, right: Rect): Rect | undefined {
   const y2 = Math.min(left.y + left.height, right.y + right.height)
   if (x2 <= x1 || y2 <= y1) return undefined
   return { x: x1, y: y1, width: x2 - x1, height: y2 - y1 }
-}
-
-async function frameDepth(
-  pageSession: ProtocolApi,
-  frameId: string,
-): Promise<number | undefined> {
-  const result = await pageSession.Page.getFrameTree()
-
-  function visit(node: FrameTreeNode): number | undefined {
-    if (node.frame.id === frameId) return 0
-    for (const child of node.childFrames ?? []) {
-      const depth = visit(child)
-      if (depth !== undefined) return depth + 1
-    }
-    return undefined
-  }
-
-  return visit(result.frameTree as FrameTreeNode)
 }
 
 async function releaseObjectGroup(sessions: Set<ProtocolApi>): Promise<void> {

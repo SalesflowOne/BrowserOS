@@ -19,6 +19,7 @@ export function createOverlayToken(): string {
 export async function injectAnnotationOverlay(
   session: ProtocolApi,
   token: string,
+  fullPage: boolean,
   annotations: OverlayAnnotation[],
 ): Promise<void> {
   const items = JSON.stringify(
@@ -32,12 +33,14 @@ export async function injectAnnotationOverlay(
   )
   const overlayAttr = JSON.stringify(ANNOTATION_OVERLAY_ATTR)
   const overlayToken = JSON.stringify(token)
+  const useDocumentSpaceLabels = JSON.stringify(fullPage)
 
   await session.Runtime.evaluate({
     expression: `(() => {
       var items = ${items};
       var attr = ${overlayAttr};
       var token = ${overlayToken};
+      var useDocumentSpaceLabels = ${useDocumentSpaceLabels};
       var existing = document.querySelectorAll('[' + attr + ']');
       for (var j = 0; j < existing.length; j++) {
         if (existing[j].getAttribute(attr) === token) existing[j].remove();
@@ -55,7 +58,8 @@ export async function injectAnnotationOverlay(
         b.style.cssText = 'position:absolute;left:' + dx + 'px;top:' + dy + 'px;width:' + it.width + 'px;height:' + it.height + 'px;border:2px solid rgba(255,0,0,0.8);box-sizing:border-box;pointer-events:none;';
         var l = document.createElement('div');
         l.textContent = String(it.number);
-        var labelTop = dy < 14 ? '2px' : '-14px';
+        var labelAnchor = useDocumentSpaceLabels ? dy : it.y;
+        var labelTop = labelAnchor < 14 ? '2px' : '-14px';
         l.style.cssText = 'position:absolute;top:' + labelTop + ';left:-2px;background:rgba(255,0,0,0.9);color:#fff;font:bold 11px/14px monospace;padding:0 4px;border-radius:2px;white-space:nowrap;';
         b.appendChild(l);
         c.appendChild(b);

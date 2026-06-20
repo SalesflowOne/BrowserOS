@@ -127,6 +127,12 @@ describe('captureScreenshotWithAnnotations', () => {
       'data-browseros-screenshot-annotation',
     )
     expect(harness.expressions[1]).not.toContain('getElementById')
+    expect(harness.expressions[1]).toContain(
+      'var useDocumentSpaceLabels = false;',
+    )
+    expect(harness.expressions[1]).toContain(
+      'var labelAnchor = useDocumentSpaceLabels ? dy : it.y;',
+    )
     expect(harness.expressions[1]).toContain('"number":1')
     expect(result).toEqual({
       data: 'png-data',
