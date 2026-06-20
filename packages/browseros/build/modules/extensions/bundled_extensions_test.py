@@ -25,11 +25,6 @@ class BundledExtensionsManifestTest(unittest.TestCase):
                     "https://cdn.browseros.com/extensions/bugreporter-52.0.0.0.crx",
                 ),
                 (
-                    "nlnihljpboknmfagkikhkdblbedophja",
-                    "1.1.0.0",
-                    "https://cdn.browseros.com/extensions/controller-1.1.0.0.crx",
-                ),
-                (
                     "bflpfmnmnokmjhmgnolecpppdbdophmk",
                     "0.0.115.0",
                     "https://cdn.browseros.com/extensions/agent-0.0.115.0.crx",
