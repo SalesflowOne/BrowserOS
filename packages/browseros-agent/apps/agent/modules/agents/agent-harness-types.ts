@@ -6,7 +6,7 @@ export interface AgentEntry {
   source?: 'agent-harness'
 }
 
-export type HarnessAgentAdapter = 'claude' | 'codex' | 'hermes'
+export type HarnessAgentAdapter = 'claude' | 'codex'
 
 export type AgentHarnessStreamEvent =
   | {
@@ -142,16 +142,6 @@ export interface CreateHarnessAgentInput {
   adapter: HarnessAgentAdapter
   modelId?: string
   reasoningEffort?: string
-  /**
-   * Adapter provider id from the user's BrowserOS AI Settings entry.
-   * Provider-backed adapters use this with `apiKey`/`baseUrl` to write
-   * or provision their runtime-specific provider config.
-   */
-  providerType?: string
-  /** API key paired with `providerType` when the selected adapter needs one. */
-  apiKey?: string
-  /** Base URL for OpenAI-compatible/custom provider entries. */
-  baseUrl?: string
 }
 
 export interface HarnessHistoryReasoning {

@@ -37,7 +37,7 @@ export enum Feature {
   CREDITS_SUPPORT = 'CREDITS_SUPPORT',
   // Claude Code / Codex agent-harness adapters in the unified picker + settings
   AGENT_HARNESS_SUPPORT = 'AGENT_HARNESS_SUPPORT',
-  // VM-backed Hermes agent adapter
+  // Remote Hermes provider
   HERMES_AGENT_SUPPORT = 'HERMES_AGENT_SUPPORT',
 }
 

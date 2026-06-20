@@ -22,23 +22,16 @@ import type {
   HarnessAdapterDescriptor,
   HarnessAgentAdapter,
 } from '@/modules/agents/agent-harness-types'
-import type {
-  CreateAgentRuntime,
-  ProviderOption,
-} from '@/modules/agents/agents-page-types'
-import { ProviderSelector } from './ProviderSelector'
+import type { CreateAgentRuntime } from '@/modules/agents/agents-page-types'
 
 export interface NewAgentDialogProps {
   adapters: HarnessAdapterDescriptor[]
   createError: string | null
   createRuntime: CreateAgentRuntime
   creating: boolean
-  defaultProviderId: string
   harnessAdapterId: HarnessAgentAdapter
   harnessModelId: string
   harnessReasoningEffort: string
-  hermesProviders: ProviderOption[]
-  hermesSelectedProviderId: string
   name: string
   open: boolean
   onCreate: () => void
@@ -47,7 +40,6 @@ export interface NewAgentDialogProps {
   onHarnessAdapterChange: (adapter: HarnessAgentAdapter) => void
   onHarnessModelChange: (modelId: string) => void
   onHarnessReasoningChange: (reasoningEffort: string) => void
-  onHermesProviderChange: (providerId: string) => void
   onNameChange: (name: string) => void
 }
 
@@ -56,12 +48,9 @@ export const NewAgentDialog: FC<NewAgentDialogProps> = ({
   createError,
   createRuntime,
   creating,
-  defaultProviderId,
   harnessAdapterId,
   harnessModelId,
   harnessReasoningEffort,
-  hermesProviders,
-  hermesSelectedProviderId,
   name,
   open,
   onCreate,
@@ -70,24 +59,13 @@ export const NewAgentDialog: FC<NewAgentDialogProps> = ({
   onHarnessAdapterChange,
   onHarnessModelChange,
   onHarnessReasoningChange,
-  onHermesProviderChange,
   onNameChange,
 }) => {
   const selectedHarnessAdapter =
     adapters.find((adapter) => adapter.id === harnessAdapterId) ?? adapters[0]
-  // When scoped to a single adapter (opened from a specific coding-agent card),
-  // the picker is redundant — the runtime is already implied.
   const showAdapterPicker = adapters.length > 1
-  const isHermesRuntime = createRuntime === 'hermes'
-  const isClassicHarnessRuntime = !isHermesRuntime
-  const hermesBlocked =
-    isHermesRuntime &&
-    (hermesProviders.length === 0 || !hermesSelectedProviderId)
   const canCreate =
-    Boolean(name.trim()) &&
-    !creating &&
-    !hermesBlocked &&
-    Boolean(selectedHarnessAdapter)
+    Boolean(name.trim()) && !creating && Boolean(selectedHarnessAdapter)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -124,11 +102,7 @@ export const NewAgentDialog: FC<NewAgentDialogProps> = ({
               <Select
                 value={createRuntime}
                 onValueChange={(value) => {
-                  if (
-                    value === 'claude' ||
-                    value === 'codex' ||
-                    value === 'hermes'
-                  ) {
+                  if (value === 'claude' || value === 'codex') {
                     onRuntimeChange(value)
                     onHarnessAdapterChange(value)
                   }
@@ -148,58 +122,42 @@ export const NewAgentDialog: FC<NewAgentDialogProps> = ({
             </div>
           ) : null}
 
-          {isHermesRuntime ? (
-            <ProviderSelector
-              providers={hermesProviders}
-              defaultProviderId={defaultProviderId}
-              selectedId={hermesSelectedProviderId}
-              onSelect={onHermesProviderChange}
-            />
-          ) : null}
+          <div className="grid gap-2">
+            <Label htmlFor="harness-model">Model</Label>
+            <Select value={harnessModelId} onValueChange={onHarnessModelChange}>
+              <SelectTrigger id="harness-model">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(selectedHarnessAdapter?.models ?? []).map((model) => (
+                  <SelectItem key={model.id} value={model.id}>
+                    {model.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-          {isClassicHarnessRuntime ? (
-            <>
-              <div className="grid gap-2">
-                <Label htmlFor="harness-model">Model</Label>
-                <Select
-                  value={harnessModelId}
-                  onValueChange={onHarnessModelChange}
-                >
-                  <SelectTrigger id="harness-model">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(selectedHarnessAdapter?.models ?? []).map((model) => (
-                      <SelectItem key={model.id} value={model.id}>
-                        {model.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="harness-effort">Reasoning</Label>
-                <Select
-                  value={harnessReasoningEffort}
-                  onValueChange={onHarnessReasoningChange}
-                >
-                  <SelectTrigger id="harness-effort">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(selectedHarnessAdapter?.reasoningEfforts ?? []).map(
-                      (effort) => (
-                        <SelectItem key={effort.id} value={effort.id}>
-                          {effort.label}
-                        </SelectItem>
-                      ),
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-            </>
-          ) : null}
+          <div className="grid gap-2">
+            <Label htmlFor="harness-effort">Reasoning</Label>
+            <Select
+              value={harnessReasoningEffort}
+              onValueChange={onHarnessReasoningChange}
+            >
+              <SelectTrigger id="harness-effort">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(selectedHarnessAdapter?.reasoningEfforts ?? []).map(
+                  (effort) => (
+                    <SelectItem key={effort.id} value={effort.id}>
+                      {effort.label}
+                    </SelectItem>
+                  ),
+                )}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         <DialogFooter>
