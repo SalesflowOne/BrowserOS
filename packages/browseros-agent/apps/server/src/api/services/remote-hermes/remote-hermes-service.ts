@@ -56,6 +56,10 @@ export interface StreamTurnInput {
   browserContext?: BrowserContext
   selectedText?: string
   selectedTextSource?: { url: string; title: string }
+  /** Active workspace directory from the chat request. Stamped on each
+   *  WS RPC dispatch so the laptop's /mcp route can scope filesystem
+   *  tools to it for remote-hermes callers. */
+  userWorkingDir?: string
 }
 
 export class RemoteHermesService {
@@ -113,6 +117,12 @@ export class RemoteHermesService {
    * to any other provider's stream.
    */
   streamTurn(input: StreamTurnInput, abortSignal: AbortSignal): Response {
+    // Stamp workingDir on the bridge before opening the turn so any
+    // tools/list / tools/call the worker dispatches during this turn
+    // carries the cwd header. Cleared when the user disconnects their
+    // workspace (input.userWorkingDir undefined) to avoid leaking a
+    // previous turn's scope.
+    this.bridge.setWorkingDir(input.userWorkingDir)
     const stream = createUIMessageStream({
       execute: async ({ writer }) => {
         await this.bridge.withTurn(async () => {

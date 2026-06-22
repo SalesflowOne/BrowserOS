@@ -49,8 +49,20 @@ export class WsBridge {
   private pingTimer: ReturnType<typeof setInterval> | null = null
   private lastPongAt = 0
   private state: SocketState = 'closed'
+  /** Latest workingDir threaded by RemoteHermesService at turn start.
+   *  Forwarded to the local /mcp route via `X-BrowserOS-Working-Dir`
+   *  on every rpc.request dispatch, so filesystem tools registered on
+   *  remote-hermes turns are scoped to the user's workspace. */
+  private currentWorkingDir: string | undefined
 
   constructor(private readonly deps: WsBridgeDeps) {}
+
+  /** Called by RemoteHermesService before each turn. `undefined` clears
+   *  the scope so a workspace-disconnected turn doesn't leak a stale
+   *  cwd from the previous one. */
+  setWorkingDir(dir: string | undefined): void {
+    this.currentWorkingDir = dir
+  }
 
   async ensureOpen(): Promise<void> {
     if (this.state === 'open') return
@@ -229,6 +241,7 @@ export class WsBridge {
       // doc).
       scopeId: this.deps.client.browserosId,
       agentId: 'remote-hermes',
+      workingDir: this.currentWorkingDir,
     })
     try {
       this.socket?.send(encodeFrame(reply))
