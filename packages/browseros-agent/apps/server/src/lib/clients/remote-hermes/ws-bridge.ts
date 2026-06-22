@@ -59,7 +59,16 @@ export class WsBridge {
 
   /** Called by RemoteHermesService before each turn. `undefined` clears
    *  the scope so a workspace-disconnected turn doesn't leak a stale
-   *  cwd from the previous one. */
+   *  cwd from the previous one.
+   *
+   *  v1 limitation: shares the same per-install scope as `scopeId`
+   *  above. Two overlapping remote-hermes turns can let the second
+   *  setWorkingDir() overwrite the first before the first's worker
+   *  RPCs dispatch, mis-scoping filesystem calls. Per-turn isolation
+   *  needs the worker to propagate threadId on the rpc.request frame
+   *  (Open Item #2 in the design doc) — same fix unlocks per-turn
+   *  scopeId too. Accepted for v1 because concurrent remote-hermes
+   *  turns are rare on a single laptop. */
   setWorkingDir(dir: string | undefined): void {
     this.currentWorkingDir = dir
   }
