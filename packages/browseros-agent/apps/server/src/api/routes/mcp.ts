@@ -23,6 +23,10 @@ interface McpRouteDeps {
   version: string
   browserSession: BrowserSession
   klavis?: KlavisService
+  /** Server scratch dir (absolute). Used as the safe-default cwd for
+   *  remote-hermes filesystem tools when the user hasn't picked a
+   *  workspace via the side panel toolbar. */
+  executionDir?: string
 }
 
 function parseOptionalNumber(value: string | undefined): number | undefined {
@@ -80,13 +84,21 @@ export function createMcpRoutes(deps: McpRouteDeps) {
     )
 
     // Gate filesystem tools on the caller being remote-hermes — the
-    // RPC dispatcher in ws-bridge stamps both headers, no other client
-    // does. Keeps the default MCP surface (ACP probes, external MCP
-    // tools) browser-only.
+    // RPC dispatcher in ws-bridge stamps the agent-id header, no other
+    // client does. Keeps the default MCP surface (ACP probes, external
+    // MCP tools) browser-only.
+    //
+    // For workspace scope: prefer the user's explicit workspace
+    // (header forwarded from the chat request); fall back to the
+    // server scratch dir so remote-hermes always has at least a
+    // sandboxed cwd. The fallback path is bounded by the server
+    // process, so the LLM never escapes to the user's whole disk.
     const agentId = c.req.header(AGENT_ID_HEADER)
     const workingDir = c.req.header(WORKING_DIR_HEADER)
     const filesystemWorkingDir =
-      agentId === REMOTE_HERMES_AGENT_ID && workingDir ? workingDir : undefined
+      agentId === REMOTE_HERMES_AGENT_ID
+        ? workingDir || deps.executionDir
+        : undefined
 
     // Per-request server + transport: no shared state, no race conditions,
     // no ID collisions. Required by MCP SDK 1.26.0+ security fix (GHSA-345p-7cg4-v4c7).
