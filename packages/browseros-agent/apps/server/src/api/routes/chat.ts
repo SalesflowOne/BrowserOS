@@ -111,7 +111,6 @@ export function createChatRoutes(deps: ChatRouteDeps) {
             browserContext: remoteBrowserContext,
             selectedText: request.selectedText,
             selectedTextSource: request.selectedTextSource,
-            userWorkingDir: request.userWorkingDir,
           },
           c.req.raw.signal,
         )
