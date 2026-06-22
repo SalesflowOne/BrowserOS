@@ -10,37 +10,19 @@ import type { BrowserSession } from '../../browser/core/session'
 import { logger } from '../../lib/logger'
 import { metrics } from '../../lib/metrics'
 import { Sentry } from '../../lib/sentry'
-import {
-  type BrowserOutputFileAccess,
-  createBrowserOutputFileAccess,
-} from '../../tools/browser/output-file'
+import { createBrowserOutputFileAccess } from '../../tools/browser/output-file'
 import type { KlavisService } from '../services/klavis'
 import { createMcpServer } from '../services/mcp/mcp-server'
 import type { Env } from '../types'
 
 export const MANAGED_MCP_SERVERS_HEADER = 'X-BrowserOS-Managed-Mcp-Servers'
-export const REMOTE_HERMES_MCP_SOURCE = 'remote-hermes'
+export const REMOTE_AGENT_HARNESS_MCP_SOURCE = 'remote-agent-harness'
 
 interface McpRouteDeps {
   version: string
   browserSession: BrowserSession
   klavis?: KlavisService
   executionDir: string
-}
-
-/** Returns generated-output readback state; scoped harnesses share it across MCP requests. */
-function getRemoteHarnessOutputFileAccess(
-  accessByScope: Map<string, BrowserOutputFileAccess>,
-  scopeId: string | undefined,
-): BrowserOutputFileAccess {
-  if (!scopeId) return createBrowserOutputFileAccess()
-
-  const existing = accessByScope.get(scopeId)
-  if (existing) return existing
-
-  const access = createBrowserOutputFileAccess()
-  accessByScope.set(scopeId, access)
-  return access
 }
 
 function parseOptionalNumber(value: string | undefined): number | undefined {
@@ -76,10 +58,9 @@ export function parseManagedMcpServersHeader(
 
 export function createMcpRoutes(deps: McpRouteDeps) {
   const app = new Hono<Env>()
-  const remoteHarnessOutputFilesByScope = new Map<
-    string,
-    BrowserOutputFileAccess
-  >()
+  const remoteAgentHarness = {
+    outputFileAccess: createBrowserOutputFileAccess(),
+  }
 
   app.get('/', (c) =>
     c.json({
@@ -89,8 +70,8 @@ export function createMcpRoutes(deps: McpRouteDeps) {
   )
 
   app.post('/', async (c) => {
-    const scopeId = c.req.header('X-BrowserOS-Scope-Id')?.trim() || undefined
-    metrics.log('mcp.request', { scopeId: scopeId ?? 'ephemeral' })
+    const scopeId = c.req.header('X-BrowserOS-Scope-Id') || 'ephemeral'
+    metrics.log('mcp.request', { scopeId })
 
     const defaultWindowId = parseOptionalNumber(
       c.req.header('X-BrowserOS-Default-Window-Id'),
@@ -101,14 +82,10 @@ export function createMcpRoutes(deps: McpRouteDeps) {
       c.req.header(MANAGED_MCP_SERVERS_HEADER),
     )
 
-    const isRemoteAgentHarness =
-      c.req.query('source') === REMOTE_HERMES_MCP_SOURCE
-    const outputFileAccess = isRemoteAgentHarness
-      ? getRemoteHarnessOutputFileAccess(
-          remoteHarnessOutputFilesByScope,
-          scopeId,
-        )
-      : undefined
+    const harness =
+      c.req.query('source') === REMOTE_AGENT_HARNESS_MCP_SOURCE
+        ? remoteAgentHarness
+        : undefined
 
     // Per-request server + transport: no shared state, no race conditions,
     // no ID collisions. Required by MCP SDK 1.26.0+ security fix (GHSA-345p-7cg4-v4c7).
@@ -120,8 +97,7 @@ export function createMcpRoutes(deps: McpRouteDeps) {
       defaultWindowId,
       defaultTabGroupId,
       executionDir: deps.executionDir,
-      isRemoteAgentHarness,
-      outputFileAccess,
+      remoteAgentHarness: harness,
     })
     const transport = new StreamableHTTPTransport({
       sessionIdGenerator: undefined,
@@ -134,7 +110,7 @@ export function createMcpRoutes(deps: McpRouteDeps) {
     } catch (error) {
       Sentry.withScope((scope) => {
         scope.setTag('route', 'mcp')
-        scope.setTag('scopeId', scopeId ?? 'ephemeral')
+        scope.setTag('scopeId', scopeId)
         Sentry.captureException(error)
       })
       logger.error('Error handling MCP request', {

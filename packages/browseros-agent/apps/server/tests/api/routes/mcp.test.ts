@@ -6,8 +6,7 @@ import type {
 
 interface McpServerCreation {
   executionDir: string | undefined
-  isRemoteAgentHarness: boolean | undefined
-  outputFileAccess: unknown
+  remoteAgentHarness: { outputFileAccess?: unknown } | undefined
   proxyStatus: KlavisProxyStatus | null
   selectedServerNames: readonly string[] | undefined
 }
@@ -29,13 +28,11 @@ const createMcpServerSpy = mock(
     klavis?: { getProxyStatus(): KlavisProxyStatus }
     connectorScope?: ConnectorToolScope
     executionDir?: string
-    isRemoteAgentHarness?: boolean
-    outputFileAccess?: unknown
+    remoteAgentHarness?: { outputFileAccess?: unknown }
   }) => {
     serverCreations.push({
       executionDir: deps.executionDir,
-      isRemoteAgentHarness: deps.isRemoteAgentHarness,
-      outputFileAccess: deps.outputFileAccess,
+      remoteAgentHarness: deps.remoteAgentHarness,
       proxyStatus: deps.klavis?.getProxyStatus() ?? null,
       selectedServerNames: deps.connectorScope?.selectedServerNames,
     })
@@ -128,15 +125,13 @@ describe('createMcpRoutes', () => {
     expect(serverCreations).toEqual([
       {
         executionDir: '/tmp/browseros-execution',
-        isRemoteAgentHarness: false,
-        outputFileAccess: undefined,
+        remoteAgentHarness: undefined,
         proxyStatus: { state: 'connecting' },
         selectedServerNames: [],
       },
       {
         executionDir: '/tmp/browseros-execution',
-        isRemoteAgentHarness: false,
-        outputFileAccess: undefined,
+        remoteAgentHarness: undefined,
         proxyStatus: { state: 'ready', toolCount: 3 },
         selectedServerNames: ['Slack', 'Google Docs'],
       },
@@ -145,7 +140,7 @@ describe('createMcpRoutes', () => {
     expect(connectCalls).toEqual(transportInstances)
   })
 
-  it('sets the remote agent harness flag only for the remote Hermes source', async () => {
+  it('sets the remote agent harness context only for the remote harness source', async () => {
     const app = createMcpRoutes({
       version: '0.0.0-test',
       browserSession: {} as never,
@@ -153,108 +148,42 @@ describe('createMcpRoutes', () => {
     })
 
     const defaultResponse = await postMcp(app)
-    const remoteHermesResponse = await postMcp(
+    const remoteHarnessResponse = await postMcp(
       app,
       {},
-      '/?source=remote-hermes',
+      '/?source=remote-agent-harness',
     )
 
     expect(defaultResponse.status).toBe(200)
-    expect(remoteHermesResponse.status).toBe(200)
+    expect(remoteHarnessResponse.status).toBe(200)
     expect(serverCreations).toEqual([
       {
         executionDir: '/tmp/browseros-execution',
-        isRemoteAgentHarness: false,
-        outputFileAccess: undefined,
+        remoteAgentHarness: undefined,
         proxyStatus: null,
         selectedServerNames: [],
       },
       {
         executionDir: '/tmp/browseros-execution',
-        isRemoteAgentHarness: true,
-        outputFileAccess: expect.any(Object),
+        remoteAgentHarness: { outputFileAccess: expect.any(Object) },
         proxyStatus: null,
         selectedServerNames: [],
       },
     ])
   })
 
-  it('keeps remote agent harness output-file access stable by scope', async () => {
+  it('keeps remote agent harness context stable by source', async () => {
     const app = createMcpRoutes({
       version: '0.0.0-test',
       browserSession: {} as never,
       executionDir: '/tmp/browseros-execution',
     })
 
-    await postMcp(
-      app,
-      { 'X-BrowserOS-Scope-Id': 'scope-a' },
-      '/?source=remote-hermes',
+    await postMcp(app, {}, '/?source=remote-agent-harness')
+    await postMcp(app, {}, '/?source=remote-agent-harness')
+
+    expect(serverCreations[0].remoteAgentHarness).toBe(
+      serverCreations[1].remoteAgentHarness,
     )
-    await postMcp(
-      app,
-      { 'X-BrowserOS-Scope-Id': 'scope-a' },
-      '/?source=remote-hermes',
-    )
-    await postMcp(
-      app,
-      { 'X-BrowserOS-Scope-Id': 'scope-b' },
-      '/?source=remote-hermes',
-    )
-
-    expect(serverCreations[0].outputFileAccess).toBe(
-      serverCreations[1].outputFileAccess,
-    )
-    expect(serverCreations[2].outputFileAccess).not.toBe(
-      serverCreations[0].outputFileAccess,
-    )
-  })
-
-  it('does not share remote agent harness output-file access without a scope', async () => {
-    const app = createMcpRoutes({
-      version: '0.0.0-test',
-      browserSession: {} as never,
-      executionDir: '/tmp/browseros-execution',
-    })
-
-    await postMcp(app, {}, '/?source=remote-hermes')
-    await postMcp(app, {}, '/?source=remote-hermes')
-
-    expect(serverCreations[0].outputFileAccess).toEqual(expect.any(Object))
-    expect(serverCreations[1].outputFileAccess).toEqual(expect.any(Object))
-    expect(serverCreations[0].outputFileAccess).not.toBe(
-      serverCreations[1].outputFileAccess,
-    )
-  })
-
-  it('does not silently evict scoped remote agent harness output-file access', async () => {
-    const app = createMcpRoutes({
-      version: '0.0.0-test',
-      browserSession: {} as never,
-      executionDir: '/tmp/browseros-execution',
-    })
-
-    await postMcp(
-      app,
-      { 'X-BrowserOS-Scope-Id': 'scope-0' },
-      '/?source=remote-hermes',
-    )
-    const firstScopeAccess = serverCreations[0].outputFileAccess
-
-    for (let i = 1; i <= 80; i++) {
-      await postMcp(
-        app,
-        { 'X-BrowserOS-Scope-Id': `scope-${i}` },
-        '/?source=remote-hermes',
-      )
-    }
-
-    await postMcp(
-      app,
-      { 'X-BrowserOS-Scope-Id': 'scope-0' },
-      '/?source=remote-hermes',
-    )
-
-    expect(serverCreations.at(-1)?.outputFileAccess).toBe(firstScopeAccess)
   })
 })

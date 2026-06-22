@@ -6,8 +6,7 @@
  * Bridges the AI-SDK filesystem toolset onto the laptop's MCP server.
  * The AI-SDK and MCP tool registries are independent (the local agent
  * loop never dials /mcp for its own tools), so registering here only
- * affects external MCP callers — today that's remote-hermes via the
- * WS RPC bridge.
+ * affects external remote-harness MCP callers.
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'

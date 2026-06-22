@@ -14,7 +14,7 @@ import { getDb } from '../lib/db'
 import { logger } from '../lib/logger'
 import { Sentry } from '../lib/sentry'
 import { createApiRoutes } from './routes'
-import { REMOTE_HERMES_MCP_SOURCE } from './routes/mcp'
+import { REMOTE_AGENT_HARNESS_MCP_SOURCE } from './routes/mcp'
 import { KlavisService } from './services/klavis'
 import { RemoteHermesService } from './services/remote-hermes/remote-hermes-service'
 import type { HttpServerConfig } from './types'
@@ -68,7 +68,7 @@ export async function createHttpServer(config: HttpServerConfig) {
           }),
           resolveLocalMcpUrl: (server) =>
             server === 'browseros'
-              ? `http://127.0.0.1:${port}/mcp?source=${REMOTE_HERMES_MCP_SOURCE}`
+              ? `http://127.0.0.1:${port}/mcp?source=${REMOTE_AGENT_HARNESS_MCP_SOURCE}`
               : null,
         })
       : null

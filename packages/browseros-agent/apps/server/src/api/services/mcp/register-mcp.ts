@@ -7,11 +7,14 @@ import {
 } from '../../../tools/browser/register'
 import { registerFilesystemMcpTools } from '../../../tools/filesystem/register-mcp'
 
+export interface RemoteAgentHarnessTools {
+  outputFileAccess: BrowserOutputFileAccess
+}
+
 export interface RegisterToolsDeps extends BrowserToolDefaults {
   browserSession: BrowserSession
   executionDir: string
-  isRemoteAgentHarness: boolean
-  outputFileAccess?: BrowserOutputFileAccess
+  remoteAgentHarness?: RemoteAgentHarnessTools
 }
 
 /** Registers BrowserOS MCP tools for the current request. */
@@ -25,12 +28,12 @@ export function registerTools(
   }
 
   registerBrowserTools(mcpServer, deps.browserSession, defaults, {
-    outputFileAccess: deps.outputFileAccess,
+    outputFileAccess: deps.remoteAgentHarness?.outputFileAccess,
   })
 
-  if (deps.isRemoteAgentHarness) {
+  if (deps.remoteAgentHarness) {
     registerFilesystemMcpTools(mcpServer, deps.executionDir, {
-      outputFileAccess: deps.outputFileAccess,
+      outputFileAccess: deps.remoteAgentHarness.outputFileAccess,
     })
   }
 }

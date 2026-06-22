@@ -109,7 +109,6 @@ describe('registerTools', () => {
     registerTools(fake.server as never, {
       browserSession: { pages: {} } as unknown as BrowserSession,
       executionDir: '/tmp/browseros-execution',
-      isRemoteAgentHarness: false,
     })
 
     expect([...fake.handlers.keys()]).toEqual(BROWSER_TOOLS.map((t) => t.name))
@@ -122,7 +121,9 @@ describe('registerTools', () => {
     registerTools(fake.server as never, {
       browserSession: { pages: {} } as unknown as BrowserSession,
       executionDir: '/tmp/browseros-execution',
-      isRemoteAgentHarness: true,
+      remoteAgentHarness: {
+        outputFileAccess: createBrowserOutputFileAccess(),
+      },
     })
 
     expect([...fake.handlers.keys()]).toEqual([
@@ -154,8 +155,7 @@ describe('registerTools', () => {
       registerTools(browserRequest.server as never, {
         browserSession,
         executionDir: '/tmp/browseros-execution',
-        isRemoteAgentHarness: true,
-        outputFileAccess,
+        remoteAgentHarness: { outputFileAccess },
       })
 
       const browserResult = await browserRequest.handlers.get('read')?.({
@@ -171,8 +171,7 @@ describe('registerTools', () => {
       registerTools(filesystemRequest.server as never, {
         browserSession: { pages: {} } as unknown as BrowserSession,
         executionDir: '/tmp/browseros-execution',
-        isRemoteAgentHarness: true,
-        outputFileAccess,
+        remoteAgentHarness: { outputFileAccess },
       })
 
       const readResult = await filesystemRequest.handlers.get(
@@ -182,15 +181,16 @@ describe('registerTools', () => {
       expect(readResult?.isError).toBeFalsy()
       expect(textOf(readResult)).toContain('remote harness generated output')
 
-      const otherScope = createFakeServer()
-      registerTools(otherScope.server as never, {
+      const otherHarness = createFakeServer()
+      registerTools(otherHarness.server as never, {
         browserSession: { pages: {} } as unknown as BrowserSession,
         executionDir: '/tmp/browseros-execution',
-        isRemoteAgentHarness: true,
-        outputFileAccess: createBrowserOutputFileAccess(),
+        remoteAgentHarness: {
+          outputFileAccess: createBrowserOutputFileAccess(),
+        },
       })
 
-      const denied = await otherScope.handlers.get('filesystem_read')?.({
+      const denied = await otherHarness.handlers.get('filesystem_read')?.({
         path: savedPath,
       })
 
@@ -205,7 +205,6 @@ describe('registerTools', () => {
       registerTools(fake.server as never, {
         browserSession: { pages: {} } as unknown as BrowserSession,
         executionDir: '/tmp/browseros-execution',
-        isRemoteAgentHarness: false,
       })
 
       if (i === 1) {
@@ -262,7 +261,6 @@ describe('registerTools', () => {
       defaultWindowId: 7,
       defaultTabGroupId: 'group-a',
       executionDir: '/tmp/browseros-execution',
-      isRemoteAgentHarness: false,
     })
 
     const result = await fake.handlers.get('tabs')?.({
