@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it } from 'bun:test'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { COMPILED_SERVER_EXEC_ARGV } from './compile'
+const nativeAddonGuardPath = join(
+  process.cwd(),
+  'apps/server/src/lib/native-addon-guard.ts',
+)
 
 describe('compiled server native addon policy', () => {
   let tempDir: string | null = null
@@ -15,8 +18,28 @@ describe('compiled server native addon policy', () => {
     }
   })
 
-  it('bakes native-addon loading disablement into compiled server binaries', () => {
-    expect(COMPILED_SERVER_EXEC_ARGV).toContain('--no-addons')
+  it('installs the native-addon guard idempotently', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'browseros-native-addon-policy-'))
+    const sourcePath = join(tempDir, 'idempotent.ts')
+    await writeFile(
+      sourcePath,
+      [
+        `import { installNativeAddonGuard } from ${JSON.stringify(nativeAddonGuardPath)}`,
+        'installNativeAddonGuard()',
+        'const guarded = process.dlopen',
+        'installNativeAddonGuard()',
+        'console.log(String(process.dlopen === guarded))',
+      ].join('\n'),
+    )
+
+    const result = await collectProcess(
+      Bun.spawn(['bun', sourcePath], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      }),
+    )
+
+    expect(result).toMatchObject({ exitCode: 0, stdout: 'true\n' })
   })
 
   it('prevents Bun from opening hidden temp native addons', async () => {
@@ -32,25 +55,20 @@ describe('compiled server native addon policy', () => {
     await writeFile(
       sourcePath,
       [
+        `import { installNativeAddonGuard, NATIVE_ADDON_DISABLED_MESSAGE } from ${JSON.stringify(nativeAddonGuardPath)}`,
+        'installNativeAddonGuard()',
         'try {',
         '  require("./addon.node")',
         '} catch (error) {',
         '  console.error(error?.message ?? String(error))',
+        '  console.error(NATIVE_ADDON_DISABLED_MESSAGE)',
         '  setInterval(() => {}, 1000)',
         '}',
       ].join('\n'),
     )
 
     const build = Bun.spawn(
-      [
-        'bun',
-        'build',
-        '--compile',
-        `--compile-exec-argv=${COMPILED_SERVER_EXEC_ARGV.join(' ')}`,
-        sourcePath,
-        '--outfile',
-        binaryPath,
-      ],
+      ['bun', 'build', '--compile', sourcePath, '--outfile', binaryPath],
       {
         stdout: 'pipe',
         stderr: 'pipe',
@@ -85,8 +103,9 @@ describe('compiled server native addon policy', () => {
     const appResult = await collectProcess(app)
 
     expect(appResult.stderr).toContain(
-      'Cannot load native addon because loading addons is disabled',
+      'BrowserOS server disables native addon loading in compiled production builds',
     )
+    expect(await listFiles(runTmpDir)).toEqual([])
     expect(openFiles.stdout).not.toContain('.node')
   })
 })
@@ -105,4 +124,9 @@ async function collectProcess(process: CollectableProcess) {
   ])
 
   return { stdout, stderr, exitCode }
+}
+
+async function listFiles(dir: string): Promise<string[]> {
+  const entries = await readdir(dir, { recursive: true })
+  return entries.map(String).sort()
 }
