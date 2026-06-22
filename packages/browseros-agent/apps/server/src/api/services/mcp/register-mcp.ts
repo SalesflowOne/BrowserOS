@@ -8,9 +8,7 @@ import { registerFilesystemMcpTools } from '../../../tools/filesystem/register-m
 
 export interface RegisterToolsDeps extends BrowserToolDefaults {
   browserSession: BrowserSession
-  /** When set, register filesystem tools scoped to this directory. Gated
-   *  upstream by the route layer (`X-BrowserOS-Agent-Id` header) so the
-   *  default MCP surface stays browser-only. */
+  /** When set, register filesystem tools scoped to this directory. */
   filesystemWorkingDir?: string
 }
 

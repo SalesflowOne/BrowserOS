@@ -18,9 +18,7 @@ export interface McpServiceDeps {
   connectorScope?: ConnectorToolScope
   defaultWindowId?: number
   defaultTabGroupId?: string
-  /** Set by the /mcp route only for remote-hermes callers (per
-   *  `X-BrowserOS-Agent-Id`). When present, the filesystem toolset is
-   *  registered alongside browser tools. */
+  /** Set by the /mcp route when source=remote-hermes. */
   filesystemWorkingDir?: string
 }
 

@@ -5,6 +5,7 @@ import type {
 } from '../../../src/api/services/klavis'
 
 interface McpServerCreation {
+  filesystemWorkingDir: string | undefined
   proxyStatus: KlavisProxyStatus | null
   selectedServerNames: readonly string[] | undefined
 }
@@ -25,8 +26,10 @@ const createMcpServerSpy = mock(
   (deps: {
     klavis?: { getProxyStatus(): KlavisProxyStatus }
     connectorScope?: ConnectorToolScope
+    filesystemWorkingDir?: string
   }) => {
     serverCreations.push({
+      filesystemWorkingDir: deps.filesystemWorkingDir,
       proxyStatus: deps.klavis?.getProxyStatus() ?? null,
       selectedServerNames: deps.connectorScope?.selectedServerNames,
     })
@@ -62,8 +65,9 @@ beforeEach(() => {
 async function postMcp(
   app: ReturnType<typeof createMcpRoutes>,
   headers: Record<string, string> = {},
+  path = '/',
 ) {
-  return app.request('/', {
+  return app.request(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify({
@@ -103,6 +107,7 @@ describe('createMcpRoutes', () => {
       version: '0.0.0-test',
       browserSession: {} as never,
       klavis: klavis as never,
+      executionDir: '/tmp/browseros-execution',
     })
 
     const first = await postMcp(app)
@@ -115,13 +120,48 @@ describe('createMcpRoutes', () => {
     expect(first.status).toBe(200)
     expect(second.status).toBe(200)
     expect(serverCreations).toEqual([
-      { proxyStatus: { state: 'connecting' }, selectedServerNames: [] },
       {
+        filesystemWorkingDir: undefined,
+        proxyStatus: { state: 'connecting' },
+        selectedServerNames: [],
+      },
+      {
+        filesystemWorkingDir: undefined,
         proxyStatus: { state: 'ready', toolCount: 3 },
         selectedServerNames: ['Slack', 'Google Docs'],
       },
     ])
     expect(transportInstances).toHaveLength(2)
     expect(connectCalls).toEqual(transportInstances)
+  })
+
+  it('registers filesystem tools only for the remote Hermes source', async () => {
+    const app = createMcpRoutes({
+      version: '0.0.0-test',
+      browserSession: {} as never,
+      executionDir: '/tmp/browseros-execution',
+    })
+
+    const defaultResponse = await postMcp(app)
+    const remoteHermesResponse = await postMcp(
+      app,
+      {},
+      '/?source=remote-hermes',
+    )
+
+    expect(defaultResponse.status).toBe(200)
+    expect(remoteHermesResponse.status).toBe(200)
+    expect(serverCreations).toEqual([
+      {
+        filesystemWorkingDir: undefined,
+        proxyStatus: null,
+        selectedServerNames: [],
+      },
+      {
+        filesystemWorkingDir: '/tmp/browseros-execution',
+        proxyStatus: null,
+        selectedServerNames: [],
+      },
+    ])
   })
 })
