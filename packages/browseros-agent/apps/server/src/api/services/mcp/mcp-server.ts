@@ -18,10 +18,11 @@ export interface McpServiceDeps {
   connectorScope?: ConnectorToolScope
   defaultWindowId?: number
   defaultTabGroupId?: string
-  /** Set by the /mcp route when source=remote-hermes. */
-  filesystemWorkingDir?: string
+  executionDir: string
+  isRemoteAgentHarness: boolean
 }
 
+/** Creates a per-request BrowserOS MCP server with tools for the requested surface. */
 export function createMcpServer(deps: McpServiceDeps): McpServer {
   const server = new McpServer(
     {
@@ -40,7 +41,8 @@ export function createMcpServer(deps: McpServiceDeps): McpServer {
     browserSession: deps.browserSession,
     defaultWindowId: deps.defaultWindowId,
     defaultTabGroupId: deps.defaultTabGroupId,
-    filesystemWorkingDir: deps.filesystemWorkingDir,
+    executionDir: deps.executionDir,
+    isRemoteAgentHarness: deps.isRemoteAgentHarness,
   })
 
   deps.klavis?.registerMcpTools(server, deps.connectorScope)

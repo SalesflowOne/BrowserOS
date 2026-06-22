@@ -5,7 +5,8 @@ import type {
 } from '../../../src/api/services/klavis'
 
 interface McpServerCreation {
-  filesystemWorkingDir: string | undefined
+  executionDir: string | undefined
+  isRemoteAgentHarness: boolean | undefined
   proxyStatus: KlavisProxyStatus | null
   selectedServerNames: readonly string[] | undefined
 }
@@ -26,10 +27,12 @@ const createMcpServerSpy = mock(
   (deps: {
     klavis?: { getProxyStatus(): KlavisProxyStatus }
     connectorScope?: ConnectorToolScope
-    filesystemWorkingDir?: string
+    executionDir?: string
+    isRemoteAgentHarness?: boolean
   }) => {
     serverCreations.push({
-      filesystemWorkingDir: deps.filesystemWorkingDir,
+      executionDir: deps.executionDir,
+      isRemoteAgentHarness: deps.isRemoteAgentHarness,
       proxyStatus: deps.klavis?.getProxyStatus() ?? null,
       selectedServerNames: deps.connectorScope?.selectedServerNames,
     })
@@ -121,12 +124,14 @@ describe('createMcpRoutes', () => {
     expect(second.status).toBe(200)
     expect(serverCreations).toEqual([
       {
-        filesystemWorkingDir: undefined,
+        executionDir: '/tmp/browseros-execution',
+        isRemoteAgentHarness: false,
         proxyStatus: { state: 'connecting' },
         selectedServerNames: [],
       },
       {
-        filesystemWorkingDir: undefined,
+        executionDir: '/tmp/browseros-execution',
+        isRemoteAgentHarness: false,
         proxyStatus: { state: 'ready', toolCount: 3 },
         selectedServerNames: ['Slack', 'Google Docs'],
       },
@@ -135,7 +140,7 @@ describe('createMcpRoutes', () => {
     expect(connectCalls).toEqual(transportInstances)
   })
 
-  it('registers filesystem tools only for the remote Hermes source', async () => {
+  it('sets the remote agent harness flag only for the remote Hermes source', async () => {
     const app = createMcpRoutes({
       version: '0.0.0-test',
       browserSession: {} as never,
@@ -153,12 +158,14 @@ describe('createMcpRoutes', () => {
     expect(remoteHermesResponse.status).toBe(200)
     expect(serverCreations).toEqual([
       {
-        filesystemWorkingDir: undefined,
+        executionDir: '/tmp/browseros-execution',
+        isRemoteAgentHarness: false,
         proxyStatus: null,
         selectedServerNames: [],
       },
       {
-        filesystemWorkingDir: '/tmp/browseros-execution',
+        executionDir: '/tmp/browseros-execution',
+        isRemoteAgentHarness: true,
         proxyStatus: null,
         selectedServerNames: [],
       },

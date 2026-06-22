@@ -39,6 +39,15 @@ function createFakeServer() {
 
 describe('registerTools', () => {
   const originalInfo = logger.info
+  const filesystemToolNames = [
+    'filesystem_read',
+    'filesystem_write',
+    'filesystem_edit',
+    'filesystem_bash',
+    'filesystem_grep',
+    'filesystem_find',
+    'filesystem_ls',
+  ]
   let infoMessages: unknown[] = []
 
   beforeEach(() => {
@@ -59,10 +68,27 @@ describe('registerTools', () => {
 
     registerTools(fake.server as never, {
       browserSession: { pages: {} } as unknown as BrowserSession,
+      executionDir: '/tmp/browseros-execution',
+      isRemoteAgentHarness: false,
     })
 
     expect([...fake.handlers.keys()]).toEqual(BROWSER_TOOLS.map((t) => t.name))
     expect(fake.handlers.size).toBe(BROWSER_TOOLS.length)
+  })
+
+  it('registers filesystem tools for remote agent harness requests', () => {
+    const fake = createFakeServer()
+
+    registerTools(fake.server as never, {
+      browserSession: { pages: {} } as unknown as BrowserSession,
+      executionDir: '/tmp/browseros-execution',
+      isRemoteAgentHarness: true,
+    })
+
+    expect([...fake.handlers.keys()]).toEqual([
+      ...BROWSER_TOOLS.map((t) => t.name),
+      ...filesystemToolNames,
+    ])
   })
 
   it('samples repeated registration info logs without skipping tool registration', () => {
@@ -70,6 +96,8 @@ describe('registerTools', () => {
       const fake = createFakeServer()
       registerTools(fake.server as never, {
         browserSession: { pages: {} } as unknown as BrowserSession,
+        executionDir: '/tmp/browseros-execution',
+        isRemoteAgentHarness: false,
       })
 
       if (i === 1) {
@@ -125,6 +153,8 @@ describe('registerTools', () => {
       } as unknown as BrowserSession,
       defaultWindowId: 7,
       defaultTabGroupId: 'group-a',
+      executionDir: '/tmp/browseros-execution',
+      isRemoteAgentHarness: false,
     })
 
     const result = await fake.handlers.get('tabs')?.({

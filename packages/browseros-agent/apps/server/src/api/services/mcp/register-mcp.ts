@@ -8,11 +8,11 @@ import { registerFilesystemMcpTools } from '../../../tools/filesystem/register-m
 
 export interface RegisterToolsDeps extends BrowserToolDefaults {
   browserSession: BrowserSession
-  /** When set, register filesystem tools scoped to this directory. */
-  filesystemWorkingDir?: string
+  executionDir: string
+  isRemoteAgentHarness: boolean
 }
 
-/** Registers BrowserOS browser tools for MCP requests. */
+/** Registers BrowserOS MCP tools for the current request. */
 export function registerTools(
   mcpServer: McpServer,
   deps: RegisterToolsDeps,
@@ -24,7 +24,7 @@ export function registerTools(
 
   registerBrowserTools(mcpServer, deps.browserSession, defaults)
 
-  if (deps.filesystemWorkingDir) {
-    registerFilesystemMcpTools(mcpServer, deps.filesystemWorkingDir)
+  if (deps.isRemoteAgentHarness) {
+    registerFilesystemMcpTools(mcpServer, deps.executionDir)
   }
 }

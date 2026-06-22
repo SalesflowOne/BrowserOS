@@ -78,10 +78,8 @@ export function createMcpRoutes(deps: McpRouteDeps) {
       c.req.header(MANAGED_MCP_SERVERS_HEADER),
     )
 
-    const filesystemWorkingDir =
+    const isRemoteAgentHarness =
       c.req.query('source') === REMOTE_HERMES_MCP_SOURCE
-        ? deps.executionDir
-        : undefined
 
     // Per-request server + transport: no shared state, no race conditions,
     // no ID collisions. Required by MCP SDK 1.26.0+ security fix (GHSA-345p-7cg4-v4c7).
@@ -92,7 +90,8 @@ export function createMcpRoutes(deps: McpRouteDeps) {
       connectorScope: { selectedServerNames },
       defaultWindowId,
       defaultTabGroupId,
-      filesystemWorkingDir,
+      executionDir: deps.executionDir,
+      isRemoteAgentHarness,
     })
     const transport = new StreamableHTTPTransport({
       sessionIdGenerator: undefined,
