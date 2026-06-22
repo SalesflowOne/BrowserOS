@@ -136,7 +136,8 @@ describe('server build', () => {
       assert.fail(`Build failed (exit ${buildExit}):\n${stderr}`)
     }
 
-    const proc = Bun.spawn([binaryPath, '--version'], {
+    // Embedded Bun exec argv consumes bare runtime-looking flags.
+    const proc = Bun.spawn([binaryPath, '--', '--version'], {
       stdout: 'pipe',
       stderr: 'pipe',
     })
