@@ -28,7 +28,7 @@ import { createCodexFetch } from '../lib/clients/oauth/codex-fetch'
 import { createCopilotFetch } from '../lib/clients/oauth/copilot-fetch'
 import { logger } from '../lib/logger'
 import { createOpenRouterCompatibleFetch } from '../lib/openrouter-fetch'
-import { ensureWorkspaceInstructionFile } from './acp-instructions'
+import { ensureWorkspaceInstructionFile } from './acp-instructions/ensureInstructionFile'
 import { ACP_PROVIDER_TYPES, isAcpProvider } from './acp-providers'
 import type { BuildSystemPromptOptions } from './prompt'
 import type { ResolvedAgentConfig } from './types'
@@ -38,6 +38,19 @@ export { isAcpProvider }
 const BUILT_IN_ACP_AGENT_BY_PROVIDER: Record<string, string> = {
   [LLM_PROVIDERS.CLAUDE_CODE]: 'claude',
   [LLM_PROVIDERS.CODEX]: 'codex',
+}
+
+export type EnsureWorkspaceInstructionFile =
+  typeof ensureWorkspaceInstructionFile
+
+let ensureWorkspaceInstructionFileForTesting: EnsureWorkspaceInstructionFile | null =
+  null
+
+/** Overrides ACP instruction-file writes in tests without Bun module mocks. */
+export function setEnsureWorkspaceInstructionFileForTesting(
+  fn: EnsureWorkspaceInstructionFile | null,
+): void {
+  ensureWorkspaceInstructionFileForTesting = fn
 }
 
 /**
@@ -115,7 +128,9 @@ async function createAcpLanguageModel(
     origin: config.origin,
     acpMode: true,
   }
-  const ensureResult = await ensureWorkspaceInstructionFile({
+  const ensure =
+    ensureWorkspaceInstructionFileForTesting ?? ensureWorkspaceInstructionFile
+  const ensureResult = await ensure({
     workspacePath,
     providerType: config.provider,
     promptOptions,
@@ -141,6 +156,7 @@ async function createAcpLanguageModel(
   for (const builtIn of ['claude', 'codex'] as const) {
     const launcher = resolveAcpSpawnCommand({
       agentType: builtIn,
+      browserosDir: getBrowserosDir(),
       resourcesDir: config.resourcesDir,
     })
     if (launcher?.source === 'bundled-bun') {
@@ -421,8 +437,7 @@ function createGitHubCopilotFactory(
 function createChatGPTProFactory(
   config: ResolvedAgentConfig,
 ): (modelId: string) => unknown {
-  if (!config.apiKey)
-    throw new Error('ChatGPT Plus/Pro requires OAuth authentication')
+  if (!config.apiKey) throw new Error('ChatGPT requires OAuth authentication')
   return createOpenAI({
     apiKey: config.apiKey,
     fetch: createCodexFetch(config.accountId) as typeof globalThis.fetch,

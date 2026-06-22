@@ -15,20 +15,18 @@ import {
   type UIMessage,
   wrapLanguageModel,
 } from 'ai'
-import {
-  buildKlavisToolSet,
-  type KlavisProxyRef,
-} from '../api/services/klavis/strata-proxy'
-import type { Browser } from '../browser/browser'
+import type { KlavisService } from '../api/services/klavis'
 import type { BrowserSession } from '../browser/core/session'
 import { logger } from '../lib/logger'
 import { metrics } from '../lib/metrics'
-import { buildFilesystemToolSet } from '../tools/filesystem/build-toolset'
-import { isAcpProvider } from './acp-providers'
 import {
-  CHAT_MODE_ALLOWED_TOOLS,
-  LEGACY_CHAT_MODE_ALLOWED_TOOLS,
-} from './chat-mode'
+  type BrowserOutputFileAccess,
+  createBrowserOutputFileAccess,
+} from '../tools/browser/output-file'
+import { buildFilesystemToolSet } from '../tools/filesystem/build-toolset'
+import { createReadTool } from '../tools/filesystem/read'
+import { isAcpProvider } from './acp-providers'
+import { CHAT_MODE_ALLOWED_TOOLS } from './chat-mode'
 import { createCompactionPrepareStep, type StepWithUsage } from './compaction'
 import { buildMcpServerSpecs, createMcpClients } from './mcp-builder'
 import {
@@ -38,30 +36,33 @@ import {
 import { buildNudgeToolSet } from './nudge-tools'
 import { buildSystemPrompt } from './prompt'
 import { createLanguageModel } from './provider-factory'
-import { buildBrowserToolSet, buildLegacyBrowserToolSet } from './tool-adapter'
+import { buildBrowserToolSet } from './tool-adapter'
 import type { ResolvedAgentConfig } from './types'
 
 export interface AiSdkAgentConfig {
   resolvedConfig: ResolvedAgentConfig
-  browser: Browser
   browserSession: BrowserSession
   browserContext?: BrowserContext
-  klavisRef?: KlavisProxyRef
+  klavis?: KlavisService
   browserosId?: string
   aiSdkDevtoolsEnabled?: boolean
-  browserUseNewTools: boolean
+  outputFileAccess?: BrowserOutputFileAccess
 }
 
-/** Builds filesystem tools only for model-backed agent sessions with an explicit workspace. */
+/** Builds filesystem tools for model-backed sessions, with scoped readback outside full workspace mode. */
 export function buildAgentFilesystemToolSet(
   resolvedConfig: ResolvedAgentConfig,
+  options: { outputFileAccess?: BrowserOutputFileAccess } = {},
 ): ToolSet {
-  if (
-    isAcpProvider(resolvedConfig.provider) ||
-    resolvedConfig.chatMode ||
-    !resolvedConfig.workingDir
-  ) {
+  if (isAcpProvider(resolvedConfig.provider)) {
     return {}
+  }
+  if (resolvedConfig.chatMode || !resolvedConfig.workingDir) {
+    return {
+      filesystem_read: createReadTool(undefined, {
+        allowedOutputPaths: options.outputFileAccess?.paths,
+      }),
+    }
   }
   return buildFilesystemToolSet(resolvedConfig.workingDir)
 }
@@ -121,23 +122,17 @@ export class AiSdkAgent {
     // (and any user-configured MCP servers) directly via the
     // mcpServers config on ResolvedAgentConfig.
     const useMcpBoundaryOnly = isAcpProvider(config.resolvedConfig.provider)
-    const useCompactBrowserTools = config.browserUseNewTools === true
+    const outputFileAccess =
+      config.outputFileAccess ?? createBrowserOutputFileAccess()
 
     const allBrowserTools = useMcpBoundaryOnly
       ? {}
-      : useCompactBrowserTools
-        ? buildBrowserToolSet(config.browserSession, {
-            readOnly: config.resolvedConfig.chatMode,
-          })
-        : buildLegacyBrowserToolSet(config.browser, {
-            workingDir: config.resolvedConfig.workingDir,
-            origin: config.resolvedConfig.origin,
-            originPageId: config.browserContext?.activeTab?.pageId,
-          })
+      : buildBrowserToolSet(config.browserSession, {
+          readOnly: config.resolvedConfig.chatMode,
+          outputFileAccess,
+        })
     const reservedBrowserToolNames = new Set(Object.keys(allBrowserTools))
-    const chatModeAllowedTools = useCompactBrowserTools
-      ? CHAT_MODE_ALLOWED_TOOLS
-      : LEGACY_CHAT_MODE_ALLOWED_TOOLS
+    const chatModeAllowedTools = CHAT_MODE_ALLOWED_TOOLS
     const browserTools = config.resolvedConfig.chatMode
       ? Object.fromEntries(
           Object.entries(allBrowserTools).filter(([name]) =>
@@ -148,17 +143,14 @@ export class AiSdkAgent {
     if (config.resolvedConfig.chatMode && !useMcpBoundaryOnly) {
       logger.info('Chat mode enabled, restricting to read-only browser tools', {
         allowedTools: Array.from(chatModeAllowedTools),
-        browserUseNewTools: useCompactBrowserTools,
       })
     }
 
-    // Get Klavis tools from shared background handle (no per-session connection).
-    // Only expose when user has enabled servers — matches old per-session gating.
     const klavisTools =
-      !useMcpBoundaryOnly &&
-      config.klavisRef?.handle &&
-      config.browserContext?.enabledMcpServers?.length
-        ? buildKlavisToolSet(config.klavisRef.handle)
+      !useMcpBoundaryOnly && config.klavis
+        ? config.klavis.buildAiSdkToolSet({
+            selectedServerNames: config.browserContext?.enabledMcpServers,
+          })
         : {}
 
     // Connect custom (non-Klavis) MCP servers per-session
@@ -217,11 +209,15 @@ export class AiSdkAgent {
       }
     }
 
-    // Add filesystem tools — skip in chat mode (read-only), when no
-    // workspace is selected, and for ACP providers (Claude Code and
-    // Codex ship their own filesystem tools; double-registering would
-    // collide on tool names and yield stale-snapshot behaviour).
-    const filesystemTools = buildAgentFilesystemToolSet(config.resolvedConfig)
+    // ACP providers skip AI SDK filesystem tools. Chat and no-workspace sessions
+    // get only output-file reads for browser-generated files.
+    const filesystemTools = buildAgentFilesystemToolSet(config.resolvedConfig, {
+      outputFileAccess,
+    })
+    const workspaceDirForPrompt =
+      !config.resolvedConfig.chatMode && 'filesystem_write' in filesystemTools
+        ? config.resolvedConfig.workingDir
+        : undefined
     const tools = {
       ...browserTools,
       ...externalMcpTools,
@@ -250,11 +246,12 @@ export class AiSdkAgent {
       exclude: excludeSections,
       isScheduledTask: config.resolvedConfig.isScheduledTask,
       scheduledTaskPageId: config.browserContext?.activeTab?.pageId,
-      workspaceDir: config.resolvedConfig.workingDir,
+      workspaceDir: workspaceDirForPrompt,
       chatMode: config.resolvedConfig.chatMode,
       connectedApps: config.browserContext?.enabledMcpServers,
       declinedApps: config.resolvedConfig.declinedApps,
       origin: config.resolvedConfig.origin,
+      generatedOutputReadAvailable: 'filesystem_read' in filesystemTools,
     })
 
     // Configure compaction for context window management
@@ -293,7 +290,7 @@ export class AiSdkAgent {
         providerOptions: {
           openai: {
             store: false,
-            reasoningEffort: config.resolvedConfig.reasoningEffort || 'high',
+            reasoningEffort: config.resolvedConfig.reasoningEffort || 'medium',
             reasoningSummary: config.resolvedConfig.reasoningSummary || 'auto',
             include: ['reasoning.encrypted_content'],
           },

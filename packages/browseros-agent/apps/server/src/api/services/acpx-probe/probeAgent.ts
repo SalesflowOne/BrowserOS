@@ -6,6 +6,7 @@
 
 import { type AgentProbeResult, probeAgent as runProbe } from 'acp-probe'
 import { resolveAcpSpawnCommand } from '../../../lib/agents/host-acp/launcher'
+import { getBrowserosDir } from '../../../lib/browseros-dir'
 import { logger } from '../../../lib/logger'
 
 export interface ServerAcpxProbeInput {
@@ -21,6 +22,7 @@ export interface ServerAcpxProbeInput {
    * HttpServerConfig.
    */
   resourcesDir?: string | null
+  browserosDir?: string | null
   platform?: NodeJS.Platform
 }
 
@@ -89,6 +91,7 @@ export async function probeAcpAgent(
   if (!command && agentId) {
     const launcher = resolveAcpSpawnCommand({
       agentType: agentId,
+      browserosDir: input.browserosDir ?? getBrowserosDir(),
       resourcesDir: input.resourcesDir,
       platform: input.platform,
     })

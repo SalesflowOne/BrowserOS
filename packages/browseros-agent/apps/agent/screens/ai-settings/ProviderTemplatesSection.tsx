@@ -46,9 +46,6 @@ export const ProviderTemplatesSection: FC<ProviderTemplatesSectionProps> = ({
         return supports(Feature.GITHUB_COPILOT_SUPPORT)
       if (template.id === 'qwen-code')
         return supports(Feature.QWEN_CODE_SUPPORT)
-      if (template.id === 'openai-compatible') {
-        return supports(Feature.OPENAI_COMPATIBLE_SUPPORT)
-      }
       return true
     })
     .sort((a, b) => {

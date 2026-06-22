@@ -54,10 +54,8 @@ export class ToolLoopExecutorBackend implements ExecutorBackend {
     try {
       agent = await AiSdkAgent.create({
         resolvedConfig: agentConfig,
-        browser,
         browserSession,
         browserContext,
-        browserUseNewTools: true,
       })
 
       // biome-ignore lint/suspicious/noExplicitAny: see comment below.

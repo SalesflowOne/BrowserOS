@@ -21,16 +21,19 @@
  * translation lives anywhere on the path.
  */
 
+import type { BrowserContext } from '@browseros/shared/schemas/browser-context'
 import {
   createUIMessageStream,
   createUIMessageStreamResponse,
   type UIMessageStreamWriter,
 } from 'ai'
+import { formatUserMessage } from '../../../agent/format-message'
 import {
   COLD_START_BUDGET_MS,
   STATUS_POLL_INTERVAL_MS,
 } from '../../../lib/clients/remote-hermes/constants'
 import type {
+  PostTurnInput,
   RemoteHermesClient,
   VmStatusView,
 } from '../../../lib/clients/remote-hermes/remote-hermes-client'
@@ -48,6 +51,11 @@ export interface StreamTurnInput {
   conversationId: string
   message: string
   modelId?: string | null
+  /** Resolved by the route — pageIds already filled in via
+   *  resolveBrowserContextPageIds before the service is called. */
+  browserContext?: BrowserContext
+  selectedText?: string
+  selectedTextSource?: { url: string; title: string }
 }
 
 export class RemoteHermesService {
@@ -134,19 +142,95 @@ export class RemoteHermesService {
     writer: UIMessageStreamWriter,
     signal: AbortSignal,
   ): Promise<string | null> {
-    // Optimistic: try the turn first. Warm VMs return 200 immediately.
-    const first = await this.client.postTurn(input, signal)
+    // Phase 1: ensure the VM is up. Branches by current status:
+    //   - error     → /vm/destroy then /vm/start (wipe bad state)
+    //   - cold      → /vm/start
+    //   - stopped   → /vm/start (warmStart in-place restart)
+    //   - starting  → just poll, provision already in flight
+    //   - running   → skip start, go straight to postTurn
+    // Any transition takes the boot poll path so the side-panel pill
+    // updates while the VM warms.
+    const initial = await this.safeGetStatus(signal)
+    if (initial?.status === 'error') {
+      logger.warn(
+        'Remote Hermes status=error before turn; wiping and restarting',
+        {
+          module: MODULE,
+          lastError: initial.lastError?.message ?? 'unknown',
+        },
+      )
+      await this.client.destroyVm(signal).catch((err) =>
+        logger.warn('Remote Hermes destroy during recovery failed', {
+          module: MODULE,
+          err: err instanceof Error ? err.message : String(err),
+        }),
+      )
+    }
+    if (initial?.status !== 'running') {
+      const started = await this.ensureStarted(initial?.status, writer, signal)
+      if (!started) return null
+    }
+
+    // Wrap the user message with the same browser-context block local
+    // chat injects, so the remote LLM has windowId/tab/pageId metadata
+    // and selected-text framing for tool routing.
+    const turnPayload = buildTurnPayload(input)
+
+    // Phase 2: optimistic turn.
+    const first = await this.client.postTurn(turnPayload, signal)
     if (first.ok) return readTaskId(first, writer)
-    if (first.status !== 503 && first.status !== 409) {
-      writeUpstreamError(writer, await first.text(), first.status)
+
+    // Phase 3: drift recovery. If the worker proxy returned 503/409
+    // even though /vm/status said running, the DO record drifted from
+    // Fly reality between status read and turn post. /vm/start
+    // reconciles in the DO and re-provisions if needed; one retry.
+    if (first.status === 503 || first.status === 409) {
+      logger.warn(
+        'Remote Hermes turn returned mid-stream cold response; forcing reconcile',
+        {
+          module: MODULE,
+          status: first.status,
+        },
+      )
+      const recovered = await this.ensureStarted('cold', writer, signal)
+      if (!recovered) return null
+      const retry = await this.client.postTurn(turnPayload, signal)
+      if (retry.ok) return readTaskId(retry, writer)
+      writeUpstreamError(writer, await retry.text(), retry.status)
+      writeBootStatus(writer, 'error')
       return null
     }
 
-    // Cold VM: poll /vm/status until running, updating the boot pill.
-    logger.debug('Remote Hermes cold response, entering boot poll', {
-      module: MODULE,
-      status: first.status,
-    })
+    writeUpstreamError(writer, await first.text(), first.status)
+    return null
+  }
+
+  /**
+   * Fire /vm/start (idempotent on the DO — no-op if already running)
+   * and poll /vm/status until running or budget exceeded. Returns true
+   * on ready, false on timeout / abort / error. Emits boot-status
+   * updates into the UI message stream so the side panel reflects
+   * progress.
+   */
+  private async ensureStarted(
+    knownStatus: string | undefined,
+    writer: UIMessageStreamWriter,
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    if (knownStatus !== 'starting') {
+      const startRes = await this.client.startVm(signal).catch((err) => {
+        logger.warn('Remote Hermes /vm/start failed', {
+          module: MODULE,
+          err: err instanceof Error ? err.message : String(err),
+        })
+        return null
+      })
+      if (startRes && !startRes.ok) {
+        writeUpstreamError(writer, await startRes.text(), startRes.status)
+        writeBootStatus(writer, 'error')
+        return false
+      }
+    }
     writeBootStatus(writer, 'booting')
     const ready = await this.pollUntilRunning(writer, signal)
     if (!ready) {
@@ -155,16 +239,27 @@ export class RemoteHermesService {
         type: 'error',
         errorText: `Remote Hermes VM did not become ready within ${COLD_START_BUDGET_MS / 1000} seconds. Try sending again.`,
       })
-      return null
+      return false
     }
+    return true
+  }
 
-    const second = await this.client.postTurn(input, signal)
-    if (!second.ok) {
-      writeUpstreamError(writer, await second.text(), second.status)
-      writeBootStatus(writer, 'error')
+  /** Wraps getVmStatus in a swallow so phase-1 dispatch never crashes
+   *  on a transient worker outage; we fall through to /vm/start and
+   *  pollUntilRunning, which both have their own error surfaces. */
+  private async safeGetStatus(
+    signal: AbortSignal,
+  ): Promise<VmStatusView | null> {
+    try {
+      return await this.client.getVmStatus(signal)
+    } catch (err) {
+      if (signal.aborted) return null
+      logger.debug('Remote Hermes pre-turn status fetch failed', {
+        module: MODULE,
+        err: err instanceof Error ? err.message : String(err),
+      })
       return null
     }
-    return readTaskId(second, writer)
   }
 
   private async pollUntilRunning(
@@ -334,6 +429,30 @@ function extractDataLine(record: string): string | null {
   }
   if (dataLines.length === 0) return null
   return dataLines.join('\n')
+}
+
+function buildTurnPayload(input: StreamTurnInput): PostTurnInput {
+  // Only wrap when there's real context to embed. Without this guard
+  // every remote-hermes turn would gain `<USER_QUERY>` framing
+  // post-upgrade, changing the wire format for conversations that
+  // don't attach tabs or selected text.
+  const hasContext =
+    Boolean(input.browserContext?.activeTab) ||
+    Boolean(input.browserContext?.selectedTabs?.length) ||
+    Boolean(input.selectedText)
+  const message = hasContext
+    ? formatUserMessage(
+        input.message,
+        input.browserContext,
+        input.selectedText,
+        input.selectedTextSource,
+      )
+    : input.message
+  return {
+    conversationId: input.conversationId,
+    message,
+    modelId: input.modelId,
+  }
 }
 
 async function readTaskId(

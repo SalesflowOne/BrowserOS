@@ -27,11 +27,11 @@ import {
   type AgentSessionId,
   MAIN_AGENT_SESSION_ID,
 } from '../agent-types'
-import { resolveBundledBun } from '../host-acp/bundled-bun'
 import {
-  resolveBundledNativeBinary,
-  withBundledNativeBinaryPath,
-} from '../host-acp/bundled-native-binary'
+  resolveBundledBun,
+  withBundledBunAcpAdapterEnv,
+} from '../host-acp/bundled-bun'
+import { withBundledNativeBinaryPath } from '../host-acp/bundled-native-binary'
 import {
   DANGEROUS_ALLOW_MODE_CANDIDATES,
   HOST_ACP_ADAPTER_CONFIG,
@@ -745,14 +745,6 @@ function createBrowserosAgentRegistry(input: {
     resolve(agentName) {
       const lower = agentName.trim().toLowerCase()
 
-      if (lower === 'hermes') {
-        const launch = resolveHermesHostAcpAdapterCommand({
-          resourcesDir: input.resourcesDir,
-          commandEnv: input.commandEnv,
-        })
-        return wrapCommandWithEnv(launch.command, launch.commandEnv)
-      }
-
       if (lower === 'claude' || lower === 'codex') {
         const launch = resolveBrowserosHostAcpAdapterCommand({
           adapter: lower,
@@ -764,47 +756,18 @@ function createBrowserosAgentRegistry(input: {
         })
         return wrapCommandWithEnv(
           launch.command,
-          launch.addBundledBunAdapterEnv
-            ? withBundledBunAcpAdapterEnv(commandEnv, input.browserosDir)
+          launch.bundledBunPath
+            ? withBundledBunAcpAdapterEnv({
+                bunPath: launch.bundledBunPath,
+                browserosDir: input.browserosDir,
+                env: commandEnv,
+              })
             : commandEnv,
         )
       }
 
       return registry.resolve(agentName)
     },
-  }
-}
-
-/** Resolves Hermes ACP launch through bundled CLI or the user's login shell. */
-function resolveHermesHostAcpAdapterCommand(input: {
-  resourcesDir: string | null
-  commandEnv: Record<string, string>
-}): { command: string; commandEnv: Record<string, string> } {
-  const commandEnv = withBundledNativeBinaryPath({
-    env: input.commandEnv,
-    resourcesDir: input.resourcesDir,
-  })
-  const bundledHermes = resolveBundledNativeBinary({
-    adapter: 'hermes',
-    resourcesDir: input.resourcesDir,
-    env: commandEnv,
-  })
-  if (bundledHermes) {
-    return {
-      command: `${shellQuote(bundledHermes.path)} acp`,
-      commandEnv,
-    }
-  }
-
-  const command = HOST_ACP_ADAPTER_CONFIG.hermes.acpCommand
-  if (process.platform === 'win32') {
-    return { command, commandEnv }
-  }
-
-  const shell = process.env.SHELL?.trim() || 'sh'
-  return {
-    command: `${shellQuote(shell)} -lic ${shellQuote(command)}`,
-    commandEnv,
   }
 }
 
@@ -817,31 +780,20 @@ function resolveHermesHostAcpAdapterCommand(input: {
 function resolveBrowserosHostAcpAdapterCommand(input: {
   adapter: 'claude' | 'codex'
   resourcesDir: string | null
-}): { command: string; addBundledBunAdapterEnv: boolean } {
+}): { command: string; bundledBunPath: string | null } {
   const bun = resolveBundledBun({ resourcesDir: input.resourcesDir })
   if (bun) {
     const config = HOST_ACP_ADAPTER_CONFIG[input.adapter]
     return {
       command: `${shellQuote(bun)} x --bun --silent --package ${shellQuote(config.acpPackageSpec)} ${shellQuote(config.acpBin)}`,
-      addBundledBunAdapterEnv: true,
+      bundledBunPath: bun,
     }
   }
 
   const config = HOST_ACP_ADAPTER_CONFIG[input.adapter]
   return {
     command: config.acpCommand,
-    addBundledBunAdapterEnv: false,
-  }
-}
-
-/** Adds the minimum env needed for BrowserOS-managed bundled Bun package installs. */
-function withBundledBunAcpAdapterEnv(
-  env: Record<string, string>,
-  browserosDir: string,
-): Record<string, string> {
-  return {
-    ...env,
-    BUN_INSTALL_CACHE_DIR: join(browserosDir, 'cache', 'bun-install'),
+    bundledBunPath: null,
   }
 }
 

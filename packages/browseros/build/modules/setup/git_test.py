@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from .git import GitSetupModule
+from .git import GitSetupModule, BROWSEROS_BRANCH
 from ...common.context import Context
 from ...common.module import ValidationError
 from ...common.testing import MockBrowserOSRoot, MockChromium, make_context
@@ -60,54 +60,31 @@ class GitSetupExecuteTest(unittest.TestCase):
             MockBrowserOSRoot(Path(self._root_tmp.name)),
         )
 
-    def test_checks_out_browseros_branch_after_tag(self):
+    def test_checks_out_tag_as_browseros_branch(self):
         commands = []
-        events = []
 
         def fake_run_command(cmd, cwd=None):
             commands.append(cmd)
-            if cmd[:3] == ["git", "checkout", "-B"]:
-                events.append("checkout_browseros")
-            elif cmd[:2] == ["git", "checkout"]:
-                events.append("checkout_tag")
-            else:
-                events.append(cmd[0])
-
-        def fake_ensure_gclient_target_cpus(module, ctx, required):
-            events.append("ensure_gclient_target_cpus")
 
         with (
             mock.patch("build.modules.setup.git.run_command", fake_run_command),
-            mock.patch("build.modules.setup.git.IS_LINUX", return_value=True),
+            mock.patch("build.modules.setup.git.IS_LINUX", return_value=False),
             mock.patch("build.modules.setup.git.IS_WINDOWS", return_value=False),
             mock.patch.object(GitSetupModule, "_verify_tag_exists", return_value=None),
-            mock.patch.object(
-                GitSetupModule,
-                "_ensure_gclient_target_cpus",
-                fake_ensure_gclient_target_cpus,
-            ),
         ):
             GitSetupModule().execute(self.ctx)
 
+        tag_ref = f"tags/{self.ctx.chromium_version}"
+        # One checkout creates the branch straight from the tag; the redundant
+        # detached-HEAD checkout that #1216 shipped (and was reverted) is gone.
         self.assertEqual(
-            commands[:3],
+            commands,
             [
                 ["git", "fetch", "--tags", "--force"],
-                ["git", "checkout", f"tags/{self.ctx.chromium_version}"],
-                [
-                    "git",
-                    "checkout",
-                    "-B",
-                    "browseros",
-                    f"tags/{self.ctx.chromium_version}",
-                ],
+                ["git", "checkout", "-B", BROWSEROS_BRANCH, tag_ref],
+                ["gclient", "sync", "-D", "--no-history", "--shallow"],
             ],
         )
-        self.assertLess(
-            events.index("checkout_browseros"),
-            events.index("ensure_gclient_target_cpus"),
-        )
-        self.assertLess(events.index("checkout_browseros"), events.index("gclient"))
 
     def test_missing_tag_stops_before_checkout(self):
         commands = []

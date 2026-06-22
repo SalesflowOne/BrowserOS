@@ -27,14 +27,20 @@ import { withTempBrowserosDir } from '../_helpers/temp-browseros-dir'
 const REAL_CATALOGUE = [
   'act',
   'diff',
+  'download',
+  'evaluate',
   'grep',
   'navigate',
+  'pdf',
   'read',
   'run',
   'screenshot',
   'snapshot',
+  'tab_groups',
   'tabs',
+  'upload',
   'wait',
+  'windows',
 ] as const
 
 function makeAgentInput(): NewAgentValues {

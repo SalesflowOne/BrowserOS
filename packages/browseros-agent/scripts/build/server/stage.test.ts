@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import type { S3Client } from '@aws-sdk/client-s3'
 import { getTargetRules, loadManifest } from './manifest'
 import { stageCompiledArtifact, stageTargetArtifact } from './stage'
+import { resolveTargets } from './targets'
 import type { BuildTarget, R2Config, ResourceRule } from './types'
 
 describe('server artifact staging', () => {
@@ -42,8 +43,6 @@ describe('server artifact staging', () => {
             },
             destination: 'resources/db/migrations',
             recursive: true,
-            os: ['macos'],
-            arch: ['arm64', 'x64'],
           },
         ],
       }),
@@ -202,6 +201,25 @@ describe('server artifact staging', () => {
     expect(destinations).toContain('resources/db/migrations')
   })
 
+  it('selects Drizzle migrations for every production server target', () => {
+    const manifest = loadManifest(
+      'scripts/build/config/server-prod-resources.json',
+    )
+
+    for (const target of resolveTargets('all')) {
+      const migrationRules = getTargetRules(manifest, target).filter(
+        (rule) => rule.name === 'Drizzle migrations',
+      )
+
+      expect(migrationRules).toEqual([
+        expect.objectContaining({
+          destination: 'resources/db/migrations',
+          recursive: true,
+        }),
+      ])
+    }
+  })
+
   it('downloads bundled Codex CLI for Linux targets and marks it executable', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'browseros-stage-test-'))
     const sourceRoot = join(tempDir, 'source')
@@ -352,8 +370,6 @@ const migrationRule: ResourceRule = {
   },
   destination: 'resources/db/migrations',
   recursive: true,
-  os: ['macos'],
-  arch: ['arm64', 'x64'],
 }
 
 const bunRule: ResourceRule = {

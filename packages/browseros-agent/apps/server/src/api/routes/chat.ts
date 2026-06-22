@@ -8,18 +8,18 @@ import { logger } from '../../lib/logger'
 import { metrics } from '../../lib/metrics'
 import { Sentry } from '../../lib/sentry'
 import { ChatService } from '../services/chat-service'
-import type { KlavisProxyRef } from '../services/klavis/strata-proxy'
+import type { KlavisService } from '../services/klavis'
 import type { RemoteHermesService } from '../services/remote-hermes/remote-hermes-service'
 import { ChatRequestSchema } from '../types'
+import { resolveBrowserContextPageIds } from '../utils/resolve-browser-context-page-ids'
 import { ConversationIdParamSchema } from '../utils/validation'
 
 interface ChatRouteDeps {
   browser: Browser
   browserSession: BrowserSession
   browserosId?: string
-  klavisRef?: KlavisProxyRef
+  klavis?: KlavisService
   aiSdkDevtoolsEnabled?: boolean
-  browserUseNewTools?: boolean
   /** Port the BrowserOS server bound to. Threaded to ACP providers so
    *  the spawned agent can dial back into the local /mcp route. */
   serverPort: number
@@ -38,12 +38,11 @@ export function createChatRoutes(deps: ChatRouteDeps) {
   const sessionStore = new SessionStore()
   const service = new ChatService({
     sessionStore,
-    klavisRef: deps.klavisRef,
+    klavis: deps.klavis,
     browser: deps.browser,
     browserSession: deps.browserSession,
     browserosId,
     aiSdkDevtoolsEnabled: deps.aiSdkDevtoolsEnabled,
-    browserUseNewTools: deps.browserUseNewTools === true,
     serverPort: deps.serverPort,
     resourcesDir: deps.resourcesDir,
   })
@@ -96,11 +95,22 @@ export function createChatRoutes(deps: ChatRouteDeps) {
           conversationId: request.conversationId,
           model: request.model,
         })
+        // Resolve Chrome tab IDs to CDP pageIds on the laptop before
+        // forwarding — the remote worker has no CDP target visibility
+        // and the LLM needs pageIds in the prompt to dispatch browser
+        // tools through the WS RPC bridge.
+        const remoteBrowserContext = await resolveBrowserContextPageIds(
+          deps.browser,
+          request.browserContext,
+        )
         return deps.remoteHermes.streamTurn(
           {
             conversationId: request.conversationId,
             message: request.message,
             modelId: request.model,
+            browserContext: remoteBrowserContext,
+            selectedText: request.selectedText,
+            selectedTextSource: request.selectedTextSource,
           },
           c.req.raw.signal,
         )

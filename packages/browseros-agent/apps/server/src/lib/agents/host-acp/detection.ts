@@ -253,8 +253,6 @@ async function probeAuth(
   runCommand: HostCommandRunner,
   timeoutMs: number,
 ): Promise<AdapterAuthState> {
-  if (adapter === 'hermes') return 'not-applicable'
-
   if (adapter === 'claude') {
     const result = await runCommand(binary.path, ['auth', 'status'], {
       env: binary.env,

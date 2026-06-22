@@ -39,7 +39,6 @@ class GitSetupModule(CommandModule):
             raise ValidationError("Chromium version not set")
 
     def execute(self, ctx: Context) -> None:
-        """Prepare Chromium at the configured tag for BrowserOS patch application."""
         log_info(f"\n🔀 Setting up Chromium {ctx.chromium_version}...")
 
         log_info("📥 Fetching all tags from remote...")
@@ -47,10 +46,6 @@ class GitSetupModule(CommandModule):
 
         self._verify_tag_exists(ctx)
 
-        log_info(f"🔀 Checking out tag: {ctx.chromium_version}")
-        run_command(
-            ["git", "checkout", f"tags/{ctx.chromium_version}"], cwd=ctx.chromium_src
-        )
         self._checkout_browseros_branch(ctx)
 
         # On Linux, depot_tools fetches per-arch sysroots automatically when
@@ -74,21 +69,28 @@ class GitSetupModule(CommandModule):
         log_success("Git setup complete")
 
     def _checkout_browseros_branch(self, ctx: Context) -> None:
-        """Switch Chromium onto the local branch that receives BrowserOS patches."""
-        log_info(f"🔀 Creating/resetting branch: {BROWSEROS_BRANCH}")
+        """Create/reset local `browseros` branch at the pinned tag, not detached HEAD."""
+        # `-B` creates or force-resets in one step from an explicit start-point,
+        # so no redundant detached-HEAD checkout is needed first. gclient's
+        # solution is `managed: False`, so the later sync ignores this branch.
+        log_info(
+            f"🔀 Checking out tag {ctx.chromium_version} as branch: {BROWSEROS_BRANCH}"
+        )
         run_command(
-            [
-                "git",
-                "checkout",
-                "-B",
-                BROWSEROS_BRANCH,
-                f"tags/{ctx.chromium_version}",
-            ],
+            ["git", "checkout", "-B", BROWSEROS_BRANCH, f"tags/{ctx.chromium_version}"],
             cwd=ctx.chromium_src,
         )
 
     def _ensure_gclient_target_cpus(self, ctx: Context, required: List[str]) -> None:
-        """Ensure gclient sync fetches the Linux sysroots needed for target CPUs."""
+        """Idempotently add `target_cpus` to .gclient so depot_tools fetches
+        the matching Linux sysroots for cross-compilation.
+
+        depot_tools convention: .gclient lives one directory above
+        chromium_src (i.e. ../.gclient). It is a Python file with a list
+        of solution dicts followed by optional top-level assignments.
+        We append a `target_cpus = [...]` line if missing or merge in any
+        archs that aren't already present.
+        """
         gclient_path = ctx.chromium_src.parent / ".gclient"
         if not gclient_path.exists():
             log_warning(
@@ -210,7 +212,10 @@ class WinSparkleSetupModule(CommandModule):
 
 
 def extract_winsparkle_zip(archive: Path, dest: Path) -> None:
-    """Extract WinSparkle so Chromium paths stay version-independent."""
+    """Extract the release zip stripping its top-level WinSparkle-<version>/
+    directory, so //third_party/winsparkle paths stay version-independent
+    (include/, x64/Release/, ...) and match the vendored BUILD.gn.
+    """
     with zipfile.ZipFile(archive) as zf:
         infos = zf.infolist()
 

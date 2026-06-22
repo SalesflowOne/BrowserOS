@@ -51,19 +51,27 @@ import { asRegister, type ToolResult } from './register-fn'
 const NAVIGATE_BLOCKED_SCHEMES = new Set(['javascript:', 'file:', 'data:'])
 
 /**
- * Maps each tool in the real catalogue to a permission verb. `tabs`
- * and `navigate` mutate site context so they map to `navigate`;
- * every other tool maps to `input`, the cockpit's catch-all for
- * "click / type / read / etc.".
+ * Maps each tool in the real catalogue to a permission verb. Tools
+ * that mutate site context (`tabs`, `navigate`, `windows`,
+ * `tab_groups`) map to `navigate`; `upload` maps to the catalog's
+ * own `upload` verb; everything else maps to `input`, the cockpit's
+ * catch-all for "click / type / read / etc.".
  *
- * `act` and `run` are intentionally lumped under `input` despite
- * being the highest-risk tools. A richer classifier (look at the
- * `kind` arg of `act`, or block `run` unless the agent opts in) is
- * the follow-up that closes this gap.
+ * `act`, `run`, `evaluate`, and `download` are deliberately lumped
+ * under `input` despite being the higher-risk tools in the surface:
+ * `download` has no dedicated catalog verb yet, and `run` /
+ * `evaluate` execute arbitrary JS in page context. A richer
+ * classifier (look at the `kind` arg of `act`, block `run` /
+ * `evaluate` unless the agent opts in, add a `download` verb) is
+ * the follow-up that closes this gap. Dispatches of the
+ * arbitrary-script tools are logged for audit until that lands.
  */
 const TOOL_TO_VERB: Record<string, string> = {
   tabs: 'navigate',
   navigate: 'navigate',
+  windows: 'navigate',
+  tab_groups: 'navigate',
+  upload: 'upload',
   snapshot: 'input',
   diff: 'input',
   act: 'input',
@@ -71,8 +79,13 @@ const TOOL_TO_VERB: Record<string, string> = {
   grep: 'input',
   screenshot: 'input',
   wait: 'input',
+  pdf: 'input',
+  download: 'input',
   run: 'input',
+  evaluate: 'input',
 }
+
+const ARBITRARY_SCRIPT_TOOLS = new Set(['run', 'evaluate'])
 
 /**
  * Picks a domain for the permission check. `navigate` carries the
@@ -184,14 +197,15 @@ export function registerBrowserTools(
           } satisfies ToolResult
         }
 
-        if (tool.name === 'run') {
-          // `run` executes arbitrary JS in the page's context. It maps
-          // to the same `input` verb as low-risk reads today, so an
-          // agent with `input: 'Auto'` runs scripts without
-          // confirmation. A dedicated `run` verb in the catalog (and
-          // a UI surface for it) is the proper fix; this log keeps the
-          // dispatch auditable until that lands. See PR review.
-          logger.warn('cockpit dispatched run (arbitrary script)', {
+        if (ARBITRARY_SCRIPT_TOOLS.has(tool.name)) {
+          // `run` and `evaluate` execute arbitrary JS in the page's
+          // context. They map to the same `input` verb as low-risk
+          // reads today, so an agent with `input: 'Auto'` runs
+          // scripts without confirmation. A dedicated catalog verb
+          // (and a UI surface for it) is the proper fix; this log
+          // keeps the dispatch auditable until that lands.
+          logger.warn('cockpit dispatched arbitrary-script tool', {
+            tool: tool.name,
             agentId: agent.id,
             domain,
           })

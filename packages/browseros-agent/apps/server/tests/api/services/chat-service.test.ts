@@ -1,4 +1,5 @@
 import { describe, expect, it, mock } from 'bun:test'
+import type { KlavisProxyStatus } from '../../../src/api/services/klavis'
 
 interface MockMessage {
   id: string
@@ -75,6 +76,18 @@ mock.module('../../../src/lib/logger', () => ({
 
 const { ChatService } = await import('../../../src/api/services/chat-service')
 
+function createKlavisStub(
+  getStatus: () => KlavisProxyStatus = () => ({
+    state: 'stopped',
+  }),
+) {
+  return {
+    getProxyStatus: getStatus,
+    buildAiSdkToolSet: mock(() => ({})),
+    registerMcpTools: mock(() => {}),
+  }
+}
+
 function createSessionStore() {
   const sessions = new Map<string, StoredSession>()
   return {
@@ -145,7 +158,7 @@ describe('ChatService scheduled task hidden page lifecycle', () => {
     const sessionStore = createSessionStore()
     const service = new ChatService({
       sessionStore: sessionStore as never,
-      klavisRef: { handle: null },
+      klavis: createKlavisStub() as never,
       browser: browser as never,
       registry: {} as never,
     })
@@ -218,7 +231,7 @@ describe('ChatService scheduled task hidden page lifecycle', () => {
 
     const service = new ChatService({
       sessionStore: sessionStore as never,
-      klavisRef: { handle: null },
+      klavis: createKlavisStub() as never,
       browser: browser as never,
       registry: {} as never,
     })
@@ -249,7 +262,7 @@ describe('ChatService scheduled task hidden page lifecycle', () => {
     const sessionStore = createSessionStore()
     const service = new ChatService({
       sessionStore: sessionStore as never,
-      klavisRef: { handle: null },
+      klavis: createKlavisStub() as never,
       browser: browser as never,
       registry: {} as never,
     })
@@ -295,7 +308,7 @@ describe('ChatService scheduled task hidden page lifecycle', () => {
 })
 
 describe('ChatService browser tool config', () => {
-  it('passes browserUseNewTools and browser into new and rebuilt agent sessions', async () => {
+  it('passes browser session into new and rebuilt agent sessions', async () => {
     const firstAgent = createFakeAgent()
     const secondAgent = createFakeAgent()
     agentToReturn = firstAgent
@@ -304,7 +317,7 @@ describe('ChatService browser tool config', () => {
       return new Response('ok')
     }
 
-    const klavisRef = { handle: null as object | null }
+    let klavisStatus: KlavisProxyStatus = { state: 'connecting' }
     const browser = {
       resolveTabIds: mock(
         async (tabIds: number[]) =>
@@ -314,10 +327,9 @@ describe('ChatService browser tool config', () => {
     }
     const service = new ChatService({
       sessionStore: createSessionStore() as never,
-      klavisRef: klavisRef as never,
+      klavis: createKlavisStub(() => klavisStatus) as never,
       browser: browser as never,
       browserSession: { pages: {} } as never,
-      browserUseNewTools: false,
     })
     const createCallsBefore = createAgentSpy.mock.calls.length
     const request = {
@@ -339,7 +351,7 @@ describe('ChatService browser tool config', () => {
     await service.processMessage(request, new AbortController().signal)
 
     agentToReturn = secondAgent
-    klavisRef.handle = {}
+    klavisStatus = { state: 'ready', toolCount: 0 }
 
     await service.processMessage(
       { ...request, message: 'check integrations again' },
@@ -349,16 +361,13 @@ describe('ChatService browser tool config', () => {
     const createCalls = createAgentSpy.mock.calls.slice(createCallsBefore)
     expect(createCalls).toHaveLength(2)
     for (const [config] of createCalls) {
-      expect(config).toMatchObject({
-        browser,
-        browserUseNewTools: false,
-      })
+      expect(config).toMatchObject({ browserSession: { pages: {} } })
     }
   })
 })
 
 describe('ChatService Klavis session rebuilds', () => {
-  it('rebuilds a managed-app session when the shared Klavis handle appears', async () => {
+  it('rebuilds a managed-app session when Klavis becomes ready', async () => {
     const firstAgent = createFakeAgent()
     const secondAgent = createFakeAgent()
     agentToReturn = firstAgent
@@ -369,7 +378,7 @@ describe('ChatService Klavis session rebuilds', () => {
       return new Response('ok')
     }
 
-    const klavisRef = { handle: null as object | null }
+    let klavisStatus: KlavisProxyStatus = { state: 'connecting' }
     const browser = {
       resolveTabIds: mock(
         async (tabIds: number[]) =>
@@ -380,7 +389,7 @@ describe('ChatService Klavis session rebuilds', () => {
     const sessionStore = createSessionStore()
     const service = new ChatService({
       sessionStore: sessionStore as never,
-      klavisRef: klavisRef as never,
+      klavis: createKlavisStub(() => klavisStatus) as never,
       browser: browser as never,
       registry: {} as never,
     })
@@ -405,7 +414,7 @@ describe('ChatService Klavis session rebuilds', () => {
     await service.processMessage(request, new AbortController().signal)
 
     agentToReturn = secondAgent
-    klavisRef.handle = {}
+    klavisStatus = { state: 'ready', toolCount: 0 }
 
     await service.processMessage(
       { ...request, message: 'check integrations again' },
@@ -414,6 +423,16 @@ describe('ChatService Klavis session rebuilds', () => {
 
     expect(createAgentSpy.mock.calls.length - createCallsBefore).toBe(2)
     expect(firstAgent.dispose).toHaveBeenCalledTimes(1)
+    const firstCreateConfig = createAgentSpy.mock.calls[
+      createCallsBefore
+    ]?.[0] as { outputFileAccess?: unknown } | undefined
+    const secondCreateConfig = createAgentSpy.mock.calls[
+      createCallsBefore + 1
+    ]?.[0] as { outputFileAccess?: unknown } | undefined
+    expect(firstCreateConfig?.outputFileAccess).toBeDefined()
+    expect(secondCreateConfig?.outputFileAccess).toBe(
+      firstCreateConfig?.outputFileAccess,
+    )
 
     // Persisted form stays the raw user text — TKT-774. The Klavis
     // context-change notice and the formatted user envelope go only
@@ -430,8 +449,8 @@ describe('ChatService Klavis session rebuilds', () => {
     expect(promptRebuiltMessage).toContain(
       'Klavis app integration tools are now available for the following connected apps: slack.',
     )
-    expect(promptRebuiltMessage).not.toContain('klavis:pending')
-    expect(promptRebuiltMessage).not.toContain('klavis:connected')
+    expect(promptRebuiltMessage).not.toContain('klavis:connecting')
+    expect(promptRebuiltMessage).not.toContain('klavis:ready')
   })
 
   it('does not rebuild a session with no enabled managed apps when Klavis connects', async () => {
@@ -443,7 +462,7 @@ describe('ChatService Klavis session rebuilds', () => {
       return new Response('ok')
     }
 
-    const klavisRef = { handle: null as object | null }
+    let klavisStatus: KlavisProxyStatus = { state: 'connecting' }
     const browser = {
       resolveTabIds: mock(
         async (tabIds: number[]) =>
@@ -454,7 +473,7 @@ describe('ChatService Klavis session rebuilds', () => {
     const sessionStore = createSessionStore()
     const service = new ChatService({
       sessionStore: sessionStore as never,
-      klavisRef: klavisRef as never,
+      klavis: createKlavisStub(() => klavisStatus) as never,
       browser: browser as never,
       registry: {} as never,
     })
@@ -478,7 +497,7 @@ describe('ChatService Klavis session rebuilds', () => {
     await service.processMessage(request, new AbortController().signal)
 
     agentToReturn = secondAgent
-    klavisRef.handle = {}
+    klavisStatus = { state: 'ready', toolCount: 0 }
 
     await service.processMessage(
       { ...request, message: 'check browser only again' },
@@ -528,7 +547,7 @@ describe('ChatService ACP provider chat history handling', () => {
     }
     return {
       browser,
-      klavisRef: { handle: null },
+      klavis: createKlavisStub(),
       sessionStore: createSessionStore(),
     }
   }
@@ -560,16 +579,37 @@ describe('ChatService ACP provider chat history handling', () => {
     const deps = baseDeps()
     const service = new ChatService({
       sessionStore: deps.sessionStore as never,
-      klavisRef: deps.klavisRef,
+      klavis: deps.klavis as never,
       browser: deps.browser as never,
       registry: {} as never,
     })
 
-    await service.processMessage(chatRequest(), new AbortController().signal)
+    await service.processMessage(
+      chatRequest({
+        browserContext: {
+          activeTab: { id: 1, url: 'https://example.com', title: 'Example' },
+          enabledMcpServers: ['Slack', 'Google Docs'],
+        },
+      }),
+      new AbortController().signal,
+    )
 
     expect(captured).toHaveLength(1)
     expect(captured?.[0]?.role).toBe('user')
     expect(captured?.[0]?.parts[0]?.type).toBe('text')
+    const createArgs = createAgentSpy.mock.calls.at(-1)?.[0] as {
+      resolvedConfig?: {
+        acpMcpServers?: Array<{
+          type: 'http'
+          headers: Array<{ name: string; value: string }>
+        }>
+      }
+    }
+    expect(
+      createArgs.resolvedConfig?.acpMcpServers?.[0]?.headers.find(
+        (h) => h.name === 'X-BrowserOS-Managed-Mcp-Servers',
+      )?.value,
+    ).toBe('Slack,Google%20Docs')
   })
 
   it('still passes the full filtered history for LLM-API providers', async () => {
@@ -594,7 +634,7 @@ describe('ChatService ACP provider chat history handling', () => {
     const deps = baseDeps()
     const service = new ChatService({
       sessionStore: deps.sessionStore as never,
-      klavisRef: deps.klavisRef,
+      klavis: deps.klavis as never,
       browser: deps.browser as never,
       registry: {} as never,
     })
@@ -645,7 +685,7 @@ describe('ChatService ACP provider chat history handling', () => {
     const deps = baseDeps()
     const service = new ChatService({
       sessionStore: deps.sessionStore as never,
-      klavisRef: deps.klavisRef,
+      klavis: deps.klavis as never,
       browser: deps.browser as never,
       registry: {} as never,
     })
@@ -693,7 +733,7 @@ describe('ChatService ACP provider chat history handling', () => {
     const deps = baseDeps()
     const service = new ChatService({
       sessionStore: deps.sessionStore as never,
-      klavisRef: deps.klavisRef,
+      klavis: deps.klavis as never,
       browser: deps.browser as never,
       registry: {} as never,
     })

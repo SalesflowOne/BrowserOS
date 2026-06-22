@@ -27,7 +27,6 @@ describe('loadServerConfig', () => {
     delete process.env.BROWSEROS_INSTALL_ID
     delete process.env.BROWSEROS_CLIENT_ID
     delete process.env.BROWSEROS_AI_SDK_DEVTOOLS
-    delete process.env.BROWSER_USE_NEW_TOOLS
   })
 
   afterEach(() => {
@@ -50,7 +49,7 @@ describe('loadServerConfig', () => {
       assert.strictEqual(result.value.cdpPort, 9222)
       assert.strictEqual(result.value.serverPort, 9223)
       assert.strictEqual(result.value.agentPort, 9223)
-      assert.strictEqual('extensionPort' in result.value, false)
+      assert.strictEqual(result.value.extensionPort, 9224)
       assert.strictEqual(result.value.mcpAllowRemote, false)
     })
 
@@ -77,7 +76,7 @@ describe('loadServerConfig', () => {
       assert.strictEqual(result.ok, true)
       if (!result.ok) return
       assert.strictEqual(result.value.cdpPort, null)
-      assert.strictEqual('extensionPort' in result.value, false)
+      assert.strictEqual(result.value.extensionPort, null)
     })
 
     it('warns when --extension-port is provided', () => {
@@ -119,7 +118,7 @@ describe('loadServerConfig', () => {
       assert.strictEqual(result.value.serverPort, 9223)
       // agentPort is deprecated - always equals serverPort
       assert.strictEqual(result.value.agentPort, 9223)
-      assert.strictEqual('extensionPort' in result.value, false)
+      assert.strictEqual(result.value.extensionPort, 9224)
     })
 
     it('CLI takes precedence over env', () => {
@@ -138,7 +137,7 @@ describe('loadServerConfig', () => {
       assert.strictEqual(result.value.serverPort, 1111)
       // agentPort is deprecated - always equals serverPort
       assert.strictEqual(result.value.agentPort, 1111)
-      assert.strictEqual('extensionPort' in result.value, false)
+      assert.strictEqual(result.value.extensionPort, 3333)
     })
   })
 
@@ -171,7 +170,7 @@ describe('loadServerConfig', () => {
       assert.strictEqual(result.value.serverPort, 3000)
       // agentPort is deprecated - always equals serverPort
       assert.strictEqual(result.value.agentPort, 3000)
-      assert.strictEqual('extensionPort' in result.value, false)
+      assert.strictEqual(result.value.extensionPort, 3002)
       assert.strictEqual(result.value.mcpAllowRemote, true)
     })
 
@@ -420,7 +419,7 @@ describe('loadServerConfig', () => {
       assert.strictEqual(result.value.agentPort, result.value.serverPort)
     })
 
-    it('does not expose deprecated extensionPort', () => {
+    it('defaults extensionPort to null', () => {
       const result = loadServerConfig([
         'bun',
         'src/index.ts',
@@ -429,7 +428,7 @@ describe('loadServerConfig', () => {
 
       assert.strictEqual(result.ok, true)
       if (!result.ok) return
-      assert.strictEqual('extensionPort' in result.value, false)
+      assert.strictEqual(result.value.extensionPort, null)
     })
 
     it('defaults aiSdkDevtoolsEnabled to false', () => {
@@ -442,82 +441,6 @@ describe('loadServerConfig', () => {
       assert.strictEqual(result.ok, true)
       if (!result.ok) return
       assert.strictEqual(result.value.aiSdkDevtoolsEnabled, false)
-    })
-
-    it('defaults browserUseNewTools to false', () => {
-      const result = loadServerConfig([
-        'bun',
-        'src/index.ts',
-        '--server-port=3000',
-      ])
-
-      assert.strictEqual(result.ok, true)
-      if (!result.ok) return
-      assert.strictEqual(result.value.browserUseNewTools, false)
-    })
-  })
-
-  describe('Browser tool registry switch', () => {
-    it('enables new browser tools via BROWSER_USE_NEW_TOOLS=true', () => {
-      process.env.BROWSER_USE_NEW_TOOLS = 'true'
-
-      const result = loadServerConfig([
-        'bun',
-        'src/index.ts',
-        '--server-port=3000',
-      ])
-
-      assert.strictEqual(result.ok, true)
-      if (!result.ok) return
-      assert.strictEqual(result.value.browserUseNewTools, true)
-    })
-
-    it('disables new browser tools via BROWSER_USE_NEW_TOOLS=false', () => {
-      process.env.BROWSER_USE_NEW_TOOLS = 'false'
-
-      const result = loadServerConfig([
-        'bun',
-        'src/index.ts',
-        '--server-port=3000',
-      ])
-
-      assert.strictEqual(result.ok, true)
-      if (!result.ok) return
-      assert.strictEqual(result.value.browserUseNewTools, false)
-    })
-
-    it('rejects boolean aliases for BROWSER_USE_NEW_TOOLS', () => {
-      process.env.BROWSER_USE_NEW_TOOLS = '0'
-
-      const result = loadServerConfig([
-        'bun',
-        'src/index.ts',
-        '--server-port=3000',
-      ])
-
-      assert.strictEqual(result.ok, false)
-      if (result.ok) return
-      assert.match(
-        result.error,
-        /BROWSER_USE_NEW_TOOLS must be "true" or "false"/,
-      )
-    })
-
-    it('rejects invalid BROWSER_USE_NEW_TOOLS values', () => {
-      process.env.BROWSER_USE_NEW_TOOLS = 'enabled'
-
-      const result = loadServerConfig([
-        'bun',
-        'src/index.ts',
-        '--server-port=3000',
-      ])
-
-      assert.strictEqual(result.ok, false)
-      if (result.ok) return
-      assert.match(
-        result.error,
-        /BROWSER_USE_NEW_TOOLS must be "true" or "false"/,
-      )
     })
   })
 

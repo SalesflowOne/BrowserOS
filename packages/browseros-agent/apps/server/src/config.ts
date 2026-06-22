@@ -20,6 +20,7 @@ const ServerConfigSchema = z.object({
   cdpPort: portSchema.nullable(),
   serverPort: portSchema,
   agentPort: portSchema,
+  extensionPort: portSchema.nullable(),
   resourcesDir: z.string(),
   executionDir: z.string(),
   mcpAllowRemote: z.boolean(),
@@ -28,7 +29,6 @@ const ServerConfigSchema = z.object({
   instanceBrowserosVersion: z.string().optional(),
   instanceChromiumVersion: z.string().optional(),
   aiSdkDevtoolsEnabled: z.boolean(),
-  browserUseNewTools: z.boolean(),
 })
 
 export type ServerConfig = z.infer<typeof ServerConfigSchema>
@@ -166,6 +166,7 @@ function parseCliArgs(argv: string[]): ConfigResult<ParsedCliArgs> {
       overrides: omitUndefined({
         cdpPort: opts.cdpPort,
         serverPort: opts.serverPort ?? opts.httpMcpPort,
+        extensionPort: opts.extensionPort,
         resourcesDir: opts.resourcesDir
           ? toAbsolutePath(opts.resourcesDir, cwd)
           : undefined,
@@ -209,6 +210,7 @@ function parseConfigFile(filePath?: string): ConfigResult<PartialConfig> {
       value: omitUndefined({
         cdpPort: cfg.ports?.cdp,
         serverPort: cfg.ports?.server ?? cfg.ports?.http_mcp,
+        extensionPort: cfg.ports?.extension,
         resourcesDir: parseAbsolutePath(cfg.directories?.resources, configDir),
         executionDir: parseAbsolutePath(cfg.directories?.execution, configDir),
         mcpAllowRemote:
@@ -241,11 +243,6 @@ function parseConfigFile(filePath?: string): ConfigResult<PartialConfig> {
 
 function parseRuntimeEnv(): ConfigResult<PartialConfig> {
   const cwd = process.cwd()
-  const browserUseNewTools = parseBooleanEnv(
-    'BROWSER_USE_NEW_TOOLS',
-    process.env.BROWSER_USE_NEW_TOOLS,
-  )
-  if (!browserUseNewTools.ok) return browserUseNewTools
 
   return {
     ok: true,
@@ -255,6 +252,9 @@ function parseRuntimeEnv(): ConfigResult<PartialConfig> {
         : undefined,
       serverPort: process.env.BROWSEROS_SERVER_PORT
         ? safeParseInt(process.env.BROWSEROS_SERVER_PORT)
+        : undefined,
+      extensionPort: process.env.BROWSEROS_EXTENSION_PORT
+        ? safeParseInt(process.env.BROWSEROS_EXTENSION_PORT)
         : undefined,
       resourcesDir: process.env.BROWSEROS_RESOURCES_DIR
         ? toAbsolutePath(process.env.BROWSEROS_RESOURCES_DIR, cwd)
@@ -266,7 +266,6 @@ function parseRuntimeEnv(): ConfigResult<PartialConfig> {
       instanceClientId: process.env.BROWSEROS_CLIENT_ID,
       aiSdkDevtoolsEnabled:
         process.env.BROWSEROS_AI_SDK_DEVTOOLS === 'true' ? true : undefined,
-      browserUseNewTools: browserUseNewTools.value,
     }),
   }
 }
@@ -296,11 +295,11 @@ function validateInlinedEnv(): ConfigResult<void> {
 function getDefaults(cwd: string): PartialConfig {
   return {
     cdpPort: null,
+    extensionPort: null,
     resourcesDir: cwd,
     executionDir: cwd,
     mcpAllowRemote: false,
     aiSdkDevtoolsEnabled: false,
-    browserUseNewTools: false,
   }
 }
 
@@ -319,20 +318,6 @@ function mergeConfigs(...configs: PartialConfig[]): PartialConfig {
 function safeParseInt(value: string): number | undefined {
   const num = parseInt(value, 10)
   return Number.isNaN(num) ? undefined : num
-}
-
-/** Parses a strict boolean env var, defaulting missing values to false. */
-function parseBooleanEnv(
-  envName: string,
-  value: string | undefined,
-): ConfigResult<boolean> {
-  if (value === undefined) return { ok: true, value: false }
-  if (value === 'true') return { ok: true, value: true }
-  if (value === 'false') return { ok: true, value: false }
-  return {
-    ok: false,
-    error: `${envName} must be "true" or "false".`,
-  }
 }
 
 function omitUndefined<T extends Record<string, unknown>>(obj: T): Partial<T> {

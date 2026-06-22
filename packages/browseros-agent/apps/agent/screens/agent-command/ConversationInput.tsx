@@ -29,12 +29,10 @@ import { McpServerIcon } from '@/components/mcp/McpServerIcon'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { type StagedAttachment, stageAttachments } from '@/lib/attachments'
-import { Feature } from '@/lib/browseros/capabilities'
 import { BrowserOSIcon, ProviderIcon } from '@/lib/llm-providers/providerIcons'
 import type { ProviderType } from '@/lib/llm-providers/types'
 import { useMcpServers } from '@/lib/mcp/mcpServerStorage'
 import { cn } from '@/lib/utils'
-import { useCapabilities } from '@/modules/browseros/capabilities.hooks'
 import { useGetUserMCPIntegrations } from '@/modules/mcp/user-integrations.hooks'
 import { useVoiceInput } from '@/modules/voice/voice.hooks'
 import { useWorkspace } from '@/modules/workspace/workspace.hooks'
@@ -200,7 +198,6 @@ function CalmContextControls({
   attachDisabled: boolean
   attachmentsEnabled: boolean
 }) {
-  const { supports } = useCapabilities()
   const { selectedFolder } = useWorkspace()
   const { servers: mcpServers } = useMcpServers()
   const { data: userMCPIntegrations } = useGetUserMCPIntegrations()
@@ -211,9 +208,6 @@ function CalmContextControls({
       (integration) => integration.name === server.managedServerName,
     )?.is_authenticated
   })
-
-  const showApps = supports(Feature.MANAGED_MCP_SUPPORT)
-  const showWorkspace = supports(Feature.WORKSPACE_FOLDER_SUPPORT)
 
   return (
     <div className="mx-3 flex items-center gap-1 border-border/60 border-t border-dashed py-2">
@@ -247,20 +241,18 @@ function CalmContextControls({
           />
         </>
       ) : null}
-      {showWorkspace ? (
-        <WorkspaceSelector>
-          <button
-            type="button"
-            className="inline-flex h-6 items-center gap-1.5 rounded-full px-2.5 text-[11.5px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground"
-          >
-            <Folder className="size-3" />
-            <span>Workspace</span>
-            <span className="font-mono text-[10.5px] text-muted-foreground/70">
-              {selectedFolder?.name ?? 'none'}
-            </span>
-          </button>
-        </WorkspaceSelector>
-      ) : null}
+      <WorkspaceSelector>
+        <button
+          type="button"
+          className="inline-flex h-6 items-center gap-1.5 rounded-full px-2.5 text-[11.5px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground"
+        >
+          <Folder className="size-3" />
+          <span>Workspace</span>
+          <span className="font-mono text-[10.5px] text-muted-foreground/70">
+            {selectedFolder?.name ?? 'none'}
+          </span>
+        </button>
+      </WorkspaceSelector>
       <TabPickerPopover
         variant="selector"
         selectedTabs={selectedTabs}
@@ -299,34 +291,29 @@ function CalmContextControls({
         <Paperclip className="size-3" />
         <span>Attach</span>
       </button>
-      {showApps ? (
-        <AppSelector side="bottom">
-          <button
-            type="button"
-            className="inline-flex h-6 items-center gap-1.5 rounded-full px-2.5 text-[11.5px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground"
-          >
-            {connectedManagedServers.length > 0 ? (
-              <span className="flex items-center -space-x-1.5">
-                {connectedManagedServers.slice(0, 4).map((server) => (
-                  <span
-                    key={server.id}
-                    className="rounded-full ring-2 ring-card"
-                  >
-                    <McpServerIcon
-                      serverName={server.managedServerName ?? ''}
-                      size={12}
-                    />
-                  </span>
-                ))}
-              </span>
-            ) : (
-              <FileText className="size-3" />
-            )}
-            <span>Apps</span>
-            <ChevronDown className="size-3" />
-          </button>
-        </AppSelector>
-      ) : null}
+      <AppSelector side="bottom">
+        <button
+          type="button"
+          className="inline-flex h-6 items-center gap-1.5 rounded-full px-2.5 text-[11.5px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground"
+        >
+          {connectedManagedServers.length > 0 ? (
+            <span className="flex items-center -space-x-1.5">
+              {connectedManagedServers.slice(0, 4).map((server) => (
+                <span key={server.id} className="rounded-full ring-2 ring-card">
+                  <McpServerIcon
+                    serverName={server.managedServerName ?? ''}
+                    size={12}
+                  />
+                </span>
+              ))}
+            </span>
+          ) : (
+            <FileText className="size-3" />
+          )}
+          <span>Apps</span>
+          <ChevronDown className="size-3" />
+        </button>
+      </AppSelector>
       <div className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground/70">
         <kbd className="inline-flex h-4 min-w-4 items-center justify-center rounded border border-border bg-accent/30 px-1 font-mono text-[10px] text-muted-foreground">
           ↵
