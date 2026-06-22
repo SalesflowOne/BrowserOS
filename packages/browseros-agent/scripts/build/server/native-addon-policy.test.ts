@@ -63,13 +63,12 @@ describe('compiled server native addon policy', () => {
     await writeFile(
       sourcePath,
       [
-        `import { installNativeAddonGuard, NATIVE_ADDON_DISABLED_MESSAGE } from ${JSON.stringify(nativeAddonGuardPath)}`,
+        `import { installNativeAddonGuard } from ${JSON.stringify(nativeAddonGuardPath)}`,
         'installNativeAddonGuard()',
         'try {',
         '  require("./addon.node")',
         '} catch (error) {',
         '  console.error(error?.message ?? String(error))',
-        '  console.error(NATIVE_ADDON_DISABLED_MESSAGE)',
         '  setInterval(() => {}, 1000)',
         '}',
       ].join('\n'),

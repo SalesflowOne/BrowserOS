@@ -1,4 +1,4 @@
-export const NATIVE_ADDON_DISABLED_MESSAGE =
+const NATIVE_ADDON_DISABLED_MESSAGE =
   'BrowserOS server disables native addon loading in compiled production builds'
 
 interface GuardedProcess extends NodeJS.Process {
