@@ -116,6 +116,164 @@ describe('registerBrowserTools', () => {
     expect(fake.configs.get('tabs')?.inputSchema).toBeDefined()
   })
 
+  it('captures JPEG screenshots with default and custom quality', async () => {
+    const fake = createFakeServer()
+    const captureOptions: unknown[] = []
+    const session = {
+      screenshot: async (_page: number, options: unknown) => {
+        captureOptions.push(options)
+        return { data: 'jpeg-data', mimeType: 'image/jpeg', annotations: [] }
+      },
+      pages: {
+        getSession: async () => ({
+          session: {
+            Page: {
+              getLayoutMetrics: async () => ({
+                layoutViewport: {
+                  pageX: 0,
+                  pageY: 0,
+                  clientWidth: 2048,
+                  clientHeight: 1536,
+                },
+                cssLayoutViewport: {
+                  pageX: 5,
+                  pageY: 7,
+                  clientWidth: 2048,
+                  clientHeight: 1536,
+                },
+              }),
+            },
+          },
+        }),
+      },
+    } as unknown as BrowserSession
+
+    registerBrowserTools(fake.server as never, session)
+
+    await expect(
+      fake.handlers.get('screenshot')?.({ page: 1 }),
+    ).resolves.toEqual({
+      content: [{ type: 'image', data: 'jpeg-data', mimeType: 'image/jpeg' }],
+    })
+    await expect(
+      fake.handlers.get('screenshot')?.({
+        page: 1,
+        quality: 60,
+        size: { width: 512, height: 384 },
+      }),
+    ).resolves.toEqual({
+      content: [{ type: 'image', data: 'jpeg-data', mimeType: 'image/jpeg' }],
+    })
+    expect(captureOptions).toEqual([
+      {
+        format: 'jpeg',
+        quality: 80,
+        fullPage: false,
+        annotate: true,
+        clip: {
+          x: 5,
+          y: 7,
+          width: 2048,
+          height: 1536,
+          scale: 0.5,
+        },
+      },
+      {
+        format: 'jpeg',
+        quality: 60,
+        fullPage: false,
+        annotate: true,
+        clip: {
+          x: 5,
+          y: 7,
+          width: 2048,
+          height: 1536,
+          scale: 0.25,
+        },
+      },
+    ])
+  })
+
+  it('omits quality for PNG screenshots and skips size clips for full page', async () => {
+    const fake = createFakeServer()
+    const captureOptions: unknown[] = []
+    let layoutMetricCalls = 0
+    const session = {
+      screenshot: async (_page: number, options: { format?: string }) => {
+        captureOptions.push(options)
+        return {
+          data: `${options.format}-data`,
+          mimeType: `image/${options.format}`,
+          annotations: [],
+        }
+      },
+      pages: {
+        getSession: async () => ({
+          session: {
+            Page: {
+              getLayoutMetrics: async () => {
+                layoutMetricCalls += 1
+                return {
+                  layoutViewport: {
+                    pageX: 0,
+                    pageY: 0,
+                    clientWidth: 800,
+                    clientHeight: 600,
+                  },
+                  cssLayoutViewport: {
+                    pageX: 0,
+                    pageY: 0,
+                    clientWidth: 800,
+                    clientHeight: 600,
+                  },
+                }
+              },
+            },
+          },
+        }),
+      },
+    } as unknown as BrowserSession
+
+    registerBrowserTools(fake.server as never, session)
+
+    await expect(
+      fake.handlers.get('screenshot')?.({
+        page: 1,
+        format: 'png',
+        quality: 25,
+      }),
+    ).resolves.toEqual({
+      content: [{ type: 'image', data: 'png-data', mimeType: 'image/png' }],
+    })
+    await expect(
+      fake.handlers.get('screenshot')?.({ page: 1, fullPage: true }),
+    ).resolves.toEqual({
+      content: [{ type: 'image', data: 'jpeg-data', mimeType: 'image/jpeg' }],
+    })
+
+    expect(layoutMetricCalls).toBe(1)
+    expect(captureOptions).toEqual([
+      {
+        format: 'png',
+        fullPage: false,
+        annotate: true,
+        clip: {
+          x: 0,
+          y: 0,
+          width: 800,
+          height: 600,
+          scale: 1,
+        },
+      },
+      {
+        format: 'jpeg',
+        quality: 80,
+        fullPage: true,
+        annotate: true,
+      },
+    ])
+  })
+
   it('manages windows through the compact windows tool', async () => {
     const fake = createFakeServer()
     const calls: Array<{ method: string; args?: unknown }> = []
@@ -567,13 +725,25 @@ return 'late'
     const result = await fake.handlers.get('diff')?.({ page: 1 })
 
     expect(result?.isError).toBeFalsy()
-    expect(result?.structuredContent).toEqual({
+    const data = result?.structuredContent as
+      | {
+          added: number
+          removed: number
+          urlChanged: boolean
+          beforeUrl: string
+          afterUrl: string
+          snapshot: string
+        }
+      | undefined
+    expect(data).toMatchObject({
       added: 0,
       removed: 0,
       urlChanged: true,
       beforeUrl: 'https://example.com/old',
       afterUrl: 'https://example.com/new',
     })
+    expect(data?.snapshot).toContain('[UNTRUSTED_PAGE_CONTENT')
+    expect(data?.snapshot).toContain('- heading "New page"')
     expect(result?.content).toEqual([
       expect.objectContaining({
         type: 'text',
@@ -624,7 +794,13 @@ return 'late'
     const result = await fake.handlers.get('diff')?.({ page: 1 })
 
     expect(result?.isError).toBeFalsy()
-    expect(result?.structuredContent).toEqual({ added: 1, removed: 0 })
+    const data = result?.structuredContent as
+      | { added: number; removed: number; diff: string }
+      | undefined
+    expect(data).toMatchObject({ added: 1, removed: 0 })
+    expect(data?.diff).toContain('origin=https://example.com/current')
+    expect(data?.diff).toContain('+   button "Saved" [ref=e1]')
+    expect(data?.diff).not.toContain('origin=https://example.com/stale')
     expect(result?.content).toEqual([
       expect.objectContaining({
         type: 'text',
@@ -670,12 +846,15 @@ return 'late'
         | {
             added: number
             removed: number
+            diff: string
           }
         | undefined
       expect(data).toMatchObject({
         added: 2001,
         removed: 0,
       })
+      expect(data?.diff).toContain('word-2000')
+      expect(data?.diff).toContain('[UNTRUSTED_PAGE_CONTENT')
       expect(JSON.stringify(result?.structuredContent)).not.toContain('path')
       expect(JSON.stringify(result?.structuredContent)).not.toContain(
         'writtenToFile',
@@ -698,8 +877,9 @@ return 'late'
   it('writes large direct diffs to a BrowserOS output markdown file', async () => {
     await withBrowserosDir(async () => {
       const fake = createFakeServer()
+      const firstMarker = 'first-diff-node'
       const lastMarker = 'last-diff-node'
-      const largeDiff = `${'x'.repeat(30_001)}\n${lastMarker}`
+      const largeDiff = `${firstMarker}\n${'x'.repeat(30_001)}\n${lastMarker}`
       const session = {
         observe: () => ({
           diff: async () => ({
@@ -718,6 +898,7 @@ return 'late'
       registerBrowserTools(fake.server as never, session)
 
       const result = await fake.handlers.get('diff')?.({ page: 1 })
+      const text = textOf(result)
 
       expect(result?.isError).toBeFalsy()
       const data = result?.structuredContent as
@@ -729,6 +910,7 @@ return 'late'
             path: string
             contentLength: number
             writtenToFile: boolean
+            diff: string
           }
         | undefined
       expect(data).toMatchObject({
@@ -759,9 +941,13 @@ return 'late'
           text: expect.not.stringContaining(lastMarker),
         }),
       ])
+      expect(text).toContain('Showing the first 5000 estimated tokens inline')
+      expect(text).toContain('[UNTRUSTED_PAGE_CONTENT')
+      expect(text).toContain(firstMarker)
       const savedContent = readFileSync(savedPath ?? '', 'utf8')
       expect(savedContent).toContain('[UNTRUSTED_PAGE_CONTENT')
       expect(savedContent).toContain(lastMarker)
+      expect(data?.diff).toBe(savedContent)
       expect(data?.contentLength).toBe(savedContent.length)
     })
   })
@@ -841,8 +1027,9 @@ return 'late'
   it('writes large URL-change act readbacks to a BrowserOS output file', async () => {
     await withBrowserosDir(async () => {
       const fake = createFakeServer()
+      const firstMarker = 'destination-first-node'
       const lastMarker = 'destination-final-node'
-      const largeSnapshot = `${'x'.repeat(30_001)}\n${lastMarker}`
+      const largeSnapshot = `${firstMarker}\n${'x'.repeat(30_001)}\n${lastMarker}`
       const session = {
         input: () => ({
           click: async () => undefined,
@@ -902,6 +1089,9 @@ return 'late'
         ]),
       )
       expect(text).not.toContain(lastMarker)
+      expect(text).toContain('Showing the first 5000 estimated tokens inline')
+      expect(text).toContain('[UNTRUSTED_PAGE_CONTENT')
+      expect(text).toContain(firstMarker)
       await expectBrowserToolOutputPath(savedPath)
       expect(readFileSync(savedPath ?? '', 'utf8')).toContain(lastMarker)
     })
@@ -1221,7 +1411,12 @@ return 'late'
     const result = await fake.handlers.get('snapshot')?.({ page: 2 })
 
     expect(result?.isError).toBeFalsy()
-    expect(result?.structuredContent).toEqual({ page: 2 })
+    const data = result?.structuredContent as
+      | { page: number; snapshot: string }
+      | undefined
+    expect(data).toMatchObject({ page: 2 })
+    expect(data?.snapshot).toContain('[UNTRUSTED_PAGE_CONTENT')
+    expect(data?.snapshot).toContain('- button "Save" [ref=e1]')
     expect(result?.content).toEqual([
       expect.objectContaining({
         type: 'text',
@@ -1257,11 +1452,14 @@ return 'late'
       const data = result?.structuredContent as
         | {
             page: number
+            snapshot: string
           }
         | undefined
       expect(data).toMatchObject({
         page: 4,
       })
+      expect(data?.snapshot).toContain('last-node')
+      expect(data?.snapshot).toContain('[UNTRUSTED_PAGE_CONTENT')
       expect(JSON.stringify(result?.structuredContent)).not.toContain('path')
       expect(result?.content).toEqual([
         expect.objectContaining({
@@ -1281,7 +1479,9 @@ return 'late'
   it('writes very large snapshots to a BrowserOS output markdown file', async () => {
     await withBrowserosDir(async () => {
       const fake = createFakeServer()
-      const largeSnapshot = `${'x '.repeat(23_000)}last-node`
+      const firstMarker = 'first-node'
+      const lastMarker = 'last-node'
+      const largeSnapshot = `${firstMarker}\n${'x '.repeat(23_000)}${lastMarker}`
       expect(largeSnapshot.length).toBeLessThan(50_000)
       const session = {
         observe: () => ({
@@ -1294,6 +1494,7 @@ return 'late'
       registerBrowserTools(fake.server as never, session)
 
       const result = await fake.handlers.get('snapshot')?.({ page: 4 })
+      const text = textOf(result)
 
       expect(result?.isError).toBeFalsy()
       const data = result?.structuredContent as
@@ -1303,6 +1504,7 @@ return 'late'
             contentLength: number
             tokenEstimate: number
             writtenToFile: boolean
+            snapshot: string
           }
         | undefined
       expect(data).toMatchObject({
@@ -1325,12 +1527,17 @@ return 'late'
           text: expect.stringContaining(savedPath ?? ''),
         }),
       ])
+      expect(text).toContain('Showing the first 5000 estimated tokens inline')
+      expect(text).toContain('[UNTRUSTED_PAGE_CONTENT')
+      expect(text).toContain(firstMarker)
+      expect(text).not.toContain(lastMarker)
       expect(existsSync(savedPath ?? '')).toBe(true)
 
       const savedContent = readFileSync(savedPath ?? '', 'utf8')
       expect(savedContent).toContain('[UNTRUSTED_PAGE_CONTENT')
       expect(savedContent).toContain('[END_UNTRUSTED_PAGE_CONTENT')
-      expect(savedContent).toContain('last-node')
+      expect(savedContent).toContain(lastMarker)
+      expect(data?.snapshot).toBe(savedContent)
       expect(data?.contentLength).toBe(savedContent.length)
     })
   })
@@ -1439,6 +1646,11 @@ return 'late'
         },
       }),
       input: () => input,
+      screenshot: async () => ({
+        data: 'image-data',
+        mimeType: 'image/jpeg',
+        annotations: [],
+      }),
       pages: {
         getInfo: () => ({ url: 'https://example.com' }),
         refresh: async () => ({ url: 'https://example.com' }),
@@ -1448,7 +1660,21 @@ return 'late'
               evaluate: async () => ({ result: { value: true } }),
             },
             Page: {
-              captureScreenshot: async () => ({ data: 'png-data' }),
+              getLayoutMetrics: async () => ({
+                layoutViewport: {
+                  pageX: 0,
+                  pageY: 0,
+                  clientWidth: 1024,
+                  clientHeight: 768,
+                },
+                cssLayoutViewport: {
+                  pageX: 0,
+                  pageY: 0,
+                  clientWidth: 1024,
+                  clientHeight: 768,
+                },
+              }),
+              captureScreenshot: async () => ({ data: 'image-data' }),
             },
           },
         }),
@@ -1478,7 +1704,7 @@ return 'late'
       }),
     ).toMatchObject({ structuredContent: { count: 1 } })
     expect(await fake.handlers.get('screenshot')?.({ page: 1 })).toMatchObject({
-      content: [{ type: 'image', data: 'png-data', mimeType: 'image/png' }],
+      content: [{ type: 'image', data: 'image-data', mimeType: 'image/jpeg' }],
     })
     expect(
       await fake.handlers.get('wait')?.({

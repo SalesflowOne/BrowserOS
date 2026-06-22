@@ -156,6 +156,7 @@ async function createAcpLanguageModel(
   for (const builtIn of ['claude', 'codex'] as const) {
     const launcher = resolveAcpSpawnCommand({
       agentType: builtIn,
+      browserosDir: getBrowserosDir(),
       resourcesDir: config.resourcesDir,
     })
     if (launcher?.source === 'bundled-bun') {
@@ -436,8 +437,7 @@ function createGitHubCopilotFactory(
 function createChatGPTProFactory(
   config: ResolvedAgentConfig,
 ): (modelId: string) => unknown {
-  if (!config.apiKey)
-    throw new Error('ChatGPT Plus/Pro requires OAuth authentication')
+  if (!config.apiKey) throw new Error('ChatGPT requires OAuth authentication')
   return createOpenAI({
     apiKey: config.apiKey,
     fetch: createCodexFetch(config.accountId) as typeof globalThis.fetch,

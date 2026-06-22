@@ -1,10 +1,13 @@
 import type { SnapshotDiff } from '../../browser/core/snapshot/diff'
 import { writeTempToolOutputFile } from './output-file'
-import { estimateTextTokens } from './token-estimate'
+import {
+  estimateTextTokens,
+  sliceTextByEstimatedTokens,
+} from './token-estimate'
 import { wrapUntrusted } from './trust-boundary'
 
 const MAX_INLINE_DIFF_TOKENS = 10_000
-const MAX_SAVE_FAILURE_EXCERPT_CHARS = 4_000
+const MAX_INLINE_EXCERPT_TOKENS = 5_000
 
 export interface FormattedDiff {
   text: string
@@ -29,20 +32,29 @@ export async function formatDiffResult(
       beforeUrl: diff.beforeUrl,
       afterUrl: diff.afterUrl,
     }),
+    ...(diff.urlChanged ? { snapshot: wrappedDiff } : { diff: wrappedDiff }),
   }
 
   if (tokenEstimate > MAX_INLINE_DIFF_TOKENS) {
+    const excerpt = sliceTextByEstimatedTokens(
+      diffText,
+      MAX_INLINE_EXCERPT_TOKENS,
+    )
     try {
       const path = await writeTempToolOutputFile({
         toolName: 'diff',
         extension: 'md',
         content: wrappedDiff,
       })
-      const text = diff.urlChanged
+      const summary = diff.urlChanged
         ? `URL changed; full current snapshot is ${tokenEstimate} estimated tokens, over the ${MAX_INLINE_DIFF_TOKENS}-token inline limit, saved to: ${path}\nRead the file for the full current snapshot.`
         : `Diff is ${tokenEstimate} estimated tokens, over the ${MAX_INLINE_DIFF_TOKENS}-token inline limit, saved to: ${path}\nRead the file for the full diff.`
       return {
-        text,
+        text: [
+          summary,
+          `Showing the first ${MAX_INLINE_EXCERPT_TOKENS} estimated tokens inline:`,
+          wrapUntrusted(excerpt, origin),
+        ].join('\n'),
         structured: {
           ...structured,
           truncated: true,
@@ -54,14 +66,13 @@ export async function formatDiffResult(
       }
     } catch (error) {
       const saveError = error instanceof Error ? error.message : String(error)
-      const excerpt = diffText.slice(0, MAX_SAVE_FAILURE_EXCERPT_CHARS)
       const text = diff.urlChanged
         ? `URL changed; full current snapshot is ${tokenEstimate} estimated tokens, over the ${MAX_INLINE_DIFF_TOKENS}-token inline limit, but saving it to a BrowserOS output file failed: ${saveError}`
         : `Diff is ${tokenEstimate} estimated tokens, over the ${MAX_INLINE_DIFF_TOKENS}-token inline limit, but saving it to a BrowserOS output file failed: ${saveError}`
       return {
         text: [
           text,
-          `Showing the first ${excerpt.length} chars instead:`,
+          `Showing the first ${MAX_INLINE_EXCERPT_TOKENS} estimated tokens instead:`,
           wrapUntrusted(excerpt, origin),
         ].join('\n'),
         structured: {

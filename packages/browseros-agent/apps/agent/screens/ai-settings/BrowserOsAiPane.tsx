@@ -25,6 +25,7 @@ import {
 } from '@/lib/constants/analyticsEvents'
 import { GetProfileIdByUserIdDocument } from '@/lib/conversations/graphql/uploadConversationDocument'
 import { getQueryKeyFromDocument } from '@/lib/graphql/getQueryKeyFromDocument'
+import { CHATGPT_PROVIDER_DISPLAY_NAME } from '@/lib/llm-providers/provider-display-names'
 import type { ProviderTemplate } from '@/lib/llm-providers/providerTemplates'
 import { testProvider } from '@/lib/llm-providers/testProvider'
 import type { LlmProviderConfig } from '@/lib/llm-providers/types'
@@ -39,7 +40,6 @@ import {
   useOAuthProviderFlow,
 } from '@/modules/llm-providers/oauth-provider-flow.hooks'
 import { CodingAgentsList } from './CodingAgentsList'
-import { CodingAgentsManager } from './CodingAgentsManager'
 import { ConfiguredProvidersList } from './ConfiguredProvidersList'
 import { useCodingAgents } from './coding-agents.hooks'
 import { DeviceCodeDialog } from './DeviceCodeDialog'
@@ -59,7 +59,7 @@ import { ProviderTemplatesSection } from './ProviderTemplatesSection'
 const OAUTH_PROVIDERS_CONFIG: Record<string, OAuthProviderFlowConfig> = {
   'chatgpt-pro': {
     providerType: 'chatgpt-pro',
-    displayName: 'ChatGPT Plus/Pro',
+    displayName: CHATGPT_PROVIDER_DISPLAY_NAME,
     startedEvent: CHATGPT_PRO_OAUTH_STARTED_EVENT,
     completedEvent: CHATGPT_PRO_OAUTH_COMPLETED_EVENT,
     disconnectedEvent: CHATGPT_PRO_OAUTH_DISCONNECTED_EVENT,
@@ -251,28 +251,11 @@ export const BrowserOsAiPane: FC = () => {
     setIsNewDialogOpen(true)
   }
 
-  // Coding-agent template cards (Claude Code / Codex) now open the
-  // provider dialog so the saved record participates in the regular
-  // /chat → streamText flow via the acpx-ai-provider runtime. The
-  // server-side provider factory branches on type and spawns the ACP
-  // agent; the LlmProviderConfig carries optional acpAgentId,
-  // acpCommand, and acpFixedWorkspacePath which the factory reads
-  // (with sensible defaults if any are absent).
   const handleUseCodingAgentTemplate = (adapterId: HarnessAgentAdapter) => {
-    if (adapterId === 'hermes') {
-      // Hermes still routes through the harness; leave the existing
-      // create flow in place.
-      coding.openCreate(adapterId)
-      return
-    }
     setTemplateValues({
       type: adapterId === 'codex' ? 'codex' : 'claude-code',
       name: adapterId === 'codex' ? 'Codex' : 'Claude Code',
       baseUrl: '',
-      // Leave modelId empty so the dialog defaults to the probe's
-      // first settable id. Hard-coded guesses (claude-sonnet-4-6,
-      // gpt-5.5, etc.) get rejected by the local adapter's
-      // session/set_config_option call.
       modelId: '',
       supportsImages: true,
       contextWindow: adapterId === 'codex' ? 400000 : 200000,
@@ -455,8 +438,6 @@ export const BrowserOsAiPane: FC = () => {
         onAddKeys={handleAddKeysToIncomplete}
         onDelete={handleDeleteIncompleteProvider}
       />
-
-      <CodingAgentsManager controller={coding} />
 
       <NewProviderDialog
         open={isNewDialogOpen}

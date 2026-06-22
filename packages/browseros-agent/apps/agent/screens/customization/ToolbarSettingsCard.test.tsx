@@ -25,13 +25,6 @@ const BROWSEROS_PREFS = {
 
 const Feature = {
   ALPHA_FEATURES_SUPPORT: 'ALPHA_FEATURES_SUPPORT',
-  OPENAI_COMPATIBLE_SUPPORT: 'OPENAI_COMPATIBLE_SUPPORT',
-  MANAGED_MCP_SUPPORT: 'MANAGED_MCP_SUPPORT',
-  PERSONALIZATION_SUPPORT: 'PERSONALIZATION_SUPPORT',
-  CUSTOMIZATION_SUPPORT: 'CUSTOMIZATION_SUPPORT',
-  WORKSPACE_FOLDER_SUPPORT: 'WORKSPACE_FOLDER_SUPPORT',
-  PROXY_SUPPORT: 'PROXY_SUPPORT',
-  PREVIOUS_CONVERSATION_ARRAY: 'PREVIOUS_CONVERSATION_ARRAY',
   NEWTAB_CHAT_SUPPORT: 'NEWTAB_CHAT_SUPPORT',
   VERTICAL_TABS_SUPPORT: 'VERTICAL_TABS_SUPPORT',
   CHATGPT_PRO_SUPPORT: 'CHATGPT_PRO_SUPPORT',
@@ -90,7 +83,13 @@ function resolveFeatureStaticSupport({
   alphaFeaturesEnabled: boolean
 }): boolean | null {
   if (feature === Feature.HERMES_AGENT_SUPPORT) {
-    return isDevelopment
+    const staticSupport = resolveStaticFeatureSupport({
+      isDevelopment,
+      alphaFeaturesEnabled,
+      requiresAlphaFlag: true,
+    })
+    if (staticSupport !== true) return staticSupport
+    return isDevelopment ? true : null
   }
   if (feature === Feature.ALPHA_FEATURES_SUPPORT) {
     return alphaFeaturesEnabled
@@ -106,7 +105,7 @@ function checkFeatureSupport(
     return compareVersionAtLeast(state.browserOSVersion, [0, 46, 0, 0])
   }
   if (feature === Feature.HERMES_AGENT_SUPPORT) {
-    return true
+    return compareVersionAtLeast(state.serverVersion, [0, 0, 116])
   }
   return false
 }

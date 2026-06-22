@@ -1,4 +1,5 @@
 import { getModelsDevProvider } from './models-dev'
+import { CHATGPT_PROVIDER_DISPLAY_NAME } from './provider-display-names'
 import type { ProviderType } from './types'
 
 /**
@@ -55,7 +56,7 @@ export const providerTemplates: ProviderTemplate[] = [
   },
   {
     id: 'chatgpt-pro',
-    name: 'ChatGPT Plus/Pro',
+    name: CHATGPT_PROVIDER_DISPLAY_NAME,
     defaultBaseUrl: 'https://chatgpt.com/backend-api',
     defaultModelId: 'gpt-5.5',
     supportsImages: true,
@@ -156,7 +157,7 @@ export const providerTemplates: ProviderTemplate[] = [
  */
 export const providerTypeOptions: { value: ProviderType; label: string }[] = [
   { value: 'remote-hermes', label: 'Remote Hermes' },
-  { value: 'chatgpt-pro', label: 'ChatGPT Plus/Pro' },
+  { value: 'chatgpt-pro', label: CHATGPT_PROVIDER_DISPLAY_NAME },
   { value: 'github-copilot', label: 'GitHub Copilot' },
   { value: 'qwen-code', label: 'Qwen Code' },
   { value: 'codex', label: 'Codex' },

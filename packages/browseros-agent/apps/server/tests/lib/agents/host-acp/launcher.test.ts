@@ -4,6 +4,7 @@
  */
 
 import { describe, expect, it } from 'bun:test'
+import { dirname } from 'node:path'
 import { HOST_ACP_ADAPTER_CONFIG } from '../../../../src/lib/agents/host-acp/config'
 import { resolveAcpSpawnCommand } from '../../../../src/lib/agents/host-acp/launcher'
 
@@ -67,25 +68,27 @@ describe('resolveAcpSpawnCommand', () => {
   it('returns the bundled-bun launcher for claude when the binary exists', () => {
     const out = resolveAcpSpawnCommand({
       agentType: 'claude',
+      env: { PATH: '/usr/bin' },
       resourcesDir: '/fake/resources',
       resolveBundledBun: stubBunPresent,
     })
     expect(out).not.toBeNull()
     expect(out?.source).toBe('bundled-bun')
     expect(out?.command).toBe(
-      `'${FAKE_BUN_PATH}' x ${HOST_ACP_ADAPTER_CONFIG.claude.acpPackageSpec}`,
+      `env PATH='${dirname(FAKE_BUN_PATH)}:/usr/bin' '${FAKE_BUN_PATH}' x --bun --silent --package '${HOST_ACP_ADAPTER_CONFIG.claude.acpPackageSpec}' '${HOST_ACP_ADAPTER_CONFIG.claude.acpBin}'`,
     )
   })
 
   it('returns the bundled-bun launcher for codex when the binary exists', () => {
     const out = resolveAcpSpawnCommand({
       agentType: 'codex',
+      env: { PATH: '/usr/bin' },
       resourcesDir: '/fake/resources',
       resolveBundledBun: stubBunPresent,
     })
     expect(out?.source).toBe('bundled-bun')
     expect(out?.command).toBe(
-      `'${FAKE_BUN_PATH}' x ${HOST_ACP_ADAPTER_CONFIG.codex.acpPackageSpec}`,
+      `env PATH='${dirname(FAKE_BUN_PATH)}:/usr/bin' '${FAKE_BUN_PATH}' x --bun --silent --package '${HOST_ACP_ADAPTER_CONFIG.codex.acpPackageSpec}' '${HOST_ACP_ADAPTER_CONFIG.codex.acpBin}'`,
     )
   })
 
@@ -102,15 +105,6 @@ describe('resolveAcpSpawnCommand', () => {
   it('returns null for acp-custom so the caller uses the user-supplied command', () => {
     const out = resolveAcpSpawnCommand({
       agentType: 'acp-custom',
-      resourcesDir: '/fake/resources',
-      resolveBundledBun: stubBunPresent,
-    })
-    expect(out).toBeNull()
-  })
-
-  it('returns null for hermes since it has no acp package spec', () => {
-    const out = resolveAcpSpawnCommand({
-      agentType: 'hermes',
       resourcesDir: '/fake/resources',
       resolveBundledBun: stubBunPresent,
     })
@@ -134,13 +128,19 @@ describe('resolveAcpSpawnCommand', () => {
       resourcesDir: '/Applications/BrowserOS.app/Contents/Resources',
       resolveBundledBun: () => bunWithSpaces,
     })
-    expect(out?.command).toBe(
-      `'${bunWithSpaces}' x ${HOST_ACP_ADAPTER_CONFIG.claude.acpPackageSpec}`,
-    )
-    expect(splitCommandLikeAcpx(out?.command ?? '')).toEqual({
-      command: bunWithSpaces,
-      args: ['x', HOST_ACP_ADAPTER_CONFIG.claude.acpPackageSpec],
-    })
+    const split = splitCommandLikeAcpx(out?.command ?? '')
+    const bunIndex = split.args.indexOf(bunWithSpaces)
+    expect(split.command).toBe('env')
+    expect(bunIndex).toBeGreaterThanOrEqual(0)
+    expect(split.args.slice(bunIndex)).toEqual([
+      bunWithSpaces,
+      'x',
+      '--bun',
+      '--silent',
+      '--package',
+      HOST_ACP_ADAPTER_CONFIG.claude.acpPackageSpec,
+      HOST_ACP_ADAPTER_CONFIG.claude.acpBin,
+    ])
   })
 
   it('preserves Windows bundled bun path separators through acpx command splitting', () => {
@@ -152,8 +152,7 @@ describe('resolveAcpSpawnCommand', () => {
     })
 
     expect(out?.source).toBe('bundled-bun')
-    expect(splitCommandLikeAcpx(out?.command ?? '').command).toBe(
-      WINDOWS_BUN_PATH,
-    )
+    const split = splitCommandLikeAcpx(out?.command ?? '')
+    expect(split.args).toContain(WINDOWS_BUN_PATH)
   })
 })

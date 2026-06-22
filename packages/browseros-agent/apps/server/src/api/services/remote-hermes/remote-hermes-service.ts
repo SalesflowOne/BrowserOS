@@ -21,16 +21,19 @@
  * translation lives anywhere on the path.
  */
 
+import type { BrowserContext } from '@browseros/shared/schemas/browser-context'
 import {
   createUIMessageStream,
   createUIMessageStreamResponse,
   type UIMessageStreamWriter,
 } from 'ai'
+import { formatUserMessage } from '../../../agent/format-message'
 import {
   COLD_START_BUDGET_MS,
   STATUS_POLL_INTERVAL_MS,
 } from '../../../lib/clients/remote-hermes/constants'
 import type {
+  PostTurnInput,
   RemoteHermesClient,
   VmStatusView,
 } from '../../../lib/clients/remote-hermes/remote-hermes-client'
@@ -48,6 +51,15 @@ export interface StreamTurnInput {
   conversationId: string
   message: string
   modelId?: string | null
+  /** Resolved by the route — pageIds already filled in via
+   *  resolveBrowserContextPageIds before the service is called. */
+  browserContext?: BrowserContext
+  selectedText?: string
+  selectedTextSource?: { url: string; title: string }
+  /** Active workspace directory from the chat request. Stamped on each
+   *  WS RPC dispatch so the laptop's /mcp route can scope filesystem
+   *  tools to it for remote-hermes callers. */
+  userWorkingDir?: string
 }
 
 export class RemoteHermesService {
@@ -105,6 +117,12 @@ export class RemoteHermesService {
    * to any other provider's stream.
    */
   streamTurn(input: StreamTurnInput, abortSignal: AbortSignal): Response {
+    // Stamp workingDir on the bridge before opening the turn so any
+    // tools/list / tools/call the worker dispatches during this turn
+    // carries the cwd header. Cleared when the user disconnects their
+    // workspace (input.userWorkingDir undefined) to avoid leaking a
+    // previous turn's scope.
+    this.bridge.setWorkingDir(input.userWorkingDir)
     const stream = createUIMessageStream({
       execute: async ({ writer }) => {
         await this.bridge.withTurn(async () => {
@@ -163,14 +181,36 @@ export class RemoteHermesService {
       if (!started) return null
     }
 
+    // Wrap the user message with the same browser-context block local
+    // chat injects, so the remote LLM has windowId/tab/pageId metadata
+    // and selected-text framing for tool routing.
+    const turnPayload = buildTurnPayload(input)
+
     // Phase 2: optimistic turn.
-    const first = await this.client.postTurn(input, signal)
+    const first = await this.client.postTurn(turnPayload, signal)
     if (first.ok) return readTaskId(first, writer)
 
-    // Phase 3: drift recovery. If the worker proxy returned 503/409
-    // even though /vm/status said running, the DO record drifted from
-    // Fly reality between status read and turn post. /vm/start
-    // reconciles in the DO and re-provisions if needed; one retry.
+    // Attach path: a 409 with `turn_in_progress` means the worker
+    // already has a live task for this thread (e.g. the side panel was
+    // refreshed mid-stream and resent the same turn). Don't restart,
+    // don't retry — subscribe to the existing task's SSE stream so the
+    // user picks up the answer in flight.
+    if (first.status === 409) {
+      const activeTaskId = await readActiveTaskId(first.clone())
+      if (activeTaskId) {
+        logger.info('Remote Hermes attaching to in-flight task', {
+          module: MODULE,
+          taskId: activeTaskId,
+        })
+        return activeTaskId
+      }
+    }
+
+    // Phase 3: drift recovery. If the worker proxy returned 503 (or a
+    // 409 that wasn't a turn_in_progress attach above), the DO record
+    // drifted from Fly reality between status read and turn post.
+    // /vm/start reconciles in the DO and re-provisions if needed; one
+    // retry.
     if (first.status === 503 || first.status === 409) {
       logger.warn(
         'Remote Hermes turn returned mid-stream cold response; forcing reconcile',
@@ -181,7 +221,7 @@ export class RemoteHermesService {
       )
       const recovered = await this.ensureStarted('cold', writer, signal)
       if (!recovered) return null
-      const retry = await this.client.postTurn(input, signal)
+      const retry = await this.client.postTurn(turnPayload, signal)
       if (retry.ok) return readTaskId(retry, writer)
       writeUpstreamError(writer, await retry.text(), retry.status)
       writeBootStatus(writer, 'error')
@@ -416,6 +456,52 @@ function extractDataLine(record: string): string | null {
   }
   if (dataLines.length === 0) return null
   return dataLines.join('\n')
+}
+
+function buildTurnPayload(input: StreamTurnInput): PostTurnInput {
+  // Only wrap when there's real context to embed. Without this guard
+  // every remote-hermes turn would gain `<USER_QUERY>` framing
+  // post-upgrade, changing the wire format for conversations that
+  // don't attach tabs or selected text.
+  const hasContext =
+    Boolean(input.browserContext?.activeTab) ||
+    Boolean(input.browserContext?.selectedTabs?.length) ||
+    Boolean(input.selectedText)
+  const message = hasContext
+    ? formatUserMessage(
+        input.message,
+        input.browserContext,
+        input.selectedText,
+        input.selectedTextSource,
+      )
+    : input.message
+  return {
+    conversationId: input.conversationId,
+    message,
+    modelId: input.modelId,
+  }
+}
+
+/** Parses a 409 turn-in-progress body. Returns the existing task id if
+ *  the worker's body matches `{ error: "turn_in_progress", activeTaskId }`
+ *  exactly; otherwise null so the caller can fall through to the
+ *  generic drift-recovery path. */
+async function readActiveTaskId(res: Response): Promise<string | null> {
+  try {
+    const body = (await res.json()) as {
+      error?: unknown
+      activeTaskId?: unknown
+    }
+    if (
+      body.error === 'turn_in_progress' &&
+      typeof body.activeTaskId === 'string'
+    ) {
+      return body.activeTaskId
+    }
+  } catch {
+    // not JSON; fall through
+  }
+  return null
 }
 
 async function readTaskId(
