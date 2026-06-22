@@ -35,13 +35,15 @@ if (typeof Bun === 'undefined') {
 
 import { Hono } from 'hono'
 import { env } from './env'
+import { bootstrapBrowserosBrowser } from './lib/browser-bootstrap'
+import { setBrowserSession } from './lib/browser-session'
 import { logger } from './lib/logger'
 import { migrateMcpUrls } from './lib/migrate-mcp-urls'
 import { setLocalServerUrl } from './local-server-url'
 import server from './server'
 import { COCKPIT_MOUNT_PREFIX } from './shared/port'
 
-function start(): void {
+async function start(): Promise<void> {
   const root = new Hono().route(COCKPIT_MOUNT_PREFIX, server)
   const httpServer = Bun.serve({
     hostname: '127.0.0.1',
@@ -51,6 +53,41 @@ function start(): void {
   const url = `http://${httpServer.hostname}:${httpServer.port}${COCKPIT_MOUNT_PREFIX}`
   setLocalServerUrl(url)
   logger.info('agent-mcp-interface listening', { url })
+
+  // Attach to the BrowserOS Chromium so MCP `tools/call` dispatches
+  // hit a real browser. The bootstrap soft-fails when BrowserOS is
+  // not reachable: the cockpit keeps serving the UI, profile CRUD,
+  // harness installs, and `tools/list`, and `tools/call` continues
+  // to short-circuit with the existing "session not connected"
+  // wire shape until the user restarts the cockpit with BrowserOS
+  // up. Reattach on transient drops is the CdpBackend's job (we
+  // pass `exitOnReconnectFailure: false` so it does not kill the
+  // process).
+  const bootstrap = await bootstrapBrowserosBrowser()
+  if (bootstrap) {
+    setBrowserSession(bootstrap.session)
+    logger.info('cockpit attached to browseros browser', {
+      cdpPort: env.cdpPort,
+    })
+    // `exiting` guards against double-cleanup when a supervisor sends
+    // SIGINT and SIGTERM back-to-back. `process.once` removes each
+    // handler independently, so without the flag a SIGTERM that
+    // arrives while the SIGINT cleanup is still in flight would
+    // restart `disconnect()` on an already-closing CDP connection.
+    // The kill switch guarantees forward progress: a hung
+    // `cdp.disconnect()` (half-open socket, network stall) would
+    // otherwise leave the process stuck because both handlers have
+    // already been removed and only SIGKILL could recover it.
+    let exiting = false
+    const cleanup = (): void => {
+      if (exiting) return
+      exiting = true
+      setTimeout(() => process.exit(1), 5_000).unref()
+      bootstrap.disconnect().finally(() => process.exit(0))
+    }
+    process.once('SIGINT', cleanup)
+    process.once('SIGTERM', cleanup)
+  }
 
   // Mirror what createCockpitRoutes does in the merged runtime: sweep
   // every stored profile and rewrite its harness install + mcpUrl to
@@ -74,4 +111,4 @@ function start(): void {
     )
 }
 
-start()
+void start()
