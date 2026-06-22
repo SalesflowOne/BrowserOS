@@ -6,7 +6,6 @@
  * BrowserOS Server - Entry Point
  */
 
-// Runtime check for Bun
 if (typeof Bun === 'undefined') {
   console.error('Error: This application requires Bun runtime.')
   console.error(
@@ -23,22 +22,6 @@ import { loadServerConfig } from './config'
 import { isPortInUseError } from './lib/port-binding'
 import { Sentry } from './lib/sentry'
 import { Application } from './main'
-import { VERSION } from './version'
-
-/** Handles app flags passed after Bun's compiled-runtime separator. */
-function isCompiledVersionRequest(argv: string[]): boolean {
-  return (
-    process.execArgv.includes('--no-addons') &&
-    argv.length === 4 &&
-    argv[2] === '--' &&
-    argv[3] === '--version'
-  )
-}
-
-if (isCompiledVersionRequest(process.argv)) {
-  console.log(VERSION)
-  process.exit(0)
-}
 
 const configResult = loadServerConfig()
 

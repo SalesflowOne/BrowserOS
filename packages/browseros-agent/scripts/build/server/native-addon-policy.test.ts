@@ -3,6 +3,8 @@ import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { SERVER_BUNDLE_ENTRYPOINT } from './compile'
+
 const nativeAddonGuardPath = join(
   process.cwd(),
   'apps/server/src/lib/native-addon-guard.ts',
@@ -16,6 +18,12 @@ describe('compiled server native addon policy', () => {
       await rm(tempDir, { recursive: true, force: true })
       tempDir = null
     }
+  })
+
+  it('bundles the compiled bootstrap entrypoint', () => {
+    expect(SERVER_BUNDLE_ENTRYPOINT).toBe(
+      'apps/server/src/compiled-bootstrap.ts',
+    )
   })
 
   it('installs the native-addon guard idempotently', async () => {

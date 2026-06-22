@@ -9,11 +9,10 @@ import type { BuildTarget, CompiledServerBinary } from './types'
 const DIST_PROD_ROOT = 'dist/prod/server'
 const TMP_ROOT = join(DIST_PROD_ROOT, '.tmp')
 const BUNDLE_DIR = join(TMP_ROOT, 'bundle')
-const BUNDLE_ENTRY = join(BUNDLE_DIR, 'index.js')
+const BUNDLE_ENTRY = join(BUNDLE_DIR, 'compiled-bootstrap.js')
 const BINARIES_DIR = join(TMP_ROOT, 'binaries')
 
-// Bun embeds native addons by extracting hidden temp `.node` files at runtime.
-export const COMPILED_SERVER_EXEC_ARGV = ['--no-addons']
+export const SERVER_BUNDLE_ENTRYPOINT = 'apps/server/src/compiled-bootstrap.ts'
 
 function compiledBinaryPath(target: BuildTarget): string {
   return join(
@@ -30,7 +29,7 @@ async function bundleServer(
   mkdirSync(BUNDLE_DIR, { recursive: true })
 
   const result = await Bun.build({
-    entrypoints: ['apps/server/src/index.ts'],
+    entrypoints: [SERVER_BUNDLE_ENTRYPOINT],
     outdir: BUNDLE_DIR,
     target: 'bun',
     minify: true,
@@ -66,7 +65,6 @@ async function compileTarget(
     '--outfile',
     binaryPath,
     `--target=${target.bunTarget}`,
-    `--compile-exec-argv=${COMPILED_SERVER_EXEC_ARGV.join(' ')}`,
     '--external=node-pty',
   ]
   await runCommand('bun', args, env)
