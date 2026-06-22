@@ -7,6 +7,7 @@ import type {
 interface McpServerCreation {
   executionDir: string | undefined
   isRemoteAgentHarness: boolean | undefined
+  outputFileAccess: unknown
   proxyStatus: KlavisProxyStatus | null
   selectedServerNames: readonly string[] | undefined
 }
@@ -29,10 +30,12 @@ const createMcpServerSpy = mock(
     connectorScope?: ConnectorToolScope
     executionDir?: string
     isRemoteAgentHarness?: boolean
+    outputFileAccess?: unknown
   }) => {
     serverCreations.push({
       executionDir: deps.executionDir,
       isRemoteAgentHarness: deps.isRemoteAgentHarness,
+      outputFileAccess: deps.outputFileAccess,
       proxyStatus: deps.klavis?.getProxyStatus() ?? null,
       selectedServerNames: deps.connectorScope?.selectedServerNames,
     })
@@ -126,12 +129,14 @@ describe('createMcpRoutes', () => {
       {
         executionDir: '/tmp/browseros-execution',
         isRemoteAgentHarness: false,
+        outputFileAccess: undefined,
         proxyStatus: { state: 'connecting' },
         selectedServerNames: [],
       },
       {
         executionDir: '/tmp/browseros-execution',
         isRemoteAgentHarness: false,
+        outputFileAccess: undefined,
         proxyStatus: { state: 'ready', toolCount: 3 },
         selectedServerNames: ['Slack', 'Google Docs'],
       },
@@ -160,15 +165,96 @@ describe('createMcpRoutes', () => {
       {
         executionDir: '/tmp/browseros-execution',
         isRemoteAgentHarness: false,
+        outputFileAccess: undefined,
         proxyStatus: null,
         selectedServerNames: [],
       },
       {
         executionDir: '/tmp/browseros-execution',
         isRemoteAgentHarness: true,
+        outputFileAccess: expect.any(Object),
         proxyStatus: null,
         selectedServerNames: [],
       },
     ])
+  })
+
+  it('keeps remote agent harness output-file access stable by scope', async () => {
+    const app = createMcpRoutes({
+      version: '0.0.0-test',
+      browserSession: {} as never,
+      executionDir: '/tmp/browseros-execution',
+    })
+
+    await postMcp(
+      app,
+      { 'X-BrowserOS-Scope-Id': 'scope-a' },
+      '/?source=remote-hermes',
+    )
+    await postMcp(
+      app,
+      { 'X-BrowserOS-Scope-Id': 'scope-a' },
+      '/?source=remote-hermes',
+    )
+    await postMcp(
+      app,
+      { 'X-BrowserOS-Scope-Id': 'scope-b' },
+      '/?source=remote-hermes',
+    )
+
+    expect(serverCreations[0].outputFileAccess).toBe(
+      serverCreations[1].outputFileAccess,
+    )
+    expect(serverCreations[2].outputFileAccess).not.toBe(
+      serverCreations[0].outputFileAccess,
+    )
+  })
+
+  it('does not share remote agent harness output-file access without a scope', async () => {
+    const app = createMcpRoutes({
+      version: '0.0.0-test',
+      browserSession: {} as never,
+      executionDir: '/tmp/browseros-execution',
+    })
+
+    await postMcp(app, {}, '/?source=remote-hermes')
+    await postMcp(app, {}, '/?source=remote-hermes')
+
+    expect(serverCreations[0].outputFileAccess).toEqual(expect.any(Object))
+    expect(serverCreations[1].outputFileAccess).toEqual(expect.any(Object))
+    expect(serverCreations[0].outputFileAccess).not.toBe(
+      serverCreations[1].outputFileAccess,
+    )
+  })
+
+  it('does not silently evict scoped remote agent harness output-file access', async () => {
+    const app = createMcpRoutes({
+      version: '0.0.0-test',
+      browserSession: {} as never,
+      executionDir: '/tmp/browseros-execution',
+    })
+
+    await postMcp(
+      app,
+      { 'X-BrowserOS-Scope-Id': 'scope-0' },
+      '/?source=remote-hermes',
+    )
+    const firstScopeAccess = serverCreations[0].outputFileAccess
+
+    for (let i = 1; i <= 80; i++) {
+      await postMcp(
+        app,
+        { 'X-BrowserOS-Scope-Id': `scope-${i}` },
+        '/?source=remote-hermes',
+      )
+    }
+
+    await postMcp(
+      app,
+      { 'X-BrowserOS-Scope-Id': 'scope-0' },
+      '/?source=remote-hermes',
+    )
+
+    expect(serverCreations.at(-1)?.outputFileAccess).toBe(firstScopeAccess)
   })
 })

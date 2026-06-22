@@ -7,6 +7,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { SetLevelRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import type { BrowserSession } from '../../../browser/core/session'
+import type { BrowserOutputFileAccess } from '../../../tools/browser/output-file'
 import type { ConnectorToolScope, KlavisService } from '../klavis'
 import { MCP_INSTRUCTIONS } from './mcp-prompt'
 import { registerTools } from './register-mcp'
@@ -20,6 +21,7 @@ export interface McpServiceDeps {
   defaultTabGroupId?: string
   executionDir: string
   isRemoteAgentHarness: boolean
+  outputFileAccess?: BrowserOutputFileAccess
 }
 
 /** Creates a per-request BrowserOS MCP server with tools for the requested surface. */
@@ -43,6 +45,7 @@ export function createMcpServer(deps: McpServiceDeps): McpServer {
     defaultTabGroupId: deps.defaultTabGroupId,
     executionDir: deps.executionDir,
     isRemoteAgentHarness: deps.isRemoteAgentHarness,
+    outputFileAccess: deps.outputFileAccess,
   })
 
   deps.klavis?.registerMcpTools(server, deps.connectorScope)

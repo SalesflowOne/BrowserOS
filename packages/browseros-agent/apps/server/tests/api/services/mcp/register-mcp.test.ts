@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { TOOL_LIMITS } from '@browseros/shared/constants/limits'
 import { registerTools } from '../../../../src/api/services/mcp/register-mcp'
 import type { BrowserSession } from '../../../../src/browser/core/session'
 import { logger } from '../../../../src/lib/logger'
+import { createBrowserOutputFileAccess } from '../../../../src/tools/browser/output-file'
 import { BROWSER_TOOLS } from '../../../../src/tools/browser/registry'
 import { resetToolRegistrationLogSamplingForTests } from '../../../../src/tools/registration-log-sampling'
 
@@ -37,8 +42,41 @@ function createFakeServer() {
   }
 }
 
+function textOf(result: Awaited<ReturnType<RegisteredHandler>> | undefined) {
+  if (!Array.isArray(result?.content)) return ''
+  return result.content
+    .filter(
+      (item): item is { type: 'text'; text: string } =>
+        typeof item === 'object' &&
+        item !== null &&
+        'type' in item &&
+        item.type === 'text' &&
+        'text' in item &&
+        typeof item.text === 'string',
+    )
+    .map((item) => item.text)
+    .join('\n')
+}
+
+async function withBrowserosDir<T>(run: () => Promise<T>): Promise<T> {
+  const previous = process.env.BROWSEROS_DIR
+  const browserosDir = await mkdtemp(join(tmpdir(), 'mcp-output-test-'))
+  process.env.BROWSEROS_DIR = browserosDir
+  try {
+    return await run()
+  } finally {
+    if (previous === undefined) {
+      delete process.env.BROWSEROS_DIR
+    } else {
+      process.env.BROWSEROS_DIR = previous
+    }
+    await rm(browserosDir, { recursive: true, force: true })
+  }
+}
+
 describe('registerTools', () => {
   const originalInfo = logger.info
+  const originalError = logger.error
   const filesystemToolNames = [
     'filesystem_read',
     'filesystem_write',
@@ -56,10 +94,12 @@ describe('registerTools', () => {
     logger.info = ((message: string) => {
       infoMessages.push(message)
     }) as typeof logger.info
+    logger.error = (() => {}) as typeof logger.error
   })
 
   afterEach(() => {
     logger.info = originalInfo
+    logger.error = originalError
     resetToolRegistrationLogSamplingForTests()
   })
 
@@ -89,6 +129,74 @@ describe('registerTools', () => {
       ...BROWSER_TOOLS.map((t) => t.name),
       ...filesystemToolNames,
     ])
+  })
+
+  it('lets remote agent harness read browser-generated output files across MCP registrations', async () => {
+    await withBrowserosDir(async () => {
+      const outputFileAccess = createBrowserOutputFileAccess()
+      const largeText = 'remote harness generated output\n'.repeat(
+        Math.ceil(TOOL_LIMITS.INLINE_PAGE_CONTENT_MAX_CHARS / 32) + 1,
+      )
+      const browserSession = {
+        pages: {
+          getSession: async () => ({
+            session: {
+              Runtime: {
+                evaluate: async () => ({ result: { value: largeText } }),
+              },
+            },
+          }),
+          getInfo: () => ({ url: 'https://example.com' }),
+        },
+      } as unknown as BrowserSession
+
+      const browserRequest = createFakeServer()
+      registerTools(browserRequest.server as never, {
+        browserSession,
+        executionDir: '/tmp/browseros-execution',
+        isRemoteAgentHarness: true,
+        outputFileAccess,
+      })
+
+      const browserResult = await browserRequest.handlers.get('read')?.({
+        page: 1,
+        format: 'text',
+      })
+      const savedPath = textOf(browserResult).match(/saved to: (.+\.txt)/)?.[1]
+
+      expect(savedPath).toBeTruthy()
+      expect(outputFileAccess.paths.has(savedPath ?? '')).toBe(true)
+
+      const filesystemRequest = createFakeServer()
+      registerTools(filesystemRequest.server as never, {
+        browserSession: { pages: {} } as unknown as BrowserSession,
+        executionDir: '/tmp/browseros-execution',
+        isRemoteAgentHarness: true,
+        outputFileAccess,
+      })
+
+      const readResult = await filesystemRequest.handlers.get(
+        'filesystem_read',
+      )?.({ path: savedPath })
+
+      expect(readResult?.isError).toBeFalsy()
+      expect(textOf(readResult)).toContain('remote harness generated output')
+
+      const otherScope = createFakeServer()
+      registerTools(otherScope.server as never, {
+        browserSession: { pages: {} } as unknown as BrowserSession,
+        executionDir: '/tmp/browseros-execution',
+        isRemoteAgentHarness: true,
+        outputFileAccess: createBrowserOutputFileAccess(),
+      })
+
+      const denied = await otherScope.handlers.get('filesystem_read')?.({
+        path: savedPath,
+      })
+
+      expect(denied?.isError).toBe(true)
+      expect(textOf(denied)).toContain('returned in this session')
+    })
   })
 
   it('samples repeated registration info logs without skipping tool registration', () => {
