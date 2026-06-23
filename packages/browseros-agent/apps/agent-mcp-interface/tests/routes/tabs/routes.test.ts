@@ -23,8 +23,12 @@ function client() {
 
 afterEach(() => {
   // Clear the singleton registry between cases so test ordering does
-  // not leak state. We snapshot then drop everything: there is no
-  // public clear() so we evict by detaching the session.
+  // not leak state. Setting the session to null short-circuits
+  // `snapshot()` but does NOT empty the underlying records Map; only
+  // the explicit `clear()` does that. Skipping it would leave a stale
+  // record visible to a later test that re-attaches a session whose
+  // stub resolves the same pageId.
+  tabActivityRegistry.clear()
   setBrowserSession(null)
 })
 

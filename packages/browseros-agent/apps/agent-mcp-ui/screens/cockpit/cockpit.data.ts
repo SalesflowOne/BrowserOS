@@ -39,6 +39,6 @@ export function useCockpitData(): CockpitData {
     activity: tabsToActivityRows(records, now),
     approvals: approvals.data ?? [],
     handoffs: handoffs.data ?? [],
-    isPending: tabs.isPending,
+    isPending: tabs.isPending || approvals.isPending || handoffs.isPending,
   }
 }

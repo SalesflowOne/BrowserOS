@@ -56,9 +56,12 @@ export interface TabActivityRegistry {
     toolName: string
   }): void
   snapshot(): TabActivityRecord[]
-  // Test-only escape hatch; lets unit tests assert eviction without
-  // mocking BrowserSession internals.
+  // Test-only escape hatches; let unit tests assert eviction and
+  // restore isolation without mocking BrowserSession internals. The
+  // singleton lives across the whole test run, so explicit clearing
+  // is the only safe way to keep `afterEach` honest.
   size(): number
+  clear(): void
 }
 
 export function createTabActivityRegistry(
@@ -109,6 +112,9 @@ export function createTabActivityRegistry(
     },
     size() {
       return records.size
+    },
+    clear() {
+      records.clear()
     },
   }
 }

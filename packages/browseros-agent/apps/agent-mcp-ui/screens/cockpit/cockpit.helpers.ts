@@ -55,6 +55,9 @@ export function tabsToAgentRows(records: TabActivityRecord[]): AgentRow[] {
     .map((r) => ({
       id: r.targetId,
       label: r.slug,
+      // TODO(pr-3 homepage): join the agent profile and surface the
+      // real harness; today every row reads "Claude Code" because the
+      // TabActivityRecord does not carry it.
       harness: 'Claude Code',
       site: siteOf(r.url),
       task: r.title || siteOf(r.url),
