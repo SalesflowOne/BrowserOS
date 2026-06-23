@@ -1,4 +1,9 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
+import {
+  createMcpRoutes,
+  MANAGED_MCP_SERVERS_HEADER,
+  parseManagedMcpServersHeader,
+} from '../../../src/api/routes/mcp'
 import type {
   ConnectorToolScope,
   KlavisProxyStatus,
@@ -23,6 +28,10 @@ class FakeTransport {
   handleRequest = mock(async () => Response.json({ ok: true }))
 }
 
+const createMcpTransportSpy = mock((options: unknown) => {
+  return new FakeTransport(options)
+})
+
 const createMcpServerSpy = mock(
   (deps: {
     klavis?: { getProxyStatus(): KlavisProxyStatus }
@@ -45,25 +54,26 @@ const createMcpServerSpy = mock(
   },
 )
 
-mock.module('@hono/mcp', () => ({
-  StreamableHTTPTransport: FakeTransport,
-}))
-
-mock.module('../../../src/api/services/mcp/mcp-server', () => ({
-  createMcpServer: createMcpServerSpy,
-}))
-
-const {
-  MANAGED_MCP_SERVERS_HEADER,
-  createMcpRoutes,
-  parseManagedMcpServersHeader,
-} = await import('../../../src/api/routes/mcp')
-
 beforeEach(() => {
   serverCreations.length = 0
   transportInstances.length = 0
   connectCalls.length = 0
+  createMcpServerSpy.mockClear()
+  createMcpTransportSpy.mockClear()
 })
+
+function createTestMcpRoutes(
+  overrides: Partial<Parameters<typeof createMcpRoutes>[0]> = {},
+) {
+  return createMcpRoutes({
+    version: '0.0.0-test',
+    browserSession: {} as never,
+    executionDir: '/tmp/browseros-execution',
+    createMcpServer: createMcpServerSpy as never,
+    createMcpTransport: createMcpTransportSpy as never,
+    ...overrides,
+  })
+}
 
 async function postMcp(
   app: ReturnType<typeof createMcpRoutes>,
@@ -106,11 +116,8 @@ describe('createMcpRoutes', () => {
     const klavis = {
       getProxyStatus: () => status,
     }
-    const app = createMcpRoutes({
-      version: '0.0.0-test',
-      browserSession: {} as never,
+    const app = createTestMcpRoutes({
       klavis: klavis as never,
-      executionDir: '/tmp/browseros-execution',
     })
 
     const first = await postMcp(app)
@@ -141,11 +148,7 @@ describe('createMcpRoutes', () => {
   })
 
   it('sets the remote agent harness context only for the remote harness source', async () => {
-    const app = createMcpRoutes({
-      version: '0.0.0-test',
-      browserSession: {} as never,
-      executionDir: '/tmp/browseros-execution',
-    })
+    const app = createTestMcpRoutes()
 
     const defaultResponse = await postMcp(app)
     const remoteHarnessResponse = await postMcp(
@@ -173,11 +176,7 @@ describe('createMcpRoutes', () => {
   })
 
   it('keeps remote agent harness context stable by source', async () => {
-    const app = createMcpRoutes({
-      version: '0.0.0-test',
-      browserSession: {} as never,
-      executionDir: '/tmp/browseros-execution',
-    })
+    const app = createTestMcpRoutes()
 
     await postMcp(app, {}, '/?source=remote-agent-harness')
     await postMcp(app, {}, '/?source=remote-agent-harness')

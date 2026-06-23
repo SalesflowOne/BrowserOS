@@ -10,10 +10,8 @@
  * the wizard / directory pages render flows through these helpers,
  * so the future cutover is confined to this file.
  *
- * TODO(temporary cockpit mount): while `apps/agent-mcp-interface`
- * lives as a sub-route under `apps/server` (mounted at
- * `/cockpit` so it can borrow the server's live BrowserSession and
- * CDP attach), this builder targets the mounted `/cockpit/mcp/<slug>`
+ * While `apps/agent-mcp-interface` lives as a sub-route under
+ * `apps/server`, this builder targets the mounted `/cockpit/mcp/<slug>`
  * shape. It defaults to the production port but honors dev-launcher
  * overrides when `dev:agent-mcp:watch:new` selects a random port.
  */
@@ -24,6 +22,7 @@ import {
 } from '@browseros/agent-mcp-interface/shared/port'
 import {
   API_URL_STORAGE_KEY,
+  isLoopbackCockpitUrl,
   resolveApiBaseUrlFromSources,
 } from './client.helpers'
 
@@ -37,16 +36,25 @@ function resolveMcpBaseUrl(): string {
   if (typeof window === 'undefined') return fallback
 
   const query = new URLSearchParams(window.location.search).get('apiUrl')
+  if (isLoopbackCockpitUrl(query)) {
+    try {
+      window.sessionStorage.setItem(API_URL_STORAGE_KEY, query)
+    } catch {
+      // sessionStorage may reject writes in sandboxed contexts; this call can still use the query URL.
+    }
+    return query
+  }
+
   try {
     return resolveApiBaseUrlFromSources({
-      query,
+      query: null,
       stored: window.sessionStorage.getItem(API_URL_STORAGE_KEY),
       launcher: import.meta.env.VITE_BROWSEROS_AGENT_MCP_API_URL,
       fallback,
     })
   } catch {
     return resolveApiBaseUrlFromSources({
-      query,
+      query: null,
       stored: null,
       launcher: import.meta.env.VITE_BROWSEROS_AGENT_MCP_API_URL,
       fallback,

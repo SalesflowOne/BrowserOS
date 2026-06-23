@@ -66,7 +66,8 @@ func runWatch(cmd *cobra.Command, args []string) error {
 	var runLock *proc.WatchRunLock
 	acquireRunLock := func(ports proc.Ports) error {
 		lock, stopped, err := proc.AcquireWatchRunLock(proc.WatchRunIdentity{
-			Mode:    watchLockMode(),
+			// All watch variants share one identity so they cannot supervise the same profile and ports concurrently.
+			Mode:    watchRunLockMode,
 			Profile: userDataDir,
 			Ports:   ports,
 		}, 3*time.Second)
@@ -205,11 +206,6 @@ func watchMode() (string, error) {
 	return "BrowserOS", nil
 }
 
-// watchLockMode keeps watch variants mutually exclusive for the same profile and ports.
-func watchLockMode() string {
-	return watchRunLockMode
-}
-
 // buildBrowserOSForAgentsWatchEnv bridges shared dev ports into the standalone MCP apps.
 func buildBrowserOSForAgentsWatchEnv(env []string, p proc.Ports) []string {
 	apiURL := fmt.Sprintf("http://127.0.0.1:%d/cockpit", p.Server)
@@ -283,7 +279,7 @@ func startBrowserOSForAgentsWatch(ctx context.Context, wg *sync.WaitGroup, root 
 		Dir:     filepath.Join(root, "apps/agent-mcp-ui"),
 		Env:     env,
 		Restart: true,
-		Cmd:     []string{"bun", "wxt"},
+		Cmd:     []string{"bun", "--env-file=.env.development", "wxt"},
 	}))
 
 	waitForCDP(ctx, p.CDP)
@@ -295,7 +291,7 @@ func startBrowserOSForAgentsWatch(ctx context.Context, wg *sync.WaitGroup, root 
 		Dir:     filepath.Join(root, "apps/agent-mcp-interface"),
 		Env:     env,
 		Restart: true,
-		Cmd:     []string{"bun", "--watch", "src/main.ts"},
+		Cmd:     []string{"bun", "--watch", "--env-file=.env.development", "src/main.ts"},
 		BeforeStart: func() error {
 			return proc.KillPortAndWait(p.Server, 3*time.Second)
 		},

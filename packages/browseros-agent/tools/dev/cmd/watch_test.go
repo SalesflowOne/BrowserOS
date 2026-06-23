@@ -27,29 +27,9 @@ func TestWatchModeRejectsManualBrowserOSForAgentsCombination(t *testing.T) {
 	}
 }
 
-func TestWatchLockModeIsSharedAcrossWatchVariants(t *testing.T) {
-	for _, tc := range []struct {
-		name      string
-		manual    bool
-		forAgents bool
-	}{
-		{name: "BrowserOS"},
-		{name: "manual", manual: true},
-		{name: "BrowserOSForAgents", forAgents: true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			oldManual, oldBrowserOSForAgents := watchManual, watchBrowserOSForAgents
-			watchManual = tc.manual
-			watchBrowserOSForAgents = tc.forAgents
-			t.Cleanup(func() {
-				watchManual = oldManual
-				watchBrowserOSForAgents = oldBrowserOSForAgents
-			})
-
-			if got := watchLockMode(); got != "watch" {
-				t.Fatalf("expected shared watch lock mode, got %q", got)
-			}
-		})
+func TestWatchRunLockModeIsSharedAcrossWatchVariants(t *testing.T) {
+	if watchRunLockMode != "watch" {
+		t.Fatalf("expected shared watch lock mode, got %q", watchRunLockMode)
 	}
 }
 

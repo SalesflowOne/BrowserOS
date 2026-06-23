@@ -57,14 +57,14 @@ function resolveApiBaseUrl(): string {
   try {
     const stored = window.sessionStorage.getItem(API_URL_STORAGE_KEY)
     return resolveApiBaseUrlFromSources({
-      query: fromQuery,
+      query: null,
       stored,
       launcher: import.meta.env.VITE_BROWSEROS_AGENT_MCP_API_URL,
       fallback,
     })
   } catch {
     return resolveApiBaseUrlFromSources({
-      query: fromQuery,
+      query: null,
       stored: null,
       launcher: import.meta.env.VITE_BROWSEROS_AGENT_MCP_API_URL,
       fallback,

@@ -7,6 +7,7 @@ export type ApiBaseUrlSources = {
 
 export const API_URL_STORAGE_KEY = 'browseros.agent-mcp-ui.apiUrl'
 
+/** Accepts numeric loopback only; `localhost` can go through DNS. */
 export function isLoopbackCockpitUrl(
   value: string | null | undefined,
 ): value is string {
