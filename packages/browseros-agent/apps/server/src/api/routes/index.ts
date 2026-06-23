@@ -50,8 +50,15 @@ export function createApiRoutes(deps: CreateApiRoutesDeps) {
     remoteHermes,
     tokenManager,
   } = deps
-  const { browser, browserosId, browserSession, port, resourcesDir, version } =
-    config
+  const {
+    browser,
+    browserosId,
+    browserSession,
+    executionDir,
+    port,
+    resourcesDir,
+    version,
+  } = config
 
   return new Hono<Env>()
     .use('/*', cors(defaultCorsConfig))
@@ -80,6 +87,7 @@ export function createApiRoutes(deps: CreateApiRoutesDeps) {
         version,
         browserSession,
         klavis,
+        executionDir,
       }),
     )
     .route(
