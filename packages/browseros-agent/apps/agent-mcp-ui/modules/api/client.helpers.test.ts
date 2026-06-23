@@ -47,4 +47,26 @@ describe('resolveApiBaseUrlFromSources', () => {
       }),
     ).toBe(fallback)
   })
+
+  it('rejects loopback-looking URLs that parse to another host', () => {
+    expect(
+      resolveApiBaseUrlFromSources({
+        query: 'http://127.0.0.1:@example.com/cockpit',
+        stored: null,
+        launcher: null,
+        fallback,
+      }),
+    ).toBe(fallback)
+  })
+
+  it('rejects malformed ports and non-cockpit paths', () => {
+    expect(
+      resolveApiBaseUrlFromSources({
+        query: 'http://127.0.0.1:99999/cockpit',
+        stored: 'http://127.0.0.1:9300',
+        launcher: 'http://127.0.0.1:9400/cockpit?x=1',
+        fallback,
+      }),
+    ).toBe(fallback)
+  })
 })

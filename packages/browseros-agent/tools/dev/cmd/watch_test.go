@@ -27,6 +27,32 @@ func TestWatchModeRejectsManualAgentMCPCombination(t *testing.T) {
 	}
 }
 
+func TestWatchLockModeIsSharedAcrossWatchVariants(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		manual   bool
+		agentMCP bool
+	}{
+		{name: "legacy"},
+		{name: "manual", manual: true},
+		{name: "agent mcp", agentMCP: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			oldManual, oldAgentMCP := watchManual, watchAgentMCP
+			watchManual = tc.manual
+			watchAgentMCP = tc.agentMCP
+			t.Cleanup(func() {
+				watchManual = oldManual
+				watchAgentMCP = oldAgentMCP
+			})
+
+			if got := watchLockMode(); got != "watch" {
+				t.Fatalf("expected shared watch lock mode, got %q", got)
+			}
+		})
+	}
+}
+
 func TestBuildAgentMCPWatchEnvIncludesSelectedPorts(t *testing.T) {
 	env := buildAgentMCPWatchEnv([]string{"BASE=1"}, proc.Ports{
 		CDP:       9012,

@@ -30,7 +30,7 @@ import {
 import { hc } from 'hono/client'
 import {
   API_URL_STORAGE_KEY,
-  isLoopbackUrl,
+  isLoopbackCockpitUrl,
   resolveApiBaseUrlFromSources,
 } from './client.helpers'
 
@@ -44,7 +44,7 @@ function resolveApiBaseUrl(): string {
   if (typeof window === 'undefined') return fallback
 
   const fromQuery = new URLSearchParams(window.location.search).get('apiUrl')
-  if (isLoopbackUrl(fromQuery)) {
+  if (isLoopbackCockpitUrl(fromQuery)) {
     try {
       window.sessionStorage.setItem(API_URL_STORAGE_KEY, fromQuery)
     } catch {

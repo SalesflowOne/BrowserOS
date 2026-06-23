@@ -7,18 +7,31 @@ export type ApiBaseUrlSources = {
 
 export const API_URL_STORAGE_KEY = 'browseros.agent-mcp-ui.apiUrl'
 
-export function isLoopbackUrl(
+export function isLoopbackCockpitUrl(
   value: string | null | undefined,
 ): value is string {
-  return !!value && value.startsWith('http://127.0.0.1:')
+  if (!value) return false
+  try {
+    const url = new URL(value)
+    return (
+      url.protocol === 'http:' &&
+      url.hostname === '127.0.0.1' &&
+      url.port !== '' &&
+      url.pathname === '/cockpit' &&
+      url.search === '' &&
+      url.hash === ''
+    )
+  } catch {
+    return false
+  }
 }
 
 /** Resolves the cockpit API URL from trusted local dev sources. */
 export function resolveApiBaseUrlFromSources(
   sources: ApiBaseUrlSources,
 ): string {
-  if (isLoopbackUrl(sources.query)) return sources.query
-  if (isLoopbackUrl(sources.stored)) return sources.stored
-  if (isLoopbackUrl(sources.launcher)) return sources.launcher
+  if (isLoopbackCockpitUrl(sources.query)) return sources.query
+  if (isLoopbackCockpitUrl(sources.stored)) return sources.stored
+  if (isLoopbackCockpitUrl(sources.launcher)) return sources.launcher
   return sources.fallback
 }

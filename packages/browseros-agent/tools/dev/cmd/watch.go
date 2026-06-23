@@ -30,6 +30,8 @@ var (
 	watchAgentMCP bool
 )
 
+const watchRunLockMode = "watch"
+
 func init() {
 	watchCmd.Flags().BoolVar(&watchNew, "new", false, "Use random available ports in 9000-9999 and create a fresh user-data directory")
 	watchCmd.Flags().BoolVar(&watchManual, "manual", false, "Build agent statically instead of WXT HMR mode")
@@ -64,7 +66,7 @@ func runWatch(cmd *cobra.Command, args []string) error {
 	var runLock *proc.WatchRunLock
 	acquireRunLock := func(ports proc.Ports) error {
 		lock, stopped, err := proc.AcquireWatchRunLock(proc.WatchRunIdentity{
-			Mode:    mode,
+			Mode:    watchLockMode(),
 			Profile: userDataDir,
 			Ports:   ports,
 		}, 3*time.Second)
@@ -189,7 +191,7 @@ func runWatch(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// watchMode resolves the process identity used by logs and run locks.
+// watchMode resolves the user-facing mode label for logs.
 func watchMode() (string, error) {
 	if watchManual && watchAgentMCP {
 		return "", fmt.Errorf("--manual cannot be combined with --agent-mcp")
@@ -201,6 +203,11 @@ func watchMode() (string, error) {
 		return "manual", nil
 	}
 	return "watch", nil
+}
+
+// watchLockMode keeps watch variants mutually exclusive for the same profile and ports.
+func watchLockMode() string {
+	return watchRunLockMode
 }
 
 // buildAgentMCPWatchEnv bridges the shared dev ports into the standalone MCP apps.
