@@ -9,13 +9,13 @@ import (
 	"browseros-dev/proc"
 )
 
-func TestWatchModeRejectsManualAgentMCPCombination(t *testing.T) {
-	oldManual, oldAgentMCP := watchManual, watchAgentMCP
+func TestWatchModeRejectsManualBrowserOSForAgentsCombination(t *testing.T) {
+	oldManual, oldBrowserOSForAgents := watchManual, watchBrowserOSForAgents
 	watchManual = true
-	watchAgentMCP = true
+	watchBrowserOSForAgents = true
 	t.Cleanup(func() {
 		watchManual = oldManual
-		watchAgentMCP = oldAgentMCP
+		watchBrowserOSForAgents = oldBrowserOSForAgents
 	})
 
 	_, err := watchMode()
@@ -29,21 +29,21 @@ func TestWatchModeRejectsManualAgentMCPCombination(t *testing.T) {
 
 func TestWatchLockModeIsSharedAcrossWatchVariants(t *testing.T) {
 	for _, tc := range []struct {
-		name     string
-		manual   bool
-		agentMCP bool
+		name      string
+		manual    bool
+		forAgents bool
 	}{
-		{name: "legacy"},
+		{name: "BrowserOS"},
 		{name: "manual", manual: true},
-		{name: "agent mcp", agentMCP: true},
+		{name: "BrowserOSForAgents", forAgents: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			oldManual, oldAgentMCP := watchManual, watchAgentMCP
+			oldManual, oldBrowserOSForAgents := watchManual, watchBrowserOSForAgents
 			watchManual = tc.manual
-			watchAgentMCP = tc.agentMCP
+			watchBrowserOSForAgents = tc.forAgents
 			t.Cleanup(func() {
 				watchManual = oldManual
-				watchAgentMCP = oldAgentMCP
+				watchBrowserOSForAgents = oldBrowserOSForAgents
 			})
 
 			if got := watchLockMode(); got != "watch" {
@@ -53,8 +53,8 @@ func TestWatchLockModeIsSharedAcrossWatchVariants(t *testing.T) {
 	}
 }
 
-func TestBuildAgentMCPWatchEnvIncludesSelectedPorts(t *testing.T) {
-	env := buildAgentMCPWatchEnv([]string{"BASE=1"}, proc.Ports{
+func TestBuildBrowserOSForAgentsWatchEnvIncludesSelectedPorts(t *testing.T) {
+	env := buildBrowserOSForAgentsWatchEnv([]string{"BASE=1"}, proc.Ports{
 		CDP:       9012,
 		Server:    9123,
 		Extension: 9321,

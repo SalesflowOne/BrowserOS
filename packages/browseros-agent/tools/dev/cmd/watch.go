@@ -25,9 +25,9 @@ var watchCmd = &cobra.Command{
 }
 
 var (
-	watchNew      bool
-	watchManual   bool
-	watchAgentMCP bool
+	watchNew                bool
+	watchManual             bool
+	watchBrowserOSForAgents bool
 )
 
 const watchRunLockMode = "watch"
@@ -35,7 +35,7 @@ const watchRunLockMode = "watch"
 func init() {
 	watchCmd.Flags().BoolVar(&watchNew, "new", false, "Use random available ports in 9000-9999 and create a fresh user-data directory")
 	watchCmd.Flags().BoolVar(&watchManual, "manual", false, "Build agent statically instead of WXT HMR mode")
-	watchCmd.Flags().BoolVar(&watchAgentMCP, "agent-mcp", false, "Run the agent MCP UI and standalone interface")
+	watchCmd.Flags().BoolVar(&watchBrowserOSForAgents, "agent-mcp", false, "Run the agent MCP UI and standalone interface")
 	rootCmd.AddCommand(watchCmd)
 }
 
@@ -146,8 +146,8 @@ func runWatch(cmd *cobra.Command, args []string) error {
 
 	env := proc.BuildEnv(p, "development")
 	env = append(env, fmt.Sprintf("BROWSEROS_USER_DATA_DIR=%s", userDataDir))
-	if watchAgentMCP {
-		env = buildAgentMCPWatchEnv(env, p)
+	if watchBrowserOSForAgents {
+		env = buildBrowserOSForAgentsWatchEnv(env, p)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -159,10 +159,10 @@ func runWatch(cmd *cobra.Command, args []string) error {
 	var wg sync.WaitGroup
 	var procs []*proc.ManagedProc
 
-	if watchAgentMCP {
-		procs = startAgentMCPWatch(ctx, &wg, root, env, p, reservations)
+	if watchBrowserOSForAgents {
+		procs = startBrowserOSForAgentsWatch(ctx, &wg, root, env, p, reservations)
 	} else {
-		procs, err = startLegacyWatch(ctx, &wg, root, env, p, reservations, userDataDir, watchManual)
+		procs, err = startBrowserOSWatch(ctx, &wg, root, env, p, reservations, userDataDir, watchManual)
 		if err != nil {
 			return err
 		}
@@ -193,16 +193,16 @@ func runWatch(cmd *cobra.Command, args []string) error {
 
 // watchMode resolves the user-facing mode label for logs.
 func watchMode() (string, error) {
-	if watchManual && watchAgentMCP {
+	if watchManual && watchBrowserOSForAgents {
 		return "", fmt.Errorf("--manual cannot be combined with --agent-mcp")
 	}
-	if watchAgentMCP {
-		return "agent-mcp", nil
+	if watchBrowserOSForAgents {
+		return "BrowserOSForAgents", nil
 	}
 	if watchManual {
-		return "manual", nil
+		return "BrowserOS manual", nil
 	}
-	return "watch", nil
+	return "BrowserOS", nil
 }
 
 // watchLockMode keeps watch variants mutually exclusive for the same profile and ports.
@@ -210,8 +210,8 @@ func watchLockMode() string {
 	return watchRunLockMode
 }
 
-// buildAgentMCPWatchEnv bridges the shared dev ports into the standalone MCP apps.
-func buildAgentMCPWatchEnv(env []string, p proc.Ports) []string {
+// buildBrowserOSForAgentsWatchEnv bridges shared dev ports into the standalone MCP apps.
+func buildBrowserOSForAgentsWatchEnv(env []string, p proc.Ports) []string {
 	apiURL := fmt.Sprintf("http://127.0.0.1:%d/cockpit", p.Server)
 	return append(env,
 		fmt.Sprintf("BROWSEROS_AGENT_MCP_INTERFACE_PORT=%d", p.Server),
@@ -220,8 +220,8 @@ func buildAgentMCPWatchEnv(env []string, p proc.Ports) []string {
 	)
 }
 
-// startLegacyWatch supervises the original agent extension plus server dev pair.
-func startLegacyWatch(ctx context.Context, wg *sync.WaitGroup, root string, env []string, p proc.Ports, reservations *proc.PortReservations, userDataDir string, manual bool) ([]*proc.ManagedProc, error) {
+// startBrowserOSWatch supervises the BrowserOS agent extension plus server dev pair.
+func startBrowserOSWatch(ctx context.Context, wg *sync.WaitGroup, root string, env []string, p proc.Ports, reservations *proc.PortReservations, userDataDir string, manual bool) ([]*proc.ManagedProc, error) {
 	var procs []*proc.ManagedProc
 	agentDir := filepath.Join(root, "apps/agent")
 
@@ -273,8 +273,8 @@ func startLegacyWatch(ctx context.Context, wg *sync.WaitGroup, root string, env 
 	return procs, nil
 }
 
-// startAgentMCPWatch supervises the MCP cockpit UI plus standalone interface.
-func startAgentMCPWatch(ctx context.Context, wg *sync.WaitGroup, root string, env []string, p proc.Ports, reservations *proc.PortReservations) []*proc.ManagedProc {
+// startBrowserOSForAgentsWatch supervises the MCP cockpit UI plus standalone interface.
+func startBrowserOSForAgentsWatch(ctx context.Context, wg *sync.WaitGroup, root string, env []string, p proc.Ports, reservations *proc.PortReservations) []*proc.ManagedProc {
 	var procs []*proc.ManagedProc
 
 	reservations.ReleaseCDP()
