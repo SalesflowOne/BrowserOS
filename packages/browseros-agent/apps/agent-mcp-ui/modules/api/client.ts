@@ -14,7 +14,8 @@
  * Resolution order for the base URL:
  *   1. ?apiUrl=… on window.location (dev launcher publishes this)
  *   2. sessionStorage cache of (1)
- *   3. PROD_API_PORT constant on 127.0.0.1
+ *   3. VITE_BROWSEROS_AGENT_MCP_API_URL from the dev watcher
+ *   4. PROD_API_PORT constant on 127.0.0.1
  *
  * The lazy Proxy is what lets us re-resolve the base URL after the
  * dev launcher hot-swaps it without breaking hc's path chaining
@@ -27,12 +28,11 @@ import {
   PROD_API_PORT,
 } from '@browseros/agent-mcp-interface/shared/port'
 import { hc } from 'hono/client'
-
-const API_URL_STORAGE_KEY = 'browseros.agent-mcp-ui.apiUrl'
-
-function isLoopbackUrl(value: string | null | undefined): value is string {
-  return !!value && value.startsWith('http://127.0.0.1:')
-}
+import {
+  API_URL_STORAGE_KEY,
+  isLoopbackUrl,
+  resolveApiBaseUrlFromSources,
+} from './client.helpers'
 
 function resolveApiBaseUrl(): string {
   // The cockpit is mounted under `/cockpit` inside apps/server's
@@ -56,12 +56,20 @@ function resolveApiBaseUrl(): string {
 
   try {
     const stored = window.sessionStorage.getItem(API_URL_STORAGE_KEY)
-    if (isLoopbackUrl(stored)) return stored
+    return resolveApiBaseUrlFromSources({
+      query: fromQuery,
+      stored,
+      launcher: import.meta.env.VITE_BROWSEROS_AGENT_MCP_API_URL,
+      fallback,
+    })
   } catch {
-    // see above
+    return resolveApiBaseUrlFromSources({
+      query: fromQuery,
+      stored: null,
+      launcher: import.meta.env.VITE_BROWSEROS_AGENT_MCP_API_URL,
+      fallback,
+    })
   }
-
-  return fallback
 }
 
 type ApiClient = ReturnType<typeof hc<AppType>>

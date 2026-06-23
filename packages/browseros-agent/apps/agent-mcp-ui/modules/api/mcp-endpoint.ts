@@ -13,22 +13,46 @@
  * TODO(temporary cockpit mount): while `apps/agent-mcp-interface`
  * lives as a sub-route under `apps/server` (mounted at
  * `/cockpit` so it can borrow the server's live BrowserSession and
- * CDP attach), this builder targets the mounted shape
- * `http://127.0.0.1:9100/cockpit/mcp/<slug>`. When the BrowserOS
- * Chromium runtime ships direct CDP integration for the
- * agent-mcp-interface package, the interface will bind its own port
- * and `buildMcpEndpointUrl` will return
- * `http://127.0.0.1:<interface-port>/mcp/<slug>`. The unmount lives
- * in three commits: (1) drop the cockpit mount from
- * `apps/server/src/api/routes/index.ts`, (2) flip the constants
- * imported below, (3) remove the legacy `/cockpit/mcp/<slug>` arm
- * from `slugFromMcpEndpointUrl` once profile migration has run.
+ * CDP attach), this builder targets the mounted `/cockpit/mcp/<slug>`
+ * shape. It defaults to the production port but honors dev-launcher
+ * overrides when `dev:agent-mcp:watch:new` selects a random port.
  */
 
 import {
   COCKPIT_MOUNT_PREFIX,
   PROD_API_PORT,
 } from '@browseros/agent-mcp-interface/shared/port'
+import {
+  API_URL_STORAGE_KEY,
+  resolveApiBaseUrlFromSources,
+} from './client.helpers'
+
+function fallbackBaseUrl(): string {
+  return `http://127.0.0.1:${PROD_API_PORT}${COCKPIT_MOUNT_PREFIX}`
+}
+
+/** Resolves the same cockpit base URL as the API client for pre-create previews. */
+function resolveMcpBaseUrl(): string {
+  const fallback = fallbackBaseUrl()
+  if (typeof window === 'undefined') return fallback
+
+  const query = new URLSearchParams(window.location.search).get('apiUrl')
+  try {
+    return resolveApiBaseUrlFromSources({
+      query,
+      stored: window.sessionStorage.getItem(API_URL_STORAGE_KEY),
+      launcher: import.meta.env.VITE_BROWSEROS_AGENT_MCP_API_URL,
+      fallback,
+    })
+  } catch {
+    return resolveApiBaseUrlFromSources({
+      query,
+      stored: null,
+      launcher: import.meta.env.VITE_BROWSEROS_AGENT_MCP_API_URL,
+      fallback,
+    })
+  }
+}
 
 /**
  * URL the UI shows in the copy widget and embeds in host-agent config
@@ -37,7 +61,7 @@ import {
  * server-side and one composed client-side produce identical strings.
  */
 export function buildMcpEndpointUrl(slug: string): string {
-  return `http://127.0.0.1:${PROD_API_PORT}${COCKPIT_MOUNT_PREFIX}/mcp/${slug}`
+  return `${resolveMcpBaseUrl()}/mcp/${slug}`
 }
 
 /**
