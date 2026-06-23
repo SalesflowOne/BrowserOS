@@ -5,7 +5,46 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"browseros-dev/proc"
 )
+
+func TestWatchModeRejectsManualAgentMCPCombination(t *testing.T) {
+	oldManual, oldAgentMCP := watchManual, watchAgentMCP
+	watchManual = true
+	watchAgentMCP = true
+	t.Cleanup(func() {
+		watchManual = oldManual
+		watchAgentMCP = oldAgentMCP
+	})
+
+	_, err := watchMode()
+	if err == nil {
+		t.Fatal("expected incompatible watch flags to return an error")
+	}
+	if !strings.Contains(err.Error(), "--manual cannot be combined with --agent-mcp") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestBuildAgentMCPWatchEnvIncludesSelectedPorts(t *testing.T) {
+	env := buildAgentMCPWatchEnv([]string{"BASE=1"}, proc.Ports{
+		CDP:       9012,
+		Server:    9123,
+		Extension: 9321,
+	})
+
+	for _, want := range []string{
+		"BASE=1",
+		"BROWSEROS_AGENT_MCP_INTERFACE_PORT=9123",
+		"BROWSEROS_COCKPIT_CDP_PORT=9012",
+		"VITE_BROWSEROS_AGENT_MCP_API_URL=http://127.0.0.1:9123/cockpit",
+	} {
+		if !hasEnvEntry(env, want) {
+			t.Fatalf("expected env to contain %q, got %#v", want, env)
+		}
+	}
+}
 
 func TestEnsureLimactlPresentMissingMessage(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
@@ -35,4 +74,13 @@ func TestEnsureLimactlPresentFindsPathBinary(t *testing.T) {
 	if err := ensureLimactlPresent(); err != nil {
 		t.Fatalf("expected limactl to resolve, got %v", err)
 	}
+}
+
+func hasEnvEntry(env []string, want string) bool {
+	for _, got := range env {
+		if got == want {
+			return true
+		}
+	}
+	return false
 }

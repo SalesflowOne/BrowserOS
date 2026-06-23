@@ -25,17 +25,24 @@ var watchCmd = &cobra.Command{
 }
 
 var (
-	watchNew    bool
-	watchManual bool
+	watchNew      bool
+	watchManual   bool
+	watchAgentMCP bool
 )
 
 func init() {
 	watchCmd.Flags().BoolVar(&watchNew, "new", false, "Use random available ports in 9000-9999 and create a fresh user-data directory")
 	watchCmd.Flags().BoolVar(&watchManual, "manual", false, "Build agent statically instead of WXT HMR mode")
+	watchCmd.Flags().BoolVar(&watchAgentMCP, "agent-mcp", false, "Run the agent MCP UI and standalone interface")
 	rootCmd.AddCommand(watchCmd)
 }
 
 func runWatch(cmd *cobra.Command, args []string) error {
+	mode, err := watchMode()
+	if err != nil {
+		return err
+	}
+
 	root, err := proc.FindMonorepoRoot()
 	if err != nil {
 		return err
@@ -53,10 +60,6 @@ func runWatch(cmd *cobra.Command, args []string) error {
 	userDataDir, err := proc.DefaultDevUserDataDir(root)
 	if err != nil {
 		return err
-	}
-	mode := "watch"
-	if watchManual {
-		mode = "manual"
 	}
 	var runLock *proc.WatchRunLock
 	acquireRunLock := func(ports proc.Ports) error {
@@ -141,6 +144,9 @@ func runWatch(cmd *cobra.Command, args []string) error {
 
 	env := proc.BuildEnv(p, "development")
 	env = append(env, fmt.Sprintf("BROWSEROS_USER_DATA_DIR=%s", userDataDir))
+	if watchAgentMCP {
+		env = buildAgentMCPWatchEnv(env, p)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -151,60 +157,14 @@ func runWatch(cmd *cobra.Command, args []string) error {
 	var wg sync.WaitGroup
 	var procs []*proc.ManagedProc
 
-	agentDir := filepath.Join(root, "apps/agent")
-
-	if watchManual {
-		proc.LogMsg(proc.TagBuild, "Building agent (dev)...")
-		if err := proc.RunBlocking(ctx, agentDir, proc.TagBuild,
-			"bun", "--env-file=.env.development", "wxt", "build", "--mode", "development"); err != nil {
-			return fmt.Errorf("agent build failed: %w", err)
+	if watchAgentMCP {
+		procs = startAgentMCPWatch(ctx, &wg, root, env, p, reservations)
+	} else {
+		procs, err = startLegacyWatch(ctx, &wg, root, env, p, reservations, userDataDir, watchManual)
+		if err != nil {
+			return err
 		}
-		proc.LogMsg(proc.TagBuild, "agent built")
-
-		reservations.ReleaseCDP()
-		procs = append(procs, proc.StartManaged(ctx, &wg, proc.ProcConfig{
-			Tag:     proc.TagBrowser,
-			Dir:     root,
-			Restart: false,
-			Cmd: browser.BuildArgs(browser.ArgsConfig{
-				Root:              root,
-				Ports:             p,
-				UserDataDir:       userDataDir,
-				LoadDevExtensions: true,
-			}),
-		}))
-	} else {
-		reservations.ReleaseCDP()
-		procs = append(procs, proc.StartManaged(ctx, &wg, proc.ProcConfig{
-			Tag:     proc.TagAgent,
-			Dir:     agentDir,
-			Env:     env,
-			Restart: true,
-			Cmd:     []string{"bun", "--env-file=.env.development", "wxt"},
-		}))
 	}
-
-	// Wait for CDP
-	proc.LogMsg(proc.TagServer, "Waiting for CDP...")
-	if browser.WaitForCDP(ctx, p.CDP, 60) {
-		proc.LogMsg(proc.TagServer, "CDP ready")
-	} else {
-		proc.LogMsg(proc.TagServer, proc.WarnColor.Sprint("CDP not available, starting server anyway"))
-	}
-
-	// Start server
-	reservations.ReleaseServer()
-	reservations.ReleaseExtension()
-	procs = append(procs, proc.StartManaged(ctx, &wg, proc.ProcConfig{
-		Tag:     proc.TagServer,
-		Dir:     filepath.Join(root, "apps/server"),
-		Env:     env,
-		Restart: true,
-		Cmd:     []string{"bun", "--watch", "--env-file=.env.development", "src/index.ts"},
-		BeforeStart: func() error {
-			return proc.KillPortAndWait(p.Server, 3*time.Second)
-		},
-	}))
 
 	<-sigCh
 	fmt.Println()
@@ -227,6 +187,122 @@ func runWatch(cmd *cobra.Command, args []string) error {
 	wg.Wait()
 	proc.LogMsg(proc.TagInfo, "All processes stopped")
 	return nil
+}
+
+// watchMode resolves the process identity used by logs and run locks.
+func watchMode() (string, error) {
+	if watchManual && watchAgentMCP {
+		return "", fmt.Errorf("--manual cannot be combined with --agent-mcp")
+	}
+	if watchAgentMCP {
+		return "agent-mcp", nil
+	}
+	if watchManual {
+		return "manual", nil
+	}
+	return "watch", nil
+}
+
+// buildAgentMCPWatchEnv bridges the shared dev ports into the standalone MCP apps.
+func buildAgentMCPWatchEnv(env []string, p proc.Ports) []string {
+	apiURL := fmt.Sprintf("http://127.0.0.1:%d/cockpit", p.Server)
+	return append(env,
+		fmt.Sprintf("BROWSEROS_AGENT_MCP_INTERFACE_PORT=%d", p.Server),
+		fmt.Sprintf("BROWSEROS_COCKPIT_CDP_PORT=%d", p.CDP),
+		fmt.Sprintf("VITE_BROWSEROS_AGENT_MCP_API_URL=%s", apiURL),
+	)
+}
+
+// startLegacyWatch supervises the original agent extension plus server dev pair.
+func startLegacyWatch(ctx context.Context, wg *sync.WaitGroup, root string, env []string, p proc.Ports, reservations *proc.PortReservations, userDataDir string, manual bool) ([]*proc.ManagedProc, error) {
+	var procs []*proc.ManagedProc
+	agentDir := filepath.Join(root, "apps/agent")
+
+	if manual {
+		proc.LogMsg(proc.TagBuild, "Building agent (dev)...")
+		if err := proc.RunBlocking(ctx, agentDir, proc.TagBuild,
+			"bun", "--env-file=.env.development", "wxt", "build", "--mode", "development"); err != nil {
+			return nil, fmt.Errorf("agent build failed: %w", err)
+		}
+		proc.LogMsg(proc.TagBuild, "agent built")
+
+		reservations.ReleaseCDP()
+		procs = append(procs, proc.StartManaged(ctx, wg, proc.ProcConfig{
+			Tag:     proc.TagBrowser,
+			Dir:     root,
+			Restart: false,
+			Cmd: browser.BuildArgs(browser.ArgsConfig{
+				Root:              root,
+				Ports:             p,
+				UserDataDir:       userDataDir,
+				LoadDevExtensions: true,
+			}),
+		}))
+	} else {
+		reservations.ReleaseCDP()
+		procs = append(procs, proc.StartManaged(ctx, wg, proc.ProcConfig{
+			Tag:     proc.TagAgent,
+			Dir:     agentDir,
+			Env:     env,
+			Restart: true,
+			Cmd:     []string{"bun", "--env-file=.env.development", "wxt"},
+		}))
+	}
+
+	waitForCDP(ctx, p.CDP)
+
+	reservations.ReleaseServer()
+	reservations.ReleaseExtension()
+	procs = append(procs, proc.StartManaged(ctx, wg, proc.ProcConfig{
+		Tag:     proc.TagServer,
+		Dir:     filepath.Join(root, "apps/server"),
+		Env:     env,
+		Restart: true,
+		Cmd:     []string{"bun", "--watch", "--env-file=.env.development", "src/index.ts"},
+		BeforeStart: func() error {
+			return proc.KillPortAndWait(p.Server, 3*time.Second)
+		},
+	}))
+	return procs, nil
+}
+
+// startAgentMCPWatch supervises the MCP cockpit UI plus standalone interface.
+func startAgentMCPWatch(ctx context.Context, wg *sync.WaitGroup, root string, env []string, p proc.Ports, reservations *proc.PortReservations) []*proc.ManagedProc {
+	var procs []*proc.ManagedProc
+
+	reservations.ReleaseCDP()
+	procs = append(procs, proc.StartManaged(ctx, wg, proc.ProcConfig{
+		Tag:     proc.TagAgent,
+		Dir:     filepath.Join(root, "apps/agent-mcp-ui"),
+		Env:     env,
+		Restart: true,
+		Cmd:     []string{"bun", "wxt"},
+	}))
+
+	waitForCDP(ctx, p.CDP)
+
+	reservations.ReleaseServer()
+	reservations.ReleaseExtension()
+	procs = append(procs, proc.StartManaged(ctx, wg, proc.ProcConfig{
+		Tag:     proc.TagServer,
+		Dir:     filepath.Join(root, "apps/agent-mcp-interface"),
+		Env:     env,
+		Restart: true,
+		Cmd:     []string{"bun", "--watch", "src/main.ts"},
+		BeforeStart: func() error {
+			return proc.KillPortAndWait(p.Server, 3*time.Second)
+		},
+	}))
+	return procs
+}
+
+func waitForCDP(ctx context.Context, port int) {
+	proc.LogMsg(proc.TagServer, "Waiting for CDP...")
+	if browser.WaitForCDP(ctx, port, 60) {
+		proc.LogMsg(proc.TagServer, "CDP ready")
+	} else {
+		proc.LogMsg(proc.TagServer, proc.WarnColor.Sprint("CDP not available, starting server anyway"))
+	}
 }
 
 func ensureLimactlPresent() error {

@@ -11,6 +11,8 @@
   "scripts": {
     "dev:watch": "./tools/dev/run.sh watch",
     "dev:watch:new": "./tools/dev/run.sh watch --new",
+    "dev:agent-mcp:watch": "./tools/dev/run.sh watch --agent-mcp",
+    "dev:agent-mcp:watch:new": "./tools/dev/run.sh watch --agent-mcp --new",
     "dev:manual": "./tools/dev/run.sh watch --manual",
     "dev:stop": "pkill -f 'browseros-dev watch' ; pkill -f 'bun --watch' ; echo 'dev watch stopped'",
     "devtools": "cd apps/server && bun run devtools",
