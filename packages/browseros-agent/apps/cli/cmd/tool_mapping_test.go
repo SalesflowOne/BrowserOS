@@ -51,6 +51,11 @@ func TestCompactToolMappings(t *testing.T) {
 			want: map[string]any{"page": 7},
 		},
 		{
+			name: "diff",
+			got:  diffToolArgs(7),
+			want: map[string]any{"page": 7},
+		},
+		{
 			name: "download",
 			got:  downloadToolArgs(7, "e12"),
 			want: map[string]any{
