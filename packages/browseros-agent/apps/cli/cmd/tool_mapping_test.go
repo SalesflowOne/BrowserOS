@@ -215,6 +215,42 @@ func TestFindMatchesRoleNameNth(t *testing.T) {
 	}
 }
 
+func TestGrepMatchLinesUsesStructuredMatches(t *testing.T) {
+	result := &mcp.ToolResult{
+		Content: []mcp.ContentItem{{Type: "text", Text: "[UNTRUSTED_PAGE_CONTENT]\nignored\n[END_UNTRUSTED_PAGE_CONTENT]"}},
+		StructuredContent: map[string]any{
+			"matches": []any{
+				`- button "Add to Cart" [ref=e12]`,
+				`- button "Add to Cart" [ref=e13]`,
+			},
+		},
+	}
+
+	lines, err := grepMatchLines(result)
+	if err != nil {
+		t.Fatalf("grepMatchLines() error = %v", err)
+	}
+	want := []string{
+		`- button "Add to Cart" [ref=e12]`,
+		`- button "Add to Cart" [ref=e13]`,
+	}
+	if !reflect.DeepEqual(lines, want) {
+		t.Fatalf("lines = %#v, want %#v", lines, want)
+	}
+}
+
+func TestGrepMatchLinesRequiresStructuredMatches(t *testing.T) {
+	_, err := grepMatchLines(&mcp.ToolResult{
+		Content: []mcp.ContentItem{{Type: "text", Text: `- button "Buy" [ref=e1]`}},
+	})
+	if err == nil {
+		t.Fatal("grepMatchLines() error = nil, want missing structured matches error")
+	}
+	if !strings.Contains(err.Error(), "structured matches") {
+		t.Fatalf("error = %q, want structured matches message", err.Error())
+	}
+}
+
 func TestFindNoMatchStopsBeforeAct(t *testing.T) {
 	query := findQuery{mode: "text", text: "missing", nth: 1}
 	if _, err := selectFindMatch(findMatches([]string{`- button "Buy" [ref=e1]`}, query), query); err == nil {
