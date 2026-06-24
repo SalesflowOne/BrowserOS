@@ -92,14 +92,21 @@ version_gt() {
   IFS=. read -r right_major right_minor right_patch <<< "$2"
 
   if [ "$left_major" -ne "$right_major" ]; then
-    [ "$left_major" -gt "$right_major" ]
-    return
+    if [ "$left_major" -gt "$right_major" ]; then
+      return 0
+    fi
+    return 1
   fi
   if [ "$left_minor" -ne "$right_minor" ]; then
-    [ "$left_minor" -gt "$right_minor" ]
-    return
+    if [ "$left_minor" -gt "$right_minor" ]; then
+      return 0
+    fi
+    return 1
   fi
-  [ "$left_patch" -gt "$right_patch" ]
+  if [ "$left_patch" -gt "$right_patch" ]; then
+    return 0
+  fi
+  return 1
 }
 
 emit() {

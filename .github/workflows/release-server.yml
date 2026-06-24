@@ -80,6 +80,7 @@ jobs:
       server_version: ${{ steps.version.outputs.package_version }}
     permissions:
       contents: write
+      pull-requests: read
     timeout-minutes: 120
     defaults:
       run:
@@ -135,18 +136,22 @@ jobs:
         run: |
           set -euo pipefail
 
-          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          write_release_flow_summary() {
+            local version="$1"
+            cat >> "$GITHUB_STEP_SUMMARY" <<EOF
           Maintainer release flow:
           1. Bump packages/browseros-agent/apps/server/package.json in a PR and merge it.
-          2. git tag -a agent-server/v0.0.122 -m "agent-server v0.0.122"
-          3. git push origin agent-server/v0.0.122
+          2. git tag -a agent-server/v${version} -m "agent-server v${version}"
+          3. git push origin agent-server/v${version}
           EOF
+          }
 
           if [ "$EVENT_NAME" = "push" ]; then
             ./scripts/release/resolve-component-release.sh \
               --component agent-server \
               --tag "$RELEASE_TAG" \
               --default-branch "$DEFAULT_BRANCH"
+            write_release_flow_summary "${RELEASE_TAG#agent-server/v}"
             exit 0
           fi
 
@@ -177,10 +182,12 @@ jobs:
                 --component agent-server \
                 --tag "agent-server/v$PACKAGE_VERSION" \
                 --default-branch "$DEFAULT_BRANCH"
+              write_release_flow_summary "$PACKAGE_VERSION"
               exit 0
             fi
           fi
 
+          write_release_flow_summary "$PACKAGE_VERSION"
           echo "package_version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
           echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 

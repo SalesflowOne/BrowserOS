@@ -16,7 +16,18 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  authorize_manual_dispatch:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: release-core
+    steps:
+      - run: echo "Manual dispatch approved through release-core."
+
   release:
+    needs: authorize_manual_dispatch
+    if: |
+      always() &&
+      (github.event_name != 'workflow_dispatch' || needs.authorize_manual_dispatch.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -43,11 +54,12 @@ jobs:
             --tag "$RELEASE_TAG" \
             --default-branch "$DEFAULT_BRANCH"
 
-          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          VERSION="${RELEASE_TAG#agent-extension/v}"
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
           Maintainer release flow:
           1. Bump packages/browseros-agent/apps/app/package.json in a PR and merge it.
-          2. git tag -a agent-extension/v0.0.100 -m "agent-extension v0.0.100"
-          3. git push origin agent-extension/v0.0.100
+          2. git tag -a agent-extension/v${VERSION} -m "agent-extension v${VERSION}"
+          3. git push origin agent-extension/v${VERSION}
           EOF
         working-directory: packages/browseros-agent
 
