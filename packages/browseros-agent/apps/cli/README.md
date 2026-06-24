@@ -224,7 +224,7 @@ apps/cli/
 │   ├── launch.go       # launch (find and start BrowserOS, wait for server)
 │   ├── open.go         # open (new_page / new_hidden_page)
 │   ├── nav.go          # nav, back, forward, reload
-│   ├── pages.go        # tabs/pages alias, active, close
+│   ├── tabs.go         # tabs/pages alias, active, close
 │   ├── snap.go         # snapshot/snap
 │   ├── text.go         # read, text, links, grep
 │   ├── find.go         # find (grep + act)
