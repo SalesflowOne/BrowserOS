@@ -20,7 +20,6 @@ func init() {
 				output.Error(err.Error(), 3)
 			}
 			value := strings.Join(args[1:], " ")
-			noClear, _ := cmd.Flags().GetBool("no-clear")
 
 			c := newClient()
 			pageID, err := resolvePageID(c)
@@ -28,7 +27,7 @@ func init() {
 				output.Error(err.Error(), 2)
 			}
 
-			result, err := c.CallTool("act", fillToolArgs(pageID, ref, value, !noClear))
+			result, err := c.CallTool("act", fillToolArgsFromCommand(cmd, pageID, ref, value))
 			if err != nil {
 				output.Error(err.Error(), 1)
 			}
@@ -77,6 +76,12 @@ func init() {
 	}
 
 	rootCmd.AddCommand(fillCmd, clearCmd, keyCmd)
+}
+
+// fillToolArgsFromCommand converts parsed fill flags into the compact act payload.
+func fillToolArgsFromCommand(cmd *cobra.Command, pageID int, ref, value string) map[string]any {
+	noClear, _ := cmd.Flags().GetBool("no-clear")
+	return fillToolArgs(pageID, ref, value, !noClear)
 }
 
 func fillToolArgs(pageID int, ref, value string, clear bool) map[string]any {

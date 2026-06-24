@@ -112,8 +112,8 @@ func TestUnsupportedCommandsAreNotRegistered(t *testing.T) {
 	for _, name := range []string{"dialog", "dom", "dom-search"} {
 		t.Run(name, func(t *testing.T) {
 			cmd, _, err := rootCmd.Find([]string{name})
-			if err == nil && cmd != nil && cmd.Name() == name {
-				t.Fatalf("root command registered unsupported command %q", name)
+			if err == nil && cmd != nil && cmd != rootCmd {
+				t.Fatalf("root command resolved unsupported command %q to %q", name, cmd.CommandPath())
 			}
 		})
 	}
