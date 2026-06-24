@@ -225,8 +225,8 @@ func resolveWatchDefaultPorts(root string, claw bool) (proc.Ports, error) {
 func buildClawWatchEnv(env []string, p proc.Ports) []string {
 	apiURL := fmt.Sprintf("http://127.0.0.1:%d/cockpit", p.Server)
 	return append(env,
-		fmt.Sprintf("BROWSEROS_CLAW_SERVER_PORT=%d", p.Server),
-		fmt.Sprintf("BROWSEROS_COCKPIT_CDP_PORT=%d", p.CDP),
+		fmt.Sprintf("CLAW_SERVER_PORT=%d", p.Server),
+		fmt.Sprintf("BROWSEROS_CLAW_CDP_PORT=%d", p.CDP),
 		fmt.Sprintf("VITE_BROWSEROS_CLAW_API_URL=%s", apiURL),
 	)
 }
