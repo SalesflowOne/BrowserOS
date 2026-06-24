@@ -115,29 +115,26 @@ if [ -z "$tag_version" ] || [[ "$tag" != "$new_prefix"* ]]; then
   exit 1
 fi
 
-if [ ! -f "$package_json" ]; then
-  echo "Package file not found: $package_json" >&2
-  exit 1
-fi
-
-package_version="$(
-  python3 - "$package_json" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-print(json.loads(Path(sys.argv[1]).read_text())["version"])
-PY
-)"
-
-if [ "$package_version" != "$tag_version" ]; then
-  echo "Tag version $tag_version does not match $package_json version $package_version" >&2
-  exit 1
-fi
-
 release_sha="$(git rev-list -n 1 "$tag" 2>/dev/null || true)"
 if [ -z "$release_sha" ]; then
   echo "Tag does not exist in this checkout: $tag" >&2
+  exit 1
+fi
+
+if ! package_version="$(
+  git show "$release_sha:$package_json" 2>/dev/null | python3 -c '
+import json
+import sys
+
+print(json.load(sys.stdin)["version"])
+'
+)"; then
+  echo "Could not read $package_json version from $tag ($release_sha)" >&2
+  exit 1
+fi
+
+if [ "$package_version" != "$tag_version" ]; then
+  echo "Tag version $tag_version does not match $package_json version $package_version" >&2
   exit 1
 fi
 

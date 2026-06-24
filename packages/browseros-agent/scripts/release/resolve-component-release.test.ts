@@ -184,6 +184,24 @@ describe('resolve-component-release', () => {
     }
   })
 
+  it('validates the package version from the tagged commit instead of the current checkout', async () => {
+    const dir = await initFixture('agent-extension', '0.0.99')
+    try {
+      const currentTag = scopedTag('agent-extension', '0.0.100')
+      await tag(dir, currentTag)
+      await commitVersion(dir, 'agent-extension', '0.0.100')
+
+      const result = await resolveRelease(dir, 'agent-extension', currentTag)
+
+      expect(result.code).toBe(1)
+      expect(result.stderr).toContain(
+        'Tag version 0.0.100 does not match apps/agent/package.json version 0.0.99',
+      )
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('rejects a duplicate version from either tag scheme', async () => {
     const dir = await initFixture('agent-extension', '0.0.100')
     try {

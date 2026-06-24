@@ -123,36 +123,6 @@ jobs:
             echo "version=$INPUT_VERSION"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Checkout existing server release tag
-        if: ${{ github.event_name != 'push' && steps.options.outputs.publish_github_release == 'true' && steps.options.outputs.apply_bump != 'true' }}
-        env:
-          REQUESTED_VERSION: ${{ steps.options.outputs.version }}
-        run: |
-          set -euo pipefail
-          tag_version="$REQUESTED_VERSION"
-          if [ -z "$tag_version" ]; then
-            tag_version="$(
-              python3 - <<'PY'
-          import json
-          from pathlib import Path
-
-          print(json.loads(Path("apps/server/package.json").read_text())["version"])
-          PY
-            )"
-          fi
-          git checkout "agent-server/v$tag_version"
-        working-directory: packages/browseros-agent
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "1.3.6"
-
-      - name: Install dependencies
-        run: bun ci
-
-      - name: Prepare production env file
-        run: cp apps/server/.env.production.example apps/server/.env.production
-
       - name: Resolve server version
         id: version
         env:
@@ -189,7 +159,14 @@ jobs:
             PACKAGE_VERSION="$(python3 "$GITHUB_WORKSPACE/packages/browseros/build/scripts/bump_server_version.py" --agent-root .)"
             echo "Bumped server version in-place to $PACKAGE_VERSION"
           else
-            PACKAGE_VERSION=$(node -p "require('./apps/server/package.json').version")
+            PACKAGE_VERSION="$(
+              python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          print(json.loads(Path("apps/server/package.json").read_text())["version"])
+          PY
+            )"
             if [ -n "$REQUESTED_VERSION" ] && [ "$PACKAGE_VERSION" != "$REQUESTED_VERSION" ]; then
               echo "::error::Requested version $REQUESTED_VERSION does not match apps/server/package.json ($PACKAGE_VERSION)"
               exit 1
@@ -206,6 +183,21 @@ jobs:
 
           echo "package_version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
           echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout server release commit
+        if: ${{ steps.options.outputs.publish_github_release == 'true' && steps.options.outputs.apply_bump != 'true' }}
+        run: git checkout --detach "${{ steps.version.outputs.release_sha }}"
+        working-directory: ${{ github.workspace }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.6"
+
+      - name: Install dependencies
+        run: bun ci
+
+      - name: Prepare production env file
+        run: cp apps/server/.env.production.example apps/server/.env.production
 
       - name: Validate release options
         env:
