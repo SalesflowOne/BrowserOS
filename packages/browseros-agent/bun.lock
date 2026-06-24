@@ -229,7 +229,6 @@
         "@browseros/browser-core": "workspace:*",
         "@browseros/browser-mcp": "workspace:*",
         "@browseros/cdp-protocol": "workspace:*",
-        "@browseros/claw-server": "workspace:*",
         "@browseros/shared": "workspace:*",
         "@hono/mcp": "^0.2.5",
         "@hono/zod-validator": "^0.4.3",

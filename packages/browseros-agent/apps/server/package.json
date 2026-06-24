@@ -72,7 +72,6 @@
     "@ai-sdk/provider": "^3.0.10",
     "@browseros/browser-core": "workspace:*",
     "@browseros/browser-mcp": "workspace:*",
-    "@browseros/claw-server": "workspace:*",
     "@browseros/cdp-protocol": "workspace:*",
     "@browseros/shared": "workspace:*",
     "@hono/mcp": "^0.2.5",
