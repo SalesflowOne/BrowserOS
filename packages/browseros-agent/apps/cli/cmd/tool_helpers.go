@@ -13,7 +13,7 @@ import (
 	"browseros-cli/mcp"
 )
 
-var snapshotRefPattern = regexp.MustCompile(`\[ref=e([0-9]+)\]`)
+var snapshotRefPattern = regexp.MustCompile(`\[ref=@?e([0-9]+)\]`)
 
 // elementRef normalizes legacy numeric element IDs to compact snapshot refs.
 func elementRef(raw string) (string, error) {

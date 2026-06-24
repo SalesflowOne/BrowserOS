@@ -164,6 +164,110 @@ func TestDisplayElementRefsPrefersAtRefs(t *testing.T) {
 	}
 }
 
+func TestFindMatchesTextAndBuildsClick(t *testing.T) {
+	lines := []string{
+		`- button "Add to Cart" [ref=e12]`,
+		`- button "Add to Cart" [ref=e13]`,
+	}
+	query := findQuery{mode: "text", text: "add to cart", nth: 1}
+
+	matches := findMatches(lines, query)
+	if len(matches) != 2 {
+		t.Fatalf("matches = %d, want 2", len(matches))
+	}
+	selected, err := selectFindMatch(matches, query)
+	if err != nil {
+		t.Fatalf("selectFindMatch() error = %v", err)
+	}
+	if selected.ref != "e12" {
+		t.Fatalf("selected ref = %q, want e12", selected.ref)
+	}
+
+	calls, err := findActionCalls(7, selected, findAction{kind: "click"})
+	if err != nil {
+		t.Fatalf("findActionCalls() error = %v", err)
+	}
+	want := []toolCall{{name: "act", args: map[string]any{"page": 7, "kind": "click", "ref": "e12"}}}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("calls = %#v, want %#v", calls, want)
+	}
+}
+
+func TestFindMatchesRoleNameNth(t *testing.T) {
+	lines := []string{
+		`- link "Add to Cart details" [ref=e4]`,
+		`- button "Add to Cart" [ref=e12]`,
+		`- button "Add to Cart" [ref=e13]`,
+	}
+	query := findQuery{mode: "role", role: "button", name: "Add to Cart", nth: 2}
+
+	selected, err := selectFindMatch(findMatches(lines, query), query)
+	if err != nil {
+		t.Fatalf("selectFindMatch() error = %v", err)
+	}
+	if selected.ref != "e13" {
+		t.Fatalf("selected ref = %q, want e13", selected.ref)
+	}
+}
+
+func TestFindNoMatchStopsBeforeAct(t *testing.T) {
+	query := findQuery{mode: "text", text: "missing", nth: 1}
+	if _, err := selectFindMatch(findMatches([]string{`- button "Buy" [ref=e1]`}, query), query); err == nil {
+		t.Fatal("selectFindMatch() error = nil, want no-match error")
+	}
+}
+
+func TestFindActionCalls(t *testing.T) {
+	match := findMatch{ref: "e12", line: `- textbox "Search" [ref=e12]`}
+	tests := []struct {
+		name   string
+		action findAction
+		want   []toolCall
+	}{
+		{
+			name:   "fill",
+			action: findAction{kind: "fill", value: "hello"},
+			want: []toolCall{{name: "act", args: map[string]any{
+				"page":  7,
+				"kind":  "fill",
+				"ref":   "e12",
+				"value": "hello",
+				"clear": true,
+			}}},
+		},
+		{
+			name:   "type",
+			action: findAction{kind: "type", value: "hello"},
+			want: []toolCall{
+				{name: "act", args: map[string]any{"page": 7, "kind": "focus", "ref": "e12"}},
+				{name: "act", args: map[string]any{"page": 7, "kind": "type", "text": "hello"}},
+			},
+		},
+		{
+			name:   "select",
+			action: findAction{kind: "select", value: "Large"},
+			want: []toolCall{{name: "act", args: map[string]any{
+				"page":  7,
+				"kind":  "select",
+				"ref":   "e12",
+				"value": "Large",
+			}}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := findActionCalls(7, match, tt.action)
+			if err != nil {
+				t.Fatalf("findActionCalls() error = %v", err)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("calls = %#v, want %#v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestTabsListResultUsesCanonicalPageField(t *testing.T) {
 	result := tabsListResult(&mcp.ToolResult{
 		StructuredContent: map[string]any{
