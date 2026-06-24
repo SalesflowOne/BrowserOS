@@ -224,16 +224,23 @@ func TestFindRejectsInvalidNth(t *testing.T) {
 	}
 }
 
-func TestFindGrepToolArgsUsesHighLimit(t *testing.T) {
+func TestFindGrepToolArgsUsesBoundedDefault(t *testing.T) {
 	got := findGrepToolArgs(7, findQuery{mode: "text", text: "Buy"})
 	want := map[string]any{
 		"page":    7,
 		"pattern": "Buy",
 		"over":    "ax",
-		"limit":   findGrepLimit,
+		"limit":   findDefaultGrepLimit,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("find grep args = %#v, want %#v", got, want)
+	}
+}
+
+func TestFindGrepToolArgsExpandsToNth(t *testing.T) {
+	got := findGrepToolArgs(7, findQuery{mode: "text", text: "Buy", nth: 150, limit: 10})
+	if got["limit"] != 150 {
+		t.Fatalf("limit = %v, want nth-sized search", got["limit"])
 	}
 }
 
@@ -341,6 +348,42 @@ func TestSnapshotOutputResultReportsFiltersForJSON(t *testing.T) {
 	filters, ok := got.StructuredContent["filters"].(map[string]any)
 	if !ok || filters["interactive"] != true {
 		t.Fatalf("filters = %#v, want interactive metadata", got.StructuredContent["filters"])
+	}
+}
+
+func TestSnapshotOutputResultFiltersStructuredSnapshotAndPreservesPath(t *testing.T) {
+	result := textResult(strings.Join([]string{
+		`Large snapshot (20000 estimated tokens, 80000 chars) saved to: /tmp/browseros/snapshot.md`,
+		`Read the file for the full snapshot and refs.`,
+		`Showing the first 5000 estimated tokens inline:`,
+		`[UNTRUSTED_PAGE_CONTENT origin="https://example.com"]`,
+		`- generic`,
+		`[END_UNTRUSTED_PAGE_CONTENT]`,
+	}, "\n"), map[string]any{
+		"page":          7,
+		"path":          "/tmp/browseros/snapshot.md",
+		"writtenToFile": true,
+		"contentLength": 80000,
+		"tokenEstimate": 20000,
+		"snapshot":      strings.Join([]string{`[UNTRUSTED_PAGE_CONTENT origin="https://example.com"]`, `- generic`, `  - searchbox "Search" [ref=e5]`, `[END_UNTRUSTED_PAGE_CONTENT]`}, "\n"),
+	})
+
+	got := snapshotOutputResult(result, 7, snapshotFilterOptions{interactive: true}, true)
+	text := got.TextContent()
+	for _, want := range []string{
+		"Large snapshot saved to: /tmp/browseros/snapshot.md",
+		"Read the file for the full snapshot and refs.",
+		`- searchbox "Search" [ref=@e5]`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("filtered text missing %q in:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "- generic") {
+		t.Fatalf("filtered text kept non-interactive row:\n%s", text)
+	}
+	if got.StructuredContent["filteredSnapshot"] != strings.Join([]string{`[UNTRUSTED_PAGE_CONTENT origin="https://example.com"]`, `  - searchbox "Search" [ref=@e5]`, `[END_UNTRUSTED_PAGE_CONTENT]`}, "\n") {
+		t.Fatalf("filteredSnapshot = %#v", got.StructuredContent["filteredSnapshot"])
 	}
 }
 

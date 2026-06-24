@@ -128,6 +128,8 @@ browseros-cli history recent
 browseros-cli group list
 ```
 
+`batch` supports page-scoped browser steps that map directly to MCP calls: `nav`, `back`, `forward`, `reload`, `eval`, `snapshot`, `read`, `grep`, `find`, `click`, `fill`, `press`, `type`, `hover`, `check`, `uncheck`, `focus`, and `select`.
+
 ## Use as MCP Server
 
 BrowserOS exposes an MCP server that AI coding agents can connect to directly. The CLI is the easiest way to verify the connection and interact with tools from the terminal.

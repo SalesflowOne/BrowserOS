@@ -235,6 +235,10 @@ func TestRequireExplicitPageID(t *testing.T) {
 		t.Fatalf("explicitPageID(true, 7) = %d, want 7", page)
 	}
 
+	if _, err := explicitPageID(true, 0); err == nil {
+		t.Fatal("explicitPageID(true, 0) error = nil, want invalid page error")
+	}
+
 	if _, err := explicitPageID(false, 0); err == nil {
 		t.Fatal("explicitPageID(false, 0) error = nil, want missing page error")
 	} else if !strings.Contains(err.Error(), "-p/--page") || strings.Contains(err.Error(), "active") {

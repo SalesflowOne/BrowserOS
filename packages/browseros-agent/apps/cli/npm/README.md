@@ -51,6 +51,8 @@ browseros-cli -p "$page" screenshot -o shot.png
 browseros-cli -p "$page" close
 ```
 
+`batch` can run shared-session browser steps for navigation, eval, snapshot/read/grep/find, and direct element actions like click/fill/press/type.
+
 ## Documentation
 
 Full documentation is available at [browseros.com](https://browseros.com).

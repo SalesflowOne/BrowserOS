@@ -202,9 +202,19 @@ func resolvePageID(_ *mcp.Client) (int, error) {
 // explicitPageID returns only caller-provided page ids, never ambient browser state.
 func explicitPageID(changed bool, page int) (int, error) {
 	if changed {
+		if err := validatePageID(page); err != nil {
+			return 0, err
+		}
 		return page, nil
 	}
 	return 0, fmt.Errorf("page id is required: pass -p/--page <id> from `browseros-cli open --json | jq -r .page` or `browseros-cli tabs --json`")
+}
+
+func validatePageID(page int) error {
+	if page <= 0 {
+		return fmt.Errorf("invalid page id: %d; page id must be greater than 0", page)
+	}
+	return nil
 }
 
 func envBool(key string) bool {

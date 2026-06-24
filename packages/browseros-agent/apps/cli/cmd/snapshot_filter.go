@@ -32,12 +32,6 @@ func (o snapshotFilterOptions) metadata() map[string]any {
 
 // snapshotOutputResult applies print-time filters while preserving the raw structured snapshot.
 func snapshotOutputResult(result *mcp.ToolResult, pageID int, filters snapshotFilterOptions, jsonOutput bool) *mcp.ToolResult {
-	text := result.TextContent()
-	if filters.applied() {
-		text = filterSnapshotText(text, filters)
-	}
-	text = displayElementRefs(text)
-
 	data := map[string]any{}
 	for key, value := range result.StructuredContent {
 		data[key] = value
@@ -45,11 +39,43 @@ func snapshotOutputResult(result *mcp.ToolResult, pageID int, filters snapshotFi
 	if _, ok := data["page"]; !ok {
 		data["page"] = pageID
 	}
+
+	text := result.TextContent()
+	filteredSnapshot := ""
+	if filters.applied() {
+		if snapshot := stringValue(data["snapshot"]); snapshot != "" {
+			text = snapshot
+		}
+		text = filterSnapshotText(text, filters)
+		filteredSnapshot = displayElementRefs(text)
+		if notice := filteredSnapshotNotice(data); notice != "" {
+			text = notice + "\n" + filteredSnapshot
+		} else {
+			text = filteredSnapshot
+		}
+	} else {
+		text = displayElementRefs(text)
+	}
+
 	if jsonOutput && filters.applied() {
-		data["filteredSnapshot"] = text
+		data["filteredSnapshot"] = filteredSnapshot
 		data["filters"] = filters.metadata()
 	}
 	return textResult(text, data)
+}
+
+func filteredSnapshotNotice(data map[string]any) string {
+	if path := stringValue(data["path"]); path != "" {
+		return strings.Join([]string{
+			"Large snapshot saved to: " + path,
+			"Read the file for the full snapshot and refs.",
+			"Showing filtered snapshot inline:",
+		}, "\n")
+	}
+	if failed, _ := data["outputWriteFailed"].(bool); failed {
+		return "Large snapshot could not be saved to a BrowserOS output file; showing filtered snapshot inline:"
+	}
+	return ""
 }
 
 // filterSnapshotText removes snapshot rows that do not match the selected print filters.
@@ -96,6 +122,9 @@ func snapshotLineDepth(line string) int {
 }
 
 func snapshotLineInteractive(line string) bool {
+	if _, ok := findLineRef(line); ok {
+		return true
+	}
 	switch lineRole(line) {
 	case "button", "link", "input", "textbox", "combobox", "checkbox", "radio", "menuitem", "tab":
 		return true

@@ -24,7 +24,7 @@ func (f *fakeToolCaller) CallTool(name string, args map[string]any) (*mcp.ToolRe
 
 func TestBatchCommandsInheritAndOverridePage(t *testing.T) {
 	caller := &fakeToolCaller{}
-	results := runBatchCommands(caller, []string{"press Enter", "-p 9 press Escape"}, batchOptions{
+	results := runBatchCommands(caller, []string{"press Enter", "-p 9 press Escape", "nav https://example.com", "eval document.title", "hover @e3", "select @e4 Large"}, batchOptions{
 		page:    7,
 		pageSet: true,
 		bail:    true,
@@ -36,6 +36,10 @@ func TestBatchCommandsInheritAndOverridePage(t *testing.T) {
 	want := []toolCall{
 		{name: "act", args: map[string]any{"page": 7, "kind": "press", "key": "Enter"}},
 		{name: "act", args: map[string]any{"page": 9, "kind": "press", "key": "Escape"}},
+		{name: "navigate", args: map[string]any{"page": 7, "action": "url", "url": "https://example.com"}},
+		{name: "evaluate", args: map[string]any{"page": 7, "code": evalCode("document.title")}},
+		{name: "act", args: map[string]any{"page": 7, "kind": "hover", "ref": "e3"}},
+		{name: "act", args: map[string]any{"page": 7, "kind": "select", "ref": "e4", "value": "Large"}},
 	}
 	if !reflect.DeepEqual(caller.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", caller.calls, want)
@@ -112,6 +116,39 @@ func TestBatchSnapshotFilters(t *testing.T) {
 
 	if _, err := batchSnapshotFilters([]string{"--selector", "button"}); err == nil {
 		t.Fatal("batchSnapshotFilters() error = nil, want unsupported flag error")
+	}
+}
+
+func TestBatchReadParsesCommandFlags(t *testing.T) {
+	got, err := batchReadOptions([]string{"read", "--text", "--selector=.main", "--viewport", "--include-links", "--images"})
+	if err != nil {
+		t.Fatalf("batchReadOptions() error = %v", err)
+	}
+	want := readOptions{
+		format:        "text",
+		selector:      ".main",
+		viewportOnly:  true,
+		includeLinks:  true,
+		includeImages: true,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("read options = %#v, want %#v", got, want)
+	}
+}
+
+func TestBatchGrepParsesCommandFlags(t *testing.T) {
+	pattern, over, limit, err := batchGrepArgs([]string{"grep", "--content", "--limit=5", "price"})
+	if err != nil {
+		t.Fatalf("batchGrepArgs() error = %v", err)
+	}
+	if pattern != "price" || over != "content" || limit != 5 {
+		t.Fatalf("grep args = %q %q %d, want price content 5", pattern, over, limit)
+	}
+}
+
+func TestBatchPageRejectsNonPositivePage(t *testing.T) {
+	if _, _, err := batchPage([]string{"-p", "0", "snapshot"}, batchOptions{}); err == nil {
+		t.Fatal("batchPage() error = nil, want invalid page error")
 	}
 }
 

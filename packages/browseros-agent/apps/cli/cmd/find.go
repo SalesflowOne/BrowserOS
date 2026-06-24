@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"browseros-cli/mcp"
@@ -12,11 +13,12 @@ import (
 )
 
 type findQuery struct {
-	mode string
-	text string
-	role string
-	name string
-	nth  int
+	mode  string
+	text  string
+	role  string
+	name  string
+	nth   int
+	limit int
 }
 
 type findAction struct {
@@ -34,7 +36,7 @@ type toolCall struct {
 	args map[string]any
 }
 
-const findGrepLimit = 1_000_000
+const findDefaultGrepLimit = 100
 
 func init() {
 	cmd := &cobra.Command{
@@ -72,7 +74,7 @@ func init() {
 			if err != nil {
 				output.Error(err.Error(), 1)
 			}
-			report := findReport(pageID, matches, selected, action, result)
+			report := findReport(pageID, matches, selected, query, action, result)
 			if jsonOut {
 				output.JSONRaw(report.StructuredContent)
 			} else {
@@ -82,6 +84,7 @@ func init() {
 	}
 	cmd.Flags().String("name", "", "Accessible name substring for role matches")
 	cmd.Flags().Int("nth", 1, "One-based match index to select")
+	cmd.Flags().Int("limit", findDefaultGrepLimit, "Maximum snapshot candidates to search")
 	rootCmd.AddCommand(cmd)
 }
 
@@ -90,8 +93,12 @@ func parseFindArgs(cmd *cobra.Command, args []string) (findQuery, findAction, er
 	if nth < 1 {
 		return findQuery{}, findAction{}, fmt.Errorf("--nth must be 1 or greater")
 	}
+	limit, _ := cmd.Flags().GetInt("limit")
+	if limit < 1 {
+		return findQuery{}, findAction{}, fmt.Errorf("--limit must be 1 or greater")
+	}
 	mode := args[0]
-	query := findQuery{mode: mode, nth: nth}
+	query := findQuery{mode: mode, nth: nth, limit: limit}
 	var actionArgs []string
 	switch mode {
 	case "text":
@@ -140,7 +147,18 @@ func (q findQuery) grepPattern() string {
 }
 
 func findGrepToolArgs(pageID int, query findQuery) map[string]any {
-	return grepToolArgs(pageID, query.grepPattern(), "ax", findGrepLimit)
+	return grepToolArgs(pageID, query.grepPattern(), "ax", query.grepLimit())
+}
+
+func (q findQuery) grepLimit() int {
+	limit := q.limit
+	if limit < 1 {
+		limit = findDefaultGrepLimit
+	}
+	if q.nth > limit {
+		return q.nth
+	}
+	return limit
 }
 
 func snapshotLines(text string) []string {
@@ -252,7 +270,7 @@ func findActionCalls(pageID int, match findMatch, action findAction) ([]toolCall
 	}
 }
 
-func findReport(pageID int, matches []findMatch, selected findMatch, action findAction, result *mcp.ToolResult) *mcp.ToolResult {
+func findReport(pageID int, matches []findMatch, selected findMatch, query findQuery, action findAction, result *mcp.ToolResult) *mcp.ToolResult {
 	selectedIndex := 1
 	for i, match := range matches {
 		if match.ref == selected.ref && match.line == selected.line {
@@ -260,8 +278,14 @@ func findReport(pageID int, matches []findMatch, selected findMatch, action find
 			break
 		}
 	}
+	limit := query.grepLimit()
+	limitReached := len(matches) >= limit
+	countLabel := strconv.Itoa(len(matches))
+	if limitReached {
+		countLabel += "+"
+	}
 	ref := "@" + selected.ref
-	text := fmt.Sprintf("match %d/%d %s\n%s", selectedIndex, len(matches), ref, displayElementRefs(selected.line))
+	text := fmt.Sprintf("match %d/%s %s\n%s", selectedIndex, countLabel, ref, displayElementRefs(selected.line))
 	if result != nil && result.TextContent() != "" {
 		text += "\n" + result.TextContent()
 	}
@@ -272,6 +296,10 @@ func findReport(pageID int, matches []findMatch, selected findMatch, action find
 		"matchCount":    len(matches),
 		"selectedIndex": selectedIndex,
 		"action":        action.kind,
+		"matchLimit":    limit,
+	}
+	if limitReached {
+		data["matchLimitReached"] = true
 	}
 	if action.value != "" {
 		data["value"] = action.value
