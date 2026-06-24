@@ -23,7 +23,7 @@ jobs:
       pull-requests: write
     defaults:
       run:
-        working-directory: packages/browseros-agent/apps/agent
+        working-directory: packages/browseros-agent/apps/app
 
     steps:
       - uses: actions/checkout@v7
@@ -45,7 +45,7 @@ jobs:
 
           cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
           Maintainer release flow:
-          1. Bump packages/browseros-agent/apps/agent/package.json in a PR and merge it.
+          1. Bump packages/browseros-agent/apps/app/package.json in a PR and merge it.
           2. git tag -a agent-extension/v0.0.100 -m "agent-extension v0.0.100"
           3. git push origin agent-extension/v0.0.100
           EOF
@@ -83,7 +83,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          AGENT_PATH="packages/browseros-agent/apps/agent"
+          AGENT_PATH="packages/browseros-agent/apps/app"
           RELEASE_SHA="${{ steps.release.outputs.release_sha }}"
           PREV_TAG="${{ steps.release.outputs.previous_tag }}"
 
@@ -142,7 +142,7 @@ jobs:
           VERSION="${{ steps.release.outputs.version }}"
           DATE=$(date -u +"%Y-%m-%d")
           BRANCH="docs/agent-extension-changelog-v${VERSION}"
-          CHANGELOG="packages/browseros-agent/apps/agent/CHANGELOG.md"
+          CHANGELOG="packages/browseros-agent/apps/app/CHANGELOG.md"
 
           git fetch origin "$DEFAULT_BRANCH" --no-tags
           git checkout -B "$DEFAULT_BRANCH" "origin/$DEFAULT_BRANCH"

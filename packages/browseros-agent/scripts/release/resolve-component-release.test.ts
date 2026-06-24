@@ -10,7 +10,7 @@ type Component = 'agent-extension' | 'agent-server'
 
 function packagePath(component: Component): string {
   return component === 'agent-extension'
-    ? 'apps/agent/package.json'
+    ? 'apps/app/package.json'
     : 'apps/server/package.json'
 }
 
@@ -76,7 +76,7 @@ function writePackage(
       {
         name:
           component === 'agent-extension'
-            ? '@browseros/agent'
+            ? '@browseros/app'
             : '@browseros/server',
         version,
       },
@@ -177,7 +177,7 @@ describe('resolve-component-release', () => {
 
       expect(result.code).toBe(1)
       expect(result.stderr).toContain(
-        'Tag version 0.0.100 does not match apps/agent/package.json version 0.0.99',
+        'Tag version 0.0.100 does not match apps/app/package.json version 0.0.99',
       )
     } finally {
       rmSync(dir, { recursive: true, force: true })
@@ -195,7 +195,7 @@ describe('resolve-component-release', () => {
 
       expect(result.code).toBe(1)
       expect(result.stderr).toContain(
-        'Tag version 0.0.100 does not match apps/agent/package.json version 0.0.99',
+        'Tag version 0.0.100 does not match apps/app/package.json version 0.0.99',
       )
     } finally {
       rmSync(dir, { recursive: true, force: true })

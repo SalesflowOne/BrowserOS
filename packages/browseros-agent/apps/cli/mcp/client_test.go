@@ -63,6 +63,24 @@ func TestExtractPageID(t *testing.T) {
 			ok:   true,
 		},
 		{
+			name: "run value page id",
+			data: map[string]any{
+				"value": float64(17),
+			},
+			want: 17,
+			ok:   true,
+		},
+		{
+			name: "run value page object",
+			data: map[string]any{
+				"value": map[string]any{
+					"pageId": float64(19),
+				},
+			},
+			want: 19,
+			ok:   true,
+		},
+		{
 			name: "non whole float page id",
 			data: map[string]any{
 				"pageId": 3.5,

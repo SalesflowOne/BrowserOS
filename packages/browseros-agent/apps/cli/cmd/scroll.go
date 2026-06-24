@@ -39,7 +39,13 @@ func init() {
 				toolArgs["element"] = element
 			}
 
-			result, err := c.CallTool("scroll", toolArgs)
+			toolArgs["kind"] = "scroll"
+			if cmd.Flags().Changed("element") {
+				toolArgs["ref"] = fmt.Sprintf("e%d", element)
+				delete(toolArgs, "element")
+			}
+
+			result, err := c.CallTool("act", toolArgs)
 			if err != nil {
 				output.Error(err.Error(), 1)
 			}

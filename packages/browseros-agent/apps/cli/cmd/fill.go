@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"strings"
 
 	"browseros-cli/output"
@@ -16,9 +15,9 @@ func init() {
 		Short:       "Type text into an input element",
 		Args:        cobra.MinimumNArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
-			var element int
-			if _, err := fmt.Sscanf(args[0], "%d", &element); err != nil {
-				output.Errorf(3, "invalid element ID: %s", args[0])
+			ref, err := elementRef(args[0])
+			if err != nil {
+				output.Error(err.Error(), 3)
 			}
 			text := strings.Join(args[1:], " ")
 			noClear, _ := cmd.Flags().GetBool("no-clear")
@@ -29,11 +28,12 @@ func init() {
 				output.Error(err.Error(), 2)
 			}
 
-			result, err := c.CallTool("fill", map[string]any{
-				"page":    pageID,
-				"element": element,
-				"text":    text,
-				"clear":   !noClear,
+			result, err := c.CallTool("act", map[string]any{
+				"page":  pageID,
+				"kind":  "fill",
+				"ref":   ref,
+				"value": text,
+				"clear": !noClear,
 			})
 			if err != nil {
 				output.Error(err.Error(), 1)
@@ -52,7 +52,7 @@ func init() {
 		Annotations: map[string]string{"group": "Input:"},
 		Short:       "Clear text content of an input element",
 		Args:        cobra.ExactArgs(1),
-		Run:   elementAction("clear"),
+		Run:         elementAction("fill", map[string]any{"value": "", "clear": true}),
 	}
 
 	keyCmd := &cobra.Command{
@@ -66,8 +66,9 @@ func init() {
 			if err != nil {
 				output.Error(err.Error(), 2)
 			}
-			result, err := c.CallTool("press_key", map[string]any{
+			result, err := c.CallTool("act", map[string]any{
 				"page": pageID,
+				"kind": "press",
 				"key":  args[0],
 			})
 			if err != nil {

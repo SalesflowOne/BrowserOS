@@ -15,9 +15,9 @@ func init() {
 		Short:       "Click an element by snapshot ID",
 		Args:        cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			var element int
-			if _, err := fmt.Sscanf(args[0], "%d", &element); err != nil {
-				output.Errorf(3, "invalid element ID: %s", args[0])
+			ref, err := elementRef(args[0])
+			if err != nil {
+				output.Error(err.Error(), 3)
 			}
 
 			right, _ := cmd.Flags().GetBool("right")
@@ -41,12 +41,7 @@ func init() {
 				output.Error(err.Error(), 2)
 			}
 
-			result, err := c.CallTool("click", map[string]any{
-				"page":       pageID,
-				"element":    element,
-				"button":     button,
-				"clickCount": clickCount,
-			})
+			result, err := c.CallTool("act", clickToolArgs(pageID, ref, button, clickCount))
 			if err != nil {
 				output.Error(err.Error(), 1)
 			}
@@ -82,11 +77,7 @@ func init() {
 				output.Error(err.Error(), 2)
 			}
 
-			result, err := c.CallTool("click_at", map[string]any{
-				"page": pageID,
-				"x":    x,
-				"y":    y,
-			})
+			result, err := c.CallTool("act", clickAtToolArgs(pageID, x, y))
 			if err != nil {
 				output.Error(err.Error(), 1)
 			}
@@ -99,4 +90,23 @@ func init() {
 	}
 
 	rootCmd.AddCommand(clickCmd, clickAtCmd)
+}
+
+func clickToolArgs(pageID int, ref, button string, clickCount int) map[string]any {
+	return map[string]any{
+		"page":       pageID,
+		"kind":       "click",
+		"ref":        ref,
+		"button":     button,
+		"clickCount": clickCount,
+	}
+}
+
+func clickAtToolArgs(pageID, x, y int) map[string]any {
+	return map[string]any{
+		"page": pageID,
+		"kind": "click_at",
+		"x":    x,
+		"y":    y,
+	}
 }

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"browseros-cli/output"
+	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -20,6 +21,9 @@ func init() {
 			if text == "" && selector == "" {
 				output.Errorf(3, "provide --text or --selector")
 			}
+			if text != "" && selector != "" {
+				output.Errorf(3, "provide only one of --text or --selector")
+			}
 
 			c := newClient()
 			pageID, err := resolvePageID(c)
@@ -32,15 +36,24 @@ func init() {
 				"timeout": waitTimeout,
 			}
 			if text != "" {
-				toolArgs["text"] = text
-			}
-			if selector != "" {
-				toolArgs["selector"] = selector
+				toolArgs["for"] = "text"
+				toolArgs["value"] = text
+			} else {
+				toolArgs["for"] = "selector"
+				toolArgs["value"] = selector
 			}
 
-			result, err := c.CallTool("wait_for", toolArgs)
+			result, err := c.CallTool("wait", toolArgs)
 			if err != nil {
 				output.Error(err.Error(), 1)
+			}
+			matched, hasMatch := result.StructuredContent["matched"].(bool)
+			if hasMatch && !matched {
+				if jsonOut {
+					output.JSON(result)
+					os.Exit(1)
+				}
+				output.Error(result.TextContent(), 1)
 			}
 			if jsonOut {
 				output.JSON(result)

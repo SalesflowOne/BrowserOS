@@ -117,7 +117,12 @@ func (c *Client) ResolvePageID(explicit *int) (int, error) {
 	if explicit != nil {
 		return *explicit, nil
 	}
-	result, err := c.CallTool("get_active_page", nil)
+	result, err := c.CallTool("run", map[string]any{
+		"code": `const pages = await browser.pages.list()
+const page = pages.find((p) => p.isActive) ?? pages[0]
+if (!page) throw new Error('No active page found.')
+return page.pageId`,
+	})
 	if err != nil {
 		return 0, fmt.Errorf("no active page: %w", err)
 	}
@@ -136,7 +141,19 @@ func extractPageID(sc map[string]any) (int, bool) {
 	if pageID, ok := intValue(sc["pageId"]); ok {
 		return pageID, true
 	}
+	if pageID, ok := intValue(sc["value"]); ok {
+		return pageID, true
+	}
 	page, ok := sc["page"].(map[string]any)
+	if !ok {
+		if value, valueOK := sc["value"].(map[string]any); valueOK {
+			pageID, ok := intValue(value["pageId"])
+			if ok {
+				return pageID, true
+			}
+			page, ok = value["page"].(map[string]any)
+		}
+	}
 	if !ok {
 		return 0, false
 	}

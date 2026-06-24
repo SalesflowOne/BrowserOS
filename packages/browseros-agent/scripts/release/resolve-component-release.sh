@@ -46,7 +46,7 @@ case "$component" in
   agent-extension)
     new_prefix="agent-extension/v"
     legacy_prefix="agent-extension-v"
-    package_json="apps/agent/package.json"
+    package_json="apps/app/package.json"
     ;;
   agent-server)
     new_prefix="agent-server/v"

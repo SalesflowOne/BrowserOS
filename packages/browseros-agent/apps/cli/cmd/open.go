@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+
 	"browseros-cli/output"
 
 	"github.com/spf13/cobra"
@@ -18,32 +20,34 @@ func init() {
 			windowID, _ := cmd.Flags().GetInt("window")
 
 			c := newClient()
-			toolArgs := map[string]any{
-				"url":        args[0],
-				"hidden":     hidden,
-				"background": bg,
-			}
-			if cmd.Flags().Changed("window") {
-				toolArgs["windowId"] = windowID
-			}
+			var resultText string
+			var resultData map[string]any
+			var err error
+			var result any
 
-			toolName := "new_page"
-			if hidden {
-				toolName = "new_hidden_page"
-				toolArgs = map[string]any{"url": args[0]}
-				if cmd.Flags().Changed("window") {
-					toolArgs["windowId"] = windowID
+			if cmd.Flags().Changed("window") {
+				_, result, err = browserRunValue(c, openInWindowCode(args[0], hidden, bg, windowID))
+				if err == nil {
+					resultData, _ = valueMap(result)
+					resultText = fmt.Sprintf("opened page %d", numberValue(resultData["page"]))
+				}
+			} else {
+				toolResult, callErr := c.CallTool("tabs", openTabsToolArgs(args[0], hidden, bg))
+				err = callErr
+				if err == nil {
+					resultText = toolResult.TextContent()
+					resultData = toolResult.StructuredContent
 				}
 			}
 
-			result, err := c.CallTool(toolName, toolArgs)
 			if err != nil {
 				output.Error(err.Error(), 1)
 			}
+			resultForOutput := textResult(resultText, resultData)
 			if jsonOut {
-				output.JSON(result)
+				output.JSON(resultForOutput)
 			} else {
-				output.Confirm(result.TextContent())
+				output.Confirm(resultForOutput.TextContent())
 			}
 		},
 	}
@@ -53,4 +57,28 @@ func init() {
 	cmd.Flags().Int("window", 0, "Window ID to open in")
 
 	rootCmd.AddCommand(cmd)
+}
+
+func openTabsToolArgs(url string, hidden, background bool) map[string]any {
+	return map[string]any{
+		"action":     "new",
+		"url":        url,
+		"hidden":     hidden,
+		"background": background,
+	}
+}
+
+func openInWindowCode(url string, hidden, background bool, windowID int) string {
+	return fmt.Sprintf(
+		`const page = await browser.pages.newPage(%s, { hidden: %t, background: %t, windowId: %d })
+return { page, url: %s, hidden: %t, background: %t, windowId: %d }`,
+		jsLiteral(url),
+		hidden,
+		background,
+		windowID,
+		jsLiteral(url),
+		hidden,
+		background,
+		windowID,
+	)
 }
