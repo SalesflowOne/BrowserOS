@@ -43,7 +43,7 @@ export function loadClawConfig(
   if (!fileConfig.ok) return fileConfig
 
   const result = ClawConfigSchema.safeParse(
-    mergeConfigs(getDefaults(), envConfig.value, fileConfig.value),
+    mergeConfigs(getDefaults(), fileConfig.value, envConfig.value),
   )
   if (!result.success) {
     const errors = result.error.issues
@@ -127,6 +127,15 @@ function parseConfigFile(
   if (ports === undefined) return { ok: true, value: {} }
   if (!isRecord(ports)) {
     return { ok: false, error: 'Config file error: ports must be a mapping' }
+  }
+  const unknownPortKeys = Object.keys(ports).filter(
+    (key) => key !== 'server' && key !== 'cdp',
+  )
+  if (unknownPortKeys.length > 0) {
+    return {
+      ok: false,
+      error: `Config file error: unknown ports key(s): ${unknownPortKeys.join(', ')}`,
+    }
   }
 
   const port = parsePort(ports.server, 'ports.server')

@@ -66,7 +66,7 @@ ports:
     })
   })
 
-  test('lets YAML config values override env ports', async () => {
+  test('lets env ports override YAML config values', async () => {
     const configPath = await writeConfig(`
 ports:
   server: 9520
@@ -86,8 +86,8 @@ ports:
     expect(result).toEqual({
       ok: true,
       value: {
-        port: 9520,
-        cdpPort: 9120,
+        port: 9310,
+        cdpPort: 9010,
       },
     })
   })
@@ -150,6 +150,24 @@ ports:
       expect(result.error).toContain('ports.server')
       expect(result.error).toContain('integer port between 1 and 65535')
     }
+  })
+
+  test('returns a clear error for unknown YAML port keys', async () => {
+    const configPath = await writeConfig(`
+ports:
+  cdpPort: 9020
+`)
+
+    const result = loadClawConfig({
+      argv: ['--config', configPath],
+      cwd: '/',
+      env: {},
+    })
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'Config file error: unknown ports key(s): cdpPort',
+    })
   })
 
   test('returns a clear error for a missing config file', () => {
