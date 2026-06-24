@@ -140,6 +140,17 @@ Codegen requires a GraphQL schema. By default it uses the bundled `schema/schema
 GRAPHQL_SCHEMA_PATH=/path/to/api-repo/.../schema.graphql
 ```
 
+## Release Flow
+
+Extension releases use annotated component tags. First bump `packages/browseros-agent/apps/app/package.json` in a PR, merge that version commit to the default branch, then tag the merged commit:
+
+```bash
+git tag -a agent-extension/v0.0.100 -m "agent-extension v0.0.100"
+git push origin agent-extension/v0.0.100
+```
+
+The release workflow validates that the tag version matches `apps/app/package.json`, that the tagged commit is reachable from the default branch, and that the version is newer than existing `agent-extension-v*` and `agent-extension/v*` tags. Legacy `agent-extension-vX.Y.Z` tags remain historical; new GitHub Releases use `agent-extension/vX.Y.Z`.
+
 ## Development Tooling
 
 ### Bun
