@@ -39,11 +39,21 @@ export const grep = defineTool({
       .split('\n')
       .filter((line) => regex.test(line))
       .slice(0, args.limit ?? 50)
-    if (matches.length === 0) return textResult('no matches', { count: 0 })
+    if (matches.length === 0) {
+      return textResult('no matches', {
+        page: args.page,
+        over: args.over,
+        count: 0,
+        matches: [],
+      })
+    }
 
     const origin = ctx.session.pages.getInfo(args.page)?.url ?? 'unknown'
     return textResult(wrapUntrusted(matches.join('\n'), origin), {
+      page: args.page,
+      over: args.over,
       count: matches.length,
+      matches,
     })
   },
 })

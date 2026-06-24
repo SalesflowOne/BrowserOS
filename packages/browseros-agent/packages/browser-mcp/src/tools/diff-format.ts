@@ -19,12 +19,18 @@ export async function formatDiffResult(
   diff: SnapshotDiff,
   origin: string,
 ): Promise<FormattedDiff> {
-  if (!diff.changed) return { text: 'no change since last snapshot' }
+  if (!diff.changed) {
+    return {
+      text: 'no change since last snapshot',
+      structured: { changed: false },
+    }
+  }
 
   const diffText = diff.text || '(empty page)'
   const wrappedDiff = wrapUntrusted(diffText, origin)
   const tokenEstimate = estimateTextTokens(wrappedDiff)
   const structured = {
+    changed: true,
     added: diff.added,
     removed: diff.removed,
     ...(diff.urlChanged && {

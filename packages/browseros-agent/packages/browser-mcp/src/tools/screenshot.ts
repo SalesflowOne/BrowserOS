@@ -86,12 +86,15 @@ export const screenshot = defineTool({
       content: [
         { type: 'image', data: result.data, mimeType: result.mimeType },
       ],
-      ...(result.annotations.length > 0 && {
-        structuredContent: {
-          page: args.page,
+      structuredContent: {
+        page: args.page,
+        format: args.format,
+        bytes: Buffer.from(result.data, 'base64').length,
+        image: result.data,
+        ...(result.annotations.length > 0 && {
           annotations: result.annotations,
-        },
-      }),
+        }),
+      },
     }
   },
 })

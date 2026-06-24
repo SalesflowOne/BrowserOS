@@ -154,6 +154,12 @@ describe('registerBrowserTools', () => {
       fake.handlers.get('screenshot')?.({ page: 1 }),
     ).resolves.toEqual({
       content: [{ type: 'image', data: 'jpeg-data', mimeType: 'image/jpeg' }],
+      structuredContent: {
+        page: 1,
+        format: 'jpeg',
+        bytes: Buffer.from('jpeg-data', 'base64').length,
+        image: 'jpeg-data',
+      },
     })
     await expect(
       fake.handlers.get('screenshot')?.({
@@ -163,6 +169,12 @@ describe('registerBrowserTools', () => {
       }),
     ).resolves.toEqual({
       content: [{ type: 'image', data: 'jpeg-data', mimeType: 'image/jpeg' }],
+      structuredContent: {
+        page: 1,
+        format: 'jpeg',
+        bytes: Buffer.from('jpeg-data', 'base64').length,
+        image: 'jpeg-data',
+      },
     })
     expect(captureOptions).toEqual([
       {
@@ -244,11 +256,23 @@ describe('registerBrowserTools', () => {
       }),
     ).resolves.toEqual({
       content: [{ type: 'image', data: 'png-data', mimeType: 'image/png' }],
+      structuredContent: {
+        page: 1,
+        format: 'png',
+        bytes: Buffer.from('png-data', 'base64').length,
+        image: 'png-data',
+      },
     })
     await expect(
       fake.handlers.get('screenshot')?.({ page: 1, fullPage: true }),
     ).resolves.toEqual({
       content: [{ type: 'image', data: 'jpeg-data', mimeType: 'image/jpeg' }],
+      structuredContent: {
+        page: 1,
+        format: 'jpeg',
+        bytes: Buffer.from('jpeg-data', 'base64').length,
+        image: 'jpeg-data',
+      },
     })
 
     expect(layoutMetricCalls).toBe(1)
@@ -845,6 +869,31 @@ return 'late'
       expect.objectContaining({
         type: 'text',
         text: expect.not.stringContaining('origin=https://example.com/stale'),
+      }),
+    ])
+  })
+
+  it('reports an unchanged diff with a changed:false discriminator', async () => {
+    const fake = createFakeServer()
+    const session = {
+      observe: () => ({
+        diff: async () => ({ changed: false, text: '', added: 0, removed: 0 }),
+      }),
+      pages: {
+        getInfo: () => ({ url: 'https://example.com' }),
+      },
+    } as unknown as BrowserSession
+
+    registerBrowserTools(fake.server as never, session)
+
+    const result = await fake.handlers.get('diff')?.({ page: 1 })
+
+    expect(result?.isError).toBeFalsy()
+    expect(result?.structuredContent).toEqual({ changed: false })
+    expect(result?.content).toEqual([
+      expect.objectContaining({
+        type: 'text',
+        text: 'no change since last snapshot',
       }),
     ])
   })

@@ -70,6 +70,9 @@ describe('screenshot tool', () => {
     ])
     expect(result.structuredContent).toEqual({
       page: 3,
+      format: 'jpeg',
+      bytes: Buffer.from('jpeg-data', 'base64').length,
+      image: 'jpeg-data',
       annotations: [
         {
           ref: 'e1',
@@ -116,6 +119,11 @@ describe('screenshot tool', () => {
     expect(result.content).toEqual([
       { type: 'image', data: 'jpeg-data', mimeType: 'image/jpeg' },
     ])
-    expect(result.structuredContent).toBeUndefined()
+    expect(result.structuredContent).toEqual({
+      page: 3,
+      format: 'jpeg',
+      bytes: Buffer.from('jpeg-data', 'base64').length,
+      image: 'jpeg-data',
+    })
   })
 })
