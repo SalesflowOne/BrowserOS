@@ -40,7 +40,7 @@ func TestCommandName(t *testing.T) {
 		{"unknown command", []string{"nonexistent"}, "unknown"},
 		{"subcommand", []string{"bookmark", "search"}, "browseros-cli bookmark search"},
 		{"strata subcommand", []string{"strata", "check"}, "browseros-cli strata check"},
-		{"known with extra args", []string{"snap", "--enhanced"}, "browseros-cli snap"},
+		{"known with extra args", []string{"snap", "extra"}, "browseros-cli snap"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -49,6 +49,22 @@ func TestCommandName(t *testing.T) {
 				t.Errorf("commandName(%v) = %q, want %q", tt.args, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestSnapCommandShape(t *testing.T) {
+	cmd, _, err := rootCmd.Find([]string{"snap"})
+	if err != nil {
+		t.Fatalf("rootCmd.Find(snap) error = %v", err)
+	}
+	if cmd.Name() != "snap" {
+		t.Fatalf("command name = %q, want snap", cmd.Name())
+	}
+	if err := cmd.Args(cmd, []string{"extra"}); err == nil {
+		t.Fatal("snap Args accepted a positional argument")
+	}
+	if cmd.Flags().Lookup("enhanced") != nil {
+		t.Fatal("snap command exposes unsupported enhanced flag")
 	}
 }
 
@@ -92,12 +108,12 @@ func TestTabsCommandShape(t *testing.T) {
 	}
 }
 
-func TestRawDOMCommandsAreNotRegistered(t *testing.T) {
-	for _, name := range []string{"dom", "dom-search"} {
+func TestUnsupportedCommandsAreNotRegistered(t *testing.T) {
+	for _, name := range []string{"dialog", "dom", "dom-search"} {
 		t.Run(name, func(t *testing.T) {
 			cmd, _, err := rootCmd.Find([]string{name})
 			if err == nil && cmd != nil && cmd.Name() == name {
-				t.Fatalf("root command registered %q; raw DOM CLI support should be removed", name)
+				t.Fatalf("root command registered unsupported command %q", name)
 			}
 		})
 	}

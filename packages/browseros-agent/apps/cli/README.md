@@ -84,7 +84,6 @@ browseros-cli reload
 
 # Observation
 browseros-cli snap                  # Accessibility tree snapshot
-browseros-cli snap -e               # Enhanced snapshot
 browseros-cli text                  # Extract page as markdown
 browseros-cli links                 # Extract all links
 browseros-cli eval "document.title" # Run JavaScript
@@ -183,7 +182,7 @@ apps/cli/
 │   ├── open.go         # open (new_page / new_hidden_page)
 │   ├── nav.go          # nav, back, forward, reload
 │   ├── pages.go        # tabs/pages alias, active, close
-│   ├── snap.go         # snap (take_snapshot / take_enhanced_snapshot)
+│   ├── snap.go         # snap (snapshot)
 │   ├── text.go         # text, links
 │   ├── screenshot.go   # ss (take_screenshot / save_screenshot)
 │   ├── eval.go         # eval (evaluate_script)
@@ -191,7 +190,6 @@ apps/cli/
 │   ├── fill.go         # fill, clear, key
 │   ├── interact.go     # hover, focus, check, uncheck, select, drag, upload
 │   ├── scroll.go       # scroll
-│   ├── dialog.go       # dialog (handle_dialog)
 │   ├── wait.go         # wait (wait_for)
 │   ├── file_actions.go # pdf, download
 │   ├── window.go       # window {list,create,close,activate}
