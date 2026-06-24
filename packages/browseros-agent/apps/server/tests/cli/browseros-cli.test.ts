@@ -121,6 +121,17 @@ describe('browseros-cli runtime commands', () => {
     expect(typeof data.tabId).toBe('number')
   })
 
+  it('snap captures an explicit page', () => {
+    const active = runJson(['active'])
+    const page = active.page
+
+    expect(typeof page).toBe('number')
+    const data = runJson(['-p', String(page), 'snap'])
+    expect(typeof data.page).toBe('number')
+    expect(typeof data.snapshot).toBe('string')
+    expect((data.snapshot as string).length).toBeGreaterThan(10)
+  })
+
   it('snap requires an explicit page flag', () => {
     const result = runCli(['--json', 'snap'])
 

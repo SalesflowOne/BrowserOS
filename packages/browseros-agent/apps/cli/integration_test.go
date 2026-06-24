@@ -274,7 +274,7 @@ func TestExplicitPageAgentFlows(t *testing.T) {
 	pageArg := fmt.Sprintf("-p=%d", pageID)
 	defer run(t, "close", pageArg)
 
-	batchR := run(t, "--json", "batch", pageArg, "--bail", "find role textbox --name Search fill batch-query", "press Enter", "snapshot -i")
+	batchR := run(t, "--json", "batch", pageArg, "--bail", "find role textbox --name Search fill batch-query", "press Enter", "snapshot")
 	if batchR.ExitCode != 0 {
 		t.Fatalf("batch exited %d: %s%s", batchR.ExitCode, batchR.Stdout, batchR.Stderr)
 	}
@@ -301,7 +301,7 @@ func TestExplicitPageAgentFlows(t *testing.T) {
 	if pressR.ExitCode != 0 {
 		t.Fatalf("press exited %d: %s%s", pressR.ExitCode, pressR.Stdout, pressR.Stderr)
 	}
-	snapshotR := run(t, "--json", "snapshot", pageArg, "-i")
+	snapshotR := run(t, "--json", "snapshot", pageArg)
 	if snapshotR.ExitCode != 0 {
 		t.Fatalf("snapshot exited %d: %s%s", snapshotR.ExitCode, snapshotR.Stdout, snapshotR.Stderr)
 	}
