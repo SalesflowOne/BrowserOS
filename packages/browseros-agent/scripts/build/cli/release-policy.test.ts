@@ -20,6 +20,7 @@ describe('parseCliReleaseTag', () => {
       'browseros-cli-v0.2.3',
       'cli/0.2.3',
       'cli/v0.2',
+      'cli/v01.2.3',
       'cli/v0.2.3-rc1',
       'server/v0.2.3',
     ]) {
@@ -59,6 +60,21 @@ describe('assertIncrementingRelease', () => {
       'must be greater',
     )
   })
+
+  test('allows repair reruns when production latest already points at the same tag', () => {
+    expect(() =>
+      assertIncrementingRelease('0.2.3', '0.2.3', {
+        tag: 'cli/v0.2.3',
+        latestTag: 'cli/v0.2.3',
+      }),
+    ).not.toThrow()
+    expect(() =>
+      assertIncrementingRelease('0.2.3', '0.2.3', {
+        tag: 'cli/v0.2.3',
+        latestTag: 'browseros-cli-v0.2.3',
+      }),
+    ).toThrow('must be greater')
+  })
 })
 
 describe('selectPreviousCliReleaseTag', () => {
@@ -69,6 +85,7 @@ describe('selectPreviousCliReleaseTag', () => {
           'browseros-cli-v0.2.0',
           'browseros-cli-v0.2.2',
           'cli/v0.0.1',
+          'cli/v01.9.9',
           'browseros-cli-v0.1.0-rc1',
           'agent-extension-v1.0.0',
         ],

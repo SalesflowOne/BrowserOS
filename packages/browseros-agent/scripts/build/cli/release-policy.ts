@@ -5,9 +5,14 @@ import { appendFileSync } from 'node:fs'
 
 const DEFAULT_LATEST_VERSION_URL =
   'https://cdn.browseros.com/cli/latest/version.txt'
-const CLI_TAG_PATTERN = /^cli\/v(?<version>[0-9]+\.[0-9]+\.[0-9]+)$/
-const LEGACY_CLI_TAG_PATTERN =
-  /^browseros-cli-v(?<version>[0-9]+\.[0-9]+\.[0-9]+)$/
+const DEFAULT_LATEST_MANIFEST_URL =
+  'https://cdn.browseros.com/cli/latest/manifest.json'
+const STRICT_VERSION_SOURCE =
+  '(?<version>(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*))'
+const CLI_TAG_PATTERN = new RegExp(`^cli/v${STRICT_VERSION_SOURCE}$`)
+const LEGACY_CLI_TAG_PATTERN = new RegExp(
+  `^browseros-cli-v${STRICT_VERSION_SOURCE}$`,
+)
 const VERSION_PATTERN =
   /^(?<major>0|[1-9]\d*)\.(?<minor>0|[1-9]\d*)\.(?<patch>0|[1-9]\d*)$/
 
@@ -20,6 +25,7 @@ export interface CliReleaseValidation {
   tag: string
   version: string
   latestVersion: string
+  latestTag: string
   previousTag: string
   targetCommit: string
 }
@@ -28,6 +34,7 @@ interface ValidateOptions {
   tag: string
   defaultBranch: string
   latestVersionURL: string
+  latestManifestURL: string
   repositoryRoot: string
 }
 
@@ -60,17 +67,27 @@ export function compareReleaseVersions(a: string, b: string): number {
   return 0
 }
 
-/** Fails releases that do not move production latest forward. */
+/** Fails releases that do not move production latest forward, except same-tag repair reruns. */
 export function assertIncrementingRelease(
   version: string,
   latestVersion: string,
+  options: { tag?: string; latestTag?: string } = {},
 ): void {
   const comparison = compareReleaseVersions(version, latestVersion)
-  if (comparison <= 0) {
-    throw new Error(
-      `Release version ${version} must be greater than latest published CLI ${latestVersion}`,
-    )
+  if (comparison > 0) {
+    return
   }
+  if (
+    comparison === 0 &&
+    options.tag !== undefined &&
+    options.tag === options.latestTag
+  ) {
+    return
+  }
+
+  throw new Error(
+    `Release version ${version} must be greater than latest published CLI ${latestVersion}`,
+  )
 }
 
 /** Picks the closest earlier CLI tag across current and legacy CLI release tag names. */
@@ -119,7 +136,14 @@ export async function validateCliRelease(
     options.defaultBranch,
   )
   const latestVersion = await fetchLatestVersion(options.latestVersionURL)
-  assertIncrementingRelease(parsed.version, latestVersion)
+  const latestTag =
+    compareReleaseVersions(parsed.version, latestVersion) === 0
+      ? await fetchLatestManifestTag(options.latestManifestURL)
+      : ''
+  assertIncrementingRelease(parsed.version, latestVersion, {
+    tag: parsed.tag,
+    latestTag,
+  })
 
   const previousTag = selectPreviousCliReleaseTag(
     listGitTags(options.repositoryRoot),
@@ -130,6 +154,7 @@ export async function validateCliRelease(
     tag: parsed.tag,
     version: parsed.version,
     latestVersion,
+    latestTag,
     previousTag,
     targetCommit,
   }
@@ -163,6 +188,11 @@ function parseKnownCliTag(tag: string): ParsedCliReleaseTag | null {
   const match = tag.match(CLI_TAG_PATTERN) ?? tag.match(LEGACY_CLI_TAG_PATTERN)
   const version = match?.groups?.version
   if (!version) {
+    return null
+  }
+  try {
+    parseReleaseVersion(version)
+  } catch {
     return null
   }
   return { tag, version }
@@ -228,6 +258,18 @@ async function fetchLatestVersion(url: string): Promise<string> {
   return version
 }
 
+async function fetchLatestManifestTag(url: string): Promise<string> {
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch latest CLI manifest from ${url}: HTTP ${response.status}`,
+    )
+  }
+
+  const manifest = (await response.json()) as { tag?: unknown }
+  return typeof manifest.tag === 'string' ? manifest.tag : ''
+}
+
 function parseArgs(args: string[]): Record<string, string> {
   const options: Record<string, string> = {}
   for (let index = 0; index < args.length; index += 1) {
@@ -258,6 +300,7 @@ function writeGithubOutputs(validation: CliReleaseValidation): void {
       `tag=${validation.tag}`,
       `version=${validation.version}`,
       `latest_version=${validation.latestVersion}`,
+      `latest_tag=${validation.latestTag}`,
       `previous_tag=${validation.previousTag}`,
       `target_commit=${validation.targetCommit}`,
     ].join('\n')}\n`,
@@ -282,12 +325,15 @@ async function main(): Promise<void> {
     options['default-branch'] ?? process.env.DEFAULT_BRANCH ?? 'main'
   const latestVersionURL =
     options['latest-version-url'] ?? DEFAULT_LATEST_VERSION_URL
+  const latestManifestURL =
+    options['latest-manifest-url'] ?? DEFAULT_LATEST_MANIFEST_URL
   const repositoryRoot = options['repository-root'] ?? process.cwd()
 
   const validation = await validateCliRelease({
     tag,
     defaultBranch,
     latestVersionURL,
+    latestManifestURL,
     repositoryRoot,
   })
 

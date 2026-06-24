@@ -142,11 +142,18 @@ jobs:
           VERSION="${{ steps.release.outputs.version }}"
 
           CLI_DIST="packages/browseros-agent/apps/cli/dist"
-          gh release create "$TAG" \
-            --verify-tag \
-            --title "BrowserOS CLI - v${VERSION}" \
-            --notes-file /tmp/release-notes.md \
-            ${CLI_DIST}/*
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" \
+              --title "BrowserOS CLI - v${VERSION}" \
+              --notes-file /tmp/release-notes.md
+            gh release upload "$TAG" ${CLI_DIST}/* --clobber
+          else
+            gh release create "$TAG" \
+              --verify-tag \
+              --title "BrowserOS CLI - v${VERSION}" \
+              --notes-file /tmp/release-notes.md \
+              ${CLI_DIST}/*
+          fi
         working-directory: ${{ github.workspace }}
 
       - name: Setup Node.js
