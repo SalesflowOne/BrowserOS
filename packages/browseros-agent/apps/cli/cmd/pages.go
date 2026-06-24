@@ -4,28 +4,26 @@ import (
 	"fmt"
 	"strings"
 
+	"browseros-cli/mcp"
 	"browseros-cli/output"
 
 	"github.com/spf13/cobra"
 )
 
 func init() {
-	pagesCmd := &cobra.Command{
-		Use:         "pages",
+	tabsCmd := &cobra.Command{
+		Use:         "tabs",
+		Aliases:     []string{"pages"},
 		Annotations: map[string]string{"group": "Navigate:"},
-		Short:       "List all open pages (tabs)",
+		Short:       "List all open tabs",
 		Args:        cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			c := newClient()
-			_, value, err := browserRunValue(c, "return await browser.pages.list()")
+			toolResult, err := c.CallTool("tabs", tabsListToolArgs())
 			if err != nil {
 				output.Error(err.Error(), 1)
 			}
-			pages := valueSlice(value)
-			result := textResult(formatPages(pages), map[string]any{
-				"pages": pages,
-				"count": len(pages),
-			})
+			result := tabsListResult(toolResult)
 			if jsonOut {
 				output.JSON(result)
 			} else {
@@ -96,7 +94,46 @@ return page`)
 		},
 	}
 
-	rootCmd.AddCommand(pagesCmd, activeCmd, closeCmd)
+	rootCmd.AddCommand(tabsCmd, activeCmd, closeCmd)
+}
+
+func tabsListToolArgs() map[string]any {
+	return map[string]any{"action": "list"}
+}
+
+// tabsListResult preserves the CLI's legacy pages/count shape around the MCP tabs tool.
+func tabsListResult(result *mcp.ToolResult) *mcp.ToolResult {
+	var pages []any
+	if result != nil && result.StructuredContent != nil {
+		pages = normalizeTabPages(valueSlice(result.StructuredContent["pages"]))
+	}
+	return textResult(formatPages(pages), map[string]any{
+		"pages": pages,
+		"count": len(pages),
+	})
+}
+
+// normalizeTabPages keeps legacy pageId fields when the tabs tool returns page.
+func normalizeTabPages(pages []any) []any {
+	normalized := make([]any, 0, len(pages))
+	for _, item := range pages {
+		page, ok := valueMap(item)
+		if !ok {
+			normalized = append(normalized, item)
+			continue
+		}
+		copy := make(map[string]any, len(page)+1)
+		for key, value := range page {
+			copy[key] = value
+		}
+		if numberValue(copy["pageId"]) == 0 {
+			if pageID := numberValue(copy["page"]); pageID != 0 {
+				copy["pageId"] = pageID
+			}
+		}
+		normalized = append(normalized, copy)
+	}
+	return normalized
 }
 
 func formatPages(pages []any) string {

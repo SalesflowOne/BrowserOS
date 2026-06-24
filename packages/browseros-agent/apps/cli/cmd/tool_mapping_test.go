@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"browseros-cli/mcp"
 )
 
 func TestCompactToolMappings(t *testing.T) {
@@ -34,6 +36,11 @@ func TestCompactToolMappings(t *testing.T) {
 				"x":    10,
 				"y":    20,
 			},
+		},
+		{
+			name: "list tabs",
+			got:  tabsListToolArgs(),
+			want: map[string]any{"action": "list"},
 		},
 		{
 			name: "open tab",
@@ -71,6 +78,31 @@ func TestCompactToolMappings(t *testing.T) {
 				t.Fatalf("mapping = %#v, want %#v", tt.got, tt.want)
 			}
 		})
+	}
+}
+
+func TestTabsListResultKeepsLegacyShape(t *testing.T) {
+	result := tabsListResult(&mcp.ToolResult{
+		StructuredContent: map[string]any{
+			"pages": []any{
+				map[string]any{"page": 42, "url": "https://example.com", "title": "Example"},
+			},
+		},
+	})
+
+	if got := result.StructuredContent["count"]; got != 1 {
+		t.Fatalf("count = %v, want 1", got)
+	}
+	pages, ok := result.StructuredContent["pages"].([]any)
+	if !ok || len(pages) != 1 {
+		t.Fatalf("pages = %#v, want one page", result.StructuredContent["pages"])
+	}
+	page, ok := pages[0].(map[string]any)
+	if !ok {
+		t.Fatalf("page = %#v, want map", pages[0])
+	}
+	if got := numberValue(page["pageId"]); got != 42 {
+		t.Fatalf("pageId = %d, want 42", got)
 	}
 }
 

@@ -68,6 +68,30 @@ func TestDiffCommandShape(t *testing.T) {
 	}
 }
 
+func TestTabsCommandShape(t *testing.T) {
+	cmd, _, err := rootCmd.Find([]string{"tabs"})
+	if err != nil {
+		t.Fatalf("rootCmd.Find(tabs) error = %v", err)
+	}
+	if cmd.Name() != "tabs" {
+		t.Fatalf("command name = %q, want tabs", cmd.Name())
+	}
+
+	alias, _, err := rootCmd.Find([]string{"pages"})
+	if err != nil {
+		t.Fatalf("rootCmd.Find(pages) error = %v", err)
+	}
+	if alias.Name() != "tabs" {
+		t.Fatalf("pages alias resolved to %q, want tabs", alias.Name())
+	}
+	if err := cmd.Args(cmd, []string{"extra"}); err == nil {
+		t.Fatal("tabs Args accepted a positional argument")
+	}
+	if cmd.LocalFlags().HasAvailableFlags() {
+		t.Fatal("tabs command exposes local flags")
+	}
+}
+
 func TestRawDOMCommandsAreNotRegistered(t *testing.T) {
 	for _, name := range []string{"dom", "dom-search"} {
 		t.Run(name, func(t *testing.T) {
