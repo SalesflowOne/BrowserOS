@@ -254,13 +254,13 @@ function writeGithubOutputs(validation: CliReleaseValidation): void {
 
   appendFileSync(
     outputPath,
-    [
+    `${[
       `tag=${validation.tag}`,
       `version=${validation.version}`,
       `latest_version=${validation.latestVersion}`,
       `previous_tag=${validation.previousTag}`,
       `target_commit=${validation.targetCommit}`,
-    ].join('\n') + '\n',
+    ].join('\n')}\n`,
   )
 }
 
