@@ -108,6 +108,37 @@ func TestTabsCommandShape(t *testing.T) {
 	}
 }
 
+func TestCloseCommandRequiresPageFlagOnly(t *testing.T) {
+	cmd, _, err := rootCmd.Find([]string{"close"})
+	if err != nil {
+		t.Fatalf("rootCmd.Find(close) error = %v", err)
+	}
+	if cmd.Name() != "close" {
+		t.Fatalf("command name = %q, want close", cmd.Name())
+	}
+	if err := cmd.Args(cmd, []string{"7"}); err == nil {
+		t.Fatal("close Args accepted a positional page id")
+	}
+}
+
+func TestRequireExplicitPageID(t *testing.T) {
+	t.Setenv("BROWSEROS_PAGE", "9")
+
+	page, err := explicitPageID(true, 7)
+	if err != nil {
+		t.Fatalf("explicitPageID(true, 7) error = %v", err)
+	}
+	if page != 7 {
+		t.Fatalf("explicitPageID(true, 7) = %d, want 7", page)
+	}
+
+	if _, err := explicitPageID(false, 0); err == nil {
+		t.Fatal("explicitPageID(false, 0) error = nil, want missing page error")
+	} else if !strings.Contains(err.Error(), "-p/--page") || strings.Contains(err.Error(), "active") {
+		t.Fatalf("missing page error = %q, want explicit page guidance without active-page fallback", err)
+	}
+}
+
 func TestUnsupportedCommandsAreNotRegistered(t *testing.T) {
 	for _, name := range []string{"dialog", "dom", "dom-search"} {
 		t.Run(name, func(t *testing.T) {

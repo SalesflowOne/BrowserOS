@@ -60,25 +60,16 @@ return page`)
 	}
 
 	closeCmd := &cobra.Command{
-		Use:         "close [pageId]",
+		Use:         "close",
 		Annotations: map[string]string{"group": "Navigate:"},
-		Short:       "Close a page (tab)",
-		Args:        cobra.MaximumNArgs(1),
+		Short:       "Close the page selected by -p/--page",
+		Args:        cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			c := newClient()
-			var pageID int
-			var err error
-			if len(args) > 0 {
-				_, err = fmt.Sscanf(args[0], "%d", &pageID)
-				if err != nil {
-					output.Errorf(3, "invalid page ID: %s", args[0])
-				}
-			} else {
-				pageID, err = resolvePageID(c)
-				if err != nil {
-					output.Error(err.Error(), 2)
-				}
+			pageID, err := resolvePageID(nil)
+			if err != nil {
+				output.Error(err.Error(), 2)
 			}
+			c := newClient()
 			result, err := c.CallTool("tabs", map[string]any{
 				"action": "close",
 				"page":   pageID,
@@ -113,7 +104,7 @@ func tabsListResult(result *mcp.ToolResult) *mcp.ToolResult {
 	})
 }
 
-// normalizeTabPages keeps legacy pageId fields when the tabs tool returns page.
+// normalizeTabPages exposes numeric page as the CLI's canonical tab handle.
 func normalizeTabPages(pages []any) []any {
 	normalized := make([]any, 0, len(pages))
 	for _, item := range pages {
@@ -124,11 +115,14 @@ func normalizeTabPages(pages []any) []any {
 		}
 		copy := make(map[string]any, len(page)+1)
 		for key, value := range page {
+			if key == "pageId" {
+				continue
+			}
 			copy[key] = value
 		}
-		if numberValue(copy["pageId"]) == 0 {
-			if pageID := numberValue(copy["page"]); pageID != 0 {
-				copy["pageId"] = pageID
+		if numberValue(copy["page"]) == 0 {
+			if pageID := numberValue(page["pageId"]); pageID != 0 {
+				copy["page"] = pageID
 			}
 		}
 		normalized = append(normalized, copy)

@@ -18,11 +18,11 @@ func init() {
 			links, _ := cmd.Flags().GetBool("links")
 			images, _ := cmd.Flags().GetBool("images")
 
-			c := newClient()
-			pageID, err := resolvePageID(c)
+			pageID, err := resolvePageID(nil)
 			if err != nil {
 				output.Error(err.Error(), 2)
 			}
+			c := newClient()
 
 			toolArgs := map[string]any{
 				"page":          pageID,
@@ -58,11 +58,11 @@ func init() {
 		Short:       "Extract all links from the page",
 		Args:        cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			c := newClient()
-			pageID, err := resolvePageID(c)
+			pageID, err := resolvePageID(nil)
 			if err != nil {
 				output.Error(err.Error(), 2)
 			}
+			c := newClient()
 			result, err := c.CallTool("read", map[string]any{
 				"page":   pageID,
 				"format": "links",

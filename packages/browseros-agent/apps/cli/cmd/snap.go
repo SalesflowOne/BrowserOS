@@ -13,11 +13,11 @@ func init() {
 		Short:       "Snapshot interactive elements on the page",
 		Args:        cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			c := newClient()
-			pageID, err := resolvePageID(c)
+			pageID, err := resolvePageID(nil)
 			if err != nil {
 				output.Error(err.Error(), 2)
 			}
+			c := newClient()
 
 			result, err := c.CallTool("snapshot", map[string]any{"page": pageID})
 			if err != nil {

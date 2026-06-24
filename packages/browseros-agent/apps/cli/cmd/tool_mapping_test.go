@@ -105,11 +105,11 @@ func TestCompactToolMappings(t *testing.T) {
 	}
 }
 
-func TestTabsListResultKeepsLegacyShape(t *testing.T) {
+func TestTabsListResultUsesCanonicalPageField(t *testing.T) {
 	result := tabsListResult(&mcp.ToolResult{
 		StructuredContent: map[string]any{
 			"pages": []any{
-				map[string]any{"page": 42, "url": "https://example.com", "title": "Example"},
+				map[string]any{"pageId": 42, "url": "https://example.com", "title": "Example"},
 			},
 		},
 	})
@@ -125,8 +125,30 @@ func TestTabsListResultKeepsLegacyShape(t *testing.T) {
 	if !ok {
 		t.Fatalf("page = %#v, want map", pages[0])
 	}
-	if got := numberValue(page["pageId"]); got != 42 {
-		t.Fatalf("pageId = %d, want 42", got)
+	if _, exists := page["pageId"]; exists {
+		t.Fatalf("page includes legacy pageId: %#v", page)
+	}
+	if got := numberValue(page["page"]); got != 42 {
+		t.Fatalf("page = %d, want 42", got)
+	}
+}
+
+func TestOpenResultUsesCanonicalPageField(t *testing.T) {
+	result := openResult("https://example.com", &mcp.ToolResult{
+		Content: []mcp.ContentItem{{Type: "text", Text: "opened page 42"}},
+		StructuredContent: map[string]any{
+			"pageId": 42,
+		},
+	})
+
+	if _, exists := result.StructuredContent["pageId"]; exists {
+		t.Fatalf("open result includes legacy pageId: %#v", result.StructuredContent)
+	}
+	if got := numberValue(result.StructuredContent["page"]); got != 42 {
+		t.Fatalf("page = %d, want 42", got)
+	}
+	if got := result.TextContent(); got != "page=42\nurl=https://example.com" {
+		t.Fatalf("open text = %q, want stable page/url lines", got)
 	}
 }
 

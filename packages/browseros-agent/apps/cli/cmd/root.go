@@ -162,7 +162,7 @@ func init() {
 	rootCmd.SetUsageTemplate(usageTemplate)
 
 	rootCmd.PersistentFlags().StringVarP(&serverURL, "server", "s", defaultServerURL(), "BrowserOS server URL")
-	rootCmd.PersistentFlags().IntVarP(&pageFlag, "page", "p", 0, "Target page ID (default: active page)")
+	rootCmd.PersistentFlags().IntVarP(&pageFlag, "page", "p", 0, "Target page ID from open or tabs")
 	rootCmd.PersistentFlags().BoolVar(&jsonOut, "json", envBool("BOS_JSON"), "JSON output")
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", envBool("BOS_DEBUG"), "Debug output")
 	rootCmd.PersistentFlags().DurationVarP(&timeout, "timeout", "t", 120*time.Second, "Request timeout")
@@ -181,18 +181,17 @@ func newClient() *mcp.Client {
 	return c
 }
 
-func resolvePageID(c *mcp.Client) (int, error) {
-	if rootCmd.PersistentFlags().Changed("page") {
-		return pageFlag, nil
-	}
+// resolvePageID enforces the CLI's explicit page contract for page-scoped commands.
+func resolvePageID(_ *mcp.Client) (int, error) {
+	return explicitPageID(rootCmd.PersistentFlags().Changed("page"), pageFlag)
+}
 
-	if env := os.Getenv("BROWSEROS_PAGE"); env != "" {
-		if v, err := strconv.Atoi(env); err == nil {
-			return v, nil
-		}
+// explicitPageID returns only caller-provided page ids, never ambient browser state.
+func explicitPageID(changed bool, page int) (int, error) {
+	if changed {
+		return page, nil
 	}
-
-	return c.ResolvePageID(nil)
+	return 0, fmt.Errorf("page id is required: pass -p/--page <id> from `browseros-cli open --json | jq -r .page` or `browseros-cli tabs --json`")
 }
 
 func envBool(key string) bool {

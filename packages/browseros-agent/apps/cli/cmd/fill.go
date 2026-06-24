@@ -21,11 +21,11 @@ func init() {
 			}
 			value := strings.Join(args[1:], " ")
 
-			c := newClient()
-			pageID, err := resolvePageID(c)
+			pageID, err := resolvePageID(nil)
 			if err != nil {
 				output.Error(err.Error(), 2)
 			}
+			c := newClient()
 
 			result, err := c.CallTool("act", fillToolArgsFromCommand(cmd, pageID, ref, value))
 			if err != nil {
@@ -54,11 +54,11 @@ func init() {
 		Short:       "Press a key or key combination (e.g., Enter, Control+A)",
 		Args:        cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			c := newClient()
-			pageID, err := resolvePageID(c)
+			pageID, err := resolvePageID(nil)
 			if err != nil {
 				output.Error(err.Error(), 2)
 			}
+			c := newClient()
 			result, err := c.CallTool("act", map[string]any{
 				"page": pageID,
 				"kind": "press",
