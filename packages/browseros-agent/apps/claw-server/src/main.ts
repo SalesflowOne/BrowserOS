@@ -20,7 +20,8 @@ if (typeof Bun === 'undefined') {
 }
 
 import { Hono } from 'hono'
-import { env } from './env'
+import { loadClawConfig } from './config'
+import { applyClawConfig, env } from './env'
 import { bootstrapBrowserosBrowser } from './lib/browser-bootstrap'
 import { setBrowserSession } from './lib/browser-session'
 import { logger } from './lib/logger'
@@ -30,6 +31,14 @@ import server from './server'
 import { COCKPIT_MOUNT_PREFIX } from './shared/port'
 
 async function start(): Promise<void> {
+  const config = loadClawConfig()
+  if (!config.ok) {
+    // biome-ignore lint/suspicious/noConsole: pre-logger startup error
+    console.error(config.error)
+    process.exit(1)
+  }
+  applyClawConfig(config.value)
+
   const root = new Hono().route(COCKPIT_MOUNT_PREFIX, server)
   const httpServer = Bun.serve({
     hostname: '127.0.0.1',

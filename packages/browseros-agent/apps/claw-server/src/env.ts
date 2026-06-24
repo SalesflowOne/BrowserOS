@@ -3,41 +3,12 @@
  * Copyright 2025 BrowserOS
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * Single chokepoint for env reads. Centralising here keeps the rest
- * of the source free of process.env access and lets biome's
- * noProcessEnv rule stay on at error level for every other file.
+ * Single chokepoint for non-port env reads. Port config lives in
+ * config.ts so startup can validate env/YAML before serving.
  */
 
+import type { ClawConfig } from './config'
 import { COCKPIT_CDP_PORT_DEFAULT, PROD_API_PORT } from './shared/port'
-
-function readPort(): number {
-  // biome-ignore lint/style/noProcessEnv: env.ts is the sanctioned env-reader for the package
-  const raw = process.env.BROWSEROS_CLAW_SERVER_PORT
-  if (!raw) return PROD_API_PORT
-  const parsed = Number(raw)
-  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 65535) {
-    return PROD_API_PORT
-  }
-  return parsed
-}
-
-/**
- * Port the cockpit dials when attaching to BrowserOS Chromium
- * over CDP. Default lives in IANA's dynamic / private range so it
- * cannot collide with a registered service; the env override is the
- * bridge until the BrowserOS browser shell defaults its DevTools
- * port to the same value.
- */
-function readCdpPort(): number {
-  // biome-ignore lint/style/noProcessEnv: env.ts is the sanctioned env-reader for the package
-  const raw = process.env.BROWSEROS_COCKPIT_CDP_PORT
-  if (!raw) return COCKPIT_CDP_PORT_DEFAULT
-  const parsed = Number(raw)
-  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
-    return COCKPIT_CDP_PORT_DEFAULT
-  }
-  return parsed
-}
 
 function readBrowserosDirOverride(): string | undefined {
   // biome-ignore lint/style/noProcessEnv: env.ts is the sanctioned env-reader for the package
@@ -65,15 +36,20 @@ function readBoolFlag(name: string): boolean {
 }
 
 /**
- * Reads happen once at module load. Tests that need different values
- * mutate this object before importing the rest of the source graph;
- * production code treats it as immutable.
+ * Runtime snapshot shared across services. main.ts applies validated
+ * port config before serving; tests may mutate fields for isolation.
  */
 export const env = {
-  port: readPort(),
-  cdpPort: readCdpPort(),
+  port: PROD_API_PORT,
+  cdpPort: COCKPIT_CDP_PORT_DEFAULT,
   browserosDirOverride: readBrowserosDirOverride(),
   isDevelopment: readIsDevelopment(),
+}
+
+/** Applies validated startup config to the shared runtime snapshot. */
+export function applyClawConfig(config: ClawConfig): void {
+  env.port = config.port
+  env.cdpPort = config.cdpPort
 }
 
 /**
