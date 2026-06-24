@@ -18,6 +18,11 @@ const testSuites = {
       argv: [bun, 'run', 'test'],
     },
     {
+      label: 'claw-server tests',
+      cwd: resolve(projectRoot, 'apps/claw-server'),
+      argv: [bun, 'run', 'test'],
+    },
+    {
       label: 'agent tests',
       cwd: resolve(projectRoot, 'apps/app'),
       argv: [bun, 'run', 'test'],
