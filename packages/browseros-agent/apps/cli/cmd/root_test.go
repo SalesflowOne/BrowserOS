@@ -52,6 +52,22 @@ func TestCommandName(t *testing.T) {
 	}
 }
 
+func TestDiffCommandShape(t *testing.T) {
+	cmd, _, err := rootCmd.Find([]string{"diff"})
+	if err != nil {
+		t.Fatalf("rootCmd.Find(diff) error = %v", err)
+	}
+	if cmd.Name() != "diff" {
+		t.Fatalf("command name = %q, want diff", cmd.Name())
+	}
+	if err := cmd.Args(cmd, []string{"extra"}); err == nil {
+		t.Fatal("diff Args accepted a positional argument")
+	}
+	if cmd.LocalFlags().HasAvailableFlags() {
+		t.Fatal("diff command exposes local flags")
+	}
+}
+
 func TestPrimaryCommand(t *testing.T) {
 	tests := []struct {
 		name string
