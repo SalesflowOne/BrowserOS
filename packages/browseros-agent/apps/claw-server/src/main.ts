@@ -4,25 +4,11 @@
  * Copyright 2025 BrowserOS
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * Bun entry point for the claw-server server.
+ * Standalone BrowserClaw API entry point.
  *
- * Binds Hono on 127.0.0.1 — same posture as @browseros/server. The
- * loopback restriction is what lets us run with wildcard CORS and
- * accept `null` Origin requests from the future WXT extension
- * loading via chrome-extension://. No external network reachability.
- *
- * Routes are mounted under `/cockpit` so the URL shape matches what
- * `createCockpitRoutes` produces when the cockpit is embedded inside
- * `@browseros/server`'s mounted runtime (which is the production path). The
- * UI client and agent-mcp-manager harness configs use a single base
- * URL shape (`http://127.0.0.1:<port>/cockpit/...`) regardless of
- * which runtime is hosting them, so a profile created against
- * standalone keeps working when the user later switches to the
- * merged runtime on the same port (and vice versa).
- *
- * The claw-app extension reads PROD_API_PORT off the shared port
- * constant; in dev it can pick up an `?apiUrl=` override published
- * by whichever launcher started this process.
+ * Binds Hono on 127.0.0.1 and serves routes under `/cockpit`; the
+ * claw-app extension can override the base URL with `?apiUrl=` or
+ * `VITE_BROWSEROS_CLAW_API_URL` when dev-watch selects a random port.
  */
 
 if (typeof Bun === 'undefined') {
@@ -89,12 +75,8 @@ async function start(): Promise<void> {
     process.once('SIGTERM', cleanup)
   }
 
-  // Mirror what createCockpitRoutes does in the merged runtime: sweep
-  // every stored profile and rewrite its harness install + mcpUrl to
-  // the new `/cockpit`-prefixed shape if it carried the pre-merge
-  // URL. Idempotent — a second run is a no-op once every profile is
-  // up to date. The factory in the production path runs the same
-  // sweep at boot.
+  // Sweep stored profiles so their harness install and mcpUrl match
+  // the standalone server's current loopback URL.
   const buildMcpUrlForMigration = (slug: string): string => `${url}/mcp/${slug}`
   void migrateMcpUrls(buildMcpUrlForMigration)
     .then((result) =>

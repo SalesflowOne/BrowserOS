@@ -15,7 +15,7 @@
  *   1. ?apiUrl=… on window.location (dev launcher publishes this)
  *   2. sessionStorage cache of (1)
  *   3. VITE_BROWSEROS_CLAW_API_URL from the dev watcher
- *   4. PROD_API_PORT constant on 127.0.0.1
+ *   4. standalone BrowserClaw port on 127.0.0.1
  *
  * The lazy Proxy is what lets us re-resolve the base URL after the
  * dev launcher hot-swaps it without breaking hc's path chaining
@@ -35,11 +35,6 @@ import {
 } from './client.helpers'
 
 function resolveApiBaseUrl(): string {
-  // The cockpit is mounted under `/cockpit` inside apps/server's
-  // runtime; every route handler lives under that prefix. The dev
-  // launcher's `?apiUrl=` query and the sessionStorage cache carry
-  // the full base URL (port + prefix), so they're passed through
-  // verbatim.
   const fallback = `http://127.0.0.1:${PROD_API_PORT}${COCKPIT_MOUNT_PREFIX}`
   if (typeof window === 'undefined') return fallback
 

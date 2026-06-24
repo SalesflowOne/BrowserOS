@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import { resolveApiBaseUrlFromSources } from './client.helpers'
 
-const fallback = 'http://127.0.0.1:9100/cockpit'
+const fallback = 'http://127.0.0.1:9200/cockpit'
 
 describe('resolveApiBaseUrlFromSources', () => {
   it('prefers the query override', () => {

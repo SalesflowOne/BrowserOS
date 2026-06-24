@@ -3,17 +3,11 @@
  * Copyright 2025 BrowserOS
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * One-shot migration that runs on startup of the merged runtime.
+ * One-shot startup migration for stored cockpit MCP URLs.
  *
- * The cockpit moved from binding its own port (9200) to mounting
- * inside `@browseros/server`'s HTTP runtime under a `/cockpit`
- * prefix. Every profile saved before this change carries an
- * `mcpUrl` like `http://127.0.0.1:9200/mcp/<slug>` which now 404s,
- * and every harness config row written by `agent-mcp-manager`
- * points at the same dead URL. The migration walks the profile
- * directory, rewrites `mcpUrl` to the new `buildMcpUrl(slug)`
- * shape, and re-installs the harness entry so it picks up the new
- * value.
+ * The migration walks the profile directory, rewrites `mcpUrl` to
+ * the runtime's current `buildMcpUrl(slug)` shape, and re-installs
+ * the harness entry so it picks up the new value.
  *
  * Failures are logged per-profile; one bad file does not abort the
  * sweep. The migration is idempotent: a second run is a no-op once
@@ -78,7 +72,7 @@ export async function migrateMcpUrls(
         harness: updated.harness,
       })
       migrated++
-      logger.info('migrated cockpit mcpUrl after runtime merge', {
+      logger.info('migrated cockpit mcpUrl', {
         slug: profile.slug,
         from: profile.mcpUrl,
         to: next,

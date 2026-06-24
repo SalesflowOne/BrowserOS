@@ -9,7 +9,7 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { setMcpManagerForTesting } from '../../src/lib/mcp-manager'
 import { migrateMcpUrls } from '../../src/lib/migrate-mcp-urls'
-import { readJson } from '../../src/lib/storage'
+import { readJson, writeJson } from '../../src/lib/storage'
 import type { NewAgentValues } from '../../src/routes/agents/schemas'
 import { storedAgentProfileSchema } from '../../src/routes/agents/schemas'
 import * as agents from '../../src/routes/agents/service'
@@ -40,11 +40,35 @@ describe('migrateMcpUrls', () => {
   test('rewrites mcpUrl when the recomputed URL differs from the stored one', async () => {
     await withTempBrowserosDir(async () => {
       const created = await agents.create(makeInput({ name: 'Cowork' }))
-      // Sanity: stored mcpUrl is whatever buildMcpUrl produced at create
-      // (in the test environment that's `http://127.0.0.1:9200/mcp/cowork`).
-      expect(created.mcpUrl).toContain('/mcp/cowork')
+      const oldEmbeddedUrl = `http://127.0.0.1:9100/cockpit/mcp/${created.slug}`
+      const storedBefore = await readJson(
+        `agents/${created.id}.json`,
+        storedAgentProfileSchema,
+      )
+      await writeJson(
+        `agents/${created.id}.json`,
+        { ...storedBefore, mcpUrl: oldEmbeddedUrl },
+        storedAgentProfileSchema,
+      )
 
-      // New shape: same slug, different host + prefix.
+      const standaloneBuilder = (slug: string) =>
+        `http://127.0.0.1:9200/cockpit/mcp/${slug}`
+      const result = await migrateMcpUrls(standaloneBuilder)
+      expect(result.migrated).toBe(1)
+      expect(result.skipped).toBe(0)
+      expect(result.failed).toBe(0)
+
+      const stored = await readJson(
+        `agents/${created.id}.json`,
+        storedAgentProfileSchema,
+      )
+      expect(stored.mcpUrl).toBe('http://127.0.0.1:9200/cockpit/mcp/cowork')
+    })
+  })
+
+  test('still handles arbitrary runtime URL changes', async () => {
+    await withTempBrowserosDir(async () => {
+      const created = await agents.create(makeInput({ name: 'Other Port' }))
       const newBuilder = (slug: string) =>
         `http://127.0.0.1:9100/cockpit/mcp/${slug}`
       const result = await migrateMcpUrls(newBuilder)
@@ -56,7 +80,7 @@ describe('migrateMcpUrls', () => {
         `agents/${created.id}.json`,
         storedAgentProfileSchema,
       )
-      expect(stored.mcpUrl).toBe('http://127.0.0.1:9100/cockpit/mcp/cowork')
+      expect(stored.mcpUrl).toBe('http://127.0.0.1:9100/cockpit/mcp/other-port')
     })
   })
 

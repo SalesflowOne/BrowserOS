@@ -70,7 +70,7 @@ describe('buildCanonicalMcpEndpointUrl', () => {
   it('falls back to the prod port + cockpit prefix when no overrides exist', () => {
     installWindow('')
     expect(buildCanonicalMcpEndpointUrl()).toBe(
-      'http://127.0.0.1:9100/cockpit/mcp',
+      'http://127.0.0.1:9200/cockpit/mcp',
     )
   })
 })
@@ -80,7 +80,7 @@ describe('buildCanonicalMcpCliCommand', () => {
     installWindow('')
     const cli = buildCanonicalMcpCliCommand()
     expect(cli).toContain('claude mcp add browseros')
-    expect(cli).toContain('http://127.0.0.1:9100/cockpit/mcp')
+    expect(cli).toContain('http://127.0.0.1:9200/cockpit/mcp')
     expect(cli).toContain('--transport http')
     expect(cli).toContain('--scope user')
   })

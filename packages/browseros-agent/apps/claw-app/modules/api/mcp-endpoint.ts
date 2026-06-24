@@ -10,9 +10,7 @@
  * the wizard / directory pages render flows through these helpers,
  * so the future cutover is confined to this file.
  *
- * While `apps/claw-server` lives as a sub-route under
- * `apps/server`, this builder targets the mounted `/cockpit/mcp/<slug>`
- * shape. It defaults to the production port but honors dev-launcher
+ * Defaults to the standalone BrowserClaw API and honors dev-launcher
  * overrides when `dev:claw:watch:new` selects a random port.
  */
 
@@ -68,9 +66,9 @@ function resolveMcpBaseUrl(): string {
 
 /**
  * URL the UI shows in the copy widget and embeds in host-agent config
- * snippets. Matches the URL `apps/claw-server` returns from
- * its `agents` service when running mounted, so a profile created
- * server-side and one composed client-side produce identical strings.
+ * snippets. Matches the URL `apps/claw-server` returns from its
+ * `agents` service so server-created and client-composed profiles
+ * produce identical strings.
  */
 export function buildMcpEndpointUrl(slug: string): string {
   return `${resolveMcpBaseUrl()}/mcp/${slug}`
@@ -78,7 +76,7 @@ export function buildMcpEndpointUrl(slug: string): string {
 
 /**
  * Pulls the slug segment out of an MCP URL. Tolerates both the
- * mounted shape (`/cockpit/mcp/<slug>`) and the future direct shape
+ * prefixed shape (`/cockpit/mcp/<slug>`) and the direct shape
  * (`/mcp/<slug>`). Returns an empty string when neither matches so
  * callers can fall back to a known id.
  */

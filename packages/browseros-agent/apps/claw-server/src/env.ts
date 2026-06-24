@@ -22,7 +22,7 @@ function readPort(): number {
 }
 
 /**
- * Port the cockpit dials when attaching to the BrowserOS Chromium
+ * Port the cockpit dials when attaching to BrowserOS Chromium
  * over CDP. Default lives in IANA's dynamic / private range so it
  * cannot collide with a registered service; the env override is the
  * bridge until the BrowserOS browser shell defaults its DevTools
