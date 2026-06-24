@@ -31,6 +31,10 @@ const testSuites = {
       label: 'build script tests',
       argv: [bun, 'run', './scripts/run-bun-test.ts', './scripts/build'],
     },
+    {
+      label: 'release script tests',
+      argv: [bun, 'run', './scripts/run-bun-test.ts', './scripts/release'],
+    },
   ],
   main: [
     {
