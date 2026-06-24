@@ -10,16 +10,16 @@ import (
 
 func init() {
 	fillCmd := &cobra.Command{
-		Use:         "fill <element> <text>",
+		Use:         "fill <ref> <value>",
 		Annotations: map[string]string{"group": "Input:"},
-		Short:       "Type text into an input element",
+		Short:       "Fill an input by snapshot ref",
 		Args:        cobra.MinimumNArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
 			ref, err := elementRef(args[0])
 			if err != nil {
 				output.Error(err.Error(), 3)
 			}
-			text := strings.Join(args[1:], " ")
+			value := strings.Join(args[1:], " ")
 			noClear, _ := cmd.Flags().GetBool("no-clear")
 
 			c := newClient()
@@ -28,13 +28,7 @@ func init() {
 				output.Error(err.Error(), 2)
 			}
 
-			result, err := c.CallTool("act", map[string]any{
-				"page":  pageID,
-				"kind":  "fill",
-				"ref":   ref,
-				"value": text,
-				"clear": !noClear,
-			})
+			result, err := c.CallTool("act", fillToolArgs(pageID, ref, value, !noClear))
 			if err != nil {
 				output.Error(err.Error(), 1)
 			}
@@ -45,12 +39,12 @@ func init() {
 			}
 		},
 	}
-	fillCmd.Flags().Bool("no-clear", false, "Don't clear existing text before typing")
+	fillCmd.Flags().Bool("no-clear", false, "Don't clear existing value before filling")
 
 	clearCmd := &cobra.Command{
-		Use:         "clear <element>",
+		Use:         "clear <ref>",
 		Annotations: map[string]string{"group": "Input:"},
-		Short:       "Clear text content of an input element",
+		Short:       "Clear an input by snapshot ref",
 		Args:        cobra.ExactArgs(1),
 		Run:         elementAction("fill", map[string]any{"value": "", "clear": true}),
 	}
@@ -83,4 +77,14 @@ func init() {
 	}
 
 	rootCmd.AddCommand(fillCmd, clearCmd, keyCmd)
+}
+
+func fillToolArgs(pageID int, ref, value string, clear bool) map[string]any {
+	return map[string]any{
+		"page":  pageID,
+		"kind":  "fill",
+		"ref":   ref,
+		"value": value,
+		"clear": clear,
+	}
 }

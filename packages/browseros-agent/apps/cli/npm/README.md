@@ -61,8 +61,8 @@ browseros-cli screenshot         # Capture the current page
 ### Input
 
 ```bash
-browseros-cli click 42           # Click an element by its node ID
-browseros-cli fill 85 "query"    # Type text into an input field
+browseros-cli click e42          # Click an element by snapshot ref
+browseros-cli fill e85 "query"   # Fill input by snapshot ref
 ```
 
 ### Agent Mode

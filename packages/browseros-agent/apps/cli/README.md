@@ -91,7 +91,7 @@ browseros-cli eval "document.title" # Run JavaScript
 # Input
 browseros-cli click e5              # Click element by ref
 browseros-cli click-at 100 200      # Click at coordinates
-browseros-cli fill e12 "hello"      # Type into input
+browseros-cli fill e12 "hello"      # Fill input by ref
 browseros-cli key Enter             # Press key
 browseros-cli hover e3
 browseros-cli scroll down 500

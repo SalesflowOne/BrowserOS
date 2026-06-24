@@ -70,6 +70,28 @@ func TestCompactToolMappings(t *testing.T) {
 				"ref":  "e12",
 			},
 		},
+		{
+			name: "fill",
+			got:  fillToolArgs(7, "e12", "hello", true),
+			want: map[string]any{
+				"page":  7,
+				"kind":  "fill",
+				"ref":   "e12",
+				"value": "hello",
+				"clear": true,
+			},
+		},
+		{
+			name: "fill without clear",
+			got:  fillToolArgs(7, "e12", "hello", false),
+			want: map[string]any{
+				"page":  7,
+				"kind":  "fill",
+				"ref":   "e12",
+				"value": "hello",
+				"clear": false,
+			},
+		},
 	}
 
 	for _, tt := range tests {
