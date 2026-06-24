@@ -66,7 +66,10 @@ func init() {
 				output.Error(err.Error(), 3)
 			}
 
-			result := runFindCalls(c, calls)
+			result, err := callTools(c, calls)
+			if err != nil {
+				output.Error(err.Error(), 1)
+			}
 			report := findReport(pageID, matches, selected, action, result)
 			if jsonOut {
 				output.JSONRaw(report.StructuredContent)
@@ -241,18 +244,6 @@ func findActionCalls(pageID int, match findMatch, action findAction) ([]toolCall
 	default:
 		return nil, fmt.Errorf("unsupported find action: %s", action.kind)
 	}
-}
-
-func runFindCalls(c *mcp.Client, calls []toolCall) *mcp.ToolResult {
-	var result *mcp.ToolResult
-	for _, call := range calls {
-		next, err := c.CallTool(call.name, call.args)
-		if err != nil {
-			output.Error(err.Error(), 1)
-		}
-		result = next
-	}
-	return result
 }
 
 func findReport(pageID int, matches []findMatch, selected findMatch, action findAction, result *mcp.ToolResult) *mcp.ToolResult {

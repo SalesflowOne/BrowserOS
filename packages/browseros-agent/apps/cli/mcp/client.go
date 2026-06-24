@@ -18,6 +18,8 @@ type Client struct {
 	HTTPClient *http.Client
 	Version    string
 	Debug      bool
+	session    *sdkmcp.ClientSession
+	sessionCtx context.Context
 }
 
 func NewClient(baseURL, version string, timeout time.Duration) *Client {
@@ -54,12 +56,40 @@ func (c *Client) CallTool(name string, args map[string]any) (*ToolResult, error)
 	ctx, cancel := context.WithTimeout(context.Background(), c.HTTPClient.Timeout)
 	defer cancel()
 
+	if c.session != nil {
+		if c.sessionCtx != nil {
+			ctx = c.sessionCtx
+		}
+		return c.callTool(ctx, c.session, name, args)
+	}
+
 	session, err := c.connect(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer session.Close()
 
+	return c.callTool(ctx, session, name, args)
+}
+
+// WithSession runs multiple tool calls through one initialized MCP session.
+func (c *Client) WithSession(fn func(*Client) error) error {
+	ctx, cancel := context.WithTimeout(context.Background(), c.HTTPClient.Timeout)
+	defer cancel()
+
+	session, err := c.connect(ctx)
+	if err != nil {
+		return err
+	}
+	defer session.Close()
+
+	shared := *c
+	shared.session = session
+	shared.sessionCtx = ctx
+	return fn(&shared)
+}
+
+func (c *Client) callTool(ctx context.Context, session *sdkmcp.ClientSession, name string, args map[string]any) (*ToolResult, error) {
 	if args == nil {
 		args = map[string]any{}
 	}
