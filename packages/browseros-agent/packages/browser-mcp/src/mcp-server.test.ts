@@ -127,4 +127,74 @@ describe('createBrowserMcpServer', () => {
     ])
     expect(events[0]?.duration_ms).toEqual(expect.any(Number))
   })
+
+  it('returns the focused page through the tabs active action', async () => {
+    const activePage = {
+      pageId: 42,
+      targetId: 'target-42',
+      tabId: 9,
+      url: 'https://example.com',
+      title: 'Example',
+      isActive: true,
+      isLoading: false,
+      loadProgress: 1,
+      isPinned: false,
+      isHidden: false,
+    }
+    const server = inspect(
+      createBrowserMcpServer({
+        name: 'browseros_mcp',
+        title: 'BrowserOS MCP server',
+        version: '1.2.3',
+        browserSession: {
+          pages: {
+            getActive: async () => activePage,
+          },
+        } as unknown as BrowserSession,
+      }),
+    )
+
+    const result = await server._registeredTools.tabs.handler({
+      action: 'active',
+    })
+
+    expect(result?.isError).toBeFalsy()
+    expect(result?.structuredContent).toEqual({
+      action: 'active',
+      page: activePage,
+    })
+    expect(result?.content).toEqual([
+      expect.objectContaining({
+        type: 'text',
+        text: expect.stringContaining('[42] https://example.com (Example)'),
+      }),
+    ])
+  })
+
+  it('returns an error when no focused page exists', async () => {
+    const server = inspect(
+      createBrowserMcpServer({
+        name: 'browseros_mcp',
+        title: 'BrowserOS MCP server',
+        version: '1.2.3',
+        browserSession: {
+          pages: {
+            getActive: async () => null,
+          },
+        } as unknown as BrowserSession,
+      }),
+    )
+
+    const result = await server._registeredTools.tabs.handler({
+      action: 'active',
+    })
+
+    expect(result?.isError).toBe(true)
+    expect(result?.content).toEqual([
+      expect.objectContaining({
+        type: 'text',
+        text: 'tabs active: no active page found.',
+      }),
+    ])
+  })
 })
