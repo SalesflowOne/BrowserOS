@@ -19,7 +19,7 @@ const testSuites = {
     },
     {
       label: 'agent tests',
-      cwd: resolve(projectRoot, 'apps/agent'),
+      cwd: resolve(projectRoot, 'apps/app'),
       argv: [bun, 'run', 'test'],
     },
     {
