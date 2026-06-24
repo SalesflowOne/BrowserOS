@@ -135,6 +135,7 @@ export async function validateCliRelease(
     parsed.tag,
     options.defaultBranch,
   )
+  ensureAnnotatedTag(options.repositoryRoot, parsed.tag)
   const latestVersion = await fetchLatestVersion(options.latestVersionURL)
   const latestTag =
     compareReleaseVersions(parsed.version, latestVersion) === 0
@@ -198,11 +199,20 @@ function parseKnownCliTag(tag: string): ParsedCliReleaseTag | null {
   return { tag, version }
 }
 
+/** Enforces annotated release tags so release metadata has an intentional tag object. */
+export function ensureAnnotatedTag(repositoryRoot: string, tag: string): void {
+  const tagType = runGit(repositoryRoot, ['cat-file', '-t', `refs/tags/${tag}`])
+  if (tagType !== 'tag') {
+    throw new Error(`Tag ${tag} must be an annotated tag`)
+  }
+}
+
 function tagPriority(tag: string): number {
   return tag.startsWith('cli/') ? 1 : 0
 }
 
-function ensureTagReachableFromDefaultBranch(
+/** Verifies the pushed tag resolves to a commit already contained in the default branch. */
+export function ensureTagReachableFromDefaultBranch(
   repositoryRoot: string,
   tag: string,
   defaultBranch: string,
