@@ -115,14 +115,12 @@ func TestVersion(t *testing.T) {
 }
 
 func TestPageLifecycle(t *testing.T) {
-	// List existing pages
-	pagesBefore := runJSON(t, "pages")
+	pagesBefore := runJSON(t, "tabs")
 	countBefore, _ := pagesBefore["count"].(float64)
 	if countBefore < 1 {
 		t.Log("Warning: no pages found before test, server may not have a browser connected")
 	}
 
-	// Open a new page
 	openData := runJSON(t, "open", "https://example.com")
 	pageIDFloat, ok := openData["pageId"].(float64)
 	if !ok {
@@ -133,21 +131,16 @@ func TestPageLifecycle(t *testing.T) {
 
 	pageArg := fmt.Sprintf("-p=%d", pageID)
 
-	// Verify page count increased
-	pagesAfter := runJSON(t, "pages")
+	pagesAfter := runJSON(t, "tabs")
 	countAfter, _ := pagesAfter["count"].(float64)
 	if countAfter <= countBefore {
 		t.Errorf("expected page count to increase: before=%v after=%v", countBefore, countAfter)
 	}
 
-	// Wait for page to load
 	time.Sleep(2 * time.Second)
 
-	// Text extraction
 	t.Run("text", func(t *testing.T) {
 		data := runJSON(t, "text", pageArg)
-		// structuredContent may have a "text" key or the content items have text
-		// With --json, the output is structuredContent if present
 		raw, _ := json.Marshal(data)
 		if !strings.Contains(strings.ToLower(string(raw)), "example") {
 			t.Errorf("expected page content to mention 'example', got: %s", string(raw))

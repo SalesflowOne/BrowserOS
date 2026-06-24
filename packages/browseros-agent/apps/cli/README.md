@@ -70,8 +70,8 @@ browseros-cli update --yes   # apply without prompting
 browseros-cli health
 browseros-cli status
 
-# Pages
-browseros-cli pages                 # List all tabs
+# Tabs
+browseros-cli tabs                  # List all tabs
 browseros-cli active                # Show active tab
 browseros-cli open https://example.com
 browseros-cli close 42
@@ -182,7 +182,7 @@ apps/cli/
 │   ├── launch.go       # launch (find and start BrowserOS, wait for server)
 │   ├── open.go         # open (new_page / new_hidden_page)
 │   ├── nav.go          # nav, back, forward, reload
-│   ├── pages.go        # pages, active, close
+│   ├── pages.go        # tabs/pages alias, active, close
 │   ├── snap.go         # snap (take_snapshot / take_enhanced_snapshot)
 │   ├── text.go         # text, links
 │   ├── screenshot.go   # ss (take_screenshot / save_screenshot)

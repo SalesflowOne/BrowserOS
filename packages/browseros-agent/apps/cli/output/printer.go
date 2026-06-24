@@ -93,7 +93,11 @@ func PageList(result *mcp.ToolResult) {
 			marker = " " + boldColor.Sprint("[ACTIVE]")
 		}
 
-		fmt.Printf("  %d. %s (tab %d)%s\n", pageID, title, tabID, marker)
+		if tabID == 0 {
+			fmt.Printf("  %d. %s%s\n", pageID, title, marker)
+		} else {
+			fmt.Printf("  %d. %s (tab %d)%s\n", pageID, title, tabID, marker)
+		}
 		fmt.Printf("     %s\n", dimColor.Sprint(url))
 	}
 }
@@ -119,7 +123,11 @@ func ActivePage(result *mcp.ToolResult) {
 	title := strVal(page["title"])
 	url := strVal(page["url"])
 
-	fmt.Printf("Active page: %d (tab %d)\n", pageID, tabID)
+	if tabID == 0 {
+		fmt.Printf("Active page: %d\n", pageID)
+	} else {
+		fmt.Printf("Active page: %d (tab %d)\n", pageID, tabID)
+	}
 	fmt.Println(title)
 	fmt.Println(dimColor.Sprint(url))
 }
