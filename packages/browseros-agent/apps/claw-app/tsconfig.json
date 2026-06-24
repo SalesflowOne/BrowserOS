@@ -4,6 +4,7 @@
     "types": ["chrome", "bun"],
     "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
+    "baseUrl": ".",
     "paths": {
       "@/*": ["./*"]
     }

@@ -8,6 +8,7 @@
     "dev": "bun --env-file=.env.development wxt",
     "build": "wxt build",
     "build:dev": "bun --env-file=.env.development wxt build --mode development",
+    "test": "bun test",
     "zip": "wxt zip",
     "compile": "wxt prepare && tsc --noEmit",
     "typecheck": "wxt prepare && tsc --noEmit",
