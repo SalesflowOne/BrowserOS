@@ -40,7 +40,7 @@ func TestCommandName(t *testing.T) {
 		{"unknown command", []string{"nonexistent"}, "unknown"},
 		{"subcommand", []string{"bookmark", "search"}, "browseros-cli bookmark search"},
 		{"strata subcommand", []string{"strata", "check"}, "browseros-cli strata check"},
-		{"known with extra args", []string{"snap", "extra"}, "browseros-cli snap"},
+		{"known with extra args", []string{"snap", "extra"}, "browseros-cli snapshot"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -57,14 +57,63 @@ func TestSnapCommandShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rootCmd.Find(snap) error = %v", err)
 	}
-	if cmd.Name() != "snap" {
-		t.Fatalf("command name = %q, want snap", cmd.Name())
+	if cmd.Name() != "snapshot" {
+		t.Fatalf("command name = %q, want snapshot", cmd.Name())
 	}
 	if err := cmd.Args(cmd, []string{"extra"}); err == nil {
 		t.Fatal("snap Args accepted a positional argument")
 	}
 	if cmd.Flags().Lookup("enhanced") != nil {
 		t.Fatal("snap command exposes unsupported enhanced flag")
+	}
+}
+
+func TestScreenshotCommandShape(t *testing.T) {
+	for _, name := range []string{"screenshot", "ss"} {
+		t.Run(name, func(t *testing.T) {
+			cmd, _, err := rootCmd.Find([]string{name})
+			if err != nil {
+				t.Fatalf("rootCmd.Find(%s) error = %v", name, err)
+			}
+			if cmd.Name() != "screenshot" {
+				t.Fatalf("%s resolved to %q, want screenshot", name, cmd.Name())
+			}
+		})
+	}
+}
+
+func TestAgentFriendlyInputCommandShapes(t *testing.T) {
+	for _, tt := range []struct {
+		input string
+		want  string
+	}{
+		{"press", "press"},
+		{"key", "press"},
+		{"type", "type"},
+	} {
+		t.Run(tt.input, func(t *testing.T) {
+			cmd, _, err := rootCmd.Find([]string{tt.input})
+			if err != nil {
+				t.Fatalf("rootCmd.Find(%s) error = %v", tt.input, err)
+			}
+			if cmd.Name() != tt.want {
+				t.Fatalf("%s resolved to %q, want %q", tt.input, cmd.Name(), tt.want)
+			}
+		})
+	}
+}
+
+func TestReadAndGrepCommandShapes(t *testing.T) {
+	for _, name := range []string{"read", "text", "links", "grep"} {
+		t.Run(name, func(t *testing.T) {
+			cmd, _, err := rootCmd.Find([]string{name})
+			if err != nil {
+				t.Fatalf("rootCmd.Find(%s) error = %v", name, err)
+			}
+			if cmd == rootCmd {
+				t.Fatalf("%s resolved to root command", name)
+			}
+		})
 	}
 }
 

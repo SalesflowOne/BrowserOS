@@ -14,7 +14,8 @@ import (
 
 func init() {
 	cmd := &cobra.Command{
-		Use:         "ss",
+		Use:         "screenshot",
+		Aliases:     []string{"ss"},
 		Annotations: map[string]string{"group": "Observe:"},
 		Short:       "Take a screenshot",
 		Args:        cobra.NoArgs,

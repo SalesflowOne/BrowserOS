@@ -94,6 +94,43 @@ func TestCompactToolMappings(t *testing.T) {
 				"clear": false,
 			},
 		},
+		{
+			name: "press",
+			got:  pressToolArgs(7, "Enter"),
+			want: map[string]any{
+				"page": 7,
+				"kind": "press",
+				"key":  "Enter",
+			},
+		},
+		{
+			name: "type",
+			got:  typeToolArgs(7, "hello"),
+			want: map[string]any{
+				"page": 7,
+				"kind": "type",
+				"text": "hello",
+			},
+		},
+		{
+			name: "read markdown",
+			got:  readToolArgs(7, readOptions{format: "markdown", includeLinks: true}),
+			want: map[string]any{
+				"page":         7,
+				"format":       "markdown",
+				"includeLinks": true,
+			},
+		},
+		{
+			name: "grep content",
+			got:  grepToolArgs(7, "Example", "content", 5),
+			want: map[string]any{
+				"page":    7,
+				"pattern": "Example",
+				"over":    "content",
+				"limit":   5,
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -102,6 +139,28 @@ func TestCompactToolMappings(t *testing.T) {
 				t.Fatalf("mapping = %#v, want %#v", tt.got, tt.want)
 			}
 		})
+	}
+}
+
+func TestElementRefAcceptsCopyPasteForms(t *testing.T) {
+	for _, raw := range []string{"@e12", "e12", "12"} {
+		t.Run(raw, func(t *testing.T) {
+			got, err := elementRef(raw)
+			if err != nil {
+				t.Fatalf("elementRef(%q) error = %v", raw, err)
+			}
+			if got != "e12" {
+				t.Fatalf("elementRef(%q) = %q, want e12", raw, got)
+			}
+		})
+	}
+}
+
+func TestDisplayElementRefsPrefersAtRefs(t *testing.T) {
+	got := displayElementRefs("- button \"Buy\" [ref=e12]\n- input [ref=e3]")
+	want := "- button \"Buy\" [ref=@e12]\n- input [ref=@e3]"
+	if got != want {
+		t.Fatalf("displayElementRefs() = %q, want %q", got, want)
 	}
 }
 

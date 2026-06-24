@@ -8,7 +8,8 @@ import (
 
 func init() {
 	cmd := &cobra.Command{
-		Use:         "snap",
+		Use:         "snapshot",
+		Aliases:     []string{"snap"},
 		Annotations: map[string]string{"group": "Observe:"},
 		Short:       "Snapshot interactive elements on the page",
 		Args:        cobra.NoArgs,
@@ -26,7 +27,7 @@ func init() {
 			if jsonOut {
 				output.JSON(result)
 			} else {
-				output.Text(result)
+				output.Text(textResult(displayElementRefs(result.TextContent()), result.StructuredContent))
 			}
 		},
 	}
