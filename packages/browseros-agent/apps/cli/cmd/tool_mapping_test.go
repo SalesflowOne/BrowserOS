@@ -217,6 +217,26 @@ func TestFindNoMatchStopsBeforeAct(t *testing.T) {
 	}
 }
 
+func TestFindRejectsInvalidNth(t *testing.T) {
+	query := findQuery{mode: "text", text: "Buy", nth: -1}
+	if _, err := selectFindMatch([]findMatch{{ref: "e1", line: `- button "Buy" [ref=e1]`}}, query); err == nil {
+		t.Fatal("selectFindMatch() error = nil, want invalid nth error")
+	}
+}
+
+func TestFindGrepToolArgsUsesHighLimit(t *testing.T) {
+	got := findGrepToolArgs(7, findQuery{mode: "text", text: "Buy"})
+	want := map[string]any{
+		"page":    7,
+		"pattern": "Buy",
+		"over":    "ax",
+		"limit":   findGrepLimit,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("find grep args = %#v, want %#v", got, want)
+	}
+}
+
 func TestFindActionCalls(t *testing.T) {
 	match := findMatch{ref: "e12", line: `- textbox "Search" [ref=e12]`}
 	tests := []struct {

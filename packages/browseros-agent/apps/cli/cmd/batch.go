@@ -50,6 +50,10 @@ func init() {
 				pageSet: rootCmd.PersistentFlags().Changed("page"),
 				bail:    bail,
 			}
+			if results := preflightBatchCommands(commands, opts); len(results) > 0 {
+				writeBatchResults(results)
+				os.Exit(1)
+			}
 
 			c := newClient()
 			var results []batchResult
@@ -60,11 +64,7 @@ func init() {
 				output.Error(err.Error(), 1)
 			}
 
-			if jsonOut {
-				output.JSONRaw(results)
-			} else {
-				output.Confirm(formatBatchResults(results))
-			}
+			writeBatchResults(results)
 			if failedBatch(results) {
 				os.Exit(1)
 			}
@@ -72,6 +72,14 @@ func init() {
 	}
 	cmd.Flags().Bool("bail", false, "Stop after the first failed subcommand")
 	rootCmd.AddCommand(cmd)
+}
+
+func writeBatchResults(results []batchResult) {
+	if jsonOut {
+		output.JSONRaw(results)
+	} else {
+		output.Confirm(formatBatchResults(results))
+	}
 }
 
 func batchCommands(args []string, stdin io.Reader) ([]string, error) {
@@ -99,6 +107,68 @@ func batchCommands(args []string, stdin io.Reader) ([]string, error) {
 		return nil, fmt.Errorf("batch requires command strings or stdin lines")
 	}
 	return commands, nil
+}
+
+// preflightBatchCommands validates command syntax and page routing before a shared MCP session can mutate pages.
+func preflightBatchCommands(commands []string, opts batchOptions) []batchResult {
+	results := make([]batchResult, 0)
+	for i, raw := range commands {
+		if err := validateBatchCommand(raw, opts); err != nil {
+			results = append(results, batchResult{Index: i + 1, Command: raw, OK: false, Error: err.Error()})
+			if opts.bail {
+				break
+			}
+		}
+	}
+	return results
+}
+
+func validateBatchCommand(raw string, opts batchOptions) error {
+	tokens, err := splitBatchCommand(raw)
+	if err != nil {
+		return err
+	}
+	_, remaining, err := batchPage(tokens, opts)
+	if err != nil {
+		return err
+	}
+	if len(remaining) == 0 {
+		return fmt.Errorf("empty batch command")
+	}
+
+	switch remaining[0] {
+	case "press", "key":
+		if len(remaining) != 2 {
+			return fmt.Errorf("%s requires one key", remaining[0])
+		}
+	case "type":
+		if len(remaining) < 2 {
+			return fmt.Errorf("type requires text")
+		}
+	case "click":
+		if len(remaining) != 2 {
+			return fmt.Errorf("click requires one ref")
+		}
+		_, err = elementRef(remaining[1])
+	case "fill":
+		if len(remaining) < 3 {
+			return fmt.Errorf("fill requires a ref and value")
+		}
+		_, err = elementRef(remaining[1])
+	case "snapshot", "snap":
+		_, err = batchSnapshotFilters(remaining[1:])
+	case "read", "text", "links":
+		err = validateBatchRead(remaining)
+	case "grep":
+		if len(remaining) != 2 {
+			return fmt.Errorf("grep requires one pattern")
+		}
+	case "find":
+		_, _, err = parseFindTokens(remaining[1:])
+	default:
+		return fmt.Errorf("unsupported batch command: %s", remaining[0])
+	}
+	return err
 }
 
 // runBatchCommands executes each command string independently so failures can be reported per step.
@@ -168,11 +238,15 @@ func runBatchCommand(c toolCaller, raw string, opts batchOptions) (*mcp.ToolResu
 		}
 		return c.CallTool("act", fillToolArgs(page, ref, strings.Join(remaining[2:], " "), true))
 	case "snapshot", "snap":
+		filters, err := batchSnapshotFilters(remaining[1:])
+		if err != nil {
+			return nil, err
+		}
 		result, err := c.CallTool("snapshot", map[string]any{"page": page})
 		if err != nil {
 			return nil, err
 		}
-		return snapshotOutputResult(result, page, snapshotFilterOptions{}, false), nil
+		return snapshotOutputResult(result, page, filters, false), nil
 	case "read", "text", "links":
 		return runBatchRead(c, page, remaining)
 	case "grep":
@@ -231,6 +305,9 @@ func batchPage(tokens []string, opts batchOptions) (int, []string, error) {
 }
 
 func runBatchRead(c toolCaller, page int, tokens []string) (*mcp.ToolResult, error) {
+	if err := validateBatchRead(tokens); err != nil {
+		return nil, err
+	}
 	switch tokens[0] {
 	case "text":
 		return c.CallTool("read", readToolArgs(page, readOptions{format: "markdown"}))
@@ -253,12 +330,70 @@ func runBatchRead(c toolCaller, page int, tokens []string) (*mcp.ToolResult, err
 	return c.CallTool("read", readToolArgs(page, opts))
 }
 
+func validateBatchRead(tokens []string) error {
+	switch tokens[0] {
+	case "text", "links":
+		if len(tokens) != 1 {
+			return fmt.Errorf("%s does not take flags in batch", tokens[0])
+		}
+		return nil
+	}
+	for _, token := range tokens[1:] {
+		switch token {
+		case "--md", "--text", "--links":
+		default:
+			return fmt.Errorf("unsupported read flag in batch: %s", token)
+		}
+	}
+	return nil
+}
+
+func batchSnapshotFilters(tokens []string) (snapshotFilterOptions, error) {
+	filters := snapshotFilterOptions{}
+	for i := 0; i < len(tokens); i++ {
+		token := tokens[i]
+		switch {
+		case token == "-i" || token == "--interactive":
+			filters.interactive = true
+		case token == "-c" || token == "--compact":
+			filters.compact = true
+		case token == "-d" || token == "--depth":
+			if i+1 >= len(tokens) {
+				return snapshotFilterOptions{}, fmt.Errorf("%s requires a depth", token)
+			}
+			depth, err := strconv.Atoi(tokens[i+1])
+			if err != nil || depth < 0 {
+				return snapshotFilterOptions{}, fmt.Errorf("invalid snapshot depth: %s", tokens[i+1])
+			}
+			filters.depth = depth
+			i++
+		case strings.HasPrefix(token, "-d="):
+			value := strings.TrimPrefix(token, "-d=")
+			depth, err := strconv.Atoi(value)
+			if err != nil || depth < 0 {
+				return snapshotFilterOptions{}, fmt.Errorf("invalid snapshot depth: %s", value)
+			}
+			filters.depth = depth
+		case strings.HasPrefix(token, "--depth="):
+			value := strings.TrimPrefix(token, "--depth=")
+			depth, err := strconv.Atoi(value)
+			if err != nil || depth < 0 {
+				return snapshotFilterOptions{}, fmt.Errorf("invalid snapshot depth: %s", value)
+			}
+			filters.depth = depth
+		default:
+			return snapshotFilterOptions{}, fmt.Errorf("unsupported snapshot flag in batch: %s", token)
+		}
+	}
+	return filters, nil
+}
+
 func runBatchFind(c toolCaller, page int, args []string) (*mcp.ToolResult, error) {
 	query, action, err := parseFindTokens(args)
 	if err != nil {
 		return nil, err
 	}
-	grepResult, err := c.CallTool("grep", grepToolArgs(page, query.grepPattern(), "ax", 100))
+	grepResult, err := c.CallTool("grep", findGrepToolArgs(page, query))
 	if err != nil {
 		return nil, err
 	}
@@ -315,6 +450,9 @@ func parseFindTokens(args []string) (findQuery, findAction, error) {
 	}
 	if len(filtered) < 3 {
 		return findQuery{}, findAction{}, fmt.Errorf("find requires a mode, query, and action")
+	}
+	if nth < 1 {
+		return findQuery{}, findAction{}, fmt.Errorf("--nth must be 1 or greater")
 	}
 	query := findQuery{mode: filtered[0], nth: nth}
 	var actionArgs []string

@@ -34,6 +34,8 @@ type toolCall struct {
 	args map[string]any
 }
 
+const findGrepLimit = 1_000_000
+
 func init() {
 	cmd := &cobra.Command{
 		Use:         "find text <text> <action> | find role <role> <action>",
@@ -51,7 +53,7 @@ func init() {
 			}
 			c := newClient()
 
-			grepResult, err := c.CallTool("grep", grepToolArgs(pageID, query.grepPattern(), "ax", 100))
+			grepResult, err := c.CallTool("grep", findGrepToolArgs(pageID, query))
 			if err != nil {
 				output.Error(err.Error(), 1)
 			}
@@ -137,6 +139,10 @@ func (q findQuery) grepPattern() string {
 	return regexp.QuoteMeta(q.text)
 }
 
+func findGrepToolArgs(pageID int, query findQuery) map[string]any {
+	return grepToolArgs(pageID, query.grepPattern(), "ax", findGrepLimit)
+}
+
 func snapshotLines(text string) []string {
 	rawLines := strings.Split(text, "\n")
 	lines := make([]string, 0, len(rawLines))
@@ -202,8 +208,8 @@ func selectFindMatch(matches []findMatch, query findQuery) (findMatch, error) {
 		return findMatch{}, fmt.Errorf("find: no matches")
 	}
 	nth := query.nth
-	if nth == 0 {
-		nth = 1
+	if nth < 1 {
+		return findMatch{}, fmt.Errorf("find: --nth must be 1 or greater")
 	}
 	if nth > len(matches) {
 		return findMatch{}, fmt.Errorf("find: only %d matches, --nth %d is out of range", len(matches), nth)
