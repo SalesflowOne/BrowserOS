@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "test": "bun test ../../apps/server/tests/tools/browser ../../apps/server/tests/tools/response.test.ts ../../apps/server/tests/tools/browser-boundary.test.ts",
+    "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
