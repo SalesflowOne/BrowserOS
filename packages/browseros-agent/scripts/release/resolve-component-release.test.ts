@@ -237,4 +237,37 @@ describe('resolve-component-release', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  it('fetches the default branch ref for tag-only checkouts', async () => {
+    const sourceDir = await initFixture('agent-server', '0.0.122')
+    const bareDir = mkdtempSync(join(tmpdir(), 'component-release-origin-'))
+    const checkoutDir = mkdtempSync(
+      join(tmpdir(), 'component-release-checkout-'),
+    )
+    try {
+      const currentTag = scopedTag('agent-server', '0.0.122')
+      await tag(sourceDir, currentTag)
+      await mustRun(sourceDir, ['git', 'clone', '--bare', sourceDir, bareDir])
+      await mustRun(checkoutDir, ['git', 'init'])
+      await mustRun(checkoutDir, ['git', 'remote', 'add', 'origin', bareDir])
+      await mustRun(checkoutDir, ['git', 'fetch', 'origin', 'tag', currentTag])
+      await mustRun(checkoutDir, ['git', 'checkout', currentTag])
+
+      const result = await resolveRelease(
+        checkoutDir,
+        'agent-server',
+        currentTag,
+      )
+
+      expect(result.code, result.stderr).toBe(0)
+      expect(parseOutput(result.stdout)).toMatchObject({
+        version: '0.0.122',
+        tag: currentTag,
+      })
+    } finally {
+      rmSync(sourceDir, { recursive: true, force: true })
+      rmSync(bareDir, { recursive: true, force: true })
+      rmSync(checkoutDir, { recursive: true, force: true })
+    }
+  })
 })

@@ -147,7 +147,7 @@ if git rev-parse --verify --quiet "origin/$default_branch^{commit}" >/dev/null; 
 elif git rev-parse --verify --quiet "$default_branch^{commit}" >/dev/null; then
   default_ref="$default_branch"
 else
-  git fetch origin "$default_branch" --no-tags
+  git fetch origin "$default_branch:refs/remotes/origin/$default_branch" --no-tags
   default_ref="origin/$default_branch"
 fi
 
