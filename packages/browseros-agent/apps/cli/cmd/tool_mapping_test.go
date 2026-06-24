@@ -45,6 +45,11 @@ func TestCompactToolMappings(t *testing.T) {
 			want: map[string]any{"action": "list"},
 		},
 		{
+			name: "active tab",
+			got:  tabsActiveToolArgs(),
+			want: map[string]any{"action": "active"},
+		},
+		{
 			name: "open tab",
 			got:  openTabsToolArgs("https://example.com", true, false),
 			want: map[string]any{
@@ -343,12 +348,17 @@ func TestOpenResultUsesCanonicalPageField(t *testing.T) {
 }
 
 func TestActivePageResultUsesCanonicalPageField(t *testing.T) {
-	result := activePageResult(map[string]any{
-		"pageId":   42,
-		"tabId":    9,
-		"title":    "Example",
-		"url":      "https://example.com",
-		"isActive": true,
+	result := activePageResult(&mcp.ToolResult{
+		StructuredContent: map[string]any{
+			"action": "active",
+			"page": map[string]any{
+				"pageId":   42,
+				"tabId":    9,
+				"title":    "Example",
+				"url":      "https://example.com",
+				"isActive": true,
+			},
+		},
 	})
 
 	if _, exists := result.StructuredContent["pageId"]; exists {

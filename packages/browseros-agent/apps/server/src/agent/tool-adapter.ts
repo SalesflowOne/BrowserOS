@@ -134,6 +134,6 @@ function readOnlyGuard(
     typeof params.action === 'string'
       ? params.action
       : 'list'
-  if (action === 'list') return null
-  return errorResult('tabs: chat mode only supports action="list".')
+  if (action === 'list' || action === 'active') return null
+  return errorResult('tabs: chat mode only supports action="list" or "active".')
 }

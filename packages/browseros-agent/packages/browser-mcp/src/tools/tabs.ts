@@ -4,9 +4,9 @@ import { defineTool, errorResult, textResult } from './framework'
 export const tabs = defineTool({
   name: 'tabs',
   description:
-    'Manage browser tabs: list open pages (with their page ids), open a new page, or close one. Use the returned page id with snapshot/act/navigate.',
+    'Manage browser tabs: list open pages (with their page ids), show the active page, open a new page, or close one. Use the returned page id with snapshot/act/navigate.',
   input: z.object({
-    action: z.enum(['list', 'new', 'close']).default('list'),
+    action: z.enum(['list', 'active', 'new', 'close']).default('list'),
     url: z
       .string()
       .optional()
@@ -26,15 +26,23 @@ export const tabs = defineTool({
     switch (args.action) {
       case 'list': {
         const pages = await ctx.session.pages.list()
-        const lines = pages.map(
-          (p) => `[${p.pageId}] ${p.url}${p.title ? ` (${p.title})` : ''}`,
-        )
+        const lines = pages.map(formatPageLine)
         return textResult(lines.join('\n') || '(no open pages)', {
           pages: pages.map((p) => ({
             page: p.pageId,
             url: p.url,
             title: p.title,
           })),
+        })
+      }
+      case 'active': {
+        const page = await ctx.session.pages.getActive()
+        if (!page) {
+          return errorResult('tabs active: no active page found.')
+        }
+        return textResult(`Active page: ${formatPageLine(page)}`, {
+          action: 'active',
+          page,
         })
       }
       case 'new': {
@@ -61,3 +69,7 @@ export const tabs = defineTool({
     }
   },
 })
+
+function formatPageLine(page: { pageId: number; url: string; title?: string }) {
+  return `[${page.pageId}] ${page.url}${page.title ? ` (${page.title})` : ''}`
+}

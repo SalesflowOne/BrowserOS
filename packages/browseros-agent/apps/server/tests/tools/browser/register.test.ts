@@ -1922,14 +1922,25 @@ describe('buildBrowserToolSet', () => {
     })
   })
 
-  it('allows chat mode to list tabs without allowing tab mutation', async () => {
+  it('allows chat mode to read tabs without allowing tab mutation', async () => {
     expect(CHAT_MODE_ALLOWED_TOOLS.has('tabs')).toBe(true)
     const calls: string[] = []
+    const activePage = {
+      pageId: 1,
+      targetId: 'target-1',
+      tabId: 11,
+      url: 'https://example.com',
+      title: 'Example',
+      isActive: true,
+      isLoading: false,
+      loadProgress: 1,
+      isPinned: false,
+      isHidden: false,
+    }
     const session = {
       pages: {
-        list: async () => [
-          { pageId: 1, url: 'https://example.com', title: 'Example' },
-        ],
+        list: async () => [activePage],
+        getActive: async () => activePage,
         newPage: async () => {
           calls.push('newPage')
           return 2
@@ -1941,12 +1952,16 @@ describe('buildBrowserToolSet', () => {
     const listResult = await tools.tabs.execute?.({ action: 'list' }, {
       abortSignal: new AbortController().signal,
     } as never)
+    const activeResult = await tools.tabs.execute?.({ action: 'active' }, {
+      abortSignal: new AbortController().signal,
+    } as never)
     const newResult = await tools.tabs.execute?.(
       { action: 'new', url: 'https://example.com' },
       { abortSignal: new AbortController().signal } as never,
     )
 
     expect(listResult).toMatchObject({ isError: false })
+    expect(activeResult).toMatchObject({ isError: false })
     expect(newResult).toMatchObject({ isError: true })
     expect(calls).toEqual([])
   })

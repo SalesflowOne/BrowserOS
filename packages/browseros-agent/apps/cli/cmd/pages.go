@@ -39,18 +39,11 @@ func init() {
 		Args:        cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			c := newClient()
-			_, value, err := browserRunValue(c, `const pages = await browser.pages.list()
-const page = pages.find((p) => p.isActive) ?? pages[0]
-if (!page) throw new Error('No active page found.')
-return page`)
+			toolResult, err := c.CallTool("tabs", tabsActiveToolArgs())
 			if err != nil {
 				output.Error(err.Error(), 1)
 			}
-			page, ok := valueMap(value)
-			if !ok {
-				output.Error("active page response was not an object", 1)
-			}
-			result := activePageResult(page)
+			result := activePageResult(toolResult)
 			if jsonOut {
 				output.JSON(result)
 			} else {
@@ -92,6 +85,10 @@ func tabsListToolArgs() map[string]any {
 	return map[string]any{"action": "list"}
 }
 
+func tabsActiveToolArgs() map[string]any {
+	return map[string]any{"action": "active"}
+}
+
 // tabsListResult preserves the CLI's legacy pages/count shape around the MCP tabs tool.
 func tabsListResult(result *mcp.ToolResult) *mcp.ToolResult {
 	var pages []any
@@ -104,7 +101,14 @@ func tabsListResult(result *mcp.ToolResult) *mcp.ToolResult {
 	})
 }
 
-func activePageResult(page map[string]any) *mcp.ToolResult {
+func activePageResult(result *mcp.ToolResult) *mcp.ToolResult {
+	var page map[string]any
+	if result != nil && result.StructuredContent != nil {
+		page, _ = valueMap(result.StructuredContent["page"])
+	}
+	if page == nil {
+		return textResult("Active page: 0", map[string]any{"page": 0})
+	}
 	normalized := normalizeTabPages([]any{page})
 	if len(normalized) == 0 {
 		return textResult("Active page: 0", map[string]any{"page": 0})
