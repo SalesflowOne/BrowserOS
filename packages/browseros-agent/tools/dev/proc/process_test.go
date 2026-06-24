@@ -21,7 +21,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func TestWatchRunPathsStableAndDistinct(t *testing.T) {
+func TestWatchRunPathsStableAndSharedAcrossPortChanges(t *testing.T) {
 	baseDir := t.TempDir()
 	identity := WatchRunIdentity{
 		Mode:    "watch",
@@ -38,8 +38,15 @@ func TestWatchRunPathsStableAndDistinct(t *testing.T) {
 	withDifferentPort := identity
 	withDifferentPort.Ports.Server = 9106
 	third := watchRunPaths(baseDir, withDifferentPort)
-	if third.Lock == first.Lock || third.State == first.State {
-		t.Fatalf("expected distinct paths for different ports, got %#v and %#v", first, third)
+	if third != first {
+		t.Fatalf("expected same paths for different ports, got %#v and %#v", first, third)
+	}
+
+	withDifferentProfile := identity
+	withDifferentProfile.Profile = "/tmp/browseros-dev-other"
+	fourth := watchRunPaths(baseDir, withDifferentProfile)
+	if fourth.Lock == first.Lock || fourth.State == first.State {
+		t.Fatalf("expected distinct paths for different profiles, got %#v and %#v", first, fourth)
 	}
 }
 
@@ -173,6 +180,56 @@ func TestAcquireWatchRunLockStopsExistingOwnerByStatePGID(t *testing.T) {
 	waitForFile(t, readyPath, 3*time.Second)
 
 	lock, stopped, err := AcquireWatchRunLockInDir(baseDir, identity, 3*time.Second)
+	if err != nil {
+		t.Fatalf("AcquireWatchRunLockInDir returned error: %v", err)
+	}
+	defer lock.Close()
+	if !stopped {
+		t.Fatal("expected takeover to stop existing owner")
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("expected helper process to exit after takeover")
+	}
+}
+
+func TestAcquireWatchRunLockStopsExistingOwnerWithDifferentPorts(t *testing.T) {
+	baseDir := t.TempDir()
+	readyPath := filepath.Join(baseDir, "ready")
+	ownerIdentity := WatchRunIdentity{
+		Mode:    "watch",
+		Profile: "/tmp/browseros-dev",
+		Ports:   Ports{CDP: 9005, Server: 9105, Extension: 9305},
+	}
+	takeoverIdentity := ownerIdentity
+	takeoverIdentity.Ports.Server = 9200
+	identityJSON, err := json.Marshal(ownerIdentity)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=TestMain")
+	cmd.Env = append(os.Environ(),
+		watchLockHelperEnv+"=1",
+		"BROWSEROS_DEV_WATCH_LOCK_BASE="+baseDir,
+		"BROWSEROS_DEV_WATCH_LOCK_READY="+readyPath,
+		"BROWSEROS_DEV_WATCH_LOCK_IDENTITY="+string(identityJSON),
+	)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("starting helper: %v", err)
+	}
+	defer cmd.Process.Kill()
+
+	waitForFile(t, readyPath, 3*time.Second)
+
+	lock, stopped, err := AcquireWatchRunLockInDir(baseDir, takeoverIdentity, 3*time.Second)
 	if err != nil {
 		t.Fatalf("AcquireWatchRunLockInDir returned error: %v", err)
 	}

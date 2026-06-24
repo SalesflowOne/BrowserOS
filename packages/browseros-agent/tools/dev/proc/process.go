@@ -82,7 +82,7 @@ func AcquireWatchRunLockInDir(baseDir string, identity WatchRunIdentity, timeout
 	if err != nil {
 		return nil, false, fmt.Errorf("dev watch lock is held but state is unreadable at %s: %w", paths.State, err)
 	}
-	if state.Identity != identity {
+	if !sameWatchRunOwner(state.Identity, identity) {
 		return nil, false, fmt.Errorf("dev watch lock state identity mismatch at %s", paths.State)
 	}
 	if state.PGID <= 0 {
@@ -115,7 +115,7 @@ func AcquireWatchRunLockInDir(baseDir string, identity WatchRunIdentity, timeout
 }
 
 // DefaultWatchRunBaseDir returns the shared location for dev watch lock files.
-// Individual runs are separated by a hash of profile, ports, and mode.
+// Individual runs are separated by a hash of profile and mode.
 func DefaultWatchRunBaseDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -356,12 +356,9 @@ func isBrowserProcessForUserDataDir(command string, userDataDirs []string, inclu
 
 func watchRunPaths(baseDir string, identity WatchRunIdentity) watchRunPathsResult {
 	identity = normalizeWatchRunIdentity(identity)
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%d\x00%d\x00%d",
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s",
 		identity.Mode,
 		identity.Profile,
-		identity.Ports.CDP,
-		identity.Ports.Server,
-		identity.Ports.Extension,
 	)))
 	key := hex.EncodeToString(sum[:])
 	return watchRunPathsResult{
@@ -373,6 +370,12 @@ func watchRunPaths(baseDir string, identity WatchRunIdentity) watchRunPathsResul
 func normalizeWatchRunIdentity(identity WatchRunIdentity) WatchRunIdentity {
 	identity.Profile = filepath.Clean(identity.Profile)
 	return identity
+}
+
+func sameWatchRunOwner(a WatchRunIdentity, b WatchRunIdentity) bool {
+	a = normalizeWatchRunIdentity(a)
+	b = normalizeWatchRunIdentity(b)
+	return a.Mode == b.Mode && a.Profile == b.Profile
 }
 
 func tryAcquireWatchRunLock(lockPath string, statePath string) (*WatchRunLock, error) {
