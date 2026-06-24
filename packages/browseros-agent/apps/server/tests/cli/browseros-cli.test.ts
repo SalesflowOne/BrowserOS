@@ -123,14 +123,10 @@ describe('browseros-cli runtime commands', () => {
   })
 
   it('snap resolves the active page without an explicit page flag', () => {
-    const result = runCli(['--json', 'snap'])
+    const data = runJson(['snap'])
 
-    if (result.status !== 0) {
-      throw new Error(
-        `browseros-cli snap exited ${result.status}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
-      )
-    }
-
-    expect(result.stdout.trim().length).toBeGreaterThan(10)
+    expect(typeof data.page).toBe('number')
+    expect(typeof data.snapshot).toBe('string')
+    expect((data.snapshot as string).length).toBeGreaterThan(10)
   })
 })
