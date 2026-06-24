@@ -106,7 +106,7 @@ describe('browseros-cli runtime commands', () => {
     expect(data.cdpConnected).toBe(true)
   })
 
-  it('lists pages through structured run output', () => {
+  it('lists pages through the tabs tool output', () => {
     const data = runJson(['pages'])
 
     expect(Array.isArray(data.pages)).toBe(true)
@@ -121,11 +121,10 @@ describe('browseros-cli runtime commands', () => {
     expect(typeof data.tabId).toBe('number')
   })
 
-  it('snap resolves the active page without an explicit page flag', () => {
-    const data = runJson(['snap'])
+  it('snap requires an explicit page flag', () => {
+    const result = runCli(['--json', 'snap'])
 
-    expect(typeof data.page).toBe('number')
-    expect(typeof data.snapshot).toBe('string')
-    expect((data.snapshot as string).length).toBeGreaterThan(10)
+    expect(result.status).toBe(2)
+    expect(result.stderr).toContain('-p/--page')
   })
 })
