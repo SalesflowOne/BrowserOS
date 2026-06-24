@@ -289,6 +289,18 @@ func TestRequestedBoolFlag(t *testing.T) {
 	}
 }
 
+func TestValidateChangedIntMinimum(t *testing.T) {
+	if err := validateChangedIntMinimum("--limit", 0, false, 1); err != nil {
+		t.Fatalf("unchanged value returned error: %v", err)
+	}
+	if err := validateChangedIntMinimum("--limit", 0, true, 1); err == nil {
+		t.Fatal("validateChangedIntMinimum() error = nil, want minimum error")
+	}
+	if err := validateChangedIntMinimum("--depth", 0, true, 0); err != nil {
+		t.Fatalf("valid changed value returned error: %v", err)
+	}
+}
+
 func TestShouldSkipAutomaticUpdates(t *testing.T) {
 	tests := []struct {
 		name string

@@ -217,6 +217,13 @@ func validatePageID(page int) error {
 	return nil
 }
 
+func validateChangedIntMinimum(name string, value int, changed bool, minimum int) error {
+	if changed && value < minimum {
+		return fmt.Errorf("%s must be %d or greater", name, minimum)
+	}
+	return nil
+}
+
 func envBool(key string) bool {
 	v := os.Getenv(key)
 	return v == "1" || v == "true"

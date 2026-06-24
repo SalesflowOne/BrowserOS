@@ -611,45 +611,67 @@ func splitBatchCommand(raw string) ([]string, error) {
 	tokens := []string{}
 	var current strings.Builder
 	var quote rune
-	escaped := false
-	for _, r := range raw {
-		if escaped {
+	tokenStarted := false
+	runes := []rune(raw)
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
+		if quote == '\'' {
+			tokenStarted = true
+			if r == quote {
+				quote = 0
+				continue
+			}
 			current.WriteRune(r)
-			escaped = false
+			continue
+		}
+		if quote == '"' {
+			tokenStarted = true
+			if r == '\\' {
+				if i+1 < len(runes) && (runes[i+1] == '"' || runes[i+1] == '\\') {
+					i++
+					current.WriteRune(runes[i])
+					continue
+				}
+				current.WriteRune(r)
+				continue
+			}
+			if r == quote {
+				quote = 0
+				continue
+			}
+			current.WriteRune(r)
 			continue
 		}
 		if r == '\\' {
-			escaped = true
-			continue
-		}
-		if quote != 0 {
-			if r == quote {
-				quote = 0
-			} else {
-				current.WriteRune(r)
+			tokenStarted = true
+			if i+1 < len(runes) && (runes[i+1] == ' ' || runes[i+1] == '\t' || runes[i+1] == '\'' || runes[i+1] == '"' || runes[i+1] == '\\') {
+				i++
+				current.WriteRune(runes[i])
+				continue
 			}
+			current.WriteRune(r)
 			continue
 		}
 		if r == '\'' || r == '"' {
 			quote = r
+			tokenStarted = true
 			continue
 		}
 		if r == ' ' || r == '\t' {
-			if current.Len() > 0 {
+			if tokenStarted {
 				tokens = append(tokens, current.String())
 				current.Reset()
+				tokenStarted = false
 			}
 			continue
 		}
 		current.WriteRune(r)
-	}
-	if escaped {
-		current.WriteRune('\\')
+		tokenStarted = true
 	}
 	if quote != 0 {
 		return nil, fmt.Errorf("unterminated quote in batch command")
 	}
-	if current.Len() > 0 {
+	if tokenStarted {
 		tokens = append(tokens, current.String())
 	}
 	return tokens, nil

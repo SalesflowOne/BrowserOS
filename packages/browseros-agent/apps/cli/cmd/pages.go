@@ -50,7 +50,7 @@ return page`)
 			if !ok {
 				output.Error("active page response was not an object", 1)
 			}
-			result := textResult(formatActivePage(page), map[string]any{"page": page})
+			result := activePageResult(page)
 			if jsonOut {
 				output.JSON(result)
 			} else {
@@ -102,6 +102,22 @@ func tabsListResult(result *mcp.ToolResult) *mcp.ToolResult {
 		"pages": pages,
 		"count": len(pages),
 	})
+}
+
+func activePageResult(page map[string]any) *mcp.ToolResult {
+	normalized := normalizeTabPages([]any{page})
+	if len(normalized) == 0 {
+		return textResult("Active page: 0", map[string]any{"page": 0})
+	}
+	pageData, ok := normalized[0].(map[string]any)
+	if !ok {
+		return textResult("Active page: 0", map[string]any{"page": 0})
+	}
+	data := make(map[string]any, len(pageData))
+	for key, value := range pageData {
+		data[key] = value
+	}
+	return textResult(formatActivePage(data), data)
 }
 
 // normalizeTabPages exposes numeric page as the CLI's canonical tab handle.

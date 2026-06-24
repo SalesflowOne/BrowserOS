@@ -162,3 +162,25 @@ func TestSplitBatchCommandPreservesQuotedArgs(t *testing.T) {
 		t.Fatalf("tokens = %#v, want %#v", got, want)
 	}
 }
+
+func TestSplitBatchCommandPreservesBackslashes(t *testing.T) {
+	got, err := splitBatchCommand(`grep "\\d+"`)
+	if err != nil {
+		t.Fatalf("splitBatchCommand() error = %v", err)
+	}
+	want := []string{"grep", `\d+`}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("tokens = %#v, want %#v", got, want)
+	}
+}
+
+func TestSplitBatchCommandPreservesEmptyQuotedArgs(t *testing.T) {
+	got, err := splitBatchCommand(`fill @e1 ""`)
+	if err != nil {
+		t.Fatalf("splitBatchCommand() error = %v", err)
+	}
+	want := []string{"fill", "@e1", ""}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("tokens = %#v, want %#v", got, want)
+	}
+}

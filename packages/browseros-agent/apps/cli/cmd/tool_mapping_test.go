@@ -434,6 +434,29 @@ func TestOpenResultUsesCanonicalPageField(t *testing.T) {
 	}
 }
 
+func TestActivePageResultUsesCanonicalPageField(t *testing.T) {
+	result := activePageResult(map[string]any{
+		"pageId":   42,
+		"tabId":    9,
+		"title":    "Example",
+		"url":      "https://example.com",
+		"isActive": true,
+	})
+
+	if _, exists := result.StructuredContent["pageId"]; exists {
+		t.Fatalf("active result includes legacy pageId: %#v", result.StructuredContent)
+	}
+	if nested, ok := result.StructuredContent["page"].(map[string]any); ok {
+		t.Fatalf("active result nested page object: %#v", nested)
+	}
+	if got := numberValue(result.StructuredContent["page"]); got != 42 {
+		t.Fatalf("page = %d, want 42", got)
+	}
+	if got := numberValue(result.StructuredContent["tabId"]); got != 9 {
+		t.Fatalf("tabId = %d, want 9", got)
+	}
+}
+
 func TestFillToolArgsFromNoClearFlag(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.Flags().Bool("no-clear", false, "")

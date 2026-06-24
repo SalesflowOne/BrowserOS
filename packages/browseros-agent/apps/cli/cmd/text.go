@@ -98,6 +98,9 @@ func init() {
 		Run: func(cmd *cobra.Command, args []string) {
 			content, _ := cmd.Flags().GetBool("content")
 			limit, _ := cmd.Flags().GetInt("limit")
+			if err := validateChangedIntMinimum("--limit", limit, cmd.Flags().Changed("limit"), 1); err != nil {
+				output.Error(err.Error(), 3)
+			}
 			over := "ax"
 			if content {
 				over = "content"

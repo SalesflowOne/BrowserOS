@@ -17,6 +17,9 @@ func init() {
 			interactive, _ := cmd.Flags().GetBool("interactive")
 			compact, _ := cmd.Flags().GetBool("compact")
 			depth, _ := cmd.Flags().GetInt("depth")
+			if err := validateChangedIntMinimum("--depth", depth, cmd.Flags().Changed("depth"), 0); err != nil {
+				output.Error(err.Error(), 3)
+			}
 			filters := snapshotFilterOptions{interactive: interactive, compact: compact, depth: depth}
 
 			pageID, err := resolvePageID(nil)

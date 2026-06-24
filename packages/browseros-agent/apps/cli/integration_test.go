@@ -270,10 +270,29 @@ func TestInvalidPage(t *testing.T) {
 }
 
 func TestExplicitPageAgentFlows(t *testing.T) {
-	openData := runJSON(t, "open", fixtureURL(`<title>Search Fixture</title><form><label>Search <input aria-label="Search" autofocus></label><button>Go</button></form>`))
+	openData := runJSON(t, "open", fixtureURL(`<title>Search Fixture</title><label>Search <input aria-label="Search" autofocus></label><button type="button">Go</button>`))
 	pageID := openedPage(t, openData)
 	pageArg := fmt.Sprintf("-p=%d", pageID)
 	defer run(t, "close", pageArg)
+
+	batchR := run(t, "--json", "batch", pageArg, "--bail", "find role textbox --name Search fill batch-query", "press Enter", "snapshot -i")
+	if batchR.ExitCode != 0 {
+		t.Fatalf("batch exited %d: %s%s", batchR.ExitCode, batchR.Stdout, batchR.Stderr)
+	}
+	var batchResults []struct {
+		OK bool `json:"ok"`
+	}
+	if err := json.Unmarshal([]byte(batchR.Stdout), &batchResults); err != nil {
+		t.Fatalf("batch JSON parse failed: %v\n%s", err, batchR.Stdout)
+	}
+	if len(batchResults) != 3 {
+		t.Fatalf("batch results = %d, want 3", len(batchResults))
+	}
+	for i, result := range batchResults {
+		if !result.OK {
+			t.Fatalf("batch result %d failed: %s", i+1, batchR.Stdout)
+		}
+	}
 
 	findR := run(t, "--json", "find", pageArg, "role", "textbox", "--name", "Search", "fill", "sensodyne")
 	if findR.ExitCode != 0 {
