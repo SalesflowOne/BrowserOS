@@ -268,6 +268,62 @@ func TestFindActionCalls(t *testing.T) {
 	}
 }
 
+func TestFilterSnapshotInteractiveRows(t *testing.T) {
+	input := strings.Join([]string{
+		`- generic`,
+		`  - button "Buy" [ref=e1]`,
+		`  - link "Details" [ref=e2]`,
+		`  - paragraph "Copy"`,
+	}, "\n")
+
+	got := filterSnapshotText(input, snapshotFilterOptions{interactive: true})
+	want := strings.Join([]string{
+		`  - button "Buy" [ref=e1]`,
+		`  - link "Details" [ref=e2]`,
+	}, "\n")
+	if got != want {
+		t.Fatalf("filterSnapshotText() = %q, want %q", got, want)
+	}
+}
+
+func TestFilterSnapshotCompactAndDepth(t *testing.T) {
+	input := strings.Join([]string{
+		`- generic`,
+		`  - section`,
+		`    - paragraph "Visible copy"`,
+		`      - button "Too deep" [ref=e9]`,
+		`  - button "Buy" [ref=e1]`,
+	}, "\n")
+
+	got := filterSnapshotText(input, snapshotFilterOptions{compact: true, depth: 2})
+	want := strings.Join([]string{
+		`    - paragraph "Visible copy"`,
+		`  - button "Buy" [ref=e1]`,
+	}, "\n")
+	if got != want {
+		t.Fatalf("filterSnapshotText() = %q, want %q", got, want)
+	}
+}
+
+func TestSnapshotOutputResultReportsFiltersForJSON(t *testing.T) {
+	result := textResult(`- button "Buy" [ref=e1]`, map[string]any{
+		"page":     7,
+		"snapshot": `- button "Buy" [ref=e1]`,
+	})
+
+	got := snapshotOutputResult(result, 7, snapshotFilterOptions{interactive: true}, true)
+	if got.StructuredContent["page"] != 7 {
+		t.Fatalf("page = %v, want 7", got.StructuredContent["page"])
+	}
+	if got.StructuredContent["filteredSnapshot"] != `- button "Buy" [ref=@e1]` {
+		t.Fatalf("filteredSnapshot = %v", got.StructuredContent["filteredSnapshot"])
+	}
+	filters, ok := got.StructuredContent["filters"].(map[string]any)
+	if !ok || filters["interactive"] != true {
+		t.Fatalf("filters = %#v, want interactive metadata", got.StructuredContent["filters"])
+	}
+}
+
 func TestTabsListResultUsesCanonicalPageField(t *testing.T) {
 	result := tabsListResult(&mcp.ToolResult{
 		StructuredContent: map[string]any{
