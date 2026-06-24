@@ -100,6 +100,10 @@ async function tag(dir: string, name: string): Promise<void> {
   await mustRun(dir, ['git', 'tag', '-a', name, '-m', name])
 }
 
+async function lightweightTag(dir: string, name: string): Promise<void> {
+  await mustRun(dir, ['git', 'tag', name])
+}
+
 async function resolveRelease(dir: string, component: Component, name: string) {
   return run(dir, [
     resolver,
@@ -123,6 +127,28 @@ function parseOutput(stdout: string): Record<string, string> {
 }
 
 describe('resolve-component-release', () => {
+  it('rejects non-strict slash tags', async () => {
+    const dir = await initFixture('agent-extension', '0.0.100')
+    try {
+      for (const invalidTag of [
+        'agent-extension/0.0.100',
+        'agent-extension/v0.0',
+        'agent-extension/v01.0.0',
+        'agent-extension/v0.0.100-rc1',
+        'agent-extension-v0.0.100',
+      ]) {
+        const result = await resolveRelease(dir, 'agent-extension', invalidTag)
+
+        expect(result.code, invalidTag).toBe(1)
+        expect(result.stderr).toContain(
+          'Expected agent-extension tag like agent-extension/vX.Y.Z',
+        )
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('resolves an extension slash tag and previous tag across tag schemes', async () => {
     const dir = await initFixture('agent-extension', '0.0.98')
     try {
@@ -162,6 +188,23 @@ describe('resolve-component-release', () => {
         version: '0.0.122',
         previous_tag: legacyTag('agent-server', '0.0.121'),
       })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects lightweight component release tags', async () => {
+    const dir = await initFixture('agent-server', '0.0.122')
+    try {
+      const currentTag = scopedTag('agent-server', '0.0.122')
+      await lightweightTag(dir, currentTag)
+
+      const result = await resolveRelease(dir, 'agent-server', currentTag)
+
+      expect(result.code).toBe(1)
+      expect(result.stderr).toContain(
+        'Tag agent-server/v0.0.122 must be an annotated tag',
+      )
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

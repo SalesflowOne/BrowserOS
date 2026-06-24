@@ -61,7 +61,7 @@ case "$component" in
 esac
 
 is_semver() {
-  [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+  [[ "$1" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
 }
 
 extract_version() {
@@ -122,11 +122,17 @@ if [ -z "$tag_version" ] || [[ "$tag" != "$new_prefix"* ]]; then
   exit 1
 fi
 
-release_sha="$(git rev-list -n 1 "$tag" 2>/dev/null || true)"
-if [ -z "$release_sha" ]; then
+tag_type="$(git cat-file -t "refs/tags/$tag" 2>/dev/null || true)"
+if [ -z "$tag_type" ]; then
   echo "Tag does not exist in this checkout: $tag" >&2
   exit 1
 fi
+if [ "$tag_type" != "tag" ]; then
+  echo "Tag $tag must be an annotated tag" >&2
+  exit 1
+fi
+
+release_sha="$(git rev-list -n 1 "$tag")"
 
 if ! package_version="$(
   git show "$release_sha:$package_json" 2>/dev/null | python3 -c '
