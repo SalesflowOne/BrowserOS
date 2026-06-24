@@ -69,7 +69,7 @@ func runWatch(cmd *cobra.Command, args []string) error {
 	var runLock *proc.WatchRunLock
 	acquireRunLock := func(ports proc.Ports) error {
 		lock, stopped, err := proc.AcquireWatchRunLock(proc.WatchRunIdentity{
-			// All watch variants share one identity so they cannot supervise the same profile and ports concurrently.
+			// All watch variants share one owner so they cannot supervise the same profile concurrently.
 			Mode:    watchRunLockMode,
 			Profile: userDataDir,
 			Ports:   ports,
