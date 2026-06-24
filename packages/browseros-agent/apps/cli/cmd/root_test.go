@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -114,6 +115,59 @@ func TestReadAndGrepCommandShapes(t *testing.T) {
 				t.Fatalf("%s resolved to root command", name)
 			}
 		})
+	}
+}
+
+func TestAgentStartHelpShowsExplicitPageLoop(t *testing.T) {
+	help := agentStartHelp(rootCmd)
+	for _, want := range []string{
+		"Start here for agents:",
+		"open --json",
+		"jq -r .page",
+		"-p \"$page\" snapshot",
+		"-p \"$page\" read",
+		"-p \"$page\" find",
+	} {
+		if !strings.Contains(help, want) {
+			t.Fatalf("agentStartHelp() missing %q in:\n%s", want, help)
+		}
+	}
+}
+
+func TestNpmPackageExposesBosAlias(t *testing.T) {
+	data, err := os.ReadFile("../npm/package.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pkg struct {
+		Bin map[string]string `json:"bin"`
+	}
+	if err := json.Unmarshal(data, &pkg); err != nil {
+		t.Fatal(err)
+	}
+	if pkg.Bin["browseros-cli"] != "bin/browseros-cli.js" {
+		t.Fatalf("browseros-cli bin = %q", pkg.Bin["browseros-cli"])
+	}
+	if pkg.Bin["bos"] != "bin/browseros-cli.js" {
+		t.Fatalf("bos bin = %q, want shared launcher", pkg.Bin["bos"])
+	}
+}
+
+func TestInstallScriptsCreateBosAlias(t *testing.T) {
+	shellScript, err := os.ReadFile("../scripts/install.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(shellScript), `"${INSTALL_DIR}/bos"`) {
+		t.Fatal("install.sh does not create bos next to browseros-cli")
+	}
+
+	powerShell, err := os.ReadFile("../scripts/install.ps1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(powerShell), `"bos.exe"`) {
+		t.Fatal("install.ps1 does not create bos.exe next to browseros-cli.exe")
 	}
 }
 

@@ -2,9 +2,9 @@
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](../../../../LICENSE)
 
-Command-line interface for controlling BrowserOS — launch and automate the browser from the terminal or from AI coding agents like Claude Code and Gemini CLI.
+Command-line interface for controlling BrowserOS — launch and automate the browser from the terminal or from AI coding agents like Claude Code and Gemini CLI. The installed `bos` command is a short alias for `browseros-cli`.
 
-Communicates with the BrowserOS MCP server over JSON-RPC 2.0 / StreamableHTTP. All 53+ MCP tools are mapped to CLI commands.
+Communicates with the BrowserOS MCP server over JSON-RPC 2.0 / StreamableHTTP and maps the core BrowserOS automation tools to CLI commands.
 
 ## Install
 
@@ -44,6 +44,20 @@ browseros-cli init http://127.0.0.1:9000/mcp
 browseros-cli health
 ```
 
+## Agent workflow
+
+Agents should capture a page id from `open` or `tabs`, then pass it explicitly with `-p`.
+
+```bash
+page=$(browseros-cli open --json https://example.com | jq -r .page)
+browseros-cli -p "$page" snapshot -i
+browseros-cli -p "$page" read --links
+browseros-cli -p "$page" find text "Search" click
+browseros-cli -p "$page" press Enter
+browseros-cli -p "$page" snapshot
+browseros-cli -p "$page" close
+```
+
 ### Other init modes
 
 ```bash
@@ -73,33 +87,39 @@ browseros-cli status
 # Tabs
 browseros-cli tabs                  # List all tabs
 browseros-cli active                # Show active tab
-browseros-cli open https://example.com
-browseros-cli close 42
+browseros-cli open --json https://example.com
+browseros-cli -p 42 close
 
 # Navigation
-browseros-cli nav https://example.com
-browseros-cli back
-browseros-cli forward
-browseros-cli reload
+browseros-cli -p 42 nav https://example.com
+browseros-cli -p 42 back
+browseros-cli -p 42 forward
+browseros-cli -p 42 reload
 
 # Observation
-browseros-cli snap                  # Accessibility tree snapshot
-browseros-cli text                  # Extract page as markdown
-browseros-cli links                 # Extract all links
-browseros-cli eval "document.title" # Run JavaScript
+browseros-cli -p 42 snapshot        # Accessibility tree snapshot
+browseros-cli -p 42 read            # Extract page as markdown
+browseros-cli -p 42 read --links    # Extract all links
+browseros-cli -p 42 grep "Submit"   # Search snapshot lines
+browseros-cli -p 42 eval "document.title" # Run JavaScript
 
 # Input
-browseros-cli click e5              # Click element by ref
-browseros-cli click-at 100 200      # Click at coordinates
-browseros-cli fill e12 "hello"      # Fill input by ref
-browseros-cli key Enter             # Press key
-browseros-cli hover e3
-browseros-cli scroll down 500
+browseros-cli -p 42 click @e5       # Click element by ref
+browseros-cli -p 42 click-at 100 200
+browseros-cli -p 42 fill @e12 "hello"
+browseros-cli -p 42 press Enter
+browseros-cli -p 42 type "hello"
+browseros-cli -p 42 find role button --name "Submit" click
+browseros-cli -p 42 hover @e3
+browseros-cli -p 42 scroll down 500
 
 # Screenshots & export
-browseros-cli ss                    # Screenshot (saves to screenshot.png)
-browseros-cli ss -o shot.png        # Screenshot to specific file
-browseros-cli pdf -o page.pdf       # Export as PDF
+browseros-cli -p 42 screenshot
+browseros-cli -p 42 screenshot -o shot.png
+browseros-cli -p 42 pdf page.pdf
+
+# Batch multiple steps through one MCP session
+browseros-cli -p 42 batch --bail "find role searchbox fill query" "press Enter"
 
 # Resource management (grouped commands)
 browseros-cli window list
@@ -119,7 +139,7 @@ To connect Claude Code, Gemini CLI, or any MCP client, see the [MCP setup guide]
 | Flag | Env Var | Description |
 |------|---------|-------------|
 | `--server, -s` | `BROWSEROS_URL` | Server URL (default: from config) |
-| `--page, -p` | `BROWSEROS_PAGE` | Target page ID (default: active page) |
+| `--page, -p` | | Required page ID for page-scoped commands |
 | `--json` | `BOS_JSON=1` | JSON output (outputs structuredContent) |
 | `--debug` | `BOS_DEBUG=1` | Debug output |
 | `--timeout, -t` | | Request timeout (default: 2m) |
@@ -151,7 +171,7 @@ Tests skip gracefully if no server is reachable — they won't fail in environme
 
 The integration tests (`integration_test.go`) cover:
 - Health check and version
-- Page lifecycle: open → text → snap → eval → screenshot → nav → reload → close
+- Page lifecycle: open → read → snapshot → eval → screenshot → nav → reload → close
 - Active page query
 - Info command
 - Error handling (invalid page ID, JS errors)
@@ -182,9 +202,11 @@ apps/cli/
 │   ├── open.go         # open (new_page / new_hidden_page)
 │   ├── nav.go          # nav, back, forward, reload
 │   ├── pages.go        # tabs/pages alias, active, close
-│   ├── snap.go         # snap (snapshot)
-│   ├── text.go         # text, links
-│   ├── screenshot.go   # ss (take_screenshot / save_screenshot)
+│   ├── snap.go         # snapshot/snap
+│   ├── text.go         # read, text, links, grep
+│   ├── find.go         # find (grep + act)
+│   ├── batch.go        # batch command runner
+│   ├── screenshot.go   # screenshot/ss
 │   ├── eval.go         # eval (evaluate_script)
 │   ├── click.go        # click, click-at
 │   ├── fill.go         # fill, clear, key
@@ -205,9 +227,7 @@ apps/cli/
     └── printer.go      # Human-readable and JSON output formatting
 ```
 
-The CLI communicates with BrowserOS via two HTTP POST requests per command:
-1. `initialize` — MCP handshake
-2. `tools/call` — execute the actual tool
+Normal CLI commands initialize an MCP session, call the requested tool, and close the session. `batch` keeps one MCP session open for all subcommands in that invocation.
 
 ## Links
 

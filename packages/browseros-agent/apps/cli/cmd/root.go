@@ -49,6 +49,17 @@ func helpAliases(aliases []string) string {
 	return helpAliasColor.Sprintf("(aliases: %s)", strings.Join(aliases, ", "))
 }
 
+func agentStartHelp(cmd *cobra.Command) string {
+	if cmd != rootCmd {
+		return ""
+	}
+	return "\n" + helpHeader("Start here for agents:") + "\n" +
+		"  page=$(browseros-cli open --json https://example.com | jq -r .page)\n" +
+		"  browseros-cli -p \"$page\" snapshot\n" +
+		"  browseros-cli -p \"$page\" read --links\n" +
+		"  browseros-cli -p \"$page\" find text \"Search\" click\n"
+}
+
 var groupOrder = []string{
 	"Navigate:",
 	"Observe:",
@@ -98,6 +109,7 @@ const usageTemplate = `{{helpHeader "Usage:"}}{{if .Runnable}}
 
 {{helpHeader "Examples:"}}
 {{.Example}}{{end}}{{if .HasAvailableSubCommands}}
+{{agentStartHelp .}}
 {{groupedHelp .}}{{end}}{{if .HasAvailableLocalFlags}}
 
 {{helpHeader "Flags:"}}
@@ -158,6 +170,7 @@ func init() {
 	cobra.AddTemplateFunc("helpAliases", helpAliases)
 	cobra.AddTemplateFunc("helpHint", helpHint)
 	cobra.AddTemplateFunc("groupedHelp", groupedHelp)
+	cobra.AddTemplateFunc("agentStartHelp", agentStartHelp)
 
 	rootCmd.SetUsageTemplate(usageTemplate)
 
