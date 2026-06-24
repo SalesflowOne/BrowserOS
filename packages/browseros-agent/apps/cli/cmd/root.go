@@ -19,13 +19,14 @@ import (
 )
 
 var (
-	serverURL string
-	pageFlag  int
-	pageSet   bool
-	jsonOut   bool
-	debug     bool
-	timeout   time.Duration
-	version   = "dev"
+	serverURL  string
+	pageFlag   int
+	pageSet    bool
+	jsonOut    bool
+	debug      bool
+	showLLMTxt bool
+	timeout    time.Duration
+	version    = "dev"
 )
 
 const automaticUpdateDrainTimeout = 150 * time.Millisecond
@@ -127,6 +128,16 @@ var rootCmd = &cobra.Command{
 	Long:          "browseros-cli — command-line interface for controlling BrowserOS via MCP",
 	SilenceUsage:  true,
 	SilenceErrors: true,
+	Run:           runRoot,
+}
+
+// runRoot prints the agent guide to stdout for `--llm-txt`, otherwise grouped help.
+func runRoot(cmd *cobra.Command, _ []string) {
+	if showLLMTxt {
+		fmt.Fprint(cmd.OutOrStdout(), llmTxtGuide)
+		return
+	}
+	_ = cmd.Help()
 }
 
 func Execute() {
@@ -179,6 +190,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&jsonOut, "json", envBool("BOS_JSON"), "JSON output")
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", envBool("BOS_DEBUG"), "Debug output")
 	rootCmd.PersistentFlags().DurationVarP(&timeout, "timeout", "t", 120*time.Second, "Request timeout")
+	rootCmd.Flags().BoolVar(&showLLMTxt, "llm-txt", false, "Print the agent usage guide and exit")
 
 	rootCmd.Version = version
 }
@@ -243,7 +255,7 @@ func newAutomaticUpdateManager(args []string) *update.Manager {
 }
 
 func shouldSkipAutomaticUpdates(args []string) bool {
-	if hasHelpFlag(args) || requestedBoolFlag(args, "--version", false) {
+	if hasHelpFlag(args) || requestedBoolFlag(args, "--version", false) || requestedBoolFlag(args, "--llm-txt", false) {
 		return true
 	}
 
