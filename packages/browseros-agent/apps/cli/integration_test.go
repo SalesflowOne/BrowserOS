@@ -222,12 +222,11 @@ func TestPageLifecycle(t *testing.T) {
 
 func TestActivePage(t *testing.T) {
 	data := runJSON(t, "active")
-	page, ok := data["page"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected active page response to contain page object, got: %v", data)
+	if _, ok := data["page"].(float64); !ok {
+		t.Fatalf("expected active page response to contain numeric page, got: %v", data)
 	}
-	if _, ok := page["pageId"].(float64); !ok {
-		t.Fatalf("expected active page response to contain numeric pageId, got: %v", page)
+	if _, ok := data["tabId"].(float64); !ok {
+		t.Fatalf("expected active page response to contain numeric tabId, got: %v", data)
 	}
 }
 
