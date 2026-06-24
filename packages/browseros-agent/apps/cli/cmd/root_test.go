@@ -36,6 +36,7 @@ func TestCommandName(t *testing.T) {
 	}{
 		{"empty args", nil, "unknown"},
 		{"known command", []string{"health"}, "browseros-cli health"},
+		{"diff command", []string{"diff"}, "browseros-cli diff"},
 		{"unknown command", []string{"nonexistent"}, "unknown"},
 		{"subcommand", []string{"bookmark", "search"}, "browseros-cli bookmark search"},
 		{"strata subcommand", []string{"strata", "check"}, "browseros-cli strata check"},
