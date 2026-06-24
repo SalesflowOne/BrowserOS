@@ -46,6 +46,9 @@ browseros-cli health
 
 ## Agent workflow
 
+Run `browseros-cli --llm-txt` for a concise, copy-pasteable agent guide to the whole CLI (printed
+from the binary, so it always matches the installed version).
+
 Agents should capture a page id from `open` or `tabs`, then pass it explicitly with `-p`.
 
 ```bash
