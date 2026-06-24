@@ -25,12 +25,33 @@ export const read = defineTool({
     page: z.number().int(),
     format: z.enum(['markdown', 'text', 'links']).default('markdown'),
     selector: z.string().optional().describe('Restrict to a CSS subtree.'),
+    viewportOnly: z
+      .boolean()
+      .optional()
+      .describe('For markdown reads, include only visible viewport content.'),
+    includeLinks: z
+      .boolean()
+      .optional()
+      .describe('For markdown reads, render links as markdown links.'),
+    includeImages: z
+      .boolean()
+      .optional()
+      .describe('For markdown reads, include image references.'),
   }),
   annotations: { readOnlyHint: true },
   handler: async (args, ctx) => {
     const { session } = await ctx.session.pages.getSession(args.page)
+    const code =
+      args.format === 'markdown'
+        ? buildContentMarkdownExpression({
+            selector: args.selector,
+            viewportOnly: args.viewportOnly,
+            includeLinks: args.includeLinks,
+            includeImages: args.includeImages,
+          })
+        : expressionFor(args.format, args.selector)
     const result = await session.Runtime.evaluate({
-      expression: expressionFor(args.format, args.selector),
+      expression: code,
       returnByValue: true,
     })
     if (result.exceptionDetails) {

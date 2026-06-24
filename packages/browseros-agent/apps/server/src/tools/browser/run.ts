@@ -64,9 +64,22 @@ export const run = defineTool({
       args.timeout ?? DEFAULT_TIMEOUT_MS,
       logs,
     )
-    return outcome.ok
-      ? textResult(format(outcome), { ok: true })
-      : { ...errorResult(format(outcome)), structuredContent: { ok: false } }
+    if (outcome.ok) {
+      const value = jsonSafeValue(outcome.value)
+      return textResult(format(outcome), {
+        ok: true,
+        ...(value !== undefined && { value }),
+        logs: outcome.logs,
+      })
+    }
+    return {
+      ...errorResult(format(outcome)),
+      structuredContent: {
+        ok: false,
+        logs: outcome.logs,
+        error: outcome.error?.message,
+      },
+    }
   },
 })
 
@@ -140,4 +153,26 @@ function safeStringify(value: unknown): string {
   } catch {
     return String(value)
   }
+}
+
+function jsonSafeValue(value: unknown): unknown {
+  const seen = new WeakSet<object>()
+  let encoded: string | undefined
+  try {
+    encoded = JSON.stringify(value, (_key, next) => {
+      if (typeof next === 'bigint') return next.toString()
+      if (typeof next === 'function' || typeof next === 'symbol') {
+        return String(next)
+      }
+      if (typeof next === 'number' && !Number.isFinite(next)) return null
+      if (typeof next === 'object' && next !== null) {
+        if (seen.has(next)) return '[Circular]'
+        seen.add(next)
+      }
+      return next
+    })
+  } catch {
+    return safeStringify(value)
+  }
+  return encoded === undefined ? undefined : JSON.parse(encoded)
 }

@@ -14,18 +14,17 @@ func init() {
 		Args:        cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			enhanced, _ := cmd.Flags().GetBool("enhanced")
+			if enhanced {
+				output.Error("snap --enhanced is not supported by the compact BrowserOS tool surface; use snap", 3)
+			}
+
 			c := newClient()
 			pageID, err := resolvePageID(c)
 			if err != nil {
 				output.Error(err.Error(), 2)
 			}
 
-			toolName := "take_snapshot"
-			if enhanced {
-				toolName = "take_enhanced_snapshot"
-			}
-
-			result, err := c.CallTool(toolName, map[string]any{"page": pageID})
+			result, err := c.CallTool("snapshot", map[string]any{"page": pageID})
 			if err != nil {
 				output.Error(err.Error(), 1)
 			}
@@ -37,6 +36,6 @@ func init() {
 		},
 	}
 
-	cmd.Flags().BoolP("enhanced", "e", false, "Detailed accessibility tree with structural context")
+	cmd.Flags().BoolP("enhanced", "e", false, "Unsupported by compact BrowserOS tools; exits with a migration error")
 	rootCmd.AddCommand(cmd)
 }

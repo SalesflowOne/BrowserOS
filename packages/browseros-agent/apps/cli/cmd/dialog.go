@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+
 	"browseros-cli/output"
 
 	"github.com/spf13/cobra"
@@ -26,18 +28,27 @@ func init() {
 				output.Error(err.Error(), 2)
 			}
 
-			toolArgs := map[string]any{
-				"page":   pageID,
-				"accept": action == "accept",
-			}
+			promptArg := "undefined"
 			if promptText != "" {
-				toolArgs["promptText"] = promptText
+				promptArg = jsLiteral(promptText)
 			}
-
-			result, err := c.CallTool("handle_dialog", toolArgs)
+			_, value, err := browserRunValue(c, fmt.Sprintf(
+				`await browser.input(%d).handleDialog(%t, %s)
+return { action: 'handle_dialog', page: %d, accept: %t }`,
+				pageID,
+				action == "accept",
+				promptArg,
+				pageID,
+				action == "accept",
+			))
 			if err != nil {
 				output.Error(err.Error(), 1)
 			}
+			message := "Dialog dismissed"
+			if action == "accept" {
+				message = "Dialog accepted"
+			}
+			result := textResult(message, resultData(value))
 			if jsonOut {
 				output.JSON(result)
 			} else {

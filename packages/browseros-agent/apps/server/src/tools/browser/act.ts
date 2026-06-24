@@ -14,7 +14,7 @@ type InputApi = ReturnType<BrowserSession['input']>
 export const act = defineTool({
   name: 'act',
   description:
-    'Act on the page using refs from the last snapshot. kinds: click, type (into focused element), fill (one field via ref+value, or many via fields[]), press (a key/combo), hover, select (an option value), scroll. Reads back a diff of what changed - re-snapshot if you need fresh refs.',
+    'Act on the page using refs from the last snapshot. kinds: click, type (into focused element), fill (one field via ref+value, or many via fields[]), press (a key/combo), hover, focus, check, uncheck, select (an option value), scroll, drag. Reads back a diff of what changed - re-snapshot if you need fresh refs.',
   input: z.object({
     page: z.number().int(),
     kind: z.enum([
@@ -26,8 +26,12 @@ export const act = defineTool({
       'press',
       'hover',
       'hover_at',
+      'focus',
+      'check',
+      'uncheck',
       'select',
       'scroll',
+      'drag',
       'drag_at',
     ]),
     ref: z.string().optional().describe('Target element ref, e.g. "e12".'),
@@ -48,6 +52,7 @@ export const act = defineTool({
       .describe('Scroll amount (wheel notches), default 3.'),
     x: z.number().optional().describe('Viewport x coordinate for *_at kinds.'),
     y: z.number().optional().describe('Viewport y coordinate for *_at kinds.'),
+    targetRef: z.string().optional().describe('Target ref for kind=drag.'),
     startX: z.number().optional().describe('Drag start x coordinate.'),
     startY: z.number().optional().describe('Drag start y coordinate.'),
     endX: z.number().optional().describe('Drag end x coordinate.'),
@@ -79,6 +84,7 @@ type ActArgs = {
   amount?: number
   x?: number
   y?: number
+  targetRef?: string
   startX?: number
   startY?: number
   endX?: number
@@ -102,8 +108,12 @@ const ACT_HANDLERS: Record<string, ActHandler> = {
   press,
   hover,
   hover_at: hoverAt,
+  focus,
+  check,
+  uncheck,
   select,
   scroll,
+  drag,
   drag_at: dragAt,
 }
 
@@ -162,11 +172,12 @@ async function fill(
   input: InputApi,
 ): Promise<ToolResult | undefined> {
   if (args.fields) {
-    for (const field of args.fields) await input.fill(field.ref, field.value)
+    for (const field of args.fields)
+      await input.fill(field.ref, field.value, { clear: args.clear })
     return undefined
   }
   if (args.ref && args.value !== undefined) {
-    await input.fill(args.ref, args.value)
+    await input.fill(args.ref, args.value, { clear: args.clear })
     return undefined
   }
   return errorResult('act fill: provide fields[] or both ref and value.')
@@ -200,6 +211,33 @@ async function hoverAt(
   return undefined
 }
 
+async function focus(
+  args: ActArgs,
+  input: InputApi,
+): Promise<ToolResult | undefined> {
+  if (!args.ref) return errorResult('act focus: ref is required.')
+  await input.focus(args.ref)
+  return undefined
+}
+
+async function check(
+  args: ActArgs,
+  input: InputApi,
+): Promise<ToolResult | undefined> {
+  if (!args.ref) return errorResult('act check: ref is required.')
+  await input.check(args.ref)
+  return undefined
+}
+
+async function uncheck(
+  args: ActArgs,
+  input: InputApi,
+): Promise<ToolResult | undefined> {
+  if (!args.ref) return errorResult('act uncheck: ref is required.')
+  await input.uncheck(args.ref)
+  return undefined
+}
+
 async function select(
   args: ActArgs,
   input: InputApi,
@@ -216,6 +254,17 @@ async function scroll(
   input: InputApi,
 ): Promise<ToolResult | undefined> {
   await input.scroll(args.direction ?? 'down', args.amount ?? 3, args.ref)
+  return undefined
+}
+
+async function drag(
+  args: ActArgs,
+  input: InputApi,
+): Promise<ToolResult | undefined> {
+  if (!args.ref || !args.targetRef) {
+    return errorResult('act drag: ref and targetRef are required.')
+  }
+  await input.drag(args.ref, args.targetRef)
   return undefined
 }
 

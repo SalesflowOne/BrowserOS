@@ -598,7 +598,11 @@ return { title: pages[0].title }
     })
 
     expect(result?.isError).toBeFalsy()
-    expect(result?.structuredContent).toEqual({ ok: true })
+    expect(result?.structuredContent).toEqual({
+      ok: true,
+      value: { title: 'Example' },
+      logs: ['pages 1', 'warn: {\n  "pageId": 7\n}'],
+    })
     expect(result?.content).toEqual([
       expect.objectContaining({
         type: 'text',
@@ -617,6 +621,28 @@ return { title: pages[0].title }
         text: expect.stringContaining('logs:\npages 1\nwarn:'),
       }),
     ])
+  })
+
+  it('keeps run structured values JSON-safe', async () => {
+    const fake = createFakeServer()
+    const session = { pages: {} } as unknown as BrowserSession
+
+    registerBrowserTools(fake.server as never, session)
+
+    const result = await fake.handlers.get('run')?.({
+      code: `
+const value = { id: 1n }
+value.self = value
+return value
+`,
+    })
+
+    expect(result?.isError).toBeFalsy()
+    expect(result?.structuredContent).toEqual({
+      ok: true,
+      value: { id: '1', self: '[Circular]' },
+      logs: [],
+    })
   })
 
   it('returns run syntax errors without invoking the browser session', async () => {
@@ -662,7 +688,11 @@ throw new Error('boom')
     })
 
     expect(result?.isError).toBe(true)
-    expect(result?.structuredContent).toEqual({ ok: false })
+    expect(result?.structuredContent).toEqual({
+      ok: false,
+      logs: ['before boom'],
+      error: 'boom',
+    })
     expect(result?.content).toEqual([
       expect.objectContaining({
         type: 'text',
@@ -692,7 +722,11 @@ return 'late'
     })
 
     expect(result?.isError).toBe(true)
-    expect(result?.structuredContent).toEqual({ ok: false })
+    expect(result?.structuredContent).toEqual({
+      ok: false,
+      logs: [],
+      error: 'run exceeded 1ms',
+    })
     expect(result?.content).toEqual([
       expect.objectContaining({
         type: 'text',
@@ -1624,8 +1658,13 @@ return 'late'
       press: async () => calls.push('press'),
       hover: async () => calls.push('hover'),
       hoverAt: async () => calls.push('hoverAt'),
+      focus: async (ref: string) => calls.push(`focus:${ref}`),
+      check: async (ref: string) => calls.push(`check:${ref}`),
+      uncheck: async (ref: string) => calls.push(`uncheck:${ref}`),
       selectOption: async () => calls.push('selectOption'),
       scroll: async () => calls.push('scroll'),
+      drag: async (source: string, target: string) =>
+        calls.push(`drag:${source}->${target}`),
       dragAt: async () => calls.push('dragAt'),
     }
     const session = {
@@ -1720,6 +1759,27 @@ return 'late'
         ref: 'e1',
       }),
     ).toMatchObject({ structuredContent: { kind: 'click', changed: true } })
+    await fake.handlers.get('act')?.({
+      page: 1,
+      kind: 'focus',
+      ref: 'e1',
+    })
+    await fake.handlers.get('act')?.({
+      page: 1,
+      kind: 'check',
+      ref: 'e2',
+    })
+    await fake.handlers.get('act')?.({
+      page: 1,
+      kind: 'uncheck',
+      ref: 'e3',
+    })
+    await fake.handlers.get('act')?.({
+      page: 1,
+      kind: 'drag',
+      ref: 'e4',
+      targetRef: 'e5',
+    })
     expect(calls).toEqual([
       'goto',
       'snapshot',
@@ -1727,6 +1787,14 @@ return 'late'
       'diff',
       'snapshot',
       'click',
+      'diff',
+      'focus:e1',
+      'diff',
+      'check:e2',
+      'diff',
+      'uncheck:e3',
+      'diff',
+      'drag:e4->e5',
       'diff',
     ])
   })

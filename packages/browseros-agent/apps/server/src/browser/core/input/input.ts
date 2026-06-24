@@ -23,6 +23,11 @@ export interface ClickOptions {
   clickCount?: number
 }
 
+export interface DragResult {
+  from: { x: number; y: number }
+  to: { x: number; y: number }
+}
+
 export type ScrollDirection = 'up' | 'down' | 'left' | 'right'
 
 const SELECT_OPTION_FN = `function(val){
@@ -196,6 +201,12 @@ export class Input {
     return coords
   }
 
+  async focus(ref: string): Promise<void> {
+    const { session, backendNodeId } = await this.observer.resolveRef(ref)
+    await scrollIntoView(session, backendNodeId)
+    await focusElement(session, backendNodeId)
+  }
+
   async type(text: string): Promise<void> {
     await this.withPageSessionRetry((session) => typeText(session, text))
   }
@@ -230,6 +241,28 @@ export class Input {
       [value],
     )
     return (selected as string | null) ?? null
+  }
+
+  async check(ref: string): Promise<boolean> {
+    const { session, backendNodeId } = await this.observer.resolveRef(ref)
+    const checked = await callOnElement(
+      session,
+      backendNodeId,
+      'function(){return this.checked}',
+    )
+    if (!checked) await this.clickNode(session, backendNodeId)
+    return true
+  }
+
+  async uncheck(ref: string): Promise<boolean> {
+    const { session, backendNodeId } = await this.observer.resolveRef(ref)
+    const checked = await callOnElement(
+      session,
+      backendNodeId,
+      'function(){return this.checked}',
+    )
+    if (checked) await this.clickNode(session, backendNodeId)
+    return false
   }
 
   async focusBackendNode(backendNodeId: number): Promise<void> {
@@ -278,13 +311,25 @@ export class Input {
     )
   }
 
+  async drag(sourceRef: string, targetRef: string): Promise<DragResult> {
+    const source = await this.observer.resolveRef(sourceRef)
+    const target = await this.observer.resolveRef(targetRef)
+    if (source.session !== target.session) {
+      throw new Error('Drag across frame sessions is not supported.')
+    }
+
+    await scrollIntoView(source.session, source.backendNodeId)
+    await scrollIntoView(target.session, target.backendNodeId)
+    const from = await getElementCenter(source.session, source.backendNodeId)
+    const to = await getElementCenter(target.session, target.backendNodeId)
+    await dispatchDrag(source.session, from, to)
+    return { from, to }
+  }
+
   async dragBackendNode(
     sourceBackendNodeId: number,
     target: { element?: number; x?: number; y?: number },
-  ): Promise<{
-    from: { x: number; y: number }
-    to: { x: number; y: number }
-  }> {
+  ): Promise<DragResult> {
     return this.withPageSessionRetry(async (session) => {
       await scrollIntoView(session, sourceBackendNodeId)
       const from = await getElementCenter(session, sourceBackendNodeId)

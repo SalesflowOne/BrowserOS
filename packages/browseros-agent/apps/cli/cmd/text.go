@@ -25,16 +25,17 @@ func init() {
 			}
 
 			toolArgs := map[string]any{
-				"page":         pageID,
-				"viewportOnly": viewport,
-				"includeLinks": links,
+				"page":          pageID,
+				"format":        "markdown",
+				"viewportOnly":  viewport,
+				"includeLinks":  links,
 				"includeImages": images,
 			}
 			if selector != "" {
 				toolArgs["selector"] = selector
 			}
 
-			result, err := c.CallTool("get_page_content", toolArgs)
+			result, err := c.CallTool("read", toolArgs)
 			if err != nil {
 				output.Error(err.Error(), 1)
 			}
@@ -62,7 +63,10 @@ func init() {
 			if err != nil {
 				output.Error(err.Error(), 2)
 			}
-			result, err := c.CallTool("get_page_links", map[string]any{"page": pageID})
+			result, err := c.CallTool("read", map[string]any{
+				"page":   pageID,
+				"format": "links",
+			})
 			if err != nil {
 				output.Error(err.Error(), 1)
 			}
