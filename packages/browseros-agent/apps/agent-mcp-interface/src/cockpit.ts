@@ -27,7 +27,7 @@
  * through `createCockpitRoutes`.
  */
 
-import type { BrowserSession } from '@browseros/server/browser/core/session'
+import type { BrowserSession } from '@browseros/browser-core/core/session'
 import { setBrowserSession } from './lib/browser-session'
 import { logger } from './lib/logger'
 import { migrateMcpUrls } from './lib/migrate-mcp-urls'

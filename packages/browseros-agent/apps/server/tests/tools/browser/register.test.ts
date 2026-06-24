@@ -10,24 +10,24 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { TOOL_LIMITS } from '@browseros/shared/constants/limits'
-import { z } from 'zod'
-import { CHAT_MODE_ALLOWED_TOOLS } from '../../../src/agent/chat-mode'
-import { buildBrowserToolSet } from '../../../src/agent/tool-adapter'
-import type { BrowserSession } from '../../../src/browser/core/session'
+import type { BrowserSession } from '@browseros/browser-core/core/session'
+import { createBrowserOutputFileAccess } from '@browseros/browser-mcp/output-file'
+import { registerBrowserTools } from '@browseros/browser-mcp/register'
+import { BROWSER_TOOLS } from '@browseros/browser-mcp/registry'
 import {
   getToolOutputDir,
   TOOL_OUTPUT_DIR_MODE,
   TOOL_OUTPUT_FILE_MODE,
-} from '../../../src/lib/browseros-dir'
+} from '@browseros/browser-mcp/tool-output-dir'
 import {
   defineTool,
   executeTool,
   textResult,
-} from '../../../src/tools/browser/framework'
-import { createBrowserOutputFileAccess } from '../../../src/tools/browser/output-file'
-import { registerBrowserTools } from '../../../src/tools/browser/register'
-import { BROWSER_TOOLS } from '../../../src/tools/browser/registry'
+} from '@browseros/browser-mcp/tools/framework'
+import { TOOL_LIMITS } from '@browseros/shared/constants/limits'
+import { z } from 'zod'
+import { CHAT_MODE_ALLOWED_TOOLS } from '../../../src/agent/chat-mode'
+import { buildBrowserToolSet } from '../../../src/agent/tool-adapter'
 import { createReadTool } from '../../../src/tools/filesystem/read'
 
 type RegisteredHandler = (args: Record<string, unknown>) => Promise<{

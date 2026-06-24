@@ -26,10 +26,10 @@
  * dispatches an "add to existing group" call instead.
  */
 
-import type { BrowserSession } from '@browseros/server/browser/core/session'
-import type { ToolDefinition } from '@browseros/server/tools/browser/framework'
-import { executeTool } from '@browseros/server/tools/browser/framework'
-import { BROWSER_TOOLS } from '@browseros/server/tools/browser/registry'
+import type { BrowserSession } from '@browseros/browser-core/core/session'
+import { BROWSER_TOOLS } from '@browseros/browser-mcp/registry'
+import type { ToolDefinition } from '@browseros/browser-mcp/tools/framework'
+import { executeTool } from '@browseros/browser-mcp/tools/framework'
 import { type TabGroupRecord, tabGroupTracker } from '../lib/agent-tab-groups'
 import { logger } from '../lib/logger'
 

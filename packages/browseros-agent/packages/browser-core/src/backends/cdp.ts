@@ -7,7 +7,7 @@ import type { ProtocolApi } from '@browseros/cdp-protocol/protocol-api'
 import { EXIT_CODES } from '@browseros/shared/constants/exit-codes'
 import { CDP_LIMITS } from '@browseros/shared/constants/limits'
 import { TIMEOUTS } from '@browseros/shared/constants/timeouts'
-import { logger } from '../../lib/logger'
+import { logger } from '../logger'
 import type { CdpTarget, CdpBackend as ICdpBackend } from './types'
 
 interface PendingRequest {

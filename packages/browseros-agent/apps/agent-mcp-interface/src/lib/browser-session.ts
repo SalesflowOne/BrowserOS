@@ -14,7 +14,7 @@
  * its CDP connection. Tests use the same setter to inject a stub.
  */
 
-import type { BrowserSession } from '@browseros/server/browser/core/session'
+import type { BrowserSession } from '@browseros/browser-core/core/session'
 
 let session: BrowserSession | null = null
 

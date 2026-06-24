@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import type { ProtocolApi } from '@browseros/cdp-protocol/protocol-api'
 import { TIMEOUTS } from '@browseros/shared/constants/timeouts'
 import { z } from 'zod'
-import { getToolOutputDir } from '../../lib/browseros-dir'
+import { getToolOutputDir } from '../tool-output-dir'
 import { defineTool, textResult } from './framework'
 import { recordBrowserOutputFile } from './output-file'
 
@@ -19,8 +19,7 @@ export const download = defineTool({
   }),
   handler: async (args, ctx) => {
     const { session } = await ctx.session.pages.getSession(args.page)
-    // Download into a fresh subdir so the suggested filename never collides and the
-    // on-disk name is deterministic (plain "allow" lets Chromium uniquify on collision).
+    // A fresh subdir avoids Chromium filename uniquifying on repeated downloads.
     const dir = await mkdtemp(join(await getToolOutputDir(), 'download-'))
 
     const { suggestedFilename } = await captureDownload(session, dir, () =>

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'bun:test'
-import type { BrowserSession } from '@browseros/server/browser/core/session'
+import type { BrowserSession } from '@browseros/browser-core/core/session'
 import {
   ACTIVE_WINDOW_MS,
   createTabActivityRegistry,

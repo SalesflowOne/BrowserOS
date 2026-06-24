@@ -13,7 +13,7 @@
  *
  * Routes are mounted under `/cockpit` so the URL shape matches what
  * `createCockpitRoutes` produces when the cockpit is embedded inside
- * `@browseros/server`'s runtime (which is the production path). The
+ * `@browseros/server`'s mounted runtime (which is the production path). The
  * UI client and agent-mcp-manager harness configs use a single base
  * URL shape (`http://127.0.0.1:<port>/cockpit/...`) regardless of
  * which runtime is hosting them, so a profile created against

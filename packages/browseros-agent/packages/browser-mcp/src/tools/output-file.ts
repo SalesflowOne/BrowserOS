@@ -5,7 +5,7 @@ import {
   getToolOutputDir,
   writeToolOutputBinaryFile,
   writeToolOutputFile,
-} from '../../lib/browseros-dir'
+} from '../tool-output-dir'
 
 export interface BrowserOutputFileAccess {
   readonly paths: ReadonlySet<string>

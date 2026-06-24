@@ -1,4 +1,4 @@
-import type { SnapshotDiff } from '../../browser/core/snapshot/diff'
+import type { SnapshotDiff } from '@browseros/browser-core/core/snapshot/diff'
 import { writeTempToolOutputFile } from './output-file'
 import {
   estimateTextTokens,

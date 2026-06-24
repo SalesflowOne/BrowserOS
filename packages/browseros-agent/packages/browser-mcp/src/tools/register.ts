@@ -1,9 +1,6 @@
+import type { BrowserSession } from '@browseros/browser-core/core/session'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { ZodRawShape } from 'zod'
-import type { BrowserSession } from '../../browser/core/session'
-import { logger } from '../../lib/logger'
-import { metrics } from '../../lib/metrics'
-import { shouldLogToolRegistration } from '../registration-log-sampling'
 import { executeTool } from './framework'
 import {
   type BrowserOutputFileAccess,
@@ -11,8 +8,6 @@ import {
 } from './output-file'
 import { BROWSER_TOOLS } from './registry'
 
-// The SDK's registerTool is heavily overloaded/generic; retyping it to a concrete signature
-// avoids a TS "excessively deep" instantiation while keeping the call shape honest.
 type RegisterFn = (
   name: string,
   config: {
@@ -37,11 +32,21 @@ export interface BrowserToolDefaults {
 
 export interface BrowserToolRegistrationOptions {
   outputFileAccess?: BrowserOutputFileAccess
+  onToolExecuted?: (event: BrowserToolExecutionEvent) => void
+  shouldLogToolRegistration?: () => boolean
+  logger?: { info(message: string): void }
+  source?: string
 }
 
-/**
- * Registers the browser-core tool surface on an MCP server, all bound to one BrowserSession.
- */
+export interface BrowserToolExecutionEvent extends Record<string, unknown> {
+  tool_name: string
+  duration_ms: number
+  success: boolean
+  source: string
+  error_message?: string
+}
+
+/** Registers the browser tool surface on an MCP server bound to one BrowserSession. */
 export function registerBrowserTools(
   server: McpServer,
   session: BrowserSession,
@@ -62,6 +67,7 @@ export function registerBrowserTools(
       },
       async (args, extra) => {
         const startTime = performance.now()
+        const duration = () => Math.round(performance.now() - startTime)
         try {
           const result = await withBrowserOutputFileAccess(
             options.outputFileAccess,
@@ -72,11 +78,11 @@ export function registerBrowserTools(
                 signal: extra?.signal,
               }),
           )
-          metrics.log('tool_executed', {
+          options.onToolExecuted?.({
             tool_name: tool.name,
-            duration_ms: Math.round(performance.now() - startTime),
+            duration_ms: duration(),
             success: !result.isError,
-            source: 'mcp',
+            source: options.source ?? 'mcp',
           })
           return {
             content: result.content,
@@ -86,12 +92,12 @@ export function registerBrowserTools(
         } catch (error) {
           const errorText =
             error instanceof Error ? error.message : String(error)
-          metrics.log('tool_executed', {
+          options.onToolExecuted?.({
             tool_name: tool.name,
-            duration_ms: Math.round(performance.now() - startTime),
+            duration_ms: duration(),
             success: false,
             error_message: errorText,
-            source: 'mcp',
+            source: options.source ?? 'mcp',
           })
           return {
             content: [{ type: 'text' as const, text: errorText }],
@@ -102,8 +108,8 @@ export function registerBrowserTools(
     )
   }
 
-  if (shouldLogToolRegistration()) {
-    logger.info(
+  if (options.shouldLogToolRegistration?.()) {
+    options.logger?.info(
       `Registered ${BROWSER_TOOLS.length} browser tools: ${BROWSER_TOOLS.map((t) => t.name).join(', ')}`,
     )
   }

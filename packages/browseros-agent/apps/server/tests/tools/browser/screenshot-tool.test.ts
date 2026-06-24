@@ -2,10 +2,10 @@ import { describe, expect, it } from 'bun:test'
 import type {
   ScreenshotCaptureOptions,
   ScreenshotCaptureResult,
-} from '../../../src/browser/core/screenshot'
-import type { BrowserSession } from '../../../src/browser/core/session'
-import { executeTool } from '../../../src/tools/browser/framework'
-import { screenshot } from '../../../src/tools/browser/screenshot'
+} from '@browseros/browser-core/core/screenshot'
+import type { BrowserSession } from '@browseros/browser-core/core/session'
+import { executeTool } from '@browseros/browser-mcp/tools/framework'
+import { screenshot } from '@browseros/browser-mcp/tools/screenshot'
 
 describe('screenshot tool', () => {
   it('defaults annotate to true and returns inline JPEG content', async () => {

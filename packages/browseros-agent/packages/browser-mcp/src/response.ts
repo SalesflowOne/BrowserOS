@@ -1,8 +1,8 @@
+import type { BrowserSession } from '@browseros/browser-core/core/session'
+import type { SnapshotDiff } from '@browseros/browser-core/core/snapshot/diff'
 import { TIMEOUTS } from '@browseros/shared/constants/timeouts'
-import type { BrowserSession } from '../browser/core/session'
-import type { SnapshotDiff } from '../browser/core/snapshot/diff'
-import { formatDiffResult } from './browser/diff-format'
-import { formatSnapshotResult } from './browser/snapshot-format'
+import { formatDiffResult } from './tools/diff-format'
+import { formatSnapshotResult } from './tools/snapshot-format'
 
 export type ContentItem =
   | { type: 'text'; text: string }

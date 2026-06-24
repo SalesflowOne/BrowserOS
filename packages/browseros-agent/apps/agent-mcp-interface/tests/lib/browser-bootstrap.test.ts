@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, test } from 'bun:test'
-import type { BrowserSession } from '@browseros/server/browser/core/session'
+import type { BrowserSession } from '@browseros/browser-core/core/session'
 import {
   bootstrapBrowserosBrowser,
   type CdpClient,

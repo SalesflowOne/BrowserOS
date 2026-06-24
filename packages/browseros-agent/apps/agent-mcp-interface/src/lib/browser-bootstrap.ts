@@ -26,9 +26,9 @@
  * after BrowserOS is up to reattach.
  */
 
-import { Browser } from '@browseros/server/browser'
-import { CdpBackend } from '@browseros/server/browser/backends/cdp'
-import type { BrowserSession } from '@browseros/server/browser/core/session'
+import { CdpBackend } from '@browseros/browser-core/backends/cdp'
+import { Browser } from '@browseros/browser-core/browser'
+import type { BrowserSession } from '@browseros/browser-core/core/session'
 import { env } from '../env'
 import { logger } from './logger'
 

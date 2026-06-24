@@ -26,7 +26,7 @@
  * targetId still matches (pageIds are reused after a tab closes).
  */
 
-import type { BrowserSession } from '@browseros/server/browser/core/session'
+import type { BrowserSession } from '@browseros/browser-core/core/session'
 
 export interface ToolEvent {
   name: string

@@ -3,7 +3,7 @@
  * Copyright 2025 BrowserOS
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * Wires every browser tool from `@browseros/server`'s catalogue onto
+ * Wires every browser tool from `@browseros/browser-mcp`'s catalogue onto
  * a per-agent MCP server with a permission gate in front. Each
  * dispatch:
  *
@@ -17,7 +17,7 @@
  *   4. Looks up the live BrowserSession; if not yet wired, returns
  *      a structured "session not connected" error so the wire shape
  *      stays honest.
- *   5. Hands off to `executeTool` from `@browseros/server`'s tool
+ *   5. Hands off to `executeTool` from `@browseros/browser-mcp`'s tool
  *      framework. That handles arg validation, error formatting,
  *      tab-id metadata, and result composition.
  *
@@ -29,8 +29,8 @@
  * a follow-up.
  */
 
-import { executeTool } from '@browseros/server/tools/browser/framework'
-import { BROWSER_TOOLS } from '@browseros/server/tools/browser/registry'
+import { BROWSER_TOOLS } from '@browseros/browser-mcp/registry'
+import { executeTool } from '@browseros/browser-mcp/tools/framework'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { ZodRawShape } from 'zod'
 import { getBrowserSession } from '../lib/browser-session'

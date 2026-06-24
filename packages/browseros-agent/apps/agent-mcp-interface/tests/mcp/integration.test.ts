@@ -8,7 +8,7 @@
  * `app.fetch`, so we never bind a port. Each test gets a fresh
  * tmp `<browserosDir>` so created agents don't leak.
  *
- * The tools surface is the real `@browseros/server` catalogue. Tool
+ * The tools surface is the real `@browseros/browser-mcp` catalogue. Tool
  * dispatches that pass the permission gate hit the
  * "session not connected" short-circuit because the cockpit's
  * runtime is not yet bound to a live Chromium (that happens in a

@@ -9,7 +9,7 @@
  * non-generic signature avoids a TS "excessively deep instantiation"
  * error while keeping the call shape honest.
  *
- * Same workaround `apps/server/src/tools/browser/register.ts` uses.
+ * Same workaround `@browseros/browser-mcp/register` uses.
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'

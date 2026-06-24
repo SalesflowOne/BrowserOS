@@ -1,5 +1,5 @@
 import type { ProtocolApi } from '@browseros/cdp-protocol/protocol-api'
-import { logger } from '../../lib/logger'
+import { logger } from '../logger'
 import {
   type CdpConnection,
   EXCLUDED_URL_PREFIXES,

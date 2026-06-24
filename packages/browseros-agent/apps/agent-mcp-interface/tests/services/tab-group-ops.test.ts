@@ -1,5 +1,5 @@
 /**
- * Stubs the `@browseros/server` browser-tool framework so we can drive
+ * Stubs the `@browseros/browser-mcp` browser-tool framework so we can drive
  * the orchestrator with synthetic results and assert on the dispatch
  * shape. Bun's `mock.module` works fine because all consumers of the
  * framework resolve through the same module specifier.
@@ -34,7 +34,7 @@ function nextResult(toolName: string): FakeResult {
 // the v2 dispatch suite needs the real BROWSER_TOOLS catalogue. The
 // real `tab_groups` and `windows` ToolDefinition objects pass through
 // our orchestrator untouched; we just short-circuit the dispatch.
-mock.module('@browseros/server/tools/browser/framework', () => ({
+mock.module('@browseros/browser-mcp/tools/framework', () => ({
   executeTool: async (def: { name: string }, args: Record<string, unknown>) => {
     calls.push({ toolName: def.name, args })
     return nextResult(def.name)

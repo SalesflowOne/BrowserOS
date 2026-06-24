@@ -1,5 +1,5 @@
+import type { WindowInfo } from '@browseros/browser-core/core/windows'
 import { z } from 'zod'
-import type { WindowInfo } from '../../browser/core/windows'
 import { defineTool, errorResult, textResult } from './framework'
 
 const ACTIONS = [

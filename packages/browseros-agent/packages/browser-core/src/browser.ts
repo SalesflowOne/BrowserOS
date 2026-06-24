@@ -1,8 +1,8 @@
 import type { ProtocolApi } from '@browseros/cdp-protocol/protocol-api'
-import { logger } from '../lib/logger'
 import type { CdpBackend } from './backends/types'
 import type { PageInfo } from './core/pages'
 import { BrowserSession } from './core/session'
+import { logger } from './logger'
 
 export type { PageInfo } from './core/pages'
 
