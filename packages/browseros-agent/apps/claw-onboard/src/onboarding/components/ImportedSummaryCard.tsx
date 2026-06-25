@@ -5,12 +5,7 @@ interface ImportedSummaryCardProps {
   profileCount: number
 }
 
-/**
- * Success card shown after the fake import flips. Headline + three
- * bullet rows mirroring the v2 design's success state. Phase 3 leaves
- * the payment-cards-skipped count hard-coded; the wiring person
- * threads the real value when they wire up the import service.
- */
+/** Shows the profile import success state. */
 export function ImportedSummaryCard({
   sites,
   profileCount,

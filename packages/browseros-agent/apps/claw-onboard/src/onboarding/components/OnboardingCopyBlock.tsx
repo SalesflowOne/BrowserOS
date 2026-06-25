@@ -5,15 +5,7 @@ interface OnboardingCopyBlockProps {
   text: string
 }
 
-/**
- * Dark code block with a copy button matching the v2 onboarding
- * design's CLI snippet shape (green prompt prefix, light mono text,
- * inline copy chip that flashes a checkmark for ~1.5 seconds). The
- * MCP page's `HeroCard` has a sibling block; once Phase 3 merges the
- * two can collapse into a shared `components/code/CopyBlock`, but
- * keeping them parallel during the Phase 3 window avoids a merge
- * conflict against Phase 2's just-landed code.
- */
+/** Renders the Claude MCP CLI snippet with clipboard copy feedback. */
 export function OnboardingCopyBlock({ text }: OnboardingCopyBlockProps) {
   const [copied, setCopied] = useState(false)
   const copy = async () => {

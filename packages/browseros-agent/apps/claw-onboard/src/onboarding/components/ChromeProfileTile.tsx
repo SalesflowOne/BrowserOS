@@ -9,13 +9,7 @@ interface ChromeProfileTileProps {
   onCheckedChange: (next: boolean) => void
 }
 
-/**
- * One Chrome profile row in the picker. Click-to-toggle on the whole
- * tile per the project's row-toggle convention. Checked tiles border
- * in accent orange with an accent-tint background; unchecked tiles
- * stay neutral. The shadcn `Checkbox` primitive is the visible
- * checkmark; the row is layout around it.
- */
+/** Renders one selectable Chrome profile row in the import picker. */
 export function ChromeProfileTile({
   profile,
   checked,
@@ -35,14 +29,7 @@ export function ChromeProfileTile({
           : 'border-border-2 bg-card hover:border-border-strong',
       )}
     >
-      <Checkbox
-        checked={checked}
-        // Click on the underlying primitive is swallowed by the outer
-        // button's onClick; this still keeps the visual primitive in
-        // sync via the `checked` prop.
-        tabIndex={-1}
-        aria-hidden
-      />
+      <Checkbox checked={checked} tabIndex={-1} aria-hidden />
       <span className="flex size-[30px] shrink-0 items-center justify-center rounded-lg border border-border-2 bg-card text-ink-2">
         <User className="size-[15px]" />
       </span>

@@ -5,12 +5,7 @@ interface ChromeQuitNoticeProps {
   onQuitChrome: () => void
 }
 
-/**
- * Amber pre-quit notice that fronts the import step. Tells the user
- * Chrome needs to close before BrowserOS can read its saved data, and
- * offers a Quit Chrome button that (in Phase 3) just advances the
- * sub-phase to the profile picker.
- */
+/** Prompts the user to close Chrome before profile import can continue. */
 export function ChromeQuitNotice({ onQuitChrome }: ChromeQuitNoticeProps) {
   return (
     <div className="mb-4 flex items-start gap-3 rounded-xl border border-amber/30 bg-amber-tint p-4">

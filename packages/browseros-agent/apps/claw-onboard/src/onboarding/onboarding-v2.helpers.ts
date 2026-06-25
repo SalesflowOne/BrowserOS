@@ -2,11 +2,6 @@
  * @license
  * Copyright 2025 BrowserOS
  * SPDX-License-Identifier: AGPL-3.0-or-later
- *
- * Static fixtures for the Phase 3 onboarding shell. Numbers exist so
- * the import-progress bar has something to climb toward and the
- * success summary has a concrete count; the wiring person replaces
- * these with real Chrome profile reads later.
  */
 
 import type { ChromeProfileId } from './onboarding-v2.schemas'
@@ -37,6 +32,7 @@ export const CHROME_PROFILES: readonly ChromeProfile[] = [
   },
 ]
 
+/** Totals selected profile site counts for the import summary and progress bar. */
 export function sumSitesFor(ids: readonly ChromeProfileId[]): number {
   return CHROME_PROFILES.filter((p) => ids.includes(p.id)).reduce(
     (sum, p) => sum + p.sites,
@@ -44,6 +40,7 @@ export function sumSitesFor(ids: readonly ChromeProfileId[]): number {
   )
 }
 
+/** Totals selected profile login counts for the import progress copy. */
 export function sumLoginsFor(ids: readonly ChromeProfileId[]): number {
   return CHROME_PROFILES.filter((p) => ids.includes(p.id)).reduce(
     (sum, p) => sum + p.logins,
@@ -51,16 +48,13 @@ export function sumLoginsFor(ids: readonly ChromeProfileId[]): number {
   )
 }
 
+/** Returns selected profile records in fixture order. */
 export function profilesByIds(
   ids: readonly ChromeProfileId[],
 ): readonly ChromeProfile[] {
   return CHROME_PROFILES.filter((p) => ids.includes(p.id))
 }
 
-/**
- * Two starter prompts the Ready step suggests. Hard-coded for Phase 3;
- * the wiring person can swap this for a real source later.
- */
 export const STARTER_PROMPTS: readonly string[] = [
   'Find me a coffee shop within walking distance and save it to my Maps.',
   'Apply for the SF visa for me, you have my passport scan in iCloud.',

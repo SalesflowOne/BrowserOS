@@ -1,12 +1,6 @@
 import { Lock, ShieldCheck, Zap } from 'lucide-react'
 
-/**
- * Left visual rail of the onboarding shell. 360 px wide with a
- * warm-orange linear gradient + radial wash, a BrowserOS logo + word
- * mark at the top, an italic serif quote in the middle, three small
- * feature blocks below it, and a faint footer caption. Lifted
- * verbatim from the v2 design's left column.
- */
+/** Renders the persistent BrowserOS visual rail beside the onboarding steps. */
 export function VisualRail() {
   return (
     <div

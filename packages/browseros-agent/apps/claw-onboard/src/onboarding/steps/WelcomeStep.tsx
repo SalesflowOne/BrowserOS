@@ -8,13 +8,7 @@ interface WelcomeStepProps {
   onSkip: () => void
 }
 
-/**
- * Step 0. Welcome copy + two CTAs. Primary advances into the full
- * flow, the quieter CTA skips ahead to the Ready step for users who
- * have done this before and just need the canonical CLI snippet
- * (Phase 3 wires this to step 3 because Connect carries the CLI; the
- * wiring person can re-route to a reconnect-specific screen later).
- */
+/** Renders the opening onboarding step and setup/reconnect choices. */
 export function WelcomeStep({ onPrimary, onSkip }: WelcomeStepProps) {
   return (
     <StepWrap>

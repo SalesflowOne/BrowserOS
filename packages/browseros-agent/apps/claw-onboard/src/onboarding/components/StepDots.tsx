@@ -5,12 +5,7 @@ interface StepDotsProps {
   total: number
 }
 
-/**
- * Four-dot progress indicator. Active dot is a 22 px elongated pill
- * in accent orange, completed dots are accent-tint-2, future dots are
- * border-2 grey. Width / colour transitions over 300 ms so step
- * changes feel smooth.
- */
+/** Renders compact step progress dots for the onboarding frame. */
 export function StepDots({ step, total }: StepDotsProps) {
   return (
     <div className="flex items-center gap-[7px]">

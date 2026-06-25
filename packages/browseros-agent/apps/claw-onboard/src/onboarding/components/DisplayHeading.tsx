@@ -4,11 +4,7 @@ interface DisplayHeadingProps {
   children: ReactNode
 }
 
-/**
- * Big sans-serif heading used at the top of every onboarding step.
- * Wrap an `<Em>` around accent words ("drive", "logins", "Claude",
- * "set") to pick up the Newsreader italic serif accent.
- */
+/** Renders the shared display heading for each onboarding step. */
 export function DisplayHeading({ children }: DisplayHeadingProps) {
   return (
     <h1 className="mb-[14px] font-extrabold font-sans text-[38px] text-ink leading-[1.05] tracking-tight">
@@ -34,10 +30,6 @@ interface StepCopyProps {
   className?: string
 }
 
-/**
- * Body copy under the display heading. Caps at 470 px so lines do
- * not stretch all the way to the content column's right edge.
- */
 export function StepCopy({ children, className = '' }: StepCopyProps) {
   return (
     <p

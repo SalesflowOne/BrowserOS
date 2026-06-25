@@ -1,10 +1,6 @@
 import { Lock } from 'lucide-react'
 
-/**
- * Blue info bar that explains the macOS Keychain permission prompt
- * the user is about to see. Phase 3 just renders it; the real prompt
- * lives in the wiring layer.
- */
+/** Explains the macOS Keychain prompt shown during Chrome data import. */
 export function MacKeychainNotice() {
   return (
     <div className="mb-4 flex items-start gap-3 rounded-xl border border-blue/20 bg-[#EEF3FA] p-4">

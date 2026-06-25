@@ -2,27 +2,6 @@
  * @license
  * Copyright 2025 BrowserOS
  * SPDX-License-Identifier: AGPL-3.0-or-later
- *
- * v2 onboarding shell. Four steps inside one macwin frame with a
- * persistent visual rail. UI-only: every "action" advances local
- * state or runs a fake-progress timer. The wiring person hooks real
- * mutations into the four callbacks below without touching layout,
- * typography, or the form-state model.
- *
- * Wiring-person checklist:
- *
- *   - `onQuitChrome`     : replace with a real "quit Chrome safely" call.
- *   - `onImport`         : replace the fake-progress effect below with a
- *                          subscription to the import service that drives
- *                          `setImportProgress` for real.
- *   - `onAddToClaude`    : replace the connect timer with a mutation
- *                          against the connect endpoint; flip
- *                          `setConnectPhase` on the mutation's lifecycle.
- *   - `onDone`           : confirm the navigation target is right for the
- *                          post-onboarding home (cockpit homepage today).
- *
- * `form.getValues().selectedProfileIds` is the picker's output. RHF
- * keeps it validated, typed, and stable across step navigations.
  */
 
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -48,6 +27,7 @@ const FAKE_IMPORT_TICK_MS = 70
 const FAKE_IMPORT_SETTLE_MS = 350
 const FAKE_CONNECT_DELAY_MS = 1700
 
+/** Runs the standalone four-step BrowserClaw onboarding flow. */
 export function OnboardingV2() {
   const navigate = useNavigate()
   const form = useForm<OnboardingFormValues>({
@@ -61,9 +41,6 @@ export function OnboardingV2() {
   const [connectPhase, setConnectPhase] = useState<ConnectPhase>('idle')
   const [importProgress, setImportProgress] = useState(0)
 
-  // Fake import-progress climber. The wiring person replaces this
-  // entire effect with a subscription to the real import service
-  // that drives `setImportProgress`.
   useEffect(() => {
     if (importPhase !== 'importing') return
     const totalSites = sumSitesFor(form.getValues().selectedProfileIds)
@@ -88,9 +65,6 @@ export function OnboardingV2() {
     return () => window.clearInterval(tick)
   }, [importPhase, form])
 
-  // Fake connect timer. The wiring person replaces this with a real
-  // mutation against the connect endpoint; flip `connectPhase` on
-  // the mutation's success / error lifecycle.
   useEffect(() => {
     if (connectPhase !== 'connecting') return
     const timer = window.setTimeout(

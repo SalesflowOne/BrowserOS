@@ -9,12 +9,7 @@ interface ReadyStepProps {
   onDone: () => void
 }
 
-/**
- * Step 3. Two starter prompt tiles and an "Open BrowserOS" CTA that
- * navigates the user home. `onDone` lives on the parent so the
- * wiring person can swap navigation behaviour without touching the
- * step component.
- */
+/** Renders the final starter prompts and completion CTA. */
 export function ReadyStep({ onDone }: ReadyStepProps) {
   return (
     <StepWrap>

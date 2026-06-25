@@ -5,11 +5,7 @@ interface StarterPromptTileProps {
   prompt: string
 }
 
-/**
- * Suggested starter prompt row. Clicking Copy puts the prompt on the
- * clipboard and flashes a checkmark for ~1.5 seconds, matching the
- * MCP page's CopyBlock pattern.
- */
+/** Renders one suggested first task with clipboard copy feedback. */
 export function StarterPromptTile({ prompt }: StarterPromptTileProps) {
   const [copied, setCopied] = useState(false)
   const copy = async () => {

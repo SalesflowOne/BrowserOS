@@ -6,11 +6,7 @@ interface ImportingProgressCardProps {
   logins: number
 }
 
-/**
- * Animated progress card shown while the import sub-phase is
- * `importing`. The progress prop is a fake counter that climbs
- * toward `total` over ~1.5 seconds; the bar width is the ratio.
- */
+/** Displays local import progress while selected profile sessions are copied. */
 export function ImportingProgressCard({
   progress,
   total,

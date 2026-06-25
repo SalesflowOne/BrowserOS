@@ -27,17 +27,7 @@ interface ImportStepProps {
   onContinue: () => void
 }
 
-/**
- * Step 1. Four sub-phases driven by the `phase` prop:
- *
- *   pre-quit   : amber notice + "Quit Chrome" button
- *   picker     : RHF-managed profile picker + Keychain notice + Import button
- *   importing  : animated progress card (parent owns the timer)
- *   imported   : success bullets + "Connect to Claude" CTA
- *
- * The form lives on the parent so the field stays mounted across all
- * four sub-phases; only the rendered content swaps.
- */
+/** Renders the Chrome profile import step across quit, picker, progress, and success states. */
 export function ImportStep({
   phase,
   progress,

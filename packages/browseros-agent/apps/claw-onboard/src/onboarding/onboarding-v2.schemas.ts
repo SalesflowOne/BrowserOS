@@ -2,12 +2,6 @@
  * @license
  * Copyright 2025 BrowserOS
  * SPDX-License-Identifier: AGPL-3.0-or-later
- *
- * Form schema for the v2 onboarding flow. Phase 3 wires only the
- * profile picker through react-hook-form; every other "input" in the
- * flow is a stateless local-state advancer. When the wiring person
- * replaces the fake handlers, they read `form.getValues()` here and
- * post to the real import service.
  */
 
 import { z } from 'zod'

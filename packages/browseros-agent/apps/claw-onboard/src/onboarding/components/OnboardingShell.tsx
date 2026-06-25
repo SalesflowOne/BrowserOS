@@ -8,17 +8,7 @@ interface OnboardingShellProps {
   children: ReactNode
 }
 
-/**
- * macwin frame for the v2 onboarding. A 44 px chrome bar with three
- * traffic-light placeholders sits on top; below it, a horizontal flex
- * with `VisualRail` on the left (360 px fixed) and the scrollable
- * content column on the right. Centered in the viewport when the
- * window exceeds 1040 x 720.
- *
- * Each step component is rendered as `children`; the shell owns the
- * dots, the rail, and the chrome bar so a step component only
- * cares about its own content.
- */
+/** Provides the shared window frame, visual rail, and step progress chrome. */
 export function OnboardingShell({
   step,
   totalSteps,

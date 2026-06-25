@@ -13,17 +13,7 @@ interface ConnectStepProps {
   onContinue: () => void
 }
 
-/**
- * Step 2. Three sub-phases driven by `phase`:
- *
- *   idle       : "Add to Claude" button + canonical CLI snippet fallback
- *   connecting : disabled button with a spinner
- *   connected  : green success card + "You're set" CTA
- *
- * The CLI snippet is the exact string the MCP page advertises so a
- * user who reaches onboarding via the reconnect path copies the same
- * command they would copy from /mcp.
- */
+/** Renders the Claude connection step and canonical MCP CLI fallback. */
 export function ConnectStep({
   phase,
   onAddToClaude,

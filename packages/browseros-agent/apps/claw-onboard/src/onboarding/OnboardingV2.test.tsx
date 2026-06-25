@@ -1,10 +1,3 @@
-/**
- * Static-markup checks for the onboarding shell. Phase 3 cannot
- * exercise click flows under `renderToStaticMarkup`; per-step content
- * coverage lives in the per-step files. This file pins the shell
- * rendering, the visual rail copy, and the step-0 default landing.
- */
-
 import { describe, expect, it } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router'
@@ -42,9 +35,6 @@ describe('OnboardingV2 shell', () => {
 
   it('renders four step dots', () => {
     const html = renderApp()
-    // 4 dots = 4 span elements with the rounded-full class. Counting
-    // the rounded-full + h-[7px] combination is structural enough to
-    // not break on minor style edits.
     const matches = html.match(/h-\[7px\]/g) ?? []
     expect(matches.length).toBeGreaterThanOrEqual(4)
   })
