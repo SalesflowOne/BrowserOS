@@ -101,7 +101,12 @@ function parseCliArgs(argv: string[]): ConfigResult<{ configPath?: string }> {
   }
 
   const opts = program.opts<{ config?: string }>()
-  return { ok: true, value: { configPath: cleanString(opts.config) } }
+  const configPath = cleanString(opts.config)
+  if (program.getOptionValueSource('config') === 'cli' && !configPath) {
+    return { ok: false, error: '--config requires a path' }
+  }
+
+  return { ok: true, value: { configPath } }
 }
 
 function parseRuntimeEnv(

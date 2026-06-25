@@ -122,6 +122,37 @@ ports:
     })
   })
 
+  test('rejects an explicitly empty --config value', () => {
+    const result = loadClawConfig({
+      argv: ['--config='],
+      cwd: '/',
+      env: {},
+    })
+
+    expect(result).toEqual({
+      ok: false,
+      error: '--config requires a path',
+    })
+  })
+
+  test('rejects a blank --config value instead of falling back to CLAW_CONFIG', async () => {
+    const envConfigPath = await writeConfig(`
+ports:
+  server: 9300
+`)
+
+    const result = loadClawConfig({
+      argv: ['--config', '   '],
+      cwd: '/',
+      env: { CLAW_CONFIG: envConfigPath },
+    })
+
+    expect(result).toEqual({
+      ok: false,
+      error: '--config requires a path',
+    })
+  })
+
   test('returns a clear error for invalid env ports', () => {
     const result = loadClawConfig({
       argv: [],
