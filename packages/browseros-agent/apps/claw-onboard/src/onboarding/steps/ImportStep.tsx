@@ -42,7 +42,7 @@ export function ImportStep({
   )
   const sites = sumSitesFor(selectedIds)
   const logins = sumLoginsFor(selectedIds)
-  const isPickerValid = form.formState.isValid
+  const isPickerValid = selectedIds.length > 0
 
   return (
     <StepWrap>

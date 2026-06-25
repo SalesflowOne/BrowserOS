@@ -15,6 +15,7 @@ function renderApp(): string {
 
 function installAssignableWindow(search: string) {
   let assignedUrl: string | null = null
+  const storage = new Map<string, string>()
   Object.defineProperty(globalThis, 'window', {
     configurable: true,
     value: {
@@ -25,10 +26,12 @@ function installAssignableWindow(search: string) {
         },
       },
       sessionStorage: {
-        getItem() {
-          return null
+        getItem(key: string) {
+          return storage.get(key) ?? null
         },
-        setItem() {},
+        setItem(key: string, value: string) {
+          storage.set(key, value)
+        },
       },
     },
   })

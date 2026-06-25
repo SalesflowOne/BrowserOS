@@ -59,8 +59,8 @@ describe('ImportStep', () => {
     expect(html).toContain('Personal')
     expect(html).toContain('Testing')
     expect(html).toContain('macOS will ask permission')
-    // Default selection sums to 47 sites across 2 profiles.
     expect(html).toContain('Import 47 sites from 2 profiles')
+    expect(html).not.toContain('disabled=""')
   })
 
   it('renders the importing progress card during importing phase', () => {
