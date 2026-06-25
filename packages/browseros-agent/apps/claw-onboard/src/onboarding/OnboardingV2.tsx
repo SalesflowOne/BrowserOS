@@ -7,8 +7,8 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
-import { useNavigate } from 'react-router'
 import { Form } from '@/components/ui/form'
+import { buildCockpitHomeUrl } from '@/modules/api/mcp-endpoint'
 import { OnboardingShell } from './components/OnboardingShell'
 import { sumSitesFor } from './onboarding-v2.helpers'
 import {
@@ -27,9 +27,13 @@ const FAKE_IMPORT_TICK_MS = 70
 const FAKE_IMPORT_SETTLE_MS = 350
 const FAKE_CONNECT_DELAY_MS = 1700
 
+/** Leaves the standalone onboarding app and opens the BrowserOS cockpit. */
+export function openBrowserOsHome() {
+  window.location.assign(buildCockpitHomeUrl())
+}
+
 /** Runs the standalone four-step BrowserClaw onboarding flow. */
 export function OnboardingV2() {
-  const navigate = useNavigate()
   const form = useForm<OnboardingFormValues>({
     resolver: zodResolver(onboardingFormSchema),
     defaultValues: onboardingFormDefaults,
@@ -97,7 +101,7 @@ export function OnboardingV2() {
             onContinue={() => setStep(3)}
           />
         )}
-        {step === 3 && <ReadyStep onDone={() => navigate('/')} />}
+        {step === 3 && <ReadyStep onDone={openBrowserOsHome} />}
       </OnboardingShell>
     </Form>
   )

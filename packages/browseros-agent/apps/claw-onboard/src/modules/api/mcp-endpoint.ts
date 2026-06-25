@@ -54,9 +54,14 @@ function resolveMcpBaseUrl(): string {
   }
 }
 
+/** Builds the cockpit home URL that standalone onboarding hands back to. */
+export function buildCockpitHomeUrl(): string {
+  return resolveMcpBaseUrl()
+}
+
 /** Builds the slugless MCP URL shown in the standalone onboarding CLI snippet. */
 export function buildCanonicalMcpEndpointUrl(): string {
-  return `${resolveMcpBaseUrl()}${MCP_PATH}`
+  return `${buildCockpitHomeUrl()}${MCP_PATH}`
 }
 
 /** Builds the Claude CLI command that registers BrowserOS over HTTP MCP. */

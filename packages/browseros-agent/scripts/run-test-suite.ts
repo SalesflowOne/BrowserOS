@@ -23,6 +23,11 @@ const testSuites = {
       argv: [bun, 'run', 'test'],
     },
     {
+      label: 'claw-onboard tests',
+      cwd: resolve(projectRoot, 'apps/claw-onboard'),
+      argv: [bun, 'run', 'test'],
+    },
+    {
       label: 'claw-server tests',
       cwd: resolve(projectRoot, 'apps/claw-server'),
       argv: [bun, 'run', 'test'],

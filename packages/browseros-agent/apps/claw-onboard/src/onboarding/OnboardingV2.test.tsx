@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router'
-import { OnboardingV2 } from './OnboardingV2'
+import { OnboardingV2, openBrowserOsHome } from './OnboardingV2'
+
+const originalWindow = globalThis.window
 
 function renderApp(): string {
   return renderToStaticMarkup(
@@ -10,6 +12,35 @@ function renderApp(): string {
     </MemoryRouter>,
   )
 }
+
+function installAssignableWindow(search: string) {
+  let assignedUrl: string | null = null
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: {
+      location: {
+        search,
+        assign(url: string) {
+          assignedUrl = url
+        },
+      },
+      sessionStorage: {
+        getItem() {
+          return null
+        },
+        setItem() {},
+      },
+    },
+  })
+  return () => assignedUrl
+}
+
+afterEach(() => {
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: originalWindow,
+  })
+})
 
 describe('OnboardingV2 shell', () => {
   it('lands on step 0 with the welcome heading and primary CTA', () => {
@@ -37,5 +68,15 @@ describe('OnboardingV2 shell', () => {
     const html = renderApp()
     const matches = html.match(/h-\[7px\]/g) ?? []
     expect(matches.length).toBeGreaterThanOrEqual(4)
+  })
+
+  it('opens the resolved BrowserOS cockpit URL when onboarding completes', () => {
+    const getAssignedUrl = installAssignableWindow(
+      '?apiUrl=http%3A%2F%2F127.0.0.1%3A9234%2Fcockpit',
+    )
+
+    openBrowserOsHome()
+
+    expect(getAssignedUrl()).toBe('http://127.0.0.1:9234/cockpit')
   })
 })
