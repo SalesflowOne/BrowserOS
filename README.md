@@ -123,7 +123,6 @@ BrowserOS works with any LLM. Bring your own keys, use OAuth, or run models loca
 | Open Source | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ |
 | AI Agent | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ |
 | MCP Server | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Visual Workflows | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Cowork (files + browser) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Scheduled Tasks | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Bring Your Own Keys | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ |
