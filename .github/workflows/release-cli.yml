@@ -41,6 +41,21 @@ jobs:
             --repository-root "${{ github.workspace }}"
         working-directory: ${{ github.workspace }}
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Prepare npm package
+        run: make npm-version VERSION=${{ steps.release.outputs.version }}
+
+      - name: Verify npm publish access
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: bun scripts/build/cli/npm-access.ts --package browseros-cli
+        working-directory: packages/browseros-agent
+
       - uses: actions/setup-go@v5
         with:
           go-version-file: packages/browseros-agent/apps/cli/go.mod
@@ -156,16 +171,9 @@ jobs:
           fi
         working-directory: ${{ github.workspace }}
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "20"
-          registry-url: "https://registry.npmjs.org"
-
       - name: Publish to npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          make npm-version VERSION=${{ steps.release.outputs.version }}
           cd npm
           npm publish --access public
