@@ -91,6 +91,8 @@ git push origin cli/v0.2.3
 
 Pushing `cli/vX.Y.Z` starts the CLI release workflow. The workflow rejects tags that are not newer than production latest or whose target commit is not reachable from the repository default branch.
 
+The `NPM_TOKEN` release secret must authenticate as an npm owner of `browseros-cli`; the workflow checks this before uploading CDN assets or creating the GitHub release.
+
 Inspect versions with:
 
 ```bash
