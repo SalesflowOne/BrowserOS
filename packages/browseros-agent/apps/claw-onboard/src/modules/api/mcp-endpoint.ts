@@ -8,33 +8,31 @@ import {
   BROWSEROS_MCP_SERVER_NAME,
   MCP_PATH,
 } from '@browseros/claw-server/shared/mcp-url'
-import {
-  CLAW_API_PORT_DEFAULT,
-  COCKPIT_MOUNT_PREFIX,
-} from '@browseros/claw-server/shared/port'
+import { CLAW_API_PORT_DEFAULT } from '@browseros/claw-server/shared/port'
 import {
   API_URL_STORAGE_KEY,
-  isLoopbackCockpitUrl,
+  normalizeLoopbackApiRootUrl,
   resolveApiBaseUrlFromSources,
 } from './client.helpers'
 
 function fallbackBaseUrl(): string {
-  return `http://127.0.0.1:${CLAW_API_PORT_DEFAULT}${COCKPIT_MOUNT_PREFIX}`
+  return `http://127.0.0.1:${CLAW_API_PORT_DEFAULT}`
 }
 
-/** Resolves the cockpit base URL used by the onboarding MCP CLI snippet. */
+/** Resolves the API base URL used by the onboarding MCP CLI snippet. */
 function resolveMcpBaseUrl(): string {
   const fallback = fallbackBaseUrl()
   if (typeof window === 'undefined') return fallback
 
   const query = new URLSearchParams(window.location.search).get('apiUrl')
-  if (isLoopbackCockpitUrl(query)) {
+  const queryBaseUrl = normalizeLoopbackApiRootUrl(query)
+  if (queryBaseUrl) {
     try {
-      window.sessionStorage.setItem(API_URL_STORAGE_KEY, query)
+      window.sessionStorage.setItem(API_URL_STORAGE_KEY, queryBaseUrl)
     } catch {
       // sessionStorage may reject writes in sandboxed contexts; this call can still use the query URL.
     }
-    return query
+    return queryBaseUrl
   }
 
   try {

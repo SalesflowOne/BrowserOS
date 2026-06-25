@@ -72,11 +72,11 @@ describe('OnboardingV2 shell', () => {
 
   it('opens the resolved BrowserOS cockpit URL when onboarding completes', () => {
     const getAssignedUrl = installAssignableWindow(
-      '?apiUrl=http%3A%2F%2F127.0.0.1%3A9234%2Fcockpit',
+      '?apiUrl=http%3A%2F%2F127.0.0.1%3A9234',
     )
 
     openBrowserOsHome()
 
-    expect(getAssignedUrl()).toBe('http://127.0.0.1:9234/cockpit')
+    expect(getAssignedUrl()).toBe('http://127.0.0.1:9234')
   })
 })
