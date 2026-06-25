@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -136,9 +137,13 @@ func convertResult(r *sdkmcp.CallToolResult) *ToolResult {
 	return result
 }
 
-// Health checks the /health endpoint (REST, not MCP).
+// Health checks BrowserOS-compatible REST health endpoints.
 func (c *Client) Health() (map[string]any, error) {
-	return c.restGET("/health")
+	data, err := c.restGET("/health")
+	if isHTTPStatus(err, http.StatusNotFound) {
+		return c.restGET("/system/health")
+	}
+	return data, err
 }
 
 // Status checks the /status endpoint (REST, not MCP).
@@ -155,7 +160,7 @@ func (c *Client) restGET(path string) (map[string]any, error) {
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("server returned HTTP %d: %s", resp.StatusCode, string(body))
+		return nil, &restHTTPError{statusCode: resp.StatusCode, body: string(body)}
 	}
 
 	var data map[string]any
@@ -163,6 +168,20 @@ func (c *Client) restGET(path string) (map[string]any, error) {
 		return nil, fmt.Errorf("parse response: %w", err)
 	}
 	return data, nil
+}
+
+type restHTTPError struct {
+	statusCode int
+	body       string
+}
+
+func (e *restHTTPError) Error() string {
+	return fmt.Sprintf("server returned HTTP %d: %s", e.statusCode, e.body)
+}
+
+func isHTTPStatus(err error, statusCode int) bool {
+	var httpErr *restHTTPError
+	return errors.As(err, &httpErr) && httpErr.statusCode == statusCode
 }
 
 // connectionSetupInstructions explains how to recover from a stale or missing server URL.
