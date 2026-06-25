@@ -6,6 +6,7 @@ export interface NpmPublishAccess {
   packageName: string
   user: string
   owners: string[]
+  access: string
 }
 
 type NpmRunner = (args: string[]) => string
@@ -33,7 +34,9 @@ export function verifyNpmPublishAccess(
     )
   }
 
-  return { packageName: normalizedPackageName, user, owners }
+  const access = readCollaboratorAccess(normalizedPackageName, user, runNpm)
+
+  return { packageName: normalizedPackageName, user, owners, access }
 }
 
 function parseNpmOwners(output: string): string[] {
@@ -58,6 +61,53 @@ function runWhoami(runNpm: NpmRunner): string {
     throw new Error('NPM_TOKEN authenticated with npm but returned no username')
   }
   return user
+}
+
+function readCollaboratorAccess(
+  packageName: string,
+  user: string,
+  runNpm: NpmRunner,
+): string {
+  let output: string
+  try {
+    output = runNpm([
+      'access',
+      'list',
+      'collaborators',
+      packageName,
+      user,
+      '--json',
+    ])
+  } catch (error) {
+    throw new Error(
+      `NPM_TOKEN could not read collaborator access for ${packageName}: ${errorMessage(error)}`,
+    )
+  }
+
+  const access = parseCollaboratorAccess(output, user)
+  if (access !== 'read-write') {
+    throw new Error(
+      `NPM_TOKEN authenticates as ${user}, but ${user} does not have read-write access to ${packageName}`,
+    )
+  }
+  return access
+}
+
+function parseCollaboratorAccess(output: string, user: string): string {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(output)
+  } catch {
+    throw new Error(`Could not parse npm collaborator access for ${user}`)
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error(`No npm collaborator access found for ${user}`)
+  }
+
+  const collaborators = parsed as Record<string, unknown>
+  const access = collaborators[user] ?? collaborators[user.toLowerCase()]
+  return typeof access === 'string' ? access : ''
 }
 
 function runNpmCommand(args: string[]): string {
