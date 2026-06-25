@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-interface DisplayHeadingProps {
+export interface DisplayHeadingProps {
   children: ReactNode
 }
 
@@ -13,7 +13,7 @@ export function DisplayHeading({ children }: DisplayHeadingProps) {
   )
 }
 
-interface EmProps {
+export interface EmProps {
   children: ReactNode
 }
 
@@ -25,7 +25,7 @@ export function Em({ children }: EmProps) {
   )
 }
 
-interface StepCopyProps {
+export interface StepCopyProps {
   children: ReactNode
   className?: string
 }

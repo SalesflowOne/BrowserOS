@@ -20,7 +20,6 @@
     "@fontsource-variable/schibsted-grotesk": "^5.2.5",
     "@fontsource/newsreader": "^5.2.5",
     "@hookform/resolvers": "^5.4.0",
-    "@radix-ui/react-slot": "^1.2.4",
     "@tabler/icons-react": "^3.34.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
