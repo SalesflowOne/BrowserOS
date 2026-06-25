@@ -1,4 +1,5 @@
 import { ArrowRight, Link2, RefreshCw } from 'lucide-react'
+import { useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { buildCanonicalMcpCliCommand } from '@/modules/api/mcp-endpoint'
 import { ConnectedSummaryCard } from '../components/ConnectedSummaryCard'
@@ -19,7 +20,7 @@ export function ConnectStep({
   onAddToClaude,
   onContinue,
 }: ConnectStepProps) {
-  const cli = buildCanonicalMcpCliCommand()
+  const cli = useMemo(() => buildCanonicalMcpCliCommand(), [])
   const isConnecting = phase === 'connecting'
   const isConnected = phase === 'connected'
 

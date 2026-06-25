@@ -69,8 +69,9 @@ describe('OnboardingV2 shell', () => {
 
   it('renders four step dots', () => {
     const html = renderApp()
-    const matches = html.match(/h-\[7px\]/g) ?? []
-    expect(matches.length).toBeGreaterThanOrEqual(4)
+    const matches = html.match(/data-step-dot="true"/g) ?? []
+    expect(html).toContain('aria-label="Onboarding progress"')
+    expect(matches.length).toBe(4)
   })
 
   it('opens the resolved BrowserOS cockpit URL when onboarding completes', () => {

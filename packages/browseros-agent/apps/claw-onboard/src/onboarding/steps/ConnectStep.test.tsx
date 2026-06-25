@@ -28,7 +28,7 @@ describe('ConnectStep', () => {
   it('shows the Connecting state and disables the button while connecting', () => {
     const html = render('connecting')
     expect(html).toContain('Connecting')
-    expect(html).toContain('disabled')
+    expect(html).toContain('disabled=""')
   })
 
   it('renders the success card and Continue CTA when connected', () => {
