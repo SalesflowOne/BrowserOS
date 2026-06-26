@@ -7,7 +7,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { Form } from '@/components/ui/form'
-import { buildCockpitHomeUrl } from '@/modules/api/mcp-endpoint'
 import {
   BROWSEROS_ONBOARDING_API_VERSION,
   type BrowserOSImportStatus,
@@ -32,6 +31,7 @@ import { WelcomeStep } from './steps/WelcomeStep'
 
 const TOTAL_STEPS = 4
 const FAKE_CONNECT_DELAY_MS = 1700
+const BROWSEROS_NEW_TAB_URL = 'chrome://new-tab'
 
 const initialOnboardingState: BrowserOSOnboardingState = {
   apiVersion: BROWSEROS_ONBOARDING_API_VERSION,
@@ -51,9 +51,9 @@ export function importPhaseFor(
   return 'picker'
 }
 
-/** Leaves the standalone onboarding app and opens the BrowserOS cockpit. */
-export function openBrowserOsHome() {
-  window.location.assign(buildCockpitHomeUrl())
+/** Leaves standalone onboarding for BrowserOS's Chromium new-tab page. */
+export function openBrowserOsNewTab() {
+  window.location.assign(BROWSEROS_NEW_TAB_URL)
 }
 
 /** Runs the standalone four-step BrowserClaw onboarding flow. */
@@ -127,7 +127,7 @@ export function OnboardingV2() {
 
   function finishOnboarding() {
     bridge.complete()
-    openBrowserOsHome()
+    openBrowserOsNewTab()
   }
 
   return (

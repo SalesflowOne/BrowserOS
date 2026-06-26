@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router'
-import { importPhaseFor, OnboardingV2, openBrowserOsHome } from './OnboardingV2'
+import {
+  importPhaseFor,
+  OnboardingV2,
+  openBrowserOsNewTab,
+} from './OnboardingV2'
 
 const originalWindow = globalThis.window
 
@@ -77,14 +81,14 @@ describe('OnboardingV2 shell', () => {
     expect(matches.length).toBe(4)
   })
 
-  it('opens the resolved BrowserOS cockpit URL when onboarding completes', () => {
+  it('opens BrowserOS new tab when onboarding completes', () => {
     const getAssignedUrl = installAssignableWindow(
       '?apiUrl=http%3A%2F%2F127.0.0.1%3A9234',
     )
 
-    openBrowserOsHome()
+    openBrowserOsNewTab()
 
-    expect(getAssignedUrl()).toBe('http://127.0.0.1:9234')
+    expect(getAssignedUrl()).toBe('chrome://new-tab')
   })
 
   it('does not treat failed or completed Chromium states as import success', () => {
