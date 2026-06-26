@@ -1,15 +1,26 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { cp, mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { sql } from 'drizzle-orm'
 import {
   getAuditDb,
   resetAuditDbForTesting,
   setAuditDbForTesting,
 } from '../../../src/modules/db/db'
+import { resolveMigrationsFolder } from '../../../src/modules/db/migrator'
 import { toolDispatches } from '../../../src/modules/db/schema/tool-dispatches.sql'
 
 describe('audit DB (in-memory test seam)', () => {
+  const tempDirs: string[] = []
+
   beforeEach(() => setAuditDbForTesting())
-  afterEach(() => resetAuditDbForTesting())
+  afterEach(async () => {
+    resetAuditDbForTesting()
+    for (const dir of tempDirs.splice(0)) {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
 
   it('runs migrations on construction so the tool_dispatches table is queryable', () => {
     const db = getAuditDb()
@@ -43,6 +54,24 @@ describe('audit DB (in-memory test seam)', () => {
     expect(indexes).toContain('tool_dispatches_created_at_idx')
     expect(indexes).toContain('tool_dispatches_agent_created_idx')
     expect(indexes).toContain('tool_dispatches_session_idx')
+  })
+
+  it('prefers packaged migrations from resources when the set is complete', async () => {
+    const resourcesDir = await mkdtemp(join(tmpdir(), 'claw-resources-'))
+    tempDirs.push(resourcesDir)
+    const sourceMigrations = resolve(import.meta.dir, '../../../drizzle')
+    const packagedMigrations = join(resourcesDir, 'db/migrations')
+    await cp(sourceMigrations, packagedMigrations, { recursive: true })
+
+    expect(resolveMigrationsFolder(resourcesDir)).toBe(packagedMigrations)
+  })
+
+  it('falls back to source migrations when packaged resources are unavailable', async () => {
+    const resourcesDir = await mkdtemp(join(tmpdir(), 'claw-resources-'))
+    tempDirs.push(resourcesDir)
+    const sourceMigrations = resolve(import.meta.dir, '../../../drizzle')
+
+    expect(resolveMigrationsFolder(resourcesDir)).toBe(sourceMigrations)
   })
 
   it('reset drops the singleton; the next getAuditDb rebuilds a fresh DB', () => {

@@ -3,8 +3,8 @@
  * Copyright 2025 BrowserOS
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * Single chokepoint for non-port env reads. Port config lives in
- * config.ts so startup can validate env/JSON before serving.
+ * Single chokepoint for non-startup env reads. Startup config lives
+ * in config.ts so it can be validated before serving.
  */
 
 import type { ClawConfig } from './config'
@@ -22,10 +22,8 @@ function readIsDevelopment(): boolean {
 }
 
 /**
- * Two opt-in escape hatches for legacy surfaces while the v2 cockpit
- * is the default. Both default to `false` so that the legacy is
- * invisible out of the box; setting either flag to `1` or `true`
- * brings the corresponding code path back.
+ * Opt-in gate for legacy MCP surfaces. Defaults to `false` so the
+ * legacy path is invisible unless explicitly requested.
  */
 function readBoolFlag(name: string): boolean {
   // biome-ignore lint/style/noProcessEnv: env.ts is the sanctioned env-reader for the package
@@ -37,11 +35,12 @@ function readBoolFlag(name: string): boolean {
 
 /**
  * Runtime snapshot shared across services. main.ts applies validated
- * port config before serving; tests may mutate fields for isolation.
+ * startup config before serving; tests may mutate fields for isolation.
  */
 export const env = {
   port: CLAW_API_PORT_DEFAULT,
   cdpPort: CLAW_CDP_PORT_DEFAULT,
+  resourcesDir: process.cwd(),
   browserosDirOverride: readBrowserosDirOverride(),
   isDevelopment: readIsDevelopment(),
 }
@@ -50,6 +49,7 @@ export const env = {
 export function applyClawConfig(config: ClawConfig): void {
   env.port = config.port
   env.cdpPort = config.cdpPort
+  env.resourcesDir = config.resourcesDir
 }
 
 /**

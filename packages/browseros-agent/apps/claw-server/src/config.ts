@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { isAbsolute, resolve } from 'node:path'
+import { dirname, isAbsolute, resolve } from 'node:path'
 import { Command } from 'commander'
 import { z } from 'zod'
 import { CLAW_API_PORT_DEFAULT, CLAW_CDP_PORT_DEFAULT } from './shared/port'
@@ -9,19 +9,31 @@ const optionalPortSchema = z.preprocess(
   normalizePortInput,
   portSchema.optional(),
 )
+const optionalPathSchema = z.preprocess(
+  normalizePathInput,
+  z.string().optional(),
+)
 const ClawConfigSchema = z.object({
   port: portSchema,
   cdpPort: portSchema,
+  resourcesDir: z.string(),
 })
 const ClawEnvSchema = z.object({
   port: optionalPortSchema,
   cdpPort: optionalPortSchema,
+  resourcesDir: optionalPathSchema,
 })
 const ClawConfigFileSchema = z.object({
   ports: z
     .object({
       server: optionalPortSchema,
       cdp: optionalPortSchema,
+    })
+    .strict()
+    .optional(),
+  directories: z
+    .object({
+      resources: optionalPathSchema,
     })
     .strict()
     .optional(),
@@ -39,6 +51,10 @@ interface LoadClawConfigOptions {
 }
 
 type PartialClawConfig = Partial<ClawConfig>
+type ParsedCliArgs = {
+  configPath?: string
+  overrides: PartialClawConfig
+}
 type ConfigIssue = {
   path: PropertyKey[]
   message: string
@@ -46,7 +62,7 @@ type ConfigIssue = {
   keys?: string[]
 }
 
-/** Loads and validates Claw server ports from defaults, env, and JSON config. */
+/** Loads and validates Claw server startup config from defaults, env, and JSON config. */
 export function loadClawConfig(
   options: LoadClawConfigOptions = {},
 ): ConfigResult<ClawConfig> {
@@ -55,10 +71,10 @@ export function loadClawConfig(
   // biome-ignore lint/style/noProcessEnv: config.ts is the sanctioned Claw config reader
   const runtimeEnv = options.env ?? process.env
 
-  const cli = parseCliArgs(argv)
+  const cli = parseCliArgs(argv, cwd)
   if (!cli.ok) return cli
 
-  const envConfig = parseRuntimeEnv(runtimeEnv)
+  const envConfig = parseRuntimeEnv(runtimeEnv, cwd)
   if (!envConfig.ok) return envConfig
 
   const configPath = cli.value.configPath ?? cleanString(runtimeEnv.CLAW_CONFIG)
@@ -66,7 +82,12 @@ export function loadClawConfig(
   if (!fileConfig.ok) return fileConfig
 
   const result = ClawConfigSchema.safeParse(
-    mergeConfigs(getDefaults(), fileConfig.value, envConfig.value),
+    mergeConfigs(
+      getDefaults(cwd),
+      fileConfig.value,
+      envConfig.value,
+      cli.value.overrides,
+    ),
   )
   if (!result.success) {
     const errors = result.error.issues
@@ -81,7 +102,10 @@ export function loadClawConfig(
   return { ok: true, value: result.data }
 }
 
-function parseCliArgs(argv: string[]): ConfigResult<{ configPath?: string }> {
+function parseCliArgs(
+  argv: string[],
+  cwd: string,
+): ConfigResult<ParsedCliArgs> {
   const program = new Command()
 
   try {
@@ -89,6 +113,7 @@ function parseCliArgs(argv: string[]): ConfigResult<{ configPath?: string }> {
       .name('claw-server')
       .description('BrowserClaw standalone API')
       .option('--config <path>', 'Path to JSON configuration file')
+      .option('--resources-dir <path>', 'Resources directory path')
       .exitOverride((err) => {
         if (err.exitCode === 0) process.exit(0)
         throw err
@@ -99,21 +124,37 @@ function parseCliArgs(argv: string[]): ConfigResult<{ configPath?: string }> {
     return { ok: false, error: message }
   }
 
-  const opts = program.opts<{ config?: string }>()
+  const opts = program.opts<{ config?: string; resourcesDir?: string }>()
   const configPath = cleanString(opts.config)
   if (program.getOptionValueSource('config') === 'cli' && !configPath) {
     return { ok: false, error: '--config requires a path' }
   }
+  const resourcesDir = cleanString(opts.resourcesDir)
+  if (program.getOptionValueSource('resourcesDir') === 'cli' && !resourcesDir) {
+    return { ok: false, error: '--resources-dir requires a path' }
+  }
 
-  return { ok: true, value: { configPath } }
+  return {
+    ok: true,
+    value: {
+      configPath,
+      overrides: omitUndefined({
+        resourcesDir: resourcesDir
+          ? toAbsolutePath(resourcesDir, cwd)
+          : undefined,
+      }),
+    },
+  }
 }
 
 function parseRuntimeEnv(
   env: Record<string, string | undefined>,
+  cwd: string,
 ): ConfigResult<PartialClawConfig> {
   const result = ClawEnvSchema.safeParse({
     port: env.CLAW_SERVER_PORT,
     cdpPort: env.BROWSEROS_CLAW_CDP_PORT,
+    resourcesDir: env.BROWSEROS_CLAW_RESOURCES_DIR,
   })
   if (!result.success) {
     return {
@@ -123,6 +164,7 @@ function parseRuntimeEnv(
         {
           port: 'CLAW_SERVER_PORT',
           cdpPort: 'BROWSEROS_CLAW_CDP_PORT',
+          resourcesDir: 'BROWSEROS_CLAW_RESOURCES_DIR',
         },
       )}`,
     }
@@ -133,6 +175,9 @@ function parseRuntimeEnv(
     value: omitUndefined({
       port: result.data.port,
       cdpPort: result.data.cdpPort,
+      resourcesDir: result.data.resourcesDir
+        ? toAbsolutePath(result.data.resourcesDir, cwd)
+        : undefined,
     }),
   }
 }
@@ -164,11 +209,15 @@ function parseConfigFile(
     }
   }
 
+  const configDir = dirname(absPath)
   return {
     ok: true,
     value: omitUndefined({
       port: parsed.data.ports?.server,
       cdpPort: parsed.data.ports?.cdp,
+      resourcesDir: parsed.data.directories?.resources
+        ? toAbsolutePath(parsed.data.directories.resources, configDir)
+        : undefined,
     }),
   }
 }
@@ -179,6 +228,14 @@ function normalizePortInput(value: unknown): unknown {
 
   const trimmed = value.trim()
   return trimmed === '' ? undefined : Number(trimmed)
+}
+
+function normalizePathInput(value: unknown): unknown {
+  if (value === undefined || value === null) return undefined
+  if (typeof value !== 'string') return value
+
+  const trimmed = value.trim()
+  return trimmed === '' ? undefined : trimmed
 }
 
 function toUserArgs(argv: string[]): string[] {
@@ -217,10 +274,11 @@ function isPortSource(source: string): boolean {
   ].includes(source)
 }
 
-function getDefaults(): ClawConfig {
+function getDefaults(cwd: string): ClawConfig {
   return {
     port: CLAW_API_PORT_DEFAULT,
     cdpPort: CLAW_CDP_PORT_DEFAULT,
+    resourcesDir: toAbsolutePath(cwd, process.cwd()),
   }
 }
 
@@ -245,4 +303,8 @@ function omitUndefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
 function cleanString(value: string | undefined): string | undefined {
   const trimmed = value?.trim()
   return trimmed ? trimmed : undefined
+}
+
+function toAbsolutePath(value: string, baseDir: string): string {
+  return isAbsolute(value) ? value : resolve(baseDir, value)
 }
