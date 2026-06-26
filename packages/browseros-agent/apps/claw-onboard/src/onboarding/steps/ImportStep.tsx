@@ -49,7 +49,9 @@ export function ImportStep({
   const sourceName =
     selectedSource?.profileName || selectedSource?.browserName || 'source'
   const isDetecting = state.status === 'detecting'
-  const isPickerValid = Boolean(selectedSource) && !isDetecting
+  const hasSelectableItems = selectedItems.length > 0
+  const isPickerValid =
+    Boolean(selectedSource) && hasSelectableItems && !isDetecting
   const completedItems = completedImportItemCount(state.progress)
   const totalItems = selectedSource
     ? importProgressTotal(selectedSource, state.progress)
@@ -129,9 +131,11 @@ export function ImportStep({
             disabled={!isPickerValid}
           >
             <Download className="size-4" />
-            {selectedSource
+            {selectedSource && hasSelectableItems
               ? `Import ${selectedItems.length} items from ${sourceName}`
-              : 'Pick an import source'}
+              : selectedSource
+                ? 'No supported import items'
+                : 'Pick an import source'}
           </Button>
         </>
       )}

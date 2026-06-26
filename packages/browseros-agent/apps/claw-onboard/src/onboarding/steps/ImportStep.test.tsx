@@ -86,6 +86,23 @@ describe('ImportStep', () => {
     expect(html).toContain('disabled=""')
   })
 
+  it('disables import when the selected source has no supported items', () => {
+    const html = render(
+      'picker',
+      readyState({
+        sources: [
+          {
+            ...MOCK_BROWSEROS_IMPORT_SOURCES[0],
+            recommendedItems: [],
+            supportedItems: [],
+          },
+        ],
+      }),
+    )
+    expect(html).toContain('No supported import items')
+    expect(html).toContain('disabled=""')
+  })
+
   it('renders the importing progress card during importing phase', () => {
     const html = render(
       'importing',
