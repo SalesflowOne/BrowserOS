@@ -23,21 +23,23 @@ const ClawEnvSchema = z.object({
   cdpPort: optionalPortSchema,
   resourcesDir: optionalPathSchema,
 })
-const ClawConfigFileSchema = z.object({
-  ports: z
-    .object({
-      server: optionalPortSchema,
-      cdp: optionalPortSchema,
-    })
-    .strict()
-    .optional(),
-  directories: z
-    .object({
-      resources: optionalPathSchema,
-    })
-    .strict()
-    .optional(),
-})
+const ClawConfigFileSchema = z
+  .object({
+    ports: z
+      .object({
+        server: optionalPortSchema,
+        cdp: optionalPortSchema,
+      })
+      .strict()
+      .optional(),
+    directories: z
+      .object({
+        resources: optionalPathSchema,
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
 
 export type ClawConfig = z.infer<typeof ClawConfigSchema>
 export type ConfigResult<T> =
