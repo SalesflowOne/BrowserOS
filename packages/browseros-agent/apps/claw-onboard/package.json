@@ -17,7 +17,6 @@
   "dependencies": {
     "@base-ui/react": "^1.5.0",
     "@browseros/claw-server": "workspace:*",
-    "@hookform/resolvers": "^5.4.0",
     "@tabler/icons-react": "^3.34.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -26,8 +25,7 @@
     "react-dom": "^19.1.1",
     "react-hook-form": "~7.78.0",
     "react-router": "^7.12.0",
-    "tailwind-merge": "^3.4.0",
-    "zod": "^4.4.3"
+    "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.17",

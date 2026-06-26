@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import { zodResolver } from '@hookform/resolvers/zod'
 import { useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { Form } from '@/components/ui/form'
@@ -23,7 +22,7 @@ import {
 import {
   type OnboardingFormValues,
   onboardingFormDefaults,
-  onboardingFormSchema,
+  onboardingFormResolver,
 } from './onboarding-v2.schemas'
 import type { ConnectPhase, ImportPhase, Step } from './onboarding-v2.types'
 import { ConnectStep } from './steps/ConnectStep'
@@ -59,7 +58,7 @@ export function openBrowserOsHome() {
 /** Runs the standalone four-step BrowserClaw onboarding flow. */
 export function OnboardingV2() {
   const form = useForm<OnboardingFormValues>({
-    resolver: zodResolver(onboardingFormSchema),
+    resolver: onboardingFormResolver,
     defaultValues: onboardingFormDefaults,
     mode: 'onChange',
   })

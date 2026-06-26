@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'bun:test'
-import { zodResolver } from '@hookform/resolvers/zod'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { useForm } from 'react-hook-form'
 import { MemoryRouter } from 'react-router'
@@ -10,7 +9,7 @@ import { MOCK_BROWSEROS_IMPORT_SOURCES } from '../onboarding-v2.helpers'
 import {
   type OnboardingFormValues,
   onboardingFormDefaults,
-  onboardingFormSchema,
+  onboardingFormResolver,
 } from '../onboarding-v2.schemas'
 import type { ImportPhase } from '../onboarding-v2.types'
 import { ImportStep } from './ImportStep'
@@ -34,7 +33,7 @@ function Harness({
   state?: BrowserOSOnboardingState
 }) {
   const form = useForm<OnboardingFormValues>({
-    resolver: zodResolver(onboardingFormSchema),
+    resolver: onboardingFormResolver,
     defaultValues: onboardingFormDefaults,
   })
   return (
