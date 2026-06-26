@@ -12,6 +12,8 @@ interface AgentRunningCardProps {
   onStop?: () => void
   /** When the focus mutation is in flight for this card. */
   isFocusPending?: boolean
+  /** When the cancel mutation is in flight for this card. */
+  isCancelPending?: boolean
 }
 
 /**
@@ -29,6 +31,7 @@ export function AgentRunningCard({
   onWatch,
   onStop,
   isFocusPending,
+  isCancelPending,
 }: AgentRunningCardProps) {
   const focus = agent.currentFocus
   const active = agent.status === 'active'
@@ -97,13 +100,19 @@ export function AgentRunningCard({
             )}{' '}
             Watch
           </button>
-          {active && (
+          {active && onStop && (
             <button
               type="button"
               onClick={onStop}
-              className="inline-flex items-center justify-center gap-1.5 rounded-md bg-bg-sunken px-2.5 py-1.5 font-semibold text-[12.5px] text-ink-2 transition hover:bg-card-tint hover:text-ink"
+              disabled={isCancelPending}
+              className="inline-flex items-center justify-center gap-1.5 rounded-md bg-bg-sunken px-2.5 py-1.5 font-semibold text-[12.5px] text-ink-2 transition hover:bg-card-tint hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <Square className="size-3" /> Stop
+              {isCancelPending ? (
+                <RefreshCw className="size-3 animate-spin" />
+              ) : (
+                <Square className="size-3" />
+              )}{' '}
+              Stop
             </button>
           )}
         </div>
