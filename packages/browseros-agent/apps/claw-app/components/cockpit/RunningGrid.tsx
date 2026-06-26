@@ -7,7 +7,7 @@ interface RunningGridProps {
   agents: AgentActivityRecord[]
 }
 
-/** Renders live agent cards and focuses their BrowserOS tab group on watch. */
+/** Renders live agent cards and switches to the agent's focus tab on Watch. */
 export function RunningGrid({ agents }: RunningGridProps) {
   const focus = useFocusAgent()
   const cancel = useCancelAgent()
@@ -15,15 +15,15 @@ export function RunningGrid({ agents }: RunningGridProps) {
 
   if (agents.length === 0) return null
 
-  const onWatch = (agentId: string) => {
+  const onWatch = (agent: AgentActivityRecord) => {
     focus.mutate(
-      { agentId },
+      { agentId: agent.agentId, focusUrl: agent.currentFocus.url },
       {
         onError: (err) => {
           // No toast surface in v2 yet; surface a console line so the
           // operator can read it from devtools while developing.
           // eslint-disable-next-line no-console
-          console.warn('focus agent failed', { agentId, err })
+          console.warn('focus agent failed', { agentId: agent.agentId, err })
         },
       },
     )
@@ -61,7 +61,7 @@ export function RunningGrid({ agents }: RunningGridProps) {
           <AgentRunningCard
             key={a.agentId}
             agent={a}
-            onWatch={() => onWatch(a.agentId)}
+            onWatch={() => onWatch(a)}
             onStop={() => onStop(a.agentId)}
             isFocusPending={pendingAgentId === a.agentId}
             isCancelPending={cancelPendingAgentId === a.agentId}
