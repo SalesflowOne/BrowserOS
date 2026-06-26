@@ -88,7 +88,7 @@ describe('OnboardingV2 shell', () => {
 
     openBrowserOsNewTab()
 
-    expect(getAssignedUrl()).toBe('chrome://new-tab')
+    expect(getAssignedUrl()).toBe('chrome://newtab')
   })
 
   it('does not treat failed or completed Chromium states as import success', () => {

@@ -31,7 +31,7 @@ import { WelcomeStep } from './steps/WelcomeStep'
 
 const TOTAL_STEPS = 4
 const FAKE_CONNECT_DELAY_MS = 1700
-const BROWSEROS_NEW_TAB_URL = 'chrome://new-tab'
+const BROWSEROS_NEW_TAB_URL = 'chrome://newtab'
 
 const initialOnboardingState: BrowserOSOnboardingState = {
   apiVersion: BROWSEROS_ONBOARDING_API_VERSION,
