@@ -63,7 +63,7 @@ export const MOCK_BROWSEROS_IMPORT_SOURCES: readonly BrowserOSImportSource[] = [
 export const DEFAULT_BROWSEROS_IMPORT_SOURCE_ID =
   MOCK_BROWSEROS_IMPORT_SOURCES[0]?.id ?? ''
 
-const IMPORT_ITEM_LABELS: Record<BrowserOSImportItem, string> = {
+const IMPORT_ITEM_LABELS: Record<string, string> = {
   history: 'History',
   bookmarks: 'Bookmarks',
   cookies: 'Cookies',
@@ -73,13 +73,20 @@ const IMPORT_ITEM_LABELS: Record<BrowserOSImportItem, string> = {
   extensions: 'Extensions',
 }
 
-export function importItemLabel(item: BrowserOSImportItem): string {
-  return IMPORT_ITEM_LABELS[item]
+function humanizeImportItem(item: string): string {
+  const label = item
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[-_]+/g, ' ')
+    .trim()
+  if (!label) return 'Unknown data'
+  return label.charAt(0).toUpperCase() + label.slice(1)
 }
 
-export function importItemListLabel(
-  items: readonly BrowserOSImportItem[],
-): string {
+export function importItemLabel(item: string): string {
+  return IMPORT_ITEM_LABELS[item] ?? humanizeImportItem(item)
+}
+
+export function importItemListLabel(items: readonly string[]): string {
   if (items.length === 0) return 'No supported data'
   return items.map(importItemLabel).join(', ')
 }

@@ -10,6 +10,11 @@
 
 export type Step = 0 | 1 | 2 | 3
 
-export type ImportPhase = 'pre-quit' | 'picker' | 'importing' | 'imported'
+export type ImportPhase =
+  | 'pre-quit'
+  | 'picker'
+  | 'importing'
+  | 'failed'
+  | 'imported'
 
 export type ConnectPhase = 'idle' | 'connecting' | 'connected'

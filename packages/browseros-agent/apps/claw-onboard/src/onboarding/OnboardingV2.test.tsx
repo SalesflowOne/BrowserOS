@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router'
-import { OnboardingV2, openBrowserOsHome } from './OnboardingV2'
+import { importPhaseFor, OnboardingV2, openBrowserOsHome } from './OnboardingV2'
 
 const originalWindow = globalThis.window
 
@@ -85,5 +85,11 @@ describe('OnboardingV2 shell', () => {
     openBrowserOsHome()
 
     expect(getAssignedUrl()).toBe('http://127.0.0.1:9234')
+  })
+
+  it('does not treat failed or completed Chromium states as import success', () => {
+    expect(importPhaseFor('failed', true)).toBe('failed')
+    expect(importPhaseFor('completed', true)).toBe('picker')
+    expect(importPhaseFor('completed', false)).toBe('pre-quit')
   })
 })

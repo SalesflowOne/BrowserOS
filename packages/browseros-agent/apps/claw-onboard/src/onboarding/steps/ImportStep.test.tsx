@@ -119,6 +119,24 @@ describe('ImportStep', () => {
     expect(html).toContain('2 / 7 items')
   })
 
+  it('renders a failure recovery state when Chromium reports failed', () => {
+    const html = render(
+      'failed',
+      readyState({
+        status: 'failed',
+        error: {
+          code: 'import_failed',
+          message: 'Chrome needs to be closed before importing.',
+        },
+      }),
+    )
+
+    expect(html).toContain('Import failed')
+    expect(html).toContain('Chrome needs to be closed before importing.')
+    expect(html).toContain('Try import again')
+    expect(html).not.toContain('Choose a browser profile to import')
+  })
+
   it('renders the success card and Connect-to-Claude CTA in imported phase', () => {
     const html = render(
       'imported',
@@ -133,5 +151,30 @@ describe('ImportStep', () => {
     expect(html).toContain('Imported 7 items from Work')
     expect(html).toContain('History, Bookmarks')
     expect(html).toContain('Connect to Claude')
+  })
+
+  it('does not fabricate a success summary when progress is missing', () => {
+    const html = render('imported', readyState({ status: 'succeeded' }))
+
+    expect(html).toContain('Imported 0 items from Work')
+    expect(html).toContain('No item details reported')
+    expect(html).not.toContain('History, Bookmarks')
+  })
+
+  it('does not fall back to selected items when no completed items are reported', () => {
+    const html = render(
+      'imported',
+      readyState({
+        status: 'succeeded',
+        progress: {
+          completedItems: [],
+          totalItems: 7,
+        },
+      }),
+    )
+
+    expect(html).toContain('Imported 0 items from Work')
+    expect(html).toContain('No completed items reported')
+    expect(html).not.toContain('History, Bookmarks')
   })
 })

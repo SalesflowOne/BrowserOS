@@ -1,4 +1,4 @@
-import { ArrowRight, Download, RefreshCw } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Download, RefreshCw } from 'lucide-react'
 import type { UseFormReturn } from 'react-hook-form'
 import { Button } from '@/components/ui/button'
 import { FormField, FormItem, FormMessage } from '@/components/ui/form'
@@ -59,6 +59,12 @@ export function ImportStep({
   const currentItemLabel = state.progress?.currentItem
     ? importItemLabel(state.progress.currentItem)
     : undefined
+  const importedItems = state.progress?.completedItems ?? []
+  const importedItemSummary = state.progress
+    ? importedItems.length
+      ? importItemListLabel(importedItems)
+      : 'No completed items reported'
+    : 'No item details reported'
 
   return (
     <StepWrap>
@@ -148,15 +154,41 @@ export function ImportStep({
         />
       )}
 
+      {phase === 'failed' && (
+        <>
+          <div className="mb-4 rounded-xl border border-amber/30 bg-amber-tint p-4">
+            <div className="mb-2 flex items-center gap-2 font-bold text-[13px] text-ink-1">
+              <AlertTriangle className="size-4 text-amber" />
+              Import failed
+            </div>
+            <div className="text-[12.5px] text-ink-2">
+              {state.error?.message ??
+                'BrowserOS could not finish importing this profile.'}
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2.5">
+            <Button
+              type="button"
+              size="lg"
+              onClick={onImport}
+              disabled={!isPickerValid}
+            >
+              <Download className="size-4" />
+              Try import again
+            </Button>
+            <Button type="button" size="lg" variant="ghost" onClick={onRefresh}>
+              <RefreshCw className="size-4" />
+              Refresh sources
+            </Button>
+          </div>
+        </>
+      )}
+
       {phase === 'imported' && (
         <>
           <ImportedSummaryCard
-            importedItemCount={totalItems}
-            itemSummary={importItemListLabel(
-              state.progress?.completedItems.length
-                ? state.progress.completedItems
-                : selectedItems,
-            )}
+            importedItemCount={completedItems}
+            itemSummary={importedItemSummary}
             sourceName={sourceName}
           />
           <Button type="button" size="lg" onClick={onContinue}>

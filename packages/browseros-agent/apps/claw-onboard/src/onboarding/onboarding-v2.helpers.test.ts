@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import {
   completedImportItemCount,
   DEFAULT_BROWSEROS_IMPORT_SOURCE_ID,
+  importItemLabel,
   importItemListLabel,
   importProgressTotal,
   MOCK_BROWSEROS_IMPORT_SOURCES,
@@ -69,6 +70,13 @@ describe('import item display helpers', () => {
   it('formats import item labels for source tiles and summaries', () => {
     expect(importItemListLabel(['history', 'bookmarks', 'cookies'])).toBe(
       'History, Bookmarks, Cookies',
+    )
+  })
+
+  it('falls back to readable labels for unknown Chromium item strings', () => {
+    expect(importItemLabel('savedWindows')).toBe('Saved Windows')
+    expect(importItemListLabel(['history', 'savedWindows'])).toBe(
+      'History, Saved Windows',
     )
   })
 

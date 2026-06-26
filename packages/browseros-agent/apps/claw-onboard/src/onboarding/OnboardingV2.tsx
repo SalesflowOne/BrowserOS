@@ -40,13 +40,14 @@ const initialOnboardingState: BrowserOSOnboardingState = {
 }
 
 /** Maps Chromium importer status into the local four-step onboarding screen state. */
-function importPhaseFor(
+export function importPhaseFor(
   status: BrowserOSImportStatus,
   hasPreparedForImport: boolean,
 ): ImportPhase {
-  if (!hasPreparedForImport) return 'pre-quit'
   if (status === 'importing') return 'importing'
-  if (status === 'succeeded' || status === 'completed') return 'imported'
+  if (status === 'failed') return 'failed'
+  if (status === 'succeeded') return 'imported'
+  if (!hasPreparedForImport) return 'pre-quit'
   return 'picker'
 }
 
@@ -126,7 +127,7 @@ export function OnboardingV2() {
 
   function finishOnboarding() {
     bridge.complete()
-    if (bridge.isMock) openBrowserOsHome()
+    openBrowserOsHome()
   }
 
   return (
