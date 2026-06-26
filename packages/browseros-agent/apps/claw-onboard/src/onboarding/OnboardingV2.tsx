@@ -119,7 +119,9 @@ export function OnboardingV2() {
       form.getValues('selectedSourceId'),
     )
     if (!source) return
-    bridge.startImport(startImportRequestFor(source))
+    const request = startImportRequestFor(source)
+    if (!request) return
+    bridge.startImport(request)
   }
 
   function finishOnboarding() {

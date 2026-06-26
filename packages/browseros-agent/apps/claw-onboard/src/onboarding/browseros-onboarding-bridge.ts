@@ -166,6 +166,7 @@ export function createBrowserOSOnboardingBridge(
       }
     },
     startImport(request) {
+      if (request.items && request.items.length === 0) return
       if (!isMock) {
         chromeBridge.send(BrowserOSOnboardingMessage.START_IMPORT, [request])
         return

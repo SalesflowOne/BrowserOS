@@ -103,10 +103,12 @@ export function selectedSourceById(
 
 export function startImportRequestFor(
   source: BrowserOSImportSource,
-): BrowserOSStartImportRequest {
+): BrowserOSStartImportRequest | null {
+  const items = selectableItemsForSource(source)
+  if (items.length === 0) return null
   return {
     sourceId: source.id,
-    items: selectableItemsForSource(source),
+    items,
   }
 }
 

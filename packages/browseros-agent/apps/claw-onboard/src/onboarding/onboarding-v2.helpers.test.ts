@@ -53,6 +53,16 @@ describe('source selection helpers', () => {
       items: MOCK_BROWSEROS_IMPORT_SOURCES[0].recommendedItems,
     })
   })
+
+  it('does not build a start-import request for empty item sources', () => {
+    expect(
+      startImportRequestFor({
+        ...MOCK_BROWSEROS_IMPORT_SOURCES[0],
+        recommendedItems: [],
+        supportedItems: [],
+      }),
+    ).toBeNull()
+  })
 })
 
 describe('import item display helpers', () => {

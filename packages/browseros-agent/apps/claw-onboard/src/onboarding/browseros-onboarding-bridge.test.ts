@@ -66,6 +66,26 @@ describe('createBrowserOSOnboardingBridge', () => {
     ])
   })
 
+  it('does not send an empty explicit import item request', () => {
+    installWindow()
+    const sent: Array<[string, unknown[] | undefined]> = []
+    Object.defineProperty(globalThis, 'chrome', {
+      configurable: true,
+      value: {
+        send(message: string, args?: unknown[]) {
+          sent.push([message, args])
+        },
+      },
+    })
+
+    createBrowserOSOnboardingBridge().startImport({
+      sourceId: 'source-0',
+      items: [],
+    })
+
+    expect(sent).toEqual([])
+  })
+
   it('installs and cleans up the window state receiver it owns', () => {
     installWindow()
     const states: BrowserOSOnboardingState[] = []
