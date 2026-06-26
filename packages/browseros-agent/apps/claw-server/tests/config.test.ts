@@ -242,6 +242,28 @@ describe('loadClawConfig', () => {
     }
   })
 
+  test('returns a clear error for unknown top-level JSON keys', async () => {
+    const configPath = await writeConfig(
+      JSON.stringify({
+        server_port: 9200,
+        cdp_port: 49337,
+      }),
+    )
+
+    const result = loadClawConfig({
+      argv: ['--config', configPath],
+      cwd: '/',
+      env: {},
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error).toContain('config')
+      expect(result.error).toContain('server_port')
+      expect(result.error).toContain('cdp_port')
+    }
+  })
+
   test('returns a clear error for malformed JSON', async () => {
     const configPath = await writeConfig(`
 {
