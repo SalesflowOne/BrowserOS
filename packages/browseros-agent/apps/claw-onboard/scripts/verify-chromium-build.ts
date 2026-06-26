@@ -7,15 +7,15 @@ const fontAssetPattern = /\.(?:woff2?|ttf|otf)$/i
 const hashedCoreAssetPattern = /\b(?:app|index)-[A-Za-z0-9_-]{6,}\.(?:css|js)\b/
 const dataUrlPattern = /\bdata:(?:[a-z][\w.+-]*\/[a-z0-9.+-]+|;base64|,)/i
 const remoteUrlPattern = /https?:\/\/[^\s"'<>\\)]+/g
-const expectedRuntimeUrlPrefixes = [
-  'http://127.0.0.1:',
-  'http://localhost',
-  'http://www.w3.org/',
-  'http://json-schema.org/',
-  'https://base-ui.com/production-error',
-  'https://json-schema.org/',
-  'https://react.dev/errors/',
-  'https://reactrouter.com/',
+const expectedRuntimeUrlPatterns = [
+  /^http:\/\/127\.0\.0\.1:(?:\d+|\$\{[$A-Z_a-z][\w$]*\})(?:$|[^\w./:-])/,
+  /^http:\/\/localhost(?::\d+)?(?:$|[/?#])/,
+  /^http:\/\/www\.w3\.org\/(?:1998\/Math\/MathML|1999\/xlink|2000\/svg|XML\/1998\/namespace)$/,
+  /^http:\/\/json-schema\.org\/draft-(?:04|07)\/schema#$/,
+  /^https:\/\/base-ui\.com\/production-error$/,
+  /^https:\/\/json-schema\.org\/draft\/2020-12\/schema$/,
+  /^https:\/\/react\.dev\/errors\/$/,
+  /^https:\/\/reactrouter\.com\/en\/main\/routers\/picking-a-router\.(?:$|[^\w./:-])/,
 ]
 
 function fail(message: string): never {
@@ -56,7 +56,7 @@ async function readResource(file: string): Promise<string> {
 }
 
 function isExpectedRuntimeUrl(url: string): boolean {
-  return expectedRuntimeUrlPrefixes.some((prefix) => url.startsWith(prefix))
+  return expectedRuntimeUrlPatterns.some((pattern) => pattern.test(url))
 }
 
 function verifyIndexReferences(indexHtml: string) {
