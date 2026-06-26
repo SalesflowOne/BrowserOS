@@ -7,6 +7,16 @@ const fontAssetPattern = /\.(?:woff2?|ttf|otf)$/i
 const hashedCoreAssetPattern = /\b(?:app|index)-[A-Za-z0-9_-]{6,}\.(?:css|js)\b/
 const dataUrlPattern = /\bdata:(?:[a-z][\w.+-]*\/[a-z0-9.+-]+|;base64|,)/i
 const remoteUrlPattern = /https?:\/\/[^\s"'<>\\)]+/g
+const expectedRuntimeUrlPrefixes = [
+  'http://127.0.0.1:',
+  'http://localhost',
+  'http://www.w3.org/',
+  'http://json-schema.org/',
+  'https://base-ui.com/production-error',
+  'https://json-schema.org/',
+  'https://react.dev/errors/',
+  'https://reactrouter.com/',
+]
 
 function fail(message: string): never {
   throw new Error(`Chromium build verification failed: ${message}`)
@@ -45,6 +55,10 @@ async function readResource(file: string): Promise<string> {
   return readFile(path.join(buildDir, file), 'utf8')
 }
 
+function isExpectedRuntimeUrl(url: string): boolean {
+  return expectedRuntimeUrlPrefixes.some((prefix) => url.startsWith(prefix))
+}
+
 function verifyIndexReferences(indexHtml: string) {
   const hasCss =
     /<link\b(?=[^>]*\brel=["']stylesheet["'])(?=[^>]*\bhref=["']\.\/app\.css["'])[^>]*>/i.test(
@@ -65,11 +79,10 @@ function verifyResourceContents(file: string, contents: string) {
     fail(`${file} references a hashed core resource`)
   }
 
-  if (file !== 'app.js') {
-    const remoteUrls = contents.match(remoteUrlPattern) ?? []
-    if (remoteUrls.length > 0) {
-      fail(`${file} references remote URLs: ${remoteUrls.join(', ')}`)
-    }
+  const remoteUrls = contents.match(remoteUrlPattern) ?? []
+  const unexpectedUrls = remoteUrls.filter((url) => !isExpectedRuntimeUrl(url))
+  if (unexpectedUrls.length > 0) {
+    fail(`${file} references remote URLs: ${unexpectedUrls.join(', ')}`)
   }
 }
 
