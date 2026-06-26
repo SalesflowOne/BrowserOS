@@ -9,7 +9,7 @@ export { loadBuildConfig } from './config'
 export { getTargetRules, loadManifest } from './manifest'
 export { writeArtifactMetadata } from './metadata'
 export { runProdResourceBuild } from './orchestrator'
-export { createR2Client, joinObjectKey } from './r2'
+export { createR2Client, joinObjectKey, uploadFileToObject } from './r2'
 export {
   stageCompiledArtifact,
   stagedBinaryName,
