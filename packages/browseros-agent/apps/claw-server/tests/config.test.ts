@@ -16,6 +16,22 @@ async function writeConfig(contents: string): Promise<string> {
 }
 
 describe('loadClawConfig', () => {
+  test('loads the checked-in sample config', () => {
+    const result = loadClawConfig({
+      argv: ['--config', join(import.meta.dir, '..', 'config.sample.json')],
+      cwd: '/',
+      env: {},
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        port: CLAW_API_PORT_DEFAULT,
+        cdpPort: CLAW_CDP_PORT_DEFAULT,
+      },
+    })
+  })
+
   test('uses standalone defaults when no env or config file is provided', () => {
     const result = loadClawConfig({ argv: [], env: {}, cwd: '/' })
 
