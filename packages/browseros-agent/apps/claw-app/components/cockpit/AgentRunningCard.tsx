@@ -105,14 +105,23 @@ export function AgentRunningCard({
               type="button"
               onClick={onStop}
               disabled={isCancelPending}
-              className="inline-flex items-center justify-center gap-1.5 rounded-md bg-bg-sunken px-2.5 py-1.5 font-semibold text-[12.5px] text-ink-2 transition hover:bg-card-tint hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
+              aria-label={isCancelPending ? 'Cancelling agent' : 'Stop agent'}
+              // min-w-[7rem] reserves enough width for the longer
+              // 'Cancelling' label so swapping in the pending state
+              // does not push the adjacent Watch button (which is
+              // flex-1) around. Centre-aligned content + fixed width
+              // means the icon position stays put across states too.
+              className="inline-flex min-w-[7rem] items-center justify-center gap-1.5 rounded-md bg-bg-sunken px-2.5 py-1.5 font-semibold text-[12.5px] text-ink-2 transition hover:bg-card-tint hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isCancelPending ? (
-                <RefreshCw className="size-3 animate-spin" />
+                <>
+                  <RefreshCw className="size-3 animate-spin" /> Cancelling
+                </>
               ) : (
-                <Square className="size-3" />
-              )}{' '}
-              Stop
+                <>
+                  <Square className="size-3" /> Stop
+                </>
+              )}
             </button>
           )}
         </div>
