@@ -8,8 +8,8 @@ const hashedCoreAssetPattern = /\b(?:app|index)-[A-Za-z0-9_-]{6,}\.(?:css|js)\b/
 const dataUrlPattern = /\bdata:(?:[a-z][\w.+-]*\/[a-z0-9.+-]+|;base64|,)/i
 const remoteUrlPattern = /https?:\/\/[^\s"'<>\\)]+/g
 const expectedRuntimeUrlPatterns = [
-  /^http:\/\/127\.0\.0\.1:(?:\d+|\$\{[$A-Z_a-z][\w$]*\})(?:$|[^\w./:-])/,
-  /^http:\/\/localhost(?::\d+)?(?:$|[/?#])/,
+  /^http:\/\/127\.0\.0\.1:(?:\d+|\$\{[$A-Z_a-z][\w$]*\})(?:$|[^\w./:?#-])/,
+  /^http:\/\/localhost(?::\d+)?(?:$|[^\w./:?#-])/,
   /^http:\/\/www\.w3\.org\/(?:1998\/Math\/MathML|1999\/xlink|2000\/svg|XML\/1998\/namespace)$/,
   /^http:\/\/json-schema\.org\/draft-(?:04|07)\/schema#$/,
   /^https:\/\/base-ui\.com\/production-error$/,
