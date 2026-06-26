@@ -33,6 +33,18 @@ export const useCancelAgent = createMutation<
     const response = await api.agents[':agentId'].cancel.$post({
       param: { agentId },
     })
+    // The route returns a structured `{ok:false, cancelled:0, reason}`
+    // with HTTP 404 when there's nothing in flight (the agent is
+    // between dispatches or has gone idle). That is not a mutation
+    // failure; it is the legitimate idle state. Unwrap the body
+    // instead of letting parseResponse throw, so onSuccess fires with
+    // the structured result and the UI can surface "nothing was
+    // running" cleanly once a toast surface ships. Without this the
+    // hook routes the 404 through onError and the operator sees a
+    // misleading "cancel agent failed" console warn.
+    if (response.status === 404) {
+      return (await response.json()) as CancelAgentResult
+    }
     return parseResponse<CancelAgentResult>(response)
   },
 })
