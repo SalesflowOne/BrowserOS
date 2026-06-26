@@ -1,0 +1,89 @@
+import { readdir, readFile } from 'node:fs/promises'
+import path from 'node:path'
+
+const buildDir = path.resolve(import.meta.dir, '../dist/chromium')
+const allowedFiles = new Set(['app.css', 'app.js', 'index.html'])
+const fontAssetPattern = /\.(?:woff2?|ttf|otf)$/i
+const hashedCoreAssetPattern = /\b(?:app|index)-[A-Za-z0-9_-]{6,}\.(?:css|js)\b/
+const dataUrlPattern = /\bdata:(?:[a-z][\w.+-]*\/[a-z0-9.+-]+|;base64|,)/i
+const remoteUrlPattern = /https?:\/\/[^\s"'<>\\)]+/g
+
+function fail(message: string): never {
+  throw new Error(`Chromium build verification failed: ${message}`)
+}
+
+async function listResourceFiles(dir: string, prefix = ''): Promise<string[]> {
+  const entries = await readdir(dir, { withFileTypes: true })
+  const files: string[] = []
+
+  for (const entry of entries) {
+    const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name
+    if (entry.isDirectory()) {
+      if (relativePath === 'assets') fail('dist/chromium/assets was emitted')
+      fail(`unexpected directory emitted: ${relativePath}`)
+    }
+    files.push(relativePath)
+  }
+
+  return files.sort()
+}
+
+function verifyFileList(files: string[]) {
+  for (const expected of allowedFiles) {
+    if (!files.includes(expected)) fail(`missing ${expected}`)
+  }
+
+  for (const file of files) {
+    if (!allowedFiles.has(file)) fail(`unexpected file emitted: ${file}`)
+    if (fontAssetPattern.test(file)) fail(`font asset emitted: ${file}`)
+    if (hashedCoreAssetPattern.test(file))
+      fail(`hashed core resource emitted: ${file}`)
+  }
+}
+
+async function readResource(file: string): Promise<string> {
+  return readFile(path.join(buildDir, file), 'utf8')
+}
+
+function verifyIndexReferences(indexHtml: string) {
+  const hasCss =
+    /<link\b(?=[^>]*\brel=["']stylesheet["'])(?=[^>]*\bhref=["']\.\/app\.css["'])[^>]*>/i.test(
+      indexHtml,
+    )
+  const hasJs = /<script\b(?=[^>]*\bsrc=["']\.\/app\.js["'])[^>]*>/i.test(
+    indexHtml,
+  )
+
+  if (!hasCss) fail('index.html does not reference ./app.css')
+  if (!hasJs) fail('index.html does not reference ./app.js')
+}
+
+function verifyResourceContents(file: string, contents: string) {
+  if (dataUrlPattern.test(contents)) fail(`${file} contains a data: URL`)
+  if (contents.includes('assets/')) fail(`${file} references assets/`)
+  if (hashedCoreAssetPattern.test(contents)) {
+    fail(`${file} references a hashed core resource`)
+  }
+
+  if (file !== 'app.js') {
+    const remoteUrls = contents.match(remoteUrlPattern) ?? []
+    if (remoteUrls.length > 0) {
+      fail(`${file} references remote URLs: ${remoteUrls.join(', ')}`)
+    }
+  }
+}
+
+/** Enforces the three-file Chromium WebUI resource contract. */
+async function main() {
+  const files = await listResourceFiles(buildDir)
+  verifyFileList(files)
+
+  const indexHtml = await readResource('index.html')
+  verifyIndexReferences(indexHtml)
+
+  for (const file of files) {
+    verifyResourceContents(file, await readResource(file))
+  }
+}
+
+await main()

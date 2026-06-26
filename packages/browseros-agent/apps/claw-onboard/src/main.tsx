@@ -1,8 +1,3 @@
-import '@fontsource-variable/schibsted-grotesk'
-import '@fontsource/newsreader/400-italic.css'
-import '@fontsource/newsreader/500-italic.css'
-import '@fontsource-variable/jetbrains-mono'
-
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router'
