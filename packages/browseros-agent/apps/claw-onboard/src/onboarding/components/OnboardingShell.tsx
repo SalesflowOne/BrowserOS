@@ -17,12 +17,12 @@ export function OnboardingShell({
   return (
     <div className="flex h-screen overflow-hidden bg-bg-canvas">
       <VisualRail />
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-12 pt-11 pb-10">
+      <main className="flex min-h-0 flex-1 flex-col overflow-y-auto px-12 pt-11 pb-10">
         <div className="mb-[30px]">
           <StepDots step={step} total={totalSteps} />
         </div>
         {children}
-      </div>
+      </main>
     </div>
   )
 }

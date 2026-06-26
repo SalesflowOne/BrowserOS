@@ -62,8 +62,10 @@ describe('OnboardingV2 shell', () => {
     expect(html).toContain('Under your control')
   })
 
-  it('does not render the fake macOS window chrome', () => {
+  it('renders a full-page main landmark without the fake macOS window chrome', () => {
     const html = renderApp()
+    expect(html).toContain('<main')
+    expect(html).not.toContain('role="dialog"')
     expect(html).not.toContain('Welcome to BrowserOS')
     expect(html).not.toContain('#FF5F57')
   })
