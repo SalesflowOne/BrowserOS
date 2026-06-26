@@ -52,6 +52,12 @@ interface LoadClawConfigOptions {
   env?: Record<string, string | undefined>
 }
 
+interface DefaultResourcesRuntime {
+  execPath?: string
+  importMetaPath?: string
+  isStandalone?: boolean
+}
+
 type PartialClawConfig = Partial<ClawConfig>
 type ParsedCliArgs = {
   configPath?: string
@@ -280,8 +286,29 @@ function getDefaults(cwd: string): ClawConfig {
   return {
     port: CLAW_API_PORT_DEFAULT,
     cdpPort: CLAW_CDP_PORT_DEFAULT,
-    resourcesDir: resolve(cwd, 'resources'),
+    resourcesDir: resolveDefaultResourcesDir(cwd),
   }
+}
+
+/** Resolves Claw's resource root for source runs and packaged binaries. */
+export function resolveDefaultResourcesDir(
+  cwd = process.cwd(),
+  runtime: DefaultResourcesRuntime = {},
+): string {
+  const standalone =
+    runtime.isStandalone ?? isStandaloneExecutable(runtime.importMetaPath)
+  if (standalone) {
+    return resolve(dirname(runtime.execPath ?? process.execPath), '..')
+  }
+  return resolve(cwd, 'resources')
+}
+
+function isStandaloneExecutable(importMetaPath = import.meta.path): boolean {
+  const bunWithStandaloneFlag = Bun as { isStandaloneExecutable?: boolean }
+  return (
+    bunWithStandaloneFlag.isStandaloneExecutable === true ||
+    importMetaPath.startsWith('/$bunfs/')
+  )
 }
 
 function mergeConfigs(...configs: PartialClawConfig[]): PartialClawConfig {

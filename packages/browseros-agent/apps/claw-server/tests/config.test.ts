@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { loadClawConfig } from '../src/config'
+import { loadClawConfig, resolveDefaultResourcesDir } from '../src/config'
 import {
   CLAW_API_PORT_DEFAULT,
   CLAW_CDP_PORT_DEFAULT,
@@ -16,6 +16,15 @@ async function writeConfig(contents: string): Promise<string> {
 }
 
 describe('loadClawConfig', () => {
+  test('resolves default resources next to the packaged executable', () => {
+    expect(
+      resolveDefaultResourcesDir('/service/workdir', {
+        execPath: '/opt/browseros-claw/resources/bin/browseros-claw-server',
+        isStandalone: true,
+      }),
+    ).toBe('/opt/browseros-claw/resources')
+  })
+
   test('loads the checked-in sample config', () => {
     const result = loadClawConfig({
       argv: ['--config', join(import.meta.dir, '..', 'config.sample.json')],
