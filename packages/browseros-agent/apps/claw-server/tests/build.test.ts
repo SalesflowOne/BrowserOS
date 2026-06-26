@@ -21,7 +21,7 @@ function getNativeTarget(): { id: string; ext: string; stagedName: string } {
   }
 }
 
-const SECRET_ENV_KEYS = [
+const UNNEEDED_SERVER_AND_R2_ENV_KEYS = [
   'BROWSEROS_CONFIG_URL',
   'POSTHOG_API_KEY',
   'SENTRY_DSN',
@@ -74,15 +74,12 @@ describe('claw server build', () => {
     rmSync(zipPath, { force: true })
     const pkg = await Bun.file(clawPkgPath).json()
 
-    const build = Bun.spawn(
-      ['bun', buildScript, `--target=${target.id}`, '--no-upload'],
-      {
-        cwd: rootDir,
-        stdout: 'pipe',
-        stderr: 'pipe',
-        env: buildEnv(SECRET_ENV_KEYS),
-      },
-    )
+    const build = Bun.spawn(['bun', buildScript, `--target=${target.id}`], {
+      cwd: rootDir,
+      stdout: 'pipe',
+      stderr: 'pipe',
+      env: buildEnv(UNNEEDED_SERVER_AND_R2_ENV_KEYS),
+    })
     const buildExit = await build.exited
     if (buildExit !== 0) {
       const stderr = await new Response(build.stderr).text()
@@ -134,7 +131,7 @@ describe('claw server build', () => {
         cwd: rootDir,
         stdout: 'pipe',
         stderr: 'pipe',
-        env: buildEnv(SECRET_ENV_KEYS),
+        env: buildEnv(UNNEEDED_SERVER_AND_R2_ENV_KEYS),
       },
     )
     const buildExit = await build.exited

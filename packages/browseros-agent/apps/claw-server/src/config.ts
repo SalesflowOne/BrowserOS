@@ -280,7 +280,7 @@ function getDefaults(cwd: string): ClawConfig {
   return {
     port: CLAW_API_PORT_DEFAULT,
     cdpPort: CLAW_CDP_PORT_DEFAULT,
-    resourcesDir: toAbsolutePath(cwd, process.cwd()),
+    resourcesDir: resolve(cwd, 'resources'),
   }
 }
 

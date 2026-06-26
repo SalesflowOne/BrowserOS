@@ -15,19 +15,23 @@ interface DrizzleJournalEntry {
 }
 
 const sourceMigrationsFolder = resolve(import.meta.dir, '../../../drizzle')
+const sourcePackageJson = resolve(import.meta.dir, '../../../package.json')
 
 /** Applies Claw audit DB migrations from packaged resources when available. */
 export function runMigrations(db: AuditDb): void {
   migrate(db, { migrationsFolder: resolveMigrationsFolder() })
 }
 
-/** Resolves packaged migrations first, with source migrations as the dev/test fallback. */
+/** Resolves packaged migrations first, with source migrations only in source checkouts. */
 export function resolveMigrationsFolder(
   resourcesDir = env.resourcesDir,
 ): string {
   const packaged = join(resourcesDir, 'db', 'migrations')
   if (hasCompleteMigrationSet(packaged)) return packaged
-  return sourceMigrationsFolder
+  if (hasSourceMigrationFallback()) return sourceMigrationsFolder
+  throw new Error(
+    `Claw migrations not found. Expected packaged migrations at ${packaged}`,
+  )
 }
 
 function hasCompleteMigrationSet(migrationsFolder: string): boolean {
@@ -38,6 +42,13 @@ function hasCompleteMigrationSet(migrationsFolder: string): boolean {
 
   return candidateJournal.entries.every((entry) =>
     existsSync(join(migrationsFolder, `${entry.tag}.sql`)),
+  )
+}
+
+function hasSourceMigrationFallback(): boolean {
+  return (
+    existsSync(sourcePackageJson) &&
+    hasCompleteMigrationSet(sourceMigrationsFolder)
   )
 }
 

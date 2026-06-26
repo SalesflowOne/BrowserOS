@@ -7,6 +7,7 @@
  * in config.ts so it can be validated before serving.
  */
 
+import { resolve } from 'node:path'
 import type { ClawConfig } from './config'
 import { CLAW_API_PORT_DEFAULT, CLAW_CDP_PORT_DEFAULT } from './shared/port'
 
@@ -40,7 +41,7 @@ function readBoolFlag(name: string): boolean {
 export const env = {
   port: CLAW_API_PORT_DEFAULT,
   cdpPort: CLAW_CDP_PORT_DEFAULT,
-  resourcesDir: process.cwd(),
+  resourcesDir: resolve(process.cwd(), 'resources'),
   browserosDirOverride: readBrowserosDirOverride(),
   isDevelopment: readIsDevelopment(),
 }

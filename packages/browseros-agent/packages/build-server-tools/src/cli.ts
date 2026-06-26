@@ -42,7 +42,7 @@ export function parseBuildArgs(
   return {
     targets: resolveTargets(options.target),
     manifestPath: options.manifest,
-    upload: ci ? false : (options.upload ?? true),
+    upload: ci ? false : (options.upload ?? product.defaultUpload ?? true),
     ci,
   }
 }

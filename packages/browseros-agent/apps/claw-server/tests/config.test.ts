@@ -28,7 +28,7 @@ describe('loadClawConfig', () => {
       value: {
         port: CLAW_API_PORT_DEFAULT,
         cdpPort: CLAW_CDP_PORT_DEFAULT,
-        resourcesDir: '/',
+        resourcesDir: '/resources',
       },
     })
   })
@@ -41,7 +41,7 @@ describe('loadClawConfig', () => {
       value: {
         port: CLAW_API_PORT_DEFAULT,
         cdpPort: CLAW_CDP_PORT_DEFAULT,
-        resourcesDir: '/',
+        resourcesDir: '/resources',
       },
     })
   })
@@ -61,7 +61,7 @@ describe('loadClawConfig', () => {
       value: {
         port: 9310,
         cdpPort: 9010,
-        resourcesDir: '/',
+        resourcesDir: '/resources',
       },
     })
   })
@@ -106,7 +106,7 @@ describe('loadClawConfig', () => {
       value: {
         port: 9420,
         cdpPort: 9020,
-        resourcesDir: '/',
+        resourcesDir: '/resources',
       },
     })
   })
@@ -161,7 +161,7 @@ describe('loadClawConfig', () => {
       value: {
         port: 9310,
         cdpPort: 9010,
-        resourcesDir: '/',
+        resourcesDir: '/resources',
       },
     })
   })
@@ -222,7 +222,7 @@ describe('loadClawConfig', () => {
       value: {
         port: 9600,
         cdpPort: 9200,
-        resourcesDir: '/',
+        resourcesDir: '/resources',
       },
     })
   })

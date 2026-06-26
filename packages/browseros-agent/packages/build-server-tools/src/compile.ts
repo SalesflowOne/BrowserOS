@@ -141,11 +141,14 @@ export async function compileProductBinaries(
   await bundleProduct(product, envVars, version)
 
   const compiled: CompiledServerBinary[] = []
-  for (const target of targets) {
-    const binaryPath = await compileTarget(product, target, processEnv, ci)
-    compiled.push({ target, binaryPath })
+  try {
+    for (const target of targets) {
+      const binaryPath = await compileTarget(product, target, processEnv, ci)
+      compiled.push({ target, binaryPath })
+    }
+  } finally {
+    rmSync(bundleDir(product), { recursive: true, force: true })
   }
 
-  rmSync(bundleDir(product), { recursive: true, force: true })
   return compiled
 }

@@ -58,6 +58,7 @@ export interface BuildProductDescriptor {
   stagedBinaryBaseName: string
   archiveBaseName: string
   defaultManifestPath: string
+  defaultUpload?: boolean
   env: BuildEnvSpec
   bundle?: BundleOptions
 }
