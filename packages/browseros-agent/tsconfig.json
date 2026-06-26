@@ -28,6 +28,7 @@
   "references": [
     { "path": "./packages/browser-core" },
     { "path": "./packages/browser-mcp" },
+    { "path": "./packages/build-server-tools" },
     { "path": "./apps/server" },
     { "path": "./apps/claw-server" }
   ],

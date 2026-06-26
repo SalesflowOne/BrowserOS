@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { SERVER_BUNDLE_ENTRYPOINT } from './compile'
+import { SERVER_BUNDLE_ENTRYPOINT } from './descriptor'
 
 const nativeAddonGuardPath = join(
   process.cwd(),
