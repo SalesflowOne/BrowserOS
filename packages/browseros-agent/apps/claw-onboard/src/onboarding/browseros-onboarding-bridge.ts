@@ -7,61 +7,12 @@
 import {
   BROWSEROS_ONBOARDING_API_VERSION,
   type BrowserOSImportProgress,
-  type BrowserOSImportSource,
   type BrowserOSOnboardingChrome,
   BrowserOSOnboardingMessage,
   type BrowserOSOnboardingState,
   type BrowserOSStartImportRequest,
 } from './browseros-onboarding-api'
-
-export const MOCK_BROWSEROS_IMPORT_SOURCES: readonly BrowserOSImportSource[] = [
-  {
-    id: 'chrome-work',
-    displayName: 'Google Chrome - Work',
-    browserName: 'Google Chrome',
-    profileName: 'Work',
-    supportedItems: [
-      'history',
-      'bookmarks',
-      'cookies',
-      'passwords',
-      'searchEngines',
-      'autofill',
-      'extensions',
-    ],
-    recommendedItems: [
-      'history',
-      'bookmarks',
-      'cookies',
-      'passwords',
-      'searchEngines',
-      'autofill',
-      'extensions',
-    ],
-  },
-  {
-    id: 'chrome-personal',
-    displayName: 'Google Chrome - Personal',
-    browserName: 'Google Chrome',
-    profileName: 'Personal',
-    supportedItems: [
-      'history',
-      'bookmarks',
-      'cookies',
-      'passwords',
-      'autofill',
-    ],
-    recommendedItems: ['history', 'bookmarks', 'cookies', 'passwords'],
-  },
-  {
-    id: 'edge-default',
-    displayName: 'Microsoft Edge - Default',
-    browserName: 'Microsoft Edge',
-    profileName: 'Default',
-    supportedItems: ['history', 'bookmarks', 'cookies', 'passwords'],
-    recommendedItems: ['history', 'bookmarks', 'cookies'],
-  },
-]
+import { MOCK_BROWSEROS_IMPORT_SOURCES } from './onboarding-v2.helpers'
 
 export interface BrowserOSOnboardingBridge {
   isMock: boolean

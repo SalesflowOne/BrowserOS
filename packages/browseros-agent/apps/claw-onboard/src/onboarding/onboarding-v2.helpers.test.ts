@@ -1,49 +1,82 @@
 import { describe, expect, it } from 'bun:test'
 import {
-  CHROME_PROFILES,
-  profilesByIds,
+  completedImportItemCount,
+  DEFAULT_BROWSEROS_IMPORT_SOURCE_ID,
+  importItemListLabel,
+  importProgressTotal,
+  MOCK_BROWSEROS_IMPORT_SOURCES,
   STARTER_PROMPTS,
-  sumLoginsFor,
-  sumSitesFor,
+  selectableItemsForSource,
+  selectedSourceById,
+  startImportRequestFor,
 } from './onboarding-v2.helpers'
 
-describe('CHROME_PROFILES fixture', () => {
-  it('ships three profiles with stable ids', () => {
-    expect(CHROME_PROFILES.map((p) => p.id)).toEqual([
-      'work',
-      'personal',
-      'testing',
+describe('MOCK_BROWSEROS_IMPORT_SOURCES fixture', () => {
+  it('ships mock import sources with stable ids', () => {
+    expect(MOCK_BROWSEROS_IMPORT_SOURCES.map((source) => source.id)).toEqual([
+      'chrome-work',
+      'chrome-personal',
+      'edge-default',
     ])
+    expect(DEFAULT_BROWSEROS_IMPORT_SOURCE_ID).toBe('chrome-work')
   })
 
-  it('uses placeholder example.com emails (no real identifiers)', () => {
-    for (const p of CHROME_PROFILES) {
-      expect(p.email).toContain('example.com')
+  it('uses the Chromium contract source shape', () => {
+    for (const source of MOCK_BROWSEROS_IMPORT_SOURCES) {
+      expect(source.displayName.length).toBeGreaterThan(0)
+      expect(source.recommendedItems.length).toBeGreaterThan(0)
+      expect(source.supportedItems).toContain(source.recommendedItems[0])
     }
   })
 })
 
-describe('sumSitesFor / sumLoginsFor', () => {
-  it('sums the default selection (work + personal)', () => {
-    expect(sumSitesFor(['work', 'personal'])).toBe(47)
-    expect(sumLoginsFor(['work', 'personal'])).toBe(12)
+describe('source selection helpers', () => {
+  it('finds the selected source by contract id', () => {
+    expect(
+      selectedSourceById(MOCK_BROWSEROS_IMPORT_SOURCES, 'chrome-personal')
+        ?.displayName,
+    ).toBe('Google Chrome - Personal')
   })
 
-  it('returns 0 when the selection is empty', () => {
-    expect(sumSitesFor([])).toBe(0)
-    expect(sumLoginsFor([])).toBe(0)
+  it('falls back to supported items when recommended items are empty', () => {
+    expect(
+      selectableItemsForSource({
+        ...MOCK_BROWSEROS_IMPORT_SOURCES[0],
+        recommendedItems: [],
+      }),
+    ).toEqual(MOCK_BROWSEROS_IMPORT_SOURCES[0].supportedItems)
   })
 
-  it('handles single-profile selections', () => {
-    expect(sumSitesFor(['testing'])).toBe(8)
-    expect(sumLoginsFor(['testing'])).toBe(2)
+  it('builds the Chromium start-import request for one source', () => {
+    expect(startImportRequestFor(MOCK_BROWSEROS_IMPORT_SOURCES[0])).toEqual({
+      sourceId: 'chrome-work',
+      items: MOCK_BROWSEROS_IMPORT_SOURCES[0].recommendedItems,
+    })
   })
 })
 
-describe('profilesByIds', () => {
-  it('returns profile records for the given ids, preserving fixture order', () => {
-    const result = profilesByIds(['personal', 'work'])
-    expect(result.map((p) => p.id)).toEqual(['work', 'personal'])
+describe('import item display helpers', () => {
+  it('formats import item labels for source tiles and summaries', () => {
+    expect(importItemListLabel(['history', 'bookmarks', 'cookies'])).toBe(
+      'History, Bookmarks, Cookies',
+    )
+  })
+
+  it('uses Chromium progress totals when present', () => {
+    expect(
+      importProgressTotal(MOCK_BROWSEROS_IMPORT_SOURCES[0], {
+        currentItem: 'cookies',
+        completedItems: ['history', 'bookmarks'],
+        totalItems: 7,
+      }),
+    ).toBe(7)
+    expect(
+      completedImportItemCount({
+        currentItem: 'cookies',
+        completedItems: ['history', 'bookmarks'],
+        totalItems: 7,
+      }),
+    ).toBe(2)
   })
 })
 

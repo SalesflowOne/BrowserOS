@@ -4,6 +4,9 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { useForm } from 'react-hook-form'
 import { MemoryRouter } from 'react-router'
 import { Form } from '@/components/ui/form'
+import type { BrowserOSOnboardingState } from '../browseros-onboarding-api'
+import { BROWSEROS_ONBOARDING_API_VERSION } from '../browseros-onboarding-api'
+import { MOCK_BROWSEROS_IMPORT_SOURCES } from '../onboarding-v2.helpers'
 import {
   type OnboardingFormValues,
   onboardingFormDefaults,
@@ -12,12 +15,23 @@ import {
 import type { ImportPhase } from '../onboarding-v2.types'
 import { ImportStep } from './ImportStep'
 
+function readyState(
+  overrides: Partial<BrowserOSOnboardingState> = {},
+): BrowserOSOnboardingState {
+  return {
+    apiVersion: BROWSEROS_ONBOARDING_API_VERSION,
+    status: 'ready',
+    sources: [...MOCK_BROWSEROS_IMPORT_SOURCES],
+    ...overrides,
+  }
+}
+
 function Harness({
   phase,
-  progress = 0,
+  state = readyState(),
 }: {
   phase: ImportPhase
-  progress?: number
+  state?: BrowserOSOnboardingState
 }) {
   const form = useForm<OnboardingFormValues>({
     resolver: zodResolver(onboardingFormSchema),
@@ -27,20 +41,24 @@ function Harness({
     <Form {...form}>
       <ImportStep
         phase={phase}
-        progress={progress}
+        state={state}
         form={form}
         onQuitChrome={() => undefined}
         onImport={() => undefined}
+        onRefresh={() => undefined}
         onContinue={() => undefined}
       />
     </Form>
   )
 }
 
-function render(phase: ImportPhase, progress = 0): string {
+function render(
+  phase: ImportPhase,
+  state: BrowserOSOnboardingState = readyState(),
+): string {
   return renderToStaticMarkup(
     <MemoryRouter>
-      <Harness phase={phase} progress={progress} />
+      <Harness phase={phase} state={state} />
     </MemoryRouter>,
   )
 }
@@ -54,25 +72,50 @@ describe('ImportStep', () => {
 
   it('renders the picker, the Keychain notice, and an Import button in picker phase', () => {
     const html = render('picker')
-    expect(html).toContain('Choose which Chrome profiles to import')
-    expect(html).toContain('Work')
-    expect(html).toContain('Personal')
-    expect(html).toContain('Testing')
+    expect(html).toContain('Choose a browser profile to import')
+    expect(html).toContain('Google Chrome - Work')
+    expect(html).toContain('Google Chrome - Personal')
+    expect(html).toContain('Microsoft Edge - Default')
     expect(html).toContain('macOS will ask permission')
-    expect(html).toContain('Import 47 sites from 2 profiles')
+    expect(html).toContain('Import 7 items from Work')
     expect(html).not.toContain('disabled=""')
   })
 
+  it('disables import while Chromium is detecting sources', () => {
+    const html = render('picker', readyState({ status: 'detecting' }))
+    expect(html).toContain('Detecting import sources')
+    expect(html).toContain('disabled=""')
+  })
+
   it('renders the importing progress card during importing phase', () => {
-    const html = render('importing', 12)
-    expect(html).toContain('Importing sessions')
-    expect(html).toContain('12 / 47 sites')
+    const html = render(
+      'importing',
+      readyState({
+        status: 'importing',
+        progress: {
+          currentItem: 'cookies',
+          completedItems: ['history', 'bookmarks'],
+          totalItems: 7,
+        },
+      }),
+    )
+    expect(html).toContain('Importing Cookies')
+    expect(html).toContain('2 / 7 items')
   })
 
   it('renders the success card and Connect-to-Claude CTA in imported phase', () => {
-    const html = render('imported')
-    expect(html).toContain('Imported 47 sites from 2 profiles')
-    expect(html).toContain('Passwords stored in vault')
+    const html = render(
+      'imported',
+      readyState({
+        status: 'succeeded',
+        progress: {
+          completedItems: MOCK_BROWSEROS_IMPORT_SOURCES[0].recommendedItems,
+          totalItems: 7,
+        },
+      }),
+    )
+    expect(html).toContain('Imported 7 items from Work')
+    expect(html).toContain('History, Bookmarks')
     expect(html).toContain('Connect to Claude')
   })
 })

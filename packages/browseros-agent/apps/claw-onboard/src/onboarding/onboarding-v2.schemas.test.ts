@@ -7,30 +7,21 @@ import {
 describe('onboardingFormSchema', () => {
   it('accepts the default values', () => {
     const parsed = onboardingFormSchema.parse(onboardingFormDefaults)
-    expect(parsed.selectedProfileIds).toEqual(['work', 'personal'])
+    expect(parsed.selectedSourceId).toBe('chrome-work')
   })
 
   it('rejects an empty selection with a helpful message', () => {
-    const result = onboardingFormSchema.safeParse({ selectedProfileIds: [] })
+    const result = onboardingFormSchema.safeParse({ selectedSourceId: '' })
     expect(result.success).toBe(false)
     if (!result.success) {
-      expect(result.error.issues[0]?.message).toBe(
-        'Pick at least one profile to import.',
-      )
+      expect(result.error.issues[0]?.message).toBe('Pick an import source.')
     }
   })
 
-  it('rejects unknown profile ids', () => {
+  it('accepts dynamic Chromium source ids', () => {
     const result = onboardingFormSchema.safeParse({
-      selectedProfileIds: ['ghost'],
+      selectedSourceId: 'source-42',
     })
-    expect(result.success).toBe(false)
-  })
-
-  it('accepts a single profile selection', () => {
-    const parsed = onboardingFormSchema.parse({
-      selectedProfileIds: ['testing'],
-    })
-    expect(parsed.selectedProfileIds).toEqual(['testing'])
+    expect(result.success).toBe(true)
   })
 })

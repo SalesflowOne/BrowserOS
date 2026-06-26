@@ -4,55 +4,123 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import type { ChromeProfileId } from './onboarding-v2.schemas'
+import type {
+  BrowserOSImportItem,
+  BrowserOSImportProgress,
+  BrowserOSImportSource,
+  BrowserOSStartImportRequest,
+} from './browseros-onboarding-api'
 
-export interface ChromeProfile {
-  id: ChromeProfileId
-  name: string
-  email: string
-  sites: number
-  logins: number
-}
-
-export const CHROME_PROFILES: readonly ChromeProfile[] = [
-  { id: 'work', name: 'Work', email: 'you@example.com', sites: 31, logins: 9 },
+export const MOCK_BROWSEROS_IMPORT_SOURCES: readonly BrowserOSImportSource[] = [
   {
-    id: 'personal',
-    name: 'Personal',
-    email: 'you.personal@example.com',
-    sites: 16,
-    logins: 3,
+    id: 'chrome-work',
+    displayName: 'Google Chrome - Work',
+    browserName: 'Google Chrome',
+    profileName: 'Work',
+    supportedItems: [
+      'history',
+      'bookmarks',
+      'cookies',
+      'passwords',
+      'searchEngines',
+      'autofill',
+      'extensions',
+    ],
+    recommendedItems: [
+      'history',
+      'bookmarks',
+      'cookies',
+      'passwords',
+      'searchEngines',
+      'autofill',
+      'extensions',
+    ],
   },
   {
-    id: 'testing',
-    name: 'Testing',
-    email: 'qa@example.com',
-    sites: 8,
-    logins: 2,
+    id: 'chrome-personal',
+    displayName: 'Google Chrome - Personal',
+    browserName: 'Google Chrome',
+    profileName: 'Personal',
+    supportedItems: [
+      'history',
+      'bookmarks',
+      'cookies',
+      'passwords',
+      'autofill',
+    ],
+    recommendedItems: ['history', 'bookmarks', 'cookies', 'passwords'],
+  },
+  {
+    id: 'edge-default',
+    displayName: 'Microsoft Edge - Default',
+    browserName: 'Microsoft Edge',
+    profileName: 'Default',
+    supportedItems: ['history', 'bookmarks', 'cookies', 'passwords'],
+    recommendedItems: ['history', 'bookmarks', 'cookies'],
   },
 ]
 
-/** Totals selected profile site counts for the import summary and progress bar. */
-export function sumSitesFor(ids: readonly ChromeProfileId[]): number {
-  return CHROME_PROFILES.filter((p) => ids.includes(p.id)).reduce(
-    (sum, p) => sum + p.sites,
-    0,
-  )
+export const DEFAULT_BROWSEROS_IMPORT_SOURCE_ID =
+  MOCK_BROWSEROS_IMPORT_SOURCES[0]?.id ?? ''
+
+const IMPORT_ITEM_LABELS: Record<BrowserOSImportItem, string> = {
+  history: 'History',
+  bookmarks: 'Bookmarks',
+  cookies: 'Cookies',
+  passwords: 'Passwords',
+  searchEngines: 'Search engines',
+  autofill: 'Autofill',
+  extensions: 'Extensions',
 }
 
-/** Totals selected profile login counts for the import progress copy. */
-export function sumLoginsFor(ids: readonly ChromeProfileId[]): number {
-  return CHROME_PROFILES.filter((p) => ids.includes(p.id)).reduce(
-    (sum, p) => sum + p.logins,
-    0,
-  )
+export function importItemLabel(item: BrowserOSImportItem): string {
+  return IMPORT_ITEM_LABELS[item]
 }
 
-/** Returns selected profile records in fixture order. */
-export function profilesByIds(
-  ids: readonly ChromeProfileId[],
-): readonly ChromeProfile[] {
-  return CHROME_PROFILES.filter((p) => ids.includes(p.id))
+export function importItemListLabel(
+  items: readonly BrowserOSImportItem[],
+): string {
+  if (items.length === 0) return 'No supported data'
+  return items.map(importItemLabel).join(', ')
+}
+
+export function selectableItemsForSource(
+  source: BrowserOSImportSource,
+): BrowserOSImportItem[] {
+  return [
+    ...(source.recommendedItems.length
+      ? source.recommendedItems
+      : source.supportedItems),
+  ]
+}
+
+export function selectedSourceById(
+  sources: readonly BrowserOSImportSource[],
+  sourceId: string,
+): BrowserOSImportSource | undefined {
+  return sources.find((source) => source.id === sourceId)
+}
+
+export function startImportRequestFor(
+  source: BrowserOSImportSource,
+): BrowserOSStartImportRequest {
+  return {
+    sourceId: source.id,
+    items: selectableItemsForSource(source),
+  }
+}
+
+export function completedImportItemCount(
+  progress: BrowserOSImportProgress | undefined,
+): number {
+  return progress?.completedItems.length ?? 0
+}
+
+export function importProgressTotal(
+  source: BrowserOSImportSource,
+  progress: BrowserOSImportProgress | undefined,
+): number {
+  return progress?.totalItems ?? selectableItemsForSource(source).length
 }
 
 export const STARTER_PROMPTS: readonly string[] = [

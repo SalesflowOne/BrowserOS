@@ -5,20 +5,14 @@
  */
 
 import { z } from 'zod'
-
-export const CHROME_PROFILE_IDS = ['work', 'personal', 'testing'] as const
-export type ChromeProfileId = (typeof CHROME_PROFILE_IDS)[number]
-
-export const chromeProfileIdEnum = z.enum(CHROME_PROFILE_IDS)
+import { DEFAULT_BROWSEROS_IMPORT_SOURCE_ID } from './onboarding-v2.helpers'
 
 export const onboardingFormSchema = z.object({
-  selectedProfileIds: z
-    .array(chromeProfileIdEnum)
-    .min(1, 'Pick at least one profile to import.'),
+  selectedSourceId: z.string().min(1, 'Pick an import source.'),
 })
 
 export type OnboardingFormValues = z.infer<typeof onboardingFormSchema>
 
 export const onboardingFormDefaults: OnboardingFormValues = {
-  selectedProfileIds: ['work', 'personal'],
+  selectedSourceId: DEFAULT_BROWSEROS_IMPORT_SOURCE_ID,
 }

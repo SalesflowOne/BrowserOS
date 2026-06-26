@@ -1,10 +1,8 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import type { BrowserOSOnboardingState } from './browseros-onboarding-api'
 import { BrowserOSOnboardingMessage } from './browseros-onboarding-api'
-import {
-  createBrowserOSOnboardingBridge,
-  MOCK_BROWSEROS_IMPORT_SOURCES,
-} from './browseros-onboarding-bridge'
+import { createBrowserOSOnboardingBridge } from './browseros-onboarding-bridge'
+import { MOCK_BROWSEROS_IMPORT_SOURCES } from './onboarding-v2.helpers'
 
 const originalWindow = globalThis.window
 const originalChrome = (globalThis as typeof globalThis & { chrome?: unknown })

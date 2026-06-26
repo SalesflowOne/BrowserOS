@@ -1,14 +1,16 @@
 import { Check, CreditCard, Lock } from 'lucide-react'
 
 interface ImportedSummaryCardProps {
-  sites: number
-  profileCount: number
+  importedItemCount: number
+  itemSummary: string
+  sourceName: string
 }
 
-/** Shows the profile import success state. */
+/** Shows the completed Chromium import summary. */
 export function ImportedSummaryCard({
-  sites,
-  profileCount,
+  importedItemCount,
+  itemSummary,
+  sourceName,
 }: ImportedSummaryCardProps) {
   return (
     <div className="mb-[18px] animate-fade-up rounded-xl border border-border-2 bg-card p-[18px]">
@@ -17,21 +19,20 @@ export function ImportedSummaryCard({
           <Check className="size-4" />
         </span>
         <span className="font-bold text-[14px]">
-          Imported {sites} sites from {profileCount} profile
-          {profileCount === 1 ? '' : 's'}
+          Imported {importedItemCount} items from {sourceName}
         </span>
       </div>
       <SummaryRow
         icon={<Check className="size-3.5 text-green" />}
-        text={`${sites} logged-in sessions ready`}
+        text={itemSummary}
       />
       <SummaryRow
         icon={<Lock className="size-3.5 text-ink-3" />}
-        text="Passwords stored in vault. Never shown to you or the agent."
+        text="Imported data stays local. Never shown to you or the agent."
       />
       <SummaryRow
         icon={<CreditCard className="size-3.5 text-ink-3" />}
-        text="3 payment cards skipped"
+        text="Payment cards skipped"
       />
     </div>
   )
