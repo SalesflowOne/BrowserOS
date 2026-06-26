@@ -1,9 +1,9 @@
 diff --git a/chrome/browser/browseros/core/browseros_prefs.cc b/chrome/browser/browseros/core/browseros_prefs.cc
 new file mode 100644
-index 0000000000000..cbc95b13018f2
+index 0000000000000..52f183b59832c
 --- /dev/null
 +++ b/chrome/browser/browseros/core/browseros_prefs.cc
-@@ -0,0 +1,89 @@
+@@ -0,0 +1,90 @@
 +// Copyright 2025 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -33,6 +33,7 @@ index 0000000000000..cbc95b13018f2
 +
 +  // NTP focus pref
 +  registry->RegisterBooleanPref(prefs::kNtpFocusContent, false);
++  registry->RegisterBooleanPref(prefs::kOnboardingCompleted, false);
 +}
 +
 +bool ShouldShowLLMChat(PrefService* pref_service) {

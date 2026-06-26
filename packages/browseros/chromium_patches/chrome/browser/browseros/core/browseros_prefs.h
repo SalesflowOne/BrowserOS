@@ -1,9 +1,9 @@
 diff --git a/chrome/browser/browseros/core/browseros_prefs.h b/chrome/browser/browseros/core/browseros_prefs.h
 new file mode 100644
-index 0000000000000..048f60b720339
+index 0000000000000..2dabac573bf82
 --- /dev/null
 +++ b/chrome/browser/browseros/core/browseros_prefs.h
-@@ -0,0 +1,80 @@
+@@ -0,0 +1,82 @@
 +// Copyright 2025 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -44,6 +44,8 @@ index 0000000000000..048f60b720339
 +
 +// Boolean: Focus NTP content instead of omnibox on new tab (default: true)
 +inline constexpr char kNtpFocusContent[] = "browseros.ntp_focus_content";
++
++inline constexpr char kOnboardingCompleted[] = "browseros.onboarding_completed";
 +
 +}  // namespace prefs
 +
