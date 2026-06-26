@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { cp, mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { sql } from 'drizzle-orm'
@@ -59,11 +59,20 @@ describe('audit DB (in-memory test seam)', () => {
   it('prefers packaged migrations from resources when the set is complete', async () => {
     const resourcesDir = await mkdtemp(join(tmpdir(), 'claw-resources-'))
     tempDirs.push(resourcesDir)
-    const sourceMigrations = resolve(import.meta.dir, '../../../drizzle')
     const packagedMigrations = join(resourcesDir, 'db/migrations')
-    await cp(sourceMigrations, packagedMigrations, { recursive: true })
+    await writeMigrationSet(packagedMigrations, '0000_packaged')
 
     expect(resolveMigrationsFolder(resourcesDir)).toBe(packagedMigrations)
+  })
+
+  it('falls back to source migrations when packaged resources are incomplete', async () => {
+    const resourcesDir = await mkdtemp(join(tmpdir(), 'claw-resources-'))
+    tempDirs.push(resourcesDir)
+    const packagedMigrations = join(resourcesDir, 'db/migrations')
+    const sourceMigrations = resolve(import.meta.dir, '../../../drizzle')
+    await writeMigrationJournal(packagedMigrations, '0000_missing')
+
+    expect(resolveMigrationsFolder(resourcesDir)).toBe(sourceMigrations)
   })
 
   it('falls back to source migrations when packaged resources are unavailable', async () => {
@@ -91,3 +100,22 @@ describe('audit DB (in-memory test seam)', () => {
     expect(b.select().from(toolDispatches).all()).toEqual([])
   })
 })
+
+async function writeMigrationSet(
+  migrationsFolder: string,
+  tag: string,
+): Promise<void> {
+  await writeMigrationJournal(migrationsFolder, tag)
+  await writeFile(join(migrationsFolder, `${tag}.sql`), 'SELECT 1;')
+}
+
+async function writeMigrationJournal(
+  migrationsFolder: string,
+  tag: string,
+): Promise<void> {
+  await mkdir(join(migrationsFolder, 'meta'), { recursive: true })
+  await writeFile(
+    join(migrationsFolder, 'meta', '_journal.json'),
+    JSON.stringify({ entries: [{ tag }] }),
+  )
+}

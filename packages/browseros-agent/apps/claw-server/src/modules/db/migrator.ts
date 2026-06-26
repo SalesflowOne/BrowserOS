@@ -31,20 +31,10 @@ export function resolveMigrationsFolder(
 }
 
 function hasCompleteMigrationSet(migrationsFolder: string): boolean {
-  const sourceJournal = readDrizzleJournal(
-    join(sourceMigrationsFolder, 'meta', '_journal.json'),
-  )
   const candidateJournal = readDrizzleJournal(
     join(migrationsFolder, 'meta', '_journal.json'),
   )
-  if (!sourceJournal || !candidateJournal) return false
-
-  const candidateTags = new Set(
-    candidateJournal.entries.map((entry) => entry.tag),
-  )
-  if (!sourceJournal.entries.every((entry) => candidateTags.has(entry.tag))) {
-    return false
-  }
+  if (!candidateJournal) return false
 
   return candidateJournal.entries.every((entry) =>
     existsSync(join(migrationsFolder, `${entry.tag}.sql`)),
