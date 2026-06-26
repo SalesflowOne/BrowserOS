@@ -62,9 +62,10 @@ describe('OnboardingV2 shell', () => {
     expect(html).toContain('Under your control')
   })
 
-  it('renders the macwin chrome bar title', () => {
+  it('does not render the fake macOS window chrome', () => {
     const html = renderApp()
-    expect(html).toContain('Welcome to BrowserOS')
+    expect(html).not.toContain('Welcome to BrowserOS')
+    expect(html).not.toContain('#FF5F57')
   })
 
   it('renders four step dots', () => {
