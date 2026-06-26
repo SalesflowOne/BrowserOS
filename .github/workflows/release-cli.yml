@@ -169,11 +169,59 @@ jobs:
               --notes-file /tmp/release-notes.md \
               ${CLI_DIST}/*
           fi
+
+          if [ "$(gh release view "$TAG" --json isDraft --jq '.isDraft')" = "true" ]; then
+            gh release edit "$TAG" --draft=false
+          fi
         working-directory: ${{ github.workspace }}
+
+      - name: Verify GitHub release assets are public
+        run: |
+          TAG="${{ steps.release.outputs.tag }}"
+          VERSION="${{ steps.release.outputs.version }}"
+          ENCODED_TAG="${TAG//\//%2F}"
+          ASSET="browseros-cli_${VERSION}_linux_amd64.tar.gz"
+          URL="https://github.com/${{ github.repository }}/releases/download/${ENCODED_TAG}/${ASSET}"
+
+          curl -fsSI -L "$URL" >/dev/null
 
       - name: Publish to npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
+          VERSION="${{ steps.release.outputs.version }}"
+          if npm view "browseros-cli@${VERSION}" version >/dev/null 2>&1; then
+            npm dist-tag add "browseros-cli@${VERSION}" latest
+            echo "browseros-cli@${VERSION} already exists on npm; refreshed latest tag and skipped publish."
+            exit 0
+          fi
+
           cd npm
           npm publish --access public
+
+      - name: Verify npm package install
+        env:
+          BROWSEROS_NPM_FORCE: "1"
+        run: |
+          VERSION="${{ steps.release.outputs.version }}"
+          TMP_DIR="$(mktemp -d)"
+          trap 'rm -rf "$TMP_DIR"' EXIT
+
+          cd "$TMP_DIR"
+          npm init -y >/dev/null
+          LATEST="$(npm view browseros-cli dist-tags.latest)"
+          if [ "$LATEST" != "$VERSION" ]; then
+            echo "Expected npm latest to be ${VERSION}, got ${LATEST}" >&2
+            exit 1
+          fi
+
+          for attempt in 1 2 3 4 5; do
+            if npm install browseros-cli@latest; then
+              break
+            fi
+            if [ "$attempt" = "5" ]; then
+              exit 1
+            fi
+            sleep 5
+          done
+          ./node_modules/.bin/browseros-cli --version | grep -F "$VERSION"
