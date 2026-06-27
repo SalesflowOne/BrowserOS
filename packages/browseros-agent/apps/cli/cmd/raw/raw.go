@@ -3,6 +3,7 @@ package raw
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 
 	"browseros-cli/mcp"
@@ -66,15 +67,27 @@ func executeCDP(deps Deps, method string, rawParams string) (*mcp.ToolResult, er
 	return callCDP(deps.NewClient(), pageID, method, params)
 }
 
-func parseParams(raw string) (any, error) {
+func parseParams(raw string) (json.RawMessage, error) {
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.UseNumber()
 	var params any
-	if err := json.Unmarshal([]byte(raw), &params); err != nil {
+	if err := decoder.Decode(&params); err != nil {
 		return nil, fmt.Errorf("invalid JSON params: %w", err)
 	}
-	return params, nil
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("invalid JSON params: multiple JSON values")
+		}
+		return nil, fmt.Errorf("invalid JSON params: %w", err)
+	}
+	if !json.Valid([]byte(raw)) {
+		return nil, fmt.Errorf("invalid JSON params: multiple JSON values")
+	}
+	return json.RawMessage(append([]byte(nil), raw...)), nil
 }
 
-func callCDP(c Client, pageID int, method string, params any) (*mcp.ToolResult, error) {
+func callCDP(c Client, pageID int, method string, params json.RawMessage) (*mcp.ToolResult, error) {
 	env, err := runJS(c, cdpScript(pageID, method, params))
 	if err != nil {
 		if env.Present {
@@ -177,15 +190,18 @@ func stringSlice(raw any) ([]string, error) {
 	return logs, nil
 }
 
-func cdpScript(pageID int, method string, params any) string {
+func cdpScript(pageID int, method string, params json.RawMessage) string {
 	return fmt.Sprintf(`const pageSession = await browser.pages.getSession(%d)
 const method = %s
-const params = %s
+const params = JSON.parse(%s)
 const parts = method.split('.')
 if (parts.length !== 2 || !parts[0] || !parts[1]) {
   throw new Error(`+"`Invalid CDP method \"${method}\"`"+`)
 }
 const [domain, command] = parts
+if (!Object.prototype.hasOwnProperty.call(pageSession.session, domain)) {
+  throw new Error(`+"`Unknown CDP method \"${method}\"`"+`)
+}
 const target = pageSession.session[domain]
 if (!target || typeof target[command] !== 'function') {
   throw new Error(`+"`Unknown CDP method \"${method}\"`"+`)
@@ -193,7 +209,7 @@ if (!target || typeof target[command] !== 'function') {
 return await target[command](params)`,
 		pageID,
 		jsLiteral(method),
-		jsLiteral(params),
+		jsLiteral(string(params)),
 	)
 }
 

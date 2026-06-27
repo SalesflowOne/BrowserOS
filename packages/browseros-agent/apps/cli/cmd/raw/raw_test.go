@@ -1,7 +1,10 @@
 package raw
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
+	"os/exec"
 	"reflect"
 	"strings"
 	"testing"
@@ -65,10 +68,7 @@ func TestExecuteCDPRequiresPageBeforeRun(t *testing.T) {
 
 func TestCallCDPBuildsPageSessionScript(t *testing.T) {
 	client := &fakeClient{result: runResult(true, map[string]any{"result": float64(3)}, []string{"log one"}, "")}
-	params := map[string]any{
-		"expression":    "document.title",
-		"returnByValue": true,
-	}
+	params := mustParseParams(t, `{"expression":"document.title","returnByValue":true}`)
 
 	result, err := callCDP(client, 12, "Runtime.evaluate", params)
 	if err != nil {
@@ -89,8 +89,7 @@ func TestCallCDPBuildsPageSessionScript(t *testing.T) {
 	for _, want := range []string{
 		"browser.pages.getSession(12)",
 		`const method = "Runtime.evaluate"`,
-		`"expression":"document.title"`,
-		`"returnByValue":true`,
+		`JSON.parse("{\"expression\":\"document.title\",\"returnByValue\":true}")`,
 		"pageSession.session[domain]",
 		"target[command](params)",
 	} {
@@ -117,7 +116,7 @@ func TestRunJSPreservesErrorEnvelope(t *testing.T) {
 		err:    errors.New(`error: Unknown CDP method "Nope.nope"`),
 	}
 
-	result, err := callCDP(client, 3, "Nope.nope", map[string]any{})
+	result, err := callCDP(client, 3, "Nope.nope", json.RawMessage(`{}`))
 	if err == nil {
 		t.Fatal("callCDP() error = nil, want run error")
 	}
@@ -160,14 +159,96 @@ func TestParseRunEnvelopeAcceptsValueAndLogs(t *testing.T) {
 }
 
 func TestParseParamsForwardsAnyValidJSON(t *testing.T) {
-	got, err := parseParams(`[{"x":1}, null, true]`)
+	got, err := parseParams(`{"id":9007199254740993123456789,"items":[{"x":1},null,true]}`)
 	if err != nil {
 		t.Fatalf("parseParams() error = %v", err)
 	}
-	want := []any{map[string]any{"x": float64(1)}, nil, true}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("params = %#v, want %#v", got, want)
+	if string(got) != `{"id":9007199254740993123456789,"items":[{"x":1},null,true]}` {
+		t.Fatalf("params = %s, want raw JSON preserved", string(got))
 	}
+
+	code := cdpScript(4, "Runtime.evaluate", got)
+	if !strings.Contains(code, `9007199254740993123456789`) {
+		t.Fatalf("generated code rewrote large integer:\n%s", code)
+	}
+}
+
+func TestCDPScriptRejectsInheritedDomain(t *testing.T) {
+	result, err := runCDPScriptWithNode(t, cdpScript(4, "constructor.keys", json.RawMessage(`{}`)))
+	if err == nil {
+		t.Fatal("script succeeded, want inherited domain rejection")
+	}
+	if result.OK {
+		t.Fatalf("script result OK = true, want false: %+v", result)
+	}
+	if !strings.Contains(result.Message, `Unknown CDP method "constructor.keys"`) {
+		t.Fatalf("message = %q, want unknown method", result.Message)
+	}
+}
+
+func TestCDPScriptAllowsOwnDomainMethod(t *testing.T) {
+	result, err := runCDPScriptWithNode(t, cdpScript(4, "Runtime.evaluate", json.RawMessage(`{"returnByValue":true}`)))
+	if err != nil {
+		t.Fatalf("script error = %v; result = %+v", err, result)
+	}
+	if !result.OK {
+		t.Fatalf("script result OK = false: %+v", result)
+	}
+	if got := result.Value["ok"]; got != true {
+		t.Fatalf("script value ok = %#v, want true", got)
+	}
+}
+
+func mustParseParams(t *testing.T, raw string) json.RawMessage {
+	t.Helper()
+	params, err := parseParams(raw)
+	if err != nil {
+		t.Fatalf("parseParams() error = %v", err)
+	}
+	return params
+}
+
+type nodeScriptResult struct {
+	OK      bool           `json:"ok"`
+	Message string         `json:"message"`
+	Value   map[string]any `json:"value"`
+}
+
+func runCDPScriptWithNode(t *testing.T, code string) (nodeScriptResult, error) {
+	t.Helper()
+
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is not available")
+	}
+
+	codeLiteral, _ := json.Marshal(code)
+	script := fmt.Sprintf(`const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
+const code = %s;
+const browser = {
+  pages: {
+    getSession: async (page) => ({
+      session: {
+        Runtime: {
+          evaluate: async (params) => ({ ok: true, page, params })
+        }
+      }
+    })
+  }
+};
+new AsyncFunction('browser', code)(browser)
+  .then((value) => console.log(JSON.stringify({ ok: true, value })))
+  .catch((err) => {
+    console.log(JSON.stringify({ ok: false, message: err.message }));
+    process.exit(1);
+  });`, string(codeLiteral))
+
+	output, runErr := exec.Command(node, "-e", script).CombinedOutput()
+	var result nodeScriptResult
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("json.Unmarshal(%q) error = %v", string(output), err)
+	}
+	return result, runErr
 }
 
 func runResult(ok bool, value any, logs []string, errText string) *mcp.ToolResult {
