@@ -191,22 +191,14 @@ func stringSlice(raw any) ([]string, error) {
 }
 
 func cdpScript(pageID int, method string, params json.RawMessage) string {
-	return fmt.Sprintf(`const pageSession = await browser.pages.getSession(%d)
+	return fmt.Sprintf(`const page = %d
 const method = %s
-const params = JSON.parse(%s)
+const paramsJson = %s
 const parts = method.split('.')
 if (parts.length !== 2 || !parts[0] || !parts[1]) {
-  throw new Error(`+"`Invalid CDP method \"${method}\"`"+`)
-}
-const [domain, command] = parts
-if (!Object.prototype.hasOwnProperty.call(pageSession.session, domain)) {
   throw new Error(`+"`Unknown CDP method \"${method}\"`"+`)
 }
-const target = pageSession.session[domain]
-if (!target || typeof target[command] !== 'function') {
-  throw new Error(`+"`Unknown CDP method \"${method}\"`"+`)
-}
-return await target[command](params)`,
+return await browser.cdpJsonForPage(page, method, paramsJson)`,
 		pageID,
 		jsLiteral(method),
 		jsLiteral(string(params)),

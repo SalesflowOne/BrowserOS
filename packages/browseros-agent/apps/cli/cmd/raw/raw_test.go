@@ -87,11 +87,10 @@ func TestCallCDPBuildsPageSessionScript(t *testing.T) {
 		t.Fatalf("run code = %#v, want string", call.args["code"])
 	}
 	for _, want := range []string{
-		"browser.pages.getSession(12)",
+		"const page = 12",
 		`const method = "Runtime.evaluate"`,
-		`JSON.parse("{\"expression\":\"document.title\",\"returnByValue\":true}")`,
-		"pageSession.session[domain]",
-		"target[command](params)",
+		`const paramsJson = "{\"expression\":\"document.title\",\"returnByValue\":true}"`,
+		"browser.cdpJsonForPage(page, method, paramsJson)",
 	} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("generated code missing %q in:\n%s", want, code)
@@ -171,6 +170,9 @@ func TestParseParamsForwardsAnyValidJSON(t *testing.T) {
 	if !strings.Contains(code, `9007199254740993123456789`) {
 		t.Fatalf("generated code rewrote large integer:\n%s", code)
 	}
+	if strings.Contains(code, "JSON.parse") {
+		t.Fatalf("generated code parses params before forwarding:\n%s", code)
+	}
 }
 
 func TestCDPScriptRejectsInheritedDomain(t *testing.T) {
@@ -226,14 +228,11 @@ func runCDPScriptWithNode(t *testing.T, code string) (nodeScriptResult, error) {
 	script := fmt.Sprintf(`const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
 const code = %s;
 const browser = {
-  pages: {
-    getSession: async (page) => ({
-      session: {
-        Runtime: {
-          evaluate: async (params) => ({ ok: true, page, params })
-        }
-      }
-    })
+  cdpJsonForPage: async (page, method, paramsJson) => {
+    if (method === 'constructor.keys') {
+      throw new Error('Unknown CDP method "constructor.keys"');
+    }
+    return { ok: true, page, method, paramsJson };
   }
 };
 new AsyncFunction('browser', code)(browser)
