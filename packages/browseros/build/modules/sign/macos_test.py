@@ -51,17 +51,30 @@ class MacOSSignDiscoveryTest(unittest.TestCase):
             _write_exec(server_bin / "third_party" / "codex")
             _write_exec(server_bin / "third_party" / "claude")
             _write_exec(server_bin / "third_party" / "lima" / "bin" / "limactl")
+            claw_bin = (
+                app_path
+                / "Contents"
+                / "Resources"
+                / "BrowserOSClawServer"
+                / "default"
+                / "resources"
+                / "bin"
+            )
+            _write_exec(claw_bin / "browseros-claw-server")
+            _write_exec(claw_bin / "not-registered")
 
             executables = set(find_components_to_sign(app_path)["executables"])
 
             self.assertIn(server_bin / "browseros_server", executables)
             self.assertIn(server_bin / "third_party" / "rg", executables)
+            self.assertIn(claw_bin / "browseros-claw-server", executables)
             self.assertNotIn(server_bin / "third_party" / "codex", executables)
             self.assertNotIn(server_bin / "third_party" / "claude", executables)
             self.assertNotIn(
                 server_bin / "third_party" / "lima" / "bin" / "limactl",
                 executables,
             )
+            self.assertNotIn(claw_bin / "not-registered", executables)
 
 
 class VerifyServerResourcesBundleTest(unittest.TestCase):
@@ -117,6 +130,29 @@ class VerifyServerResourcesBundleTest(unittest.TestCase):
                 verify_server_resources_bundle(app_path, chromium_src), []
             )
 
+    def test_reports_claw_bundle_root_for_missing_resource(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            chromium_src = Path(tmp) / "src"
+            app_path = Path(tmp) / "out" / "BrowserOS.app"
+            source_root = (
+                chromium_src
+                / "chrome"
+                / "browser"
+                / "browseros"
+                / "claw_server"
+                / "resources"
+            )
+            _write_exec(source_root / "bin" / "browseros-claw-server")
+
+            problems = verify_server_resources_bundle(app_path, chromium_src)
+
+            self.assertEqual(len(problems), 1)
+            self.assertIn(
+                "Contents/Resources/BrowserOSClawServer/default/resources",
+                problems[0],
+            )
+            self.assertIn("bin/browseros-claw-server", problems[0])
+
     def test_skips_when_source_dir_absent(self):
         with tempfile.TemporaryDirectory() as tmp:
             chromium_src, app_path, _, bundle_root = self._setup(tmp)
@@ -163,6 +199,16 @@ class VerifyServerResourcesBundleTest(unittest.TestCase):
         }
 
         self.assertEqual(destinations, {SERVER_RESOURCES_SOURCE_REL.as_posix()})
+
+        claw_destinations = {
+            op["destination"]
+            for op in config["copy_operations"]
+            if op["name"].startswith("BrowserOS Claw Server Resources")
+        }
+        self.assertEqual(
+            claw_destinations,
+            {"chrome/browser/browseros/claw_server/resources"},
+        )
 
 
 class SignModuleGuardWiringTest(unittest.TestCase):

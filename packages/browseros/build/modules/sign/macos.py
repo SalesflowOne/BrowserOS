@@ -11,7 +11,11 @@ from typing import Optional, List, Dict, Tuple
 from ...common.module import CommandModule, ValidationError
 from ...common.context import Context
 from ...common.env import EnvConfig
-from ...common.server_binaries import macos_sign_spec_for
+from ...common.server_binaries import (
+    SERVER_BUNDLES,
+    ServerBundle,
+    macos_sign_spec_for,
+)
 from ...common.utils import (
     run_command as utils_run_command,
     log_info,
@@ -37,38 +41,34 @@ def get_browseros_server_binary_info(component_path: Path) -> Optional[Dict[str,
     return info
 
 
-SERVER_RESOURCES_SOURCE_REL = Path("chrome/browser/browseros/server/resources")
-SERVER_RESOURCES_BUNDLE_REL = Path(
-    "Contents/Resources/BrowserOSServer/default/resources"
-)
+SERVER_RESOURCES_SOURCE_REL = SERVER_BUNDLES[0].chromium_resources_root
+SERVER_RESOURCES_BUNDLE_REL = SERVER_BUNDLES[0].macos_bundle_resources_root
 # Finder droppings in the staged tree must not fail the nightly sign.
 SERVER_RESOURCES_JUNK_FILES = {".DS_Store"}
 
 
 def verify_server_resources_bundle(app_path: Path, chromium_src: Path) -> List[str]:
-    """Check the app bundle ships exactly what the build staged for the server.
+    """Check bundled server resources match what the build staged."""
+    problems: List[str] = []
+    for bundle in SERVER_BUNDLES:
+        problems.extend(_verify_server_resource_bundle(bundle, app_path, chromium_src))
+    return problems
 
-    Guards against signing/packaging a stale or incomplete bundle (a leftover
-    out/Default_universal app once shipped for two weeks unnoticed): every file
-    staged under chrome/browser/browseros/server/resources must exist in the
-    bundle with executable bits intact. Returns problem strings; empty = OK.
-    Bundle-only extras and a missing source tree (sign-only flows) just warn.
 
-    Deliberately compares paths + exec bits only, never content/size: universal
-    bundles hold lipo-fat binaries whose bytes differ from the thin staged
-    tree, so same-name content staleness is out of this guard's reach.
-    """
-    source_root = chromium_src / SERVER_RESOURCES_SOURCE_REL
-    bundle_root = app_path / SERVER_RESOURCES_BUNDLE_REL
-
+def _verify_server_resource_bundle(
+    bundle: ServerBundle, app_path: Path, chromium_src: Path
+) -> List[str]:
+    source_root = chromium_src / bundle.chromium_resources_root
+    bundle_root = app_path / bundle.macos_bundle_resources_root
     if not source_root.is_dir():
         log_warning(
-            f"Staged server resources not found at {source_root} - "
+            f"Staged {bundle.name} resources not found at {source_root} - "
             "skipping bundle verification"
         )
         return []
 
     problems: List[str] = []
+    bundle_label = bundle.macos_bundle_resources_root.as_posix()
     staged = set()
     for source_file in sorted(source_root.rglob("*")):
         if not source_file.is_file() or source_file.name in SERVER_RESOURCES_JUNK_FILES:
@@ -77,10 +77,14 @@ def verify_server_resources_bundle(app_path: Path, chromium_src: Path) -> List[s
         staged.add(rel)
         bundle_file = bundle_root / rel
         if not bundle_file.is_file():
-            problems.append(f"missing from app bundle: {rel.as_posix()}")
+            problems.append(
+                f"{bundle_label}: missing from app bundle: {rel.as_posix()}"
+            )
             continue
         if os.access(source_file, os.X_OK) and not os.access(bundle_file, os.X_OK):
-            problems.append(f"lost executable bit in app bundle: {rel.as_posix()}")
+            problems.append(
+                f"{bundle_label}: lost executable bit in app bundle: {rel.as_posix()}"
+            )
 
     if bundle_root.is_dir():
         for bundle_file in sorted(bundle_root.rglob("*")):
@@ -92,7 +96,7 @@ def verify_server_resources_bundle(app_path: Path, chromium_src: Path) -> List[s
             rel = bundle_file.relative_to(bundle_root)
             if rel not in staged:
                 log_warning(
-                    f"App bundle has server file not in staged resources "
+                    f"App bundle has {bundle.name} file not in staged resources "
                     f"(stale?): {rel.as_posix()}"
                 )
 
@@ -347,10 +351,11 @@ def find_components_to_sign(
         if nested_app not in components["helpers"]:
             components["apps"].append(nested_app)
 
-    # Find BrowserOS Server binaries
-    browseros_server_dir = join_paths(app_path, "Contents", "Resources", "BrowserOSServer")
-    if browseros_server_dir.exists():
-        for item in browseros_server_dir.rglob("*"):
+    for bundle in SERVER_BUNDLES:
+        bundle_root = app_path / bundle.macos_bundle_resources_root
+        if not bundle_root.exists():
+            continue
+        for item in bundle_root.rglob("*"):
             if (
                 item.is_file()
                 and not item.suffix
