@@ -1,5 +1,5 @@
 diff --git a/chrome/browser/ui/toolbar/pinned_toolbar/pinned_toolbar_actions_model.h b/chrome/browser/ui/toolbar/pinned_toolbar/pinned_toolbar_actions_model.h
-index 9f7cbd0272c0a..c9be4ae585551 100644
+index 9f7cbd0272c0a..84b696bf47bce 100644
 --- a/chrome/browser/ui/toolbar/pinned_toolbar/pinned_toolbar_actions_model.h
 +++ b/chrome/browser/ui/toolbar/pinned_toolbar/pinned_toolbar_actions_model.h
 @@ -55,6 +55,9 @@ class PinnedToolbarActionsModel : public KeyedService {
@@ -28,7 +28,7 @@ index 9f7cbd0272c0a..c9be4ae585551 100644
  
    void UpdatePref(const std::vector<actions::ActionId>& updated_list);
  
-+  // Called when a BrowserOS visibility pref changes (e.g., kShowLLMChat).
++  // Called when a BrowserOS visibility pref changes.
 +  // Re-evaluates which actions should be pinned and notifies observers.
 +  void OnBrowserOSVisibilityPrefChanged();
 +

@@ -1,5 +1,5 @@
 diff --git a/chrome/browser/ui/toolbar/pinned_toolbar/pinned_toolbar_actions_model.cc b/chrome/browser/ui/toolbar/pinned_toolbar/pinned_toolbar_actions_model.cc
-index 0177d0e3bda7c..3be84e565fb7b 100644
+index 0177d0e3bda7c..dbdd029d1ffb4 100644
 --- a/chrome/browser/ui/toolbar/pinned_toolbar/pinned_toolbar_actions_model.cc
 +++ b/chrome/browser/ui/toolbar/pinned_toolbar/pinned_toolbar_actions_model.cc
 @@ -16,6 +16,8 @@
@@ -11,13 +11,18 @@ index 0177d0e3bda7c..3be84e565fb7b 100644
  #include "chrome/browser/profiles/profile.h"
  #include "chrome/browser/ui/actions/chrome_action_id.h"
  #include "chrome/browser/ui/tab_search_feature.h"
-@@ -37,6 +39,18 @@ PinnedToolbarActionsModel::PinnedToolbarActionsModel(Profile* profile)
+@@ -37,6 +39,24 @@ PinnedToolbarActionsModel::PinnedToolbarActionsModel(Profile* profile)
        base::BindRepeating(&PinnedToolbarActionsModel::UpdatePinnedActionIds,
                            base::Unretained(this)));
  
 +  // Observe BrowserOS visibility prefs for reactive updates.
 +  pref_change_registrar_.Add(
 +      browseros::prefs::kShowLLMChat,
++      base::BindRepeating(
++          &PinnedToolbarActionsModel::OnBrowserOSVisibilityPrefChanged,
++          base::Unretained(this)));
++  pref_change_registrar_.Add(
++      browseros::prefs::kShowAssistant,
 +      base::BindRepeating(
 +          &PinnedToolbarActionsModel::OnBrowserOSVisibilityPrefChanged,
 +          base::Unretained(this)));
@@ -29,8 +34,9 @@ index 0177d0e3bda7c..3be84e565fb7b 100644
 +
    // Initialize the model with the current state of the kPinnedActions pref.
    UpdatePinnedActionIds();
++  EnsureAlwaysPinnedActions();
  }
-@@ -239,8 +253,11 @@ void PinnedToolbarActionsModel::MaybeMigrateExistingPinnedStates() {
+@@ -239,8 +258,11 @@ void PinnedToolbarActionsModel::MaybeMigrateExistingPinnedStates() {
    if (!CanUpdate()) {
      return;
    }
@@ -43,7 +49,7 @@ index 0177d0e3bda7c..3be84e565fb7b 100644
      pref_service_->SetBoolean(prefs::kPinnedChromeLabsMigrationComplete, true);
    }
    if (features::HasTabSearchToolbarButton() &&
-@@ -256,6 +273,36 @@ void PinnedToolbarActionsModel::MaybeMigrateExistingPinnedStates() {
+@@ -256,6 +278,36 @@ void PinnedToolbarActionsModel::MaybeMigrateExistingPinnedStates() {
    }
  }
  
@@ -80,7 +86,7 @@ index 0177d0e3bda7c..3be84e565fb7b 100644
  const std::vector<actions::ActionId>&
  PinnedToolbarActionsModel::PinnedActionIds() const {
    return pinned_action_ids_;
-@@ -274,3 +321,20 @@ void PinnedToolbarActionsModel::UpdatePref(
+@@ -274,3 +326,20 @@ void PinnedToolbarActionsModel::UpdatePref(
      list_of_values.Append(id_string.value());
    }
  }

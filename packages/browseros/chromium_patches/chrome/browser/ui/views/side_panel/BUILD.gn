@@ -1,5 +1,5 @@
 diff --git a/chrome/browser/ui/views/side_panel/BUILD.gn b/chrome/browser/ui/views/side_panel/BUILD.gn
-index 555a27ca0c171..42afed39a3469 100644
+index 555a27ca0c171..39c81946c74d4 100644
 --- a/chrome/browser/ui/views/side_panel/BUILD.gn
 +++ b/chrome/browser/ui/views/side_panel/BUILD.gn
 @@ -56,8 +56,14 @@ source_set("side_panel") {
@@ -17,10 +17,11 @@ index 555a27ca0c171..42afed39a3469 100644
    ]
    public_deps = [
      "//base",
-@@ -76,6 +82,7 @@ source_set("side_panel") {
+@@ -76,6 +82,8 @@ source_set("side_panel") {
      "//chrome/browser/ui/webui/side_panel/customize_chrome",
      "//chrome/common",
      "//chrome/common/read_anything:mojo_bindings",
++    "//chrome/browser/browseros/core:prefs",
 +    "//chrome/browser/browseros/metrics",
      "//components/omnibox/browser",
      "//components/prefs",

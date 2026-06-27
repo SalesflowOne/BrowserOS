@@ -1,15 +1,17 @@
 diff --git a/chrome/browser/browseros/core/browseros_prefs.h b/chrome/browser/browseros/core/browseros_prefs.h
 new file mode 100644
-index 0000000000000..2dabac573bf82
+index 0000000000000..fe576bc18a041
 --- /dev/null
 +++ b/chrome/browser/browseros/core/browseros_prefs.h
-@@ -0,0 +1,82 @@
+@@ -0,0 +1,95 @@
 +// Copyright 2025 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
 +#ifndef CHROME_BROWSER_BROWSEROS_CORE_BROWSEROS_PREFS_H_
 +#define CHROME_BROWSER_BROWSEROS_CORE_BROWSEROS_PREFS_H_
++
++#include <string>
 +
 +#include "components/prefs/pref_service.h"
 +#include "ui/actions/action_id.h"
@@ -25,6 +27,9 @@ index 0000000000000..2dabac573bf82
 +// Toolbar visibility prefs
 +// Boolean: Show LLM Chat in toolbar (default: true)
 +inline constexpr char kShowLLMChat[] = "browseros.show_llm_chat";
++
++// Boolean: Show Assistant in toolbar (default: true)
++inline constexpr char kShowAssistant[] = "browseros.show_assistant";
 +
 +// Boolean: Show labels on BrowserOS toolbar actions (default: true)
 +inline constexpr char kShowToolbarLabels[] = "browseros.show_toolbar_labels";
@@ -55,6 +60,9 @@ index 0000000000000..2dabac573bf82
 +// Check if LLM Chat should be shown in toolbar.
 +bool ShouldShowLLMChat(PrefService* pref_service);
 +
++// Check if Assistant should be shown in toolbar.
++bool ShouldShowAssistant(PrefService* pref_service);
++
 +// Check if toolbar labels should be shown for BrowserOS actions.
 +bool ShouldShowToolbarLabels(PrefService* pref_service);
 +
@@ -72,10 +80,15 @@ index 0000000000000..2dabac573bf82
 +
 +// Check if a toolbar action should be shown based on its visibility pref.
 +// Returns true if:
-+//   - Action has no visibility pref (e.g., Assistant - always visible)
++//   - Action has no visibility pref
 +//   - Action's visibility pref is true
 +// Returns false if action's visibility pref is false.
 +bool ShouldShowToolbarAction(actions::ActionId id, PrefService* pref_service);
++
++// Check if a BrowserOS extension should be pinned in the toolbar based on its
++// extension metadata and visibility pref.
++bool ShouldPinBrowserOSExtension(const std::string& extension_id,
++                                 PrefService* pref_service);
 +
 +// Check if NTP content should receive focus instead of the omnibox.
 +bool IsNtpFocusContentEnabled(PrefService* pref_service);

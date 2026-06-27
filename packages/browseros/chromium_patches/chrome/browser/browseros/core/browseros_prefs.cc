@@ -1,15 +1,16 @@
 diff --git a/chrome/browser/browseros/core/browseros_prefs.cc b/chrome/browser/browseros/core/browseros_prefs.cc
 new file mode 100644
-index 0000000000000..52f183b59832c
+index 0000000000000..c47c0fad94dda
 --- /dev/null
 +++ b/chrome/browser/browseros/core/browseros_prefs.cc
-@@ -0,0 +1,90 @@
+@@ -0,0 +1,106 @@
 +// Copyright 2025 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
 +#include "chrome/browser/browseros/core/browseros_prefs.h"
 +
++#include "chrome/browser/browseros/core/browseros_constants.h"
 +#include "chrome/browser/ui/actions/chrome_action_id.h"
 +#include "chrome/common/pref_names.h"
 +#include "components/pref_registry/pref_registry_syncable.h"
@@ -21,6 +22,7 @@ index 0000000000000..52f183b59832c
 +void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
 +  // Toolbar visibility prefs
 +  registry->RegisterBooleanPref(prefs::kShowLLMChat, true);
++  registry->RegisterBooleanPref(prefs::kShowAssistant, true);
 +  registry->RegisterBooleanPref(prefs::kShowToolbarLabels, true);
 +
 +  // Vertical tabs pref
@@ -38,6 +40,10 @@ index 0000000000000..52f183b59832c
 +
 +bool ShouldShowLLMChat(PrefService* pref_service) {
 +  return pref_service->GetBoolean(prefs::kShowLLMChat);
++}
++
++bool ShouldShowAssistant(PrefService* pref_service) {
++  return pref_service->GetBoolean(prefs::kShowAssistant);
 +}
 +
 +bool ShouldShowToolbarLabels(PrefService* pref_service) {
@@ -80,6 +86,8 @@ index 0000000000000..52f183b59832c
 +  switch (id) {
 +    case kActionSidePanelShowThirdPartyLlm:
 +      return prefs::kShowLLMChat;
++    case kActionBrowserOSAgent:
++      return prefs::kShowAssistant;
 +    default:
 +      return nullptr;
 +  }
@@ -91,6 +99,14 @@ index 0000000000000..52f183b59832c
 +    return true;  // No pref means always show
 +  }
 +  return pref_service->GetBoolean(pref_key);
++}
++
++bool ShouldPinBrowserOSExtension(const std::string& extension_id,
++                                 PrefService* pref_service) {
++  if (extension_id == kAgentExtensionId) {
++    return ShouldShowAssistant(pref_service);
++  }
++  return IsBrowserOSPinnedExtension(extension_id);
 +}
 +
 +}  // namespace browseros

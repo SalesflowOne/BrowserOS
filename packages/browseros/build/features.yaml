@@ -326,6 +326,7 @@ features:
       - chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn
       - chrome/browser/ui/toolbar/pinned_toolbar/pinned_toolbar_actions_model.cc
       - chrome/browser/ui/toolbar/pinned_toolbar/pinned_toolbar_actions_model.h
+      - chrome/browser/ui/toolbar/pinned_toolbar/pinned_toolbar_actions_model_browsertest.cc
       - chrome/browser/ui/toolbar/toolbar_pref_names.h
       - chrome/browser/ui/views/toolbar/BUILD.gn
       - chrome/browser/ui/views/toolbar/pinned_action_toolbar_button.h
@@ -338,6 +339,7 @@ features:
     files:
       - chrome/browser/extensions/extension_context_menu_model.cc
       - chrome/browser/extensions/extension_management.cc
+      - chrome/browser/ui/toolbar/BUILD.gn
       - chrome/browser/ui/toolbar/toolbar_actions_model.cc
       - chrome/browser/ui/views/side_panel/extensions/extension_side_panel_manager.cc
       - chrome/browser/ui/side_panel/side_panel_action_callback.cc
