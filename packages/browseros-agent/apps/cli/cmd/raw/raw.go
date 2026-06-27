@@ -34,10 +34,11 @@ type codedError interface {
 }
 
 type runEnvelope struct {
-	OK    bool
-	Value any
-	Logs  []string
-	Error string
+	OK      bool
+	Value   any
+	Logs    []string
+	Error   string
+	Present bool
 }
 
 func executeCDP(deps Deps, method string, rawParams string) (*mcp.ToolResult, error) {
@@ -76,6 +77,9 @@ func parseParams(raw string) (any, error) {
 func callCDP(c Client, pageID int, method string, params any) (*mcp.ToolResult, error) {
 	env, err := runJS(c, cdpScript(pageID, method, params))
 	if err != nil {
+		if env.Present {
+			return cdpToolResult(pageID, method, env), commandError{code: 1, err: err}
+		}
 		return nil, commandError{code: 1, err: err}
 	}
 	return cdpToolResult(pageID, method, env), nil
@@ -100,7 +104,7 @@ func runJS(c Client, code string) (runEnvelope, error) {
 
 	if !env.OK {
 		if env.Error != "" {
-			return env, fmt.Errorf("%s", env.Error)
+			return env, fmt.Errorf("%s", errorTextWithLogs(env.Error, env.Logs))
 		}
 		if callErr != nil {
 			return env, callErr
@@ -109,7 +113,7 @@ func runJS(c Client, code string) (runEnvelope, error) {
 		if text == "" {
 			text = "run failed"
 		}
-		return env, fmt.Errorf("%s", text)
+		return env, fmt.Errorf("%s", errorTextWithLogs(text, env.Logs))
 	}
 
 	if callErr != nil {
@@ -143,10 +147,11 @@ func parseRunEnvelope(result *mcp.ToolResult) (runEnvelope, error) {
 	}
 
 	return runEnvelope{
-		OK:    ok,
-		Value: result.StructuredContent["value"],
-		Logs:  logs,
-		Error: errorText,
+		OK:      ok,
+		Value:   result.StructuredContent["value"],
+		Logs:    logs,
+		Error:   errorText,
+		Present: true,
 	}, nil
 }
 
@@ -193,20 +198,39 @@ return await target[command](params)`,
 }
 
 func cdpToolResult(pageID int, method string, env runEnvelope) *mcp.ToolResult {
+	structured := map[string]any{
+		"ok":     env.OK,
+		"page":   pageID,
+		"method": method,
+		"result": env.Value,
+		"logs":   env.Logs,
+	}
+
 	text := "ok"
-	if env.Value != nil {
+	isError := !env.OK
+	if isError {
+		errText := strings.TrimSpace(env.Error)
+		if errText == "" {
+			errText = "run failed"
+		}
+		structured["error"] = errText
+		text = "error: " + errorTextWithLogs(errText, env.Logs)
+	} else if env.Value != nil {
 		text = fmt.Sprintf("return: %s", safeStringify(env.Value))
 	}
+
 	return &mcp.ToolResult{
-		Content: []mcp.ContentItem{{Type: "text", Text: text}},
-		StructuredContent: map[string]any{
-			"ok":     true,
-			"page":   pageID,
-			"method": method,
-			"result": env.Value,
-			"logs":   env.Logs,
-		},
+		Content:           []mcp.ContentItem{{Type: "text", Text: text}},
+		StructuredContent: structured,
+		IsError:           isError,
 	}
+}
+
+func errorTextWithLogs(message string, logs []string) string {
+	if len(logs) == 0 {
+		return message
+	}
+	return message + "\nlogs:\n" + strings.Join(logs, "\n")
 }
 
 func jsLiteral(v any) string {

@@ -117,15 +117,35 @@ func TestRunJSPreservesErrorEnvelope(t *testing.T) {
 		err:    errors.New(`error: Unknown CDP method "Nope.nope"`),
 	}
 
-	_, err := callCDP(client, 3, "Nope.nope", map[string]any{})
+	result, err := callCDP(client, 3, "Nope.nope", map[string]any{})
 	if err == nil {
 		t.Fatal("callCDP() error = nil, want run error")
 	}
 	if !strings.Contains(err.Error(), `Unknown CDP method "Nope.nope"`) {
 		t.Fatalf("error = %q, want real CDP method error", err)
 	}
+	if !strings.Contains(err.Error(), "before failure") {
+		t.Fatalf("error = %q, want captured logs", err)
+	}
 	if strings.Contains(err.Error(), "structured value") || strings.Contains(err.Error(), "missing") {
 		t.Fatalf("error = %q, want protocol/server error, not missing-value error", err)
+	}
+	if result == nil {
+		t.Fatal("result = nil, want structured error result")
+	}
+	wantStructured := map[string]any{
+		"ok":     false,
+		"page":   3,
+		"method": "Nope.nope",
+		"result": nil,
+		"logs":   []string{"before failure"},
+		"error":  `Unknown CDP method "Nope.nope"`,
+	}
+	if !reflect.DeepEqual(result.StructuredContent, wantStructured) {
+		t.Fatalf("structured = %#v, want %#v", result.StructuredContent, wantStructured)
+	}
+	if !result.IsError {
+		t.Fatal("result.IsError = false, want true")
 	}
 }
 

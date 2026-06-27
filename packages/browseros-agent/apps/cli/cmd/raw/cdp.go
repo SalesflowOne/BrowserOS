@@ -24,6 +24,9 @@ func newCDPCommand(deps Deps) *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			result, err := executeCDP(deps, args[0], args[1])
 			if err != nil {
+				if result != nil && deps.JSONOutput != nil && deps.JSONOutput() {
+					output.JSON(result)
+				}
 				output.Error(err.Error(), errorCode(err))
 			}
 			if deps.JSONOutput != nil && deps.JSONOutput() {
