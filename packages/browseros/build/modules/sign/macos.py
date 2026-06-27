@@ -69,6 +69,13 @@ def _verify_server_resource_bundle(
 
     problems: List[str] = []
     bundle_label = bundle.macos_bundle_resources_root.as_posix()
+    if not bundle_root.is_dir() and not bundle.required_in_chromium_output:
+        log_warning(
+            f"{bundle.name} bundle resources not found at {bundle_root} - "
+            "skipping optional bundle verification"
+        )
+        return []
+
     staged = set()
     for source_file in sorted(source_root.rglob("*")):
         if not source_file.is_file() or source_file.name in SERVER_RESOURCES_JUNK_FILES:

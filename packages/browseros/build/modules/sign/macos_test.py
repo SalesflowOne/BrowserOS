@@ -130,7 +130,7 @@ class VerifyServerResourcesBundleTest(unittest.TestCase):
                 verify_server_resources_bundle(app_path, chromium_src), []
             )
 
-    def test_reports_claw_bundle_root_for_missing_resource(self):
+    def test_skips_claw_resource_verification_until_bundle_root_exists(self):
         with tempfile.TemporaryDirectory() as tmp:
             chromium_src = Path(tmp) / "src"
             app_path = Path(tmp) / "out" / "BrowserOS.app"
@@ -143,6 +143,33 @@ class VerifyServerResourcesBundleTest(unittest.TestCase):
                 / "resources"
             )
             _write_exec(source_root / "bin" / "browseros-claw-server")
+
+            problems = verify_server_resources_bundle(app_path, chromium_src)
+
+            self.assertEqual(problems, [])
+
+    def test_reports_claw_bundle_root_for_missing_resource_once_packaged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            chromium_src = Path(tmp) / "src"
+            app_path = Path(tmp) / "out" / "BrowserOS.app"
+            source_root = (
+                chromium_src
+                / "chrome"
+                / "browser"
+                / "browseros"
+                / "claw_server"
+                / "resources"
+            )
+            bundle_root = (
+                app_path
+                / "Contents"
+                / "Resources"
+                / "BrowserOSClawServer"
+                / "default"
+                / "resources"
+            )
+            _write_exec(source_root / "bin" / "browseros-claw-server")
+            bundle_root.mkdir(parents=True)
 
             problems = verify_server_resources_bundle(app_path, chromium_src)
 

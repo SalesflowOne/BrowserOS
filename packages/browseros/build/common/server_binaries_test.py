@@ -46,6 +46,8 @@ class MacosServerBinariesTest(unittest.TestCase):
             BROWSEROS_CLAW_SERVER_BUNDLE.macos_bundle_resources_root,
             Path("Contents/Resources/BrowserOSClawServer/default/resources"),
         )
+        self.assertTrue(BROWSEROS_SERVER_BUNDLE.required_in_chromium_output)
+        self.assertFalse(BROWSEROS_CLAW_SERVER_BUNDLE.required_in_chromium_output)
 
     def test_every_entry_has_identifier_and_options(self):
         for stem, spec in MACOS_SERVER_BINARIES.items():

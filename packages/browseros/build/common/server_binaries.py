@@ -26,6 +26,7 @@ class ServerBundle:
     windows_bundle_resources_root: Path
     macos_binaries: Dict[str, SignSpec]
     windows_binaries: Tuple[str, ...]
+    required_in_chromium_output: bool = True
 
 
 BROWSEROS_SERVER_MACOS_BINARIES: Dict[str, SignSpec] = {
@@ -67,6 +68,7 @@ BROWSEROS_CLAW_SERVER_BUNDLE = ServerBundle(
     windows_bundle_resources_root=Path("BrowserOSClawServer/default/resources"),
     macos_binaries=BROWSEROS_CLAW_SERVER_MACOS_BINARIES,
     windows_binaries=("browseros-claw-server.exe",),
+    required_in_chromium_output=False,
 )
 
 SERVER_BUNDLES = (
