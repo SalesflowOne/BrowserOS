@@ -25,7 +25,7 @@ class ExtensionInfo(NamedTuple):
 REQUIRED_BUNDLED_EXTENSION_IDS: Dict[str, str] = {
     "adlpneommgkgeanpaekgoaolcpncohkf": "BrowserOS bug reporter",
     "bflpfmnmnokmjhmgnolecpppdbdophmk": "BrowserOS agent",
-    "pjimfkbpehlcllblajnpfamdfjhhlgkc": "BrowserOS Claw app",
+    # "pjimfkbpehlcllblajnpfamdfjhhlgkc": "BrowserOS Claw app",
 }
 
 
@@ -67,7 +67,9 @@ class BundledExtensionsModule(CommandModule):
 
     def _get_output_dir(self, ctx: Context) -> Path:
         """Get the bundled extensions output directory in Chromium source"""
-        return ctx.chromium_src / "chrome" / "browser" / "browseros" / "bundled_extensions"
+        return (
+            ctx.chromium_src / "chrome" / "browser" / "browseros" / "bundled_extensions"
+        )
 
     def _fetch_and_parse_manifest(self, url: str) -> List[ExtensionInfo]:
         """Fetch XML manifest and parse extension information"""
@@ -112,17 +114,17 @@ class BundledExtensionsModule(CommandModule):
             codebase = updatecheck.get("codebase")
 
             if version and codebase:
-                extensions.append(ExtensionInfo(
-                    id=app_id,
-                    version=version,
-                    codebase=codebase,
-                ))
+                extensions.append(
+                    ExtensionInfo(
+                        id=app_id,
+                        version=version,
+                        codebase=codebase,
+                    )
+                )
 
         return extensions
 
-    def _validate_required_extensions(
-        self, extensions: List[ExtensionInfo]
-    ) -> None:
+    def _validate_required_extensions(self, extensions: List[ExtensionInfo]) -> None:
         """Fail if the release manifest omits a required bundled extension."""
         extension_ids = {ext.id for ext in extensions}
         missing = [
@@ -155,14 +157,14 @@ class BundledExtensionsModule(CommandModule):
                     f.write(chunk)
                     downloaded += len(chunk)
                     if total_size:
-                        percent = (downloaded / total_size * 100)
-                        sys.stdout.write(
-                            f"\r    {dest_filename}: {percent:.0f}%  "
-                        )
+                        percent = downloaded / total_size * 100
+                        sys.stdout.write(f"\r    {dest_filename}: {percent:.0f}%  ")
                         sys.stdout.flush()
 
             if total_size:
-                sys.stdout.write(f"\r    {dest_filename}: done ({total_size / 1024:.0f} KB)\n")
+                sys.stdout.write(
+                    f"\r    {dest_filename}: done ({total_size / 1024:.0f} KB)\n"
+                )
             else:
                 sys.stdout.write(f"\r    {dest_filename}: done\n")
             sys.stdout.flush()
