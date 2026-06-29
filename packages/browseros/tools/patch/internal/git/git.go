@@ -100,6 +100,7 @@ func IsDirtyPaths(ctx context.Context, dir string, pathspecs []string) (bool, er
 	return strings.TrimSpace(result.Stdout) != "", nil
 }
 
+// StatusPorcelain returns tracked and untracked working-tree changes.
 func StatusPorcelain(ctx context.Context, dir string, pathspecs []string) ([]FileChange, error) {
 	args := []string{"-c", "core.quotepath=false", "status", "--porcelain", "--untracked-files=all"}
 	if len(pathspecs) > 0 {
@@ -134,6 +135,7 @@ func StatusPorcelain(ctx context.Context, dir string, pathspecs []string) ([]Fil
 	return changes, nil
 }
 
+// CommitPaths creates a commit scoped to paths and returns the new HEAD.
 func CommitPaths(ctx context.Context, dir string, message string, paths []string) (string, error) {
 	args := []string{"commit", "-m", message}
 	if len(paths) > 0 {

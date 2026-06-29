@@ -72,6 +72,8 @@ func Annotate(ctx context.Context, opts AnnotateOptions) (*AnnotateResult, error
 		Workspace:    opts.Workspace.Name,
 		FeaturesFile: featuresFile,
 		Feature:      opts.Feature,
+		Committed:    []AnnotateCommittedFeature{},
+		Skipped:      []AnnotateSkippedFeature{},
 	}
 	for _, feature := range features {
 		result.Processed++
