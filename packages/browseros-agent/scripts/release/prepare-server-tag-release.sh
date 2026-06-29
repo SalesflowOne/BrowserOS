@@ -149,12 +149,10 @@ fi
 
 git -C "$agent_root" add apps/server/package.json bun.lock
 git -C "$agent_root" commit -m "chore: bump server version to $version"
-git -C "$agent_root" push "$remote" "HEAD:refs/heads/$default_branch"
-
-git -C "$agent_root" tag -d "$tag" >/dev/null
-git -C "$agent_root" push "$remote" ":refs/tags/$tag"
-git -C "$agent_root" tag -a "$tag" -m "agent-server v$version"
-git -C "$agent_root" push "$remote" "$tag"
+git -C "$agent_root" tag -f -a "$tag" -m "agent-server v$version"
+git -C "$agent_root" push --atomic "$remote" \
+  "HEAD:refs/heads/$default_branch" \
+  "+refs/tags/$tag:refs/tags/$tag"
 git -C "$agent_root" fetch "$remote" "$default_branch:refs/remotes/$remote/$default_branch" --no-tags
 
 run_resolver
