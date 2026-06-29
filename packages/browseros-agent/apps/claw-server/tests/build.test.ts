@@ -2,7 +2,10 @@ import { afterAll, describe, it } from 'bun:test'
 import assert from 'node:assert'
 import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { loadBuildConfig } from '../../../packages/build-server-tools/src'
+import {
+  loadBuildConfig,
+  parseBuildArgs,
+} from '../../../packages/build-server-tools/src'
 import { clawServerBuildProduct } from '../../../scripts/build/claw-server/descriptor'
 
 function getNativeTarget(): { id: string; ext: string; stagedName: string } {
@@ -70,17 +73,39 @@ describe('claw server build', () => {
     })
   })
 
+  it('uploads artifacts by default while preserving local-only modes', () => {
+    assert.strictEqual(
+      parseBuildArgs(['--target=darwin-arm64'], clawServerBuildProduct).upload,
+      true,
+    )
+    assert.strictEqual(
+      parseBuildArgs(
+        ['--target=darwin-arm64', '--no-upload'],
+        clawServerBuildProduct,
+      ).upload,
+      false,
+    )
+    assert.strictEqual(
+      parseBuildArgs(['--target=darwin-arm64', '--ci'], clawServerBuildProduct)
+        .upload,
+      false,
+    )
+  })
+
   it('builds a local artifact without apps/server env files', async () => {
     rmSync(zipPath, { force: true })
     const pkg = await Bun.file(clawPkgPath).json()
     const expectedVersion: string = pkg.version
 
-    const build = Bun.spawn(['bun', buildScript, `--target=${target.id}`], {
-      cwd: rootDir,
-      stdout: 'pipe',
-      stderr: 'pipe',
-      env: buildEnv(UNNEEDED_SERVER_AND_R2_ENV_KEYS),
-    })
+    const build = Bun.spawn(
+      ['bun', buildScript, `--target=${target.id}`, '--no-upload'],
+      {
+        cwd: rootDir,
+        stdout: 'pipe',
+        stderr: 'pipe',
+        env: buildEnv(UNNEEDED_SERVER_AND_R2_ENV_KEYS),
+      },
+    )
     const buildExit = await build.exited
     if (buildExit !== 0) {
       const stderr = await new Response(build.stderr).text()
