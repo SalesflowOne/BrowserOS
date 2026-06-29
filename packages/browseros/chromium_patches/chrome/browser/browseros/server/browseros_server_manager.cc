@@ -1,9 +1,9 @@
 diff --git a/chrome/browser/browseros/server/browseros_server_manager.cc b/chrome/browser/browseros/server/browseros_server_manager.cc
 new file mode 100644
-index 0000000000000..67698c3e33388
+index 0000000000000..c39cdbe4f8f1c
 --- /dev/null
 +++ b/chrome/browser/browseros/server/browseros_server_manager.cc
-@@ -0,0 +1,1049 @@
+@@ -0,0 +1,1048 @@
 +// Copyright 2024 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -553,7 +553,6 @@ index 0000000000000..67698c3e33388
 +  config.config_file_name =
 +      base::FilePath::StringType(descriptor.config_file_name);
 +  config.health_path = std::string(descriptor.health_path);
-+  config.config_kind = descriptor.config_kind;
 +  config.enable_updater = descriptor.enable_updater;
 +
 +  config.paths.fallback_exe = GetBrowserOSServerExecutablePath();

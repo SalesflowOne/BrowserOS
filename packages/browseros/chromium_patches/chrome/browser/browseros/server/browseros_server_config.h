@@ -1,9 +1,9 @@
 diff --git a/chrome/browser/browseros/server/browseros_server_config.h b/chrome/browser/browseros/server/browseros_server_config.h
 new file mode 100644
-index 0000000000000..8ef87b9c85014
+index 0000000000000..88a323a1c735c
 --- /dev/null
 +++ b/chrome/browser/browseros/server/browseros_server_config.h
-@@ -0,0 +1,134 @@
+@@ -0,0 +1,127 @@
 +// Copyright 2024 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -22,11 +22,6 @@ index 0000000000000..8ef87b9c85014
 +
 +struct ServerLaunchConfig;
 +
-+enum class ServerConfigKind {
-+  kBrowserOS,
-+  kBrowserClaw,
-+};
-+
 +struct ManagedServerDescriptor {
 +  Product product;
 +  std::string_view log_name;
@@ -34,7 +29,6 @@ index 0000000000000..8ef87b9c85014
 +  base::FilePath::StringViewType binary_name;
 +  base::FilePath::StringViewType config_file_name;
 +  std::string_view health_path;
-+  ServerConfigKind config_kind;
 +  bool enable_updater;
 +};
 +
@@ -120,7 +114,6 @@ index 0000000000000..8ef87b9c85014
 +  std::string log_name;
 +  base::FilePath::StringType config_file_name;
 +  std::string health_path;
-+  ServerConfigKind config_kind = ServerConfigKind::kBrowserOS;
 +  bool enable_updater = true;
 +
 +  ServerPorts ports;

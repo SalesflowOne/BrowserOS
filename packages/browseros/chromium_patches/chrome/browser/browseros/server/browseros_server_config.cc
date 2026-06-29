@@ -1,16 +1,15 @@
 diff --git a/chrome/browser/browseros/server/browseros_server_config.cc b/chrome/browser/browseros/server/browseros_server_config.cc
 new file mode 100644
-index 0000000000000..fc4a5deeb7916
+index 0000000000000..108ebf4b1cb5a
 --- /dev/null
 +++ b/chrome/browser/browseros/server/browseros_server_config.cc
-@@ -0,0 +1,203 @@
+@@ -0,0 +1,162 @@
 +// Copyright 2024 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
 +#include "chrome/browser/browseros/server/browseros_server_config.h"
 +
-+#include "base/notreached.h"
 +#include "base/strings/stringprintf.h"
 +#include "chrome/browser/browseros/core/browseros_product.h"
 +
@@ -22,9 +21,8 @@ index 0000000000000..fc4a5deeb7916
 +    "BrowserOS server",
 +    FILE_PATH_LITERAL("BrowserOSServer"),
 +    FILE_PATH_LITERAL("browseros_server"),
-+    FILE_PATH_LITERAL("server_config.json"),
++    FILE_PATH_LITERAL("config.json"),
 +    "/health",
-+    ServerConfigKind::kBrowserOS,
 +    true,
 +};
 +
@@ -33,13 +31,32 @@ index 0000000000000..fc4a5deeb7916
 +    "BrowserClaw server",
 +    FILE_PATH_LITERAL("BrowserClawServer"),
 +    FILE_PATH_LITERAL("browseros-claw-server"),
-+    FILE_PATH_LITERAL("claw_config.json"),
++    FILE_PATH_LITERAL("config.json"),
 +    "/system/health",
-+    ServerConfigKind::kBrowserClaw,
 +    false,
 +};
 +
-+base::DictValue BuildBrowserOSConfigJson(
++}  // namespace
++
++const ManagedServerDescriptor& GetBrowserOSServerDescriptor() {
++  return kBrowserOSServerDescriptor;
++}
++
++const ManagedServerDescriptor& GetBrowserClawServerDescriptor() {
++  return kBrowserClawServerDescriptor;
++}
++
++const ManagedServerDescriptor& GetManagedServerDescriptor() {
++  if (IsBrowserClawProduct()) {
++    return GetBrowserClawServerDescriptor();
++  }
++  return GetBrowserOSServerDescriptor();
++}
++
++// Single config.json shape shared by every managed server product. Any
++// product-specific server binary (e.g. the Claw server) must tolerate the full
++// key set below; it must not reject unknown keys.
++base::DictValue BuildServerConfigJson(
 +    const ServerLaunchConfig& config,
 +    const base::FilePath& actual_resources_dir) {
 +  base::DictValue root;
@@ -66,62 +83,6 @@ index 0000000000000..fc4a5deeb7916
 +  root.Set("instance", std::move(instance));
 +
 +  return root;
-+}
-+
-+base::DictValue BuildBrowserClawConfigJson(
-+    const ServerLaunchConfig& config,
-+    const base::FilePath& actual_resources_dir) {
-+  base::DictValue root;
-+
-+  base::DictValue ports_dict;
-+  ports_dict.Set("server", config.ports.server);
-+  ports_dict.Set("cdp", config.ports.cdp);
-+  root.Set("ports", std::move(ports_dict));
-+
-+  base::DictValue directories;
-+  directories.Set("resources", actual_resources_dir.AsUTF8Unsafe());
-+  root.Set("directories", std::move(directories));
-+
-+  return root;
-+}
-+
-+std::string ConfigKindToString(ServerConfigKind kind) {
-+  switch (kind) {
-+    case ServerConfigKind::kBrowserOS:
-+      return "browseros";
-+    case ServerConfigKind::kBrowserClaw:
-+      return "browserclaw";
-+  }
-+  NOTREACHED();
-+}
-+
-+}  // namespace
-+
-+const ManagedServerDescriptor& GetBrowserOSServerDescriptor() {
-+  return kBrowserOSServerDescriptor;
-+}
-+
-+const ManagedServerDescriptor& GetBrowserClawServerDescriptor() {
-+  return kBrowserClawServerDescriptor;
-+}
-+
-+const ManagedServerDescriptor& GetManagedServerDescriptor() {
-+  if (IsBrowserClawProduct()) {
-+    return GetBrowserClawServerDescriptor();
-+  }
-+  return GetBrowserOSServerDescriptor();
-+}
-+
-+base::DictValue BuildServerConfigJson(
-+    const ServerLaunchConfig& config,
-+    const base::FilePath& actual_resources_dir) {
-+  switch (config.config_kind) {
-+    case ServerConfigKind::kBrowserOS:
-+      return BuildBrowserOSConfigJson(config, actual_resources_dir);
-+    case ServerConfigKind::kBrowserClaw:
-+      return BuildBrowserClawConfigJson(config, actual_resources_dir);
-+  }
-+  NOTREACHED();
 +}
 +
 +bool ServerPorts::IsValid() const {
@@ -192,7 +153,6 @@ index 0000000000000..fc4a5deeb7916
 +      "  log_name=%s\n"
 +      "  config_file=%s\n"
 +      "  health_path=%s\n"
-+      "  config_kind=%s\n"
 +      "  enable_updater=%s\n"
 +      "  %s\n"
 +      "  %s\n"
@@ -200,7 +160,6 @@ index 0000000000000..fc4a5deeb7916
 +      "  allow_remote=%s\n"
 +      "}",
 +      log_name.c_str(), config_file.c_str(), health_path.c_str(),
-+      ConfigKindToString(config_kind).c_str(),
 +      enable_updater ? "true" : "false", ports.DebugString().c_str(),
 +      paths.DebugString().c_str(), identity.DebugString().c_str(),
 +      allow_remote_in_mcp ? "true" : "false");

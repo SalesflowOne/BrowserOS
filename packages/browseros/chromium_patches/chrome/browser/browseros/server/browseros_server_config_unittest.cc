@@ -1,9 +1,9 @@
 diff --git a/chrome/browser/browseros/server/browseros_server_config_unittest.cc b/chrome/browser/browseros/server/browseros_server_config_unittest.cc
 new file mode 100644
-index 0000000000000..b851337b9f356
+index 0000000000000..ce19186789056
 --- /dev/null
 +++ b/chrome/browser/browseros/server/browseros_server_config_unittest.cc
-@@ -0,0 +1,138 @@
+@@ -0,0 +1,132 @@
 +// Copyright 2024 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -22,13 +22,12 @@ index 0000000000000..b851337b9f356
 +  return base::FilePath::StringType(value.begin(), value.end());
 +}
 +
-+ServerLaunchConfig BuildLaunchConfig(ServerConfigKind kind) {
++ServerLaunchConfig BuildLaunchConfig() {
 +  ServerLaunchConfig config;
-+  config.config_kind = kind;
 +  config.config_file_name = FILE_PATH_LITERAL("config.json");
 +  config.health_path = "/health";
 +  config.log_name = "test server";
-+  config.enable_updater = kind == ServerConfigKind::kBrowserOS;
++  config.enable_updater = true;
 +
 +  config.ports.cdp = 9222;
 +  config.ports.server = 9230;
@@ -54,10 +53,9 @@ index 0000000000000..b851337b9f356
 +            ToPathString(descriptor.bundle_dir));
 +  EXPECT_EQ(base::FilePath::StringType(FILE_PATH_LITERAL("browseros_server")),
 +            ToPathString(descriptor.binary_name));
-+  EXPECT_EQ(base::FilePath::StringType(FILE_PATH_LITERAL("server_config.json")),
++  EXPECT_EQ(base::FilePath::StringType(FILE_PATH_LITERAL("config.json")),
 +            ToPathString(descriptor.config_file_name));
 +  EXPECT_EQ(std::string_view("/health"), descriptor.health_path);
-+  EXPECT_EQ(ServerConfigKind::kBrowserOS, descriptor.config_kind);
 +  EXPECT_TRUE(descriptor.enable_updater);
 +}
 +
@@ -71,15 +69,14 @@ index 0000000000000..b851337b9f356
 +  EXPECT_EQ(
 +      base::FilePath::StringType(FILE_PATH_LITERAL("browseros-claw-server")),
 +      ToPathString(descriptor.binary_name));
-+  EXPECT_EQ(base::FilePath::StringType(FILE_PATH_LITERAL("claw_config.json")),
++  EXPECT_EQ(base::FilePath::StringType(FILE_PATH_LITERAL("config.json")),
 +            ToPathString(descriptor.config_file_name));
 +  EXPECT_EQ(std::string_view("/system/health"), descriptor.health_path);
-+  EXPECT_EQ(ServerConfigKind::kBrowserClaw, descriptor.config_kind);
 +  EXPECT_FALSE(descriptor.enable_updater);
 +}
 +
-+TEST(BrowserOSServerConfigTest, BrowserOSConfigKeepsLegacyShape) {
-+  ServerLaunchConfig config = BuildLaunchConfig(ServerConfigKind::kBrowserOS);
++TEST(BrowserOSServerConfigTest, ServerConfigJsonHasUnifiedShape) {
++  ServerLaunchConfig config = BuildLaunchConfig();
 +  base::FilePath resources(FILE_PATH_LITERAL("resources"));
 +
 +  base::DictValue root = BuildServerConfigJson(config, resources);
@@ -116,28 +113,25 @@ index 0000000000000..b851337b9f356
 +  EXPECT_EQ("140.0.0.0", *instance->FindString("chromium_version"));
 +}
 +
-+TEST(BrowserOSServerConfigTest, BrowserClawConfigUsesStrictShape) {
-+  ServerLaunchConfig config = BuildLaunchConfig(ServerConfigKind::kBrowserClaw);
++// Both BrowserOS and BrowserClaw consume this same config.json. Guard against
++// re-stripping the shape per product: the keys the old Claw config omitted
++// (ports.proxy, directories.execution, flags, instance) must stay present.
++TEST(BrowserOSServerConfigTest, ServerConfigJsonIncludesSharedRuntimeKeys) {
++  ServerLaunchConfig config = BuildLaunchConfig();
 +  base::FilePath resources(FILE_PATH_LITERAL("resources"));
 +
 +  base::DictValue root = BuildServerConfigJson(config, resources);
 +
 +  const base::DictValue* ports = root.FindDict("ports");
 +  ASSERT_NE(nullptr, ports);
-+  ASSERT_TRUE(ports->FindInt("server").has_value());
-+  EXPECT_EQ(9230, ports->FindInt("server").value());
-+  ASSERT_TRUE(ports->FindInt("cdp").has_value());
-+  EXPECT_EQ(9222, ports->FindInt("cdp").value());
-+  EXPECT_FALSE(ports->FindInt("proxy").has_value());
++  EXPECT_TRUE(ports->FindInt("proxy").has_value());
 +
 +  const base::DictValue* directories = root.FindDict("directories");
 +  ASSERT_NE(nullptr, directories);
-+  ASSERT_NE(nullptr, directories->FindString("resources"));
-+  EXPECT_EQ(resources.AsUTF8Unsafe(), *directories->FindString("resources"));
-+  EXPECT_EQ(nullptr, directories->FindString("execution"));
++  EXPECT_NE(nullptr, directories->FindString("execution"));
 +
-+  EXPECT_EQ(nullptr, root.FindDict("flags"));
-+  EXPECT_EQ(nullptr, root.FindDict("instance"));
++  EXPECT_NE(nullptr, root.FindDict("flags"));
++  EXPECT_NE(nullptr, root.FindDict("instance"));
 +}
 +
 +}  // namespace

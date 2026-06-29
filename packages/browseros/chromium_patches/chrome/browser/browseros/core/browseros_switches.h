@@ -1,9 +1,9 @@
 diff --git a/chrome/browser/browseros/core/browseros_switches.h b/chrome/browser/browseros/core/browseros_switches.h
 new file mode 100644
-index 0000000000000..465149164d56b
+index 0000000000000..1080aa947bec2
 --- /dev/null
 +++ b/chrome/browser/browseros/core/browseros_switches.h
-@@ -0,0 +1,86 @@
+@@ -0,0 +1,83 @@
 +// Copyright 2024 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -41,9 +41,6 @@ index 0000000000000..465149164d56b
 +
 +// Overrides the sidecar backend server port.
 +inline constexpr char kServerPort[] = "browseros-server-port";
-+
-+// Overrides the Agent server port.
-+inline constexpr char kAgentPort[] = "browseros-agent-port";
 +
 +// === Extension Switches ===
 +
