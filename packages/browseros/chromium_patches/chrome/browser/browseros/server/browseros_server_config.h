@@ -1,6 +1,6 @@
 diff --git a/chrome/browser/browseros/server/browseros_server_config.h b/chrome/browser/browseros/server/browseros_server_config.h
 new file mode 100644
-index 0000000000000..88a323a1c735c
+index 0000000000000..3ace523b486f4
 --- /dev/null
 +++ b/chrome/browser/browseros/server/browseros_server_config.h
 @@ -0,0 +1,127 @@
@@ -35,7 +35,7 @@ index 0000000000000..88a323a1c735c
 +const ManagedServerDescriptor& GetBrowserOSServerDescriptor();
 +const ManagedServerDescriptor& GetBrowserClawServerDescriptor();
 +
-+// Returns the server descriptor selected by the build-time product identity.
++// Returns the descriptor selected by browseros::GetProduct().
 +const ManagedServerDescriptor& GetManagedServerDescriptor();
 +
 +// Builds the JSON config expected by the selected server product.
@@ -48,7 +48,7 @@ index 0000000000000..88a323a1c735c
 +struct ServerPorts {
 +  int cdp = 0;
 +  int server = 0;  // ephemeral backend port for sidecar (was "mcp")
-+  int proxy = 0;  // stable MCP proxy port bound by Chromium
++  int proxy = 0;   // stable MCP proxy port bound by Chromium
 +
 +  bool operator==(const ServerPorts&) const = default;
 +

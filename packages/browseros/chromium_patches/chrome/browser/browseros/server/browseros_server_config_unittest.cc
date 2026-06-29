@@ -1,9 +1,9 @@
 diff --git a/chrome/browser/browseros/server/browseros_server_config_unittest.cc b/chrome/browser/browseros/server/browseros_server_config_unittest.cc
 new file mode 100644
-index 0000000000000..ce19186789056
+index 0000000000000..e88bef039ced0
 --- /dev/null
 +++ b/chrome/browser/browseros/server/browseros_server_config_unittest.cc
-@@ -0,0 +1,132 @@
+@@ -0,0 +1,206 @@
 +// Copyright 2024 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -12,14 +12,38 @@ index 0000000000000..ce19186789056
 +
 +#include <string_view>
 +
++#include "base/test/scoped_command_line.h"
++#include "chrome/browser/browseros/buildflags.h"
++#include "chrome/browser/browseros/core/browseros_switches.h"
 +#include "testing/gtest/include/gtest/gtest.h"
 +
 +namespace browseros {
 +namespace {
 +
-+base::FilePath::StringType ToPathString(
-+    base::FilePath::StringViewType value) {
++base::FilePath::StringType ToPathString(base::FilePath::StringViewType value) {
 +  return base::FilePath::StringType(value.begin(), value.end());
++}
++
++Product BakedProduct() {
++#if BUILDFLAG(BROWSEROS_PRODUCT_BROWSERCLAW)
++  return Product::kBrowserClaw;
++#else
++  return Product::kBrowserOS;
++#endif
++}
++
++Product OtherProduct() {
++  if (BakedProduct() == Product::kBrowserClaw) {
++    return Product::kBrowserOS;
++  }
++  return Product::kBrowserClaw;
++}
++
++std::string_view ProductSwitchValue(Product product) {
++  if (product == Product::kBrowserClaw) {
++    return "browserclaw";
++  }
++  return "browseros";
 +}
 +
 +ServerLaunchConfig BuildLaunchConfig() {
@@ -43,6 +67,38 @@ index 0000000000000..ce19186789056
 +
 +  return config;
 +}
++
++TEST(BrowserOSProductTest, ReturnsBakedProductWithoutSwitch) {
++  EXPECT_EQ(BakedProduct(), GetProduct());
++}
++
++#if !BUILDFLAG(BROWSEROS_ALLOW_RUNTIME_PRODUCT_OVERRIDE)
++TEST(BrowserOSProductTest, IgnoresProductSwitchWhenOverrideDisabled) {
++  base::test::ScopedCommandLine scoped_command_line;
++  scoped_command_line.GetProcessCommandLine()->AppendSwitchASCII(
++      kBrowserOSProduct, ProductSwitchValue(OtherProduct()));
++
++  EXPECT_EQ(BakedProduct(), GetProduct());
++}
++#endif
++
++#if BUILDFLAG(BROWSEROS_ALLOW_RUNTIME_PRODUCT_OVERRIDE)
++TEST(BrowserOSProductTest, HonorsProductSwitchWhenOverrideEnabled) {
++  base::test::ScopedCommandLine scoped_command_line;
++  scoped_command_line.GetProcessCommandLine()->AppendSwitchASCII(
++      kBrowserOSProduct, ProductSwitchValue(OtherProduct()));
++
++  EXPECT_EQ(OtherProduct(), GetProduct());
++}
++
++TEST(BrowserOSProductTest, InvalidProductSwitchFallsBackToBakedProduct) {
++  base::test::ScopedCommandLine scoped_command_line;
++  scoped_command_line.GetProcessCommandLine()->AppendSwitchASCII(
++      kBrowserOSProduct, "invalid");
++
++  EXPECT_EQ(BakedProduct(), GetProduct());
++}
++#endif
 +
 +TEST(BrowserOSServerConfigTest, BrowserOSDescriptorMatchesLegacyServer) {
 +  const ManagedServerDescriptor& descriptor = GetBrowserOSServerDescriptor();
@@ -74,6 +130,24 @@ index 0000000000000..ce19186789056
 +  EXPECT_EQ(std::string_view("/system/health"), descriptor.health_path);
 +  EXPECT_FALSE(descriptor.enable_updater);
 +}
++
++TEST(BrowserOSServerConfigTest, ManagedDescriptorUsesSelectedProduct) {
++  const ManagedServerDescriptor& descriptor = GetManagedServerDescriptor();
++
++  EXPECT_EQ(GetProduct(), descriptor.product);
++}
++
++#if BUILDFLAG(BROWSEROS_ALLOW_RUNTIME_PRODUCT_OVERRIDE)
++TEST(BrowserOSServerConfigTest, ManagedDescriptorFollowsRuntimeOverride) {
++  base::test::ScopedCommandLine scoped_command_line;
++  scoped_command_line.GetProcessCommandLine()->AppendSwitchASCII(
++      kBrowserOSProduct, ProductSwitchValue(OtherProduct()));
++
++  const ManagedServerDescriptor& descriptor = GetManagedServerDescriptor();
++
++  EXPECT_EQ(OtherProduct(), descriptor.product);
++}
++#endif
 +
 +TEST(BrowserOSServerConfigTest, ServerConfigJsonHasUnifiedShape) {
 +  ServerLaunchConfig config = BuildLaunchConfig();

@@ -1,9 +1,9 @@
 diff --git a/chrome/browser/browseros/core/browseros_product.h b/chrome/browser/browseros/core/browseros_product.h
 new file mode 100644
-index 0000000000000..8ff030b115de6
+index 0000000000000..a55819d454fdd
 --- /dev/null
 +++ b/chrome/browser/browseros/core/browseros_product.h
-@@ -0,0 +1,26 @@
+@@ -0,0 +1,23 @@
 +// Copyright 2024 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -13,15 +13,12 @@ index 0000000000000..8ff030b115de6
 +
 +namespace browseros {
 +
-+// Product identity for this build. Selected at build time via the
-+// `browseros_product` GN arg and baked into the binary, so runtime switches
-+// and field trials cannot change it.
 +enum class Product {
 +  kBrowserOS,
 +  kBrowserClaw,
 +};
 +
-+// Returns the product this binary was built as.
++// Returns the baked product, or a dev/test command-line override when enabled.
 +Product GetProduct();
 +
 +bool IsBrowserOSProduct();
