@@ -100,7 +100,7 @@ func Annotate(ctx context.Context, opts AnnotateOptions) (*AnnotateResult, error
 			result.FeaturesSkipped++
 			continue
 		}
-		commit, err := commitFeatureFiles(ctx, opts.Workspace.Path, feature.Description, modified)
+		commit, err := commitFeatureFiles(ctx, opts.Workspace.Path, feature.Description, feature.Files)
 		if err != nil {
 			return nil, fmt.Errorf("commit feature %s: %w", feature.Name, err)
 		}
@@ -200,19 +200,21 @@ func modifiedFeatureFiles(ctx context.Context, workspacePath string, files []str
 	seen := map[string]bool{}
 	var modified []string
 	for _, change := range changes {
-		rel := patch.NormalizeChromiumPath(change.Path)
-		if rel == "." || rel == "" || patch.IsInternalPath(rel) || seen[rel] {
-			continue
+		for _, rel := range []string{change.Path, change.OldPath} {
+			rel = patch.NormalizeChromiumPath(rel)
+			if rel == "." || rel == "" || patch.IsInternalPath(rel) || seen[rel] {
+				continue
+			}
+			seen[rel] = true
+			modified = append(modified, rel)
 		}
-		seen[rel] = true
-		modified = append(modified, rel)
 	}
 	slices.Sort(modified)
 	return modified, nil
 }
 
 func commitFeatureFiles(ctx context.Context, workspacePath string, message string, files []string) (string, error) {
-	if err := git.AddPaths(ctx, workspacePath, files); err != nil {
+	if err := git.AddAllPaths(ctx, workspacePath, files); err != nil {
 		return "", err
 	}
 	return git.CommitPaths(ctx, workspacePath, message, files)

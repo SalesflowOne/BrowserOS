@@ -685,11 +685,28 @@ func PullRebase(ctx context.Context, dir string, remote string, branch string) e
 	return nil
 }
 
+// AddPaths stages existing paths with git add.
 func AddPaths(ctx context.Context, dir string, paths []string) error {
 	if len(paths) == 0 {
 		return nil
 	}
 	args := append([]string{"add", "--"}, paths...)
+	result, err := Run(ctx, dir, nil, args...)
+	if err != nil {
+		return err
+	}
+	if result.Code != 0 {
+		return errors.New(strings.TrimSpace(result.Stderr))
+	}
+	return nil
+}
+
+// AddAllPaths stages additions, modifications, and deletions under paths.
+func AddAllPaths(ctx context.Context, dir string, paths []string) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	args := append([]string{"add", "-A", "--"}, paths...)
 	result, err := Run(ctx, dir, nil, args...)
 	if err != nil {
 		return err

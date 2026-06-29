@@ -227,6 +227,46 @@ features:
 	}
 }
 
+func TestAnnotateCommitsRenamesUnderDirectoryFeature(t *testing.T) {
+	ctx := context.Background()
+	workspacePath := initGitRepo(t)
+	writeFile(t, filepath.Join(workspacePath, "chrome", "old.cc"), "old\n")
+	runGit(t, workspacePath, "add", "chrome/old.cc")
+	runGit(t, workspacePath, "commit", "-m", "workspace base")
+	baseCommit := gitOutput(t, workspacePath, "rev-parse", "HEAD")
+
+	runGit(t, workspacePath, "mv", "chrome/old.cc", "chrome/new.cc")
+
+	repoInfo := newPatchRepo(t, baseCommit)
+	writeFeaturesYAML(t, repoInfo.Root, `version: "1.0"
+features:
+  renames:
+    description: "feat: rename file"
+    files:
+      - chrome/
+`)
+
+	result, err := Annotate(ctx, AnnotateOptions{
+		Workspace: workspace.Entry{Name: "ws", Path: workspacePath},
+		Repo:      repoInfo,
+	})
+	if err != nil {
+		t.Fatalf("Annotate: %v", err)
+	}
+	if result.CommitsCreated != 1 {
+		t.Fatalf("expected rename commit, got %+v", result)
+	}
+	if !slices.Equal(result.Committed[0].Files, []string{"chrome/new.cc", "chrome/old.cc"}) {
+		t.Fatalf("unexpected committed rename paths: %v", result.Committed[0].Files)
+	}
+	if status := gitOutput(t, workspacePath, "status", "--porcelain"); status != "" {
+		t.Fatalf("expected clean checkout after rename annotate, got %q", status)
+	}
+	if nameStatus := gitOutput(t, workspacePath, "show", "--name-status", "--format=", "HEAD"); !strings.Contains(nameStatus, "R100\tchrome/old.cc\tchrome/new.cc") {
+		t.Fatalf("expected rename in commit, got:\n%s", nameStatus)
+	}
+}
+
 func TestAnnotateMissingFeatureDoesNotCommit(t *testing.T) {
 	ctx := context.Background()
 	workspacePath := initGitRepo(t)
