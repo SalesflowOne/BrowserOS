@@ -78,6 +78,21 @@ describe('loadServerConfig', () => {
     assert.strictEqual(result.value.instanceChromiumVersion, '140.0.0.0')
   })
 
+  it('accepts standalone binary argv without a script path', () => {
+    const configPath = writeSidecarConfig()
+
+    const result = loadServerConfig([
+      '/usr/bin/browseros_server',
+      '--config',
+      configPath,
+    ])
+
+    assert.strictEqual(result.ok, true)
+    if (!result.ok) return
+    assert.strictEqual(result.value.serverPort, 9100)
+    assert.strictEqual(result.value.cdpPort, 9000)
+  })
+
   it('requires --config instead of falling back to defaults or env', () => {
     process.env.BROWSEROS_CDP_PORT = '9222'
     process.env.BROWSEROS_SERVER_PORT = '9223'

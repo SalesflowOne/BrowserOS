@@ -159,7 +159,8 @@ function validateInlinedEnv(): ConfigResult<void> {
 }
 
 function toUserArgs(argv: string[]): string[] {
-  return argv.length >= 2 && !argv[0]?.startsWith('-') ? argv.slice(2) : argv
+  if (argv.length === 0 || argv[0]?.startsWith('-')) return argv
+  return argv[1]?.startsWith('-') ? argv.slice(1) : argv.slice(2)
 }
 
 function cleanString(value: string | undefined): string | undefined {

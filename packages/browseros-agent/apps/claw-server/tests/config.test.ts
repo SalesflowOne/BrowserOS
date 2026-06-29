@@ -106,6 +106,30 @@ describe('loadClawConfig', () => {
     })
   })
 
+  test('accepts standalone binary argv without a script path', async () => {
+    const configPath = await writeConfig({
+      ports: {
+        server: 9420,
+        cdp: 9020,
+      },
+    })
+
+    const result = loadClawConfig({
+      argv: ['/usr/bin/browseros-claw-server', '--config', configPath],
+      cwd: '/',
+      env: {},
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        port: 9420,
+        cdpPort: 9020,
+        resourcesDir: '/resources',
+      },
+    })
+  })
+
   test('falls back to default resources when the sidecar omits directories.resources', async () => {
     const configPath = await writeConfig({
       ports: {
