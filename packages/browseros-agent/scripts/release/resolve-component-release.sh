@@ -134,12 +134,53 @@ fi
 
 release_sha="$(git rev-list -n 1 "$tag")"
 
+git_root="$(git rev-parse --show-toplevel)"
+git_root="$(cd "$git_root" && pwd -P)"
+current_dir="$(pwd -P)"
+git_package_json="$package_json"
+browseros_agent_package_json="packages/browseros-agent/$package_json"
+
+# Git object paths are repository-root-relative, but release jobs run from the package checkout.
+case "$current_dir" in
+  "$git_root")
+    ;;
+  "$git_root"/*)
+    git_package_json="${current_dir#"$git_root"/}/$package_json"
+    ;;
+esac
+
+git_package_json_candidates=("$git_package_json")
+if [ "$git_package_json" != "$package_json" ]; then
+  git_package_json_candidates+=("$package_json")
+fi
+if [ "$git_package_json" != "$browseros_agent_package_json" ]; then
+  git_package_json_candidates+=("$browseros_agent_package_json")
+fi
+
+found_package_blob=false
+for candidate in "${git_package_json_candidates[@]}"; do
+  if package_blob="$(git show "$release_sha:$candidate" 2>/dev/null)"; then
+    git_package_json="$candidate"
+    found_package_blob=true
+    break
+  fi
+done
+
+if [ "$found_package_blob" != "true" ]; then
+  echo "Could not read $package_json version from $tag ($release_sha)" >&2
+  exit 1
+fi
+
 if ! package_version="$(
-  git show "$release_sha:$package_json" 2>/dev/null | python3 -c '
+  printf '%s\n' "$package_blob" | python3 -c '
 import json
 import sys
 
-print(json.load(sys.stdin)["version"])
+try:
+    print(json.load(sys.stdin)["version"])
+except Exception as exc:
+    print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
+    sys.exit(1)
 '
 )"; then
   echo "Could not read $package_json version from $tag ($release_sha)" >&2

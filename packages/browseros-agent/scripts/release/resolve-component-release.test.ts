@@ -86,6 +86,31 @@ function writePackage(
   )
 }
 
+function writeNestedPackage(
+  dir: string,
+  component: Component,
+  version: string,
+): string {
+  const packageDir = join(dir, 'packages/browseros-agent')
+  const path = join(packageDir, packagePath(component))
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(
+    path,
+    JSON.stringify(
+      {
+        name:
+          component === 'agent-extension'
+            ? '@browseros/app'
+            : '@browseros/server',
+        version,
+      },
+      null,
+      2,
+    ),
+  )
+  return packageDir
+}
+
 async function commitVersion(
   dir: string,
   component: Component,
@@ -187,6 +212,38 @@ describe('resolve-component-release', () => {
       expect(parseOutput(result.stdout)).toMatchObject({
         version: '0.0.122',
         previous_tag: legacyTag('agent-server', '0.0.121'),
+      })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('resolves a server slash tag from a nested browseros-agent checkout', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'component-release-nested-'))
+    try {
+      await mustRun(dir, ['git', 'init', '--initial-branch=main'])
+      await mustRun(dir, ['git', 'config', 'user.name', 'BrowserOS Test'])
+      await mustRun(dir, ['git', 'config', 'user.email', 'test@browseros.com'])
+      const packageDir = writeNestedPackage(dir, 'agent-server', '0.0.122')
+      await mustRun(dir, ['git', 'add', '.'])
+      await mustRun(dir, ['git', 'commit', '-m', 'version 0.0.122'])
+      const currentTag = scopedTag('agent-server', '0.0.122')
+      await tag(dir, currentTag)
+      const releaseSha = (
+        await mustRun(dir, ['git', 'rev-parse', 'HEAD'])
+      ).trim()
+
+      const result = await resolveRelease(
+        packageDir,
+        'agent-server',
+        currentTag,
+      )
+
+      expect(result.code, result.stderr).toBe(0)
+      expect(parseOutput(result.stdout)).toMatchObject({
+        package_version: '0.0.122',
+        tag: currentTag,
+        release_sha: releaseSha,
       })
     } finally {
       rmSync(dir, { recursive: true, force: true })
