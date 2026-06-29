@@ -76,6 +76,10 @@ func Annotate(ctx context.Context, opts AnnotateOptions) (*AnnotateResult, error
 		}
 		features = filtered
 	}
+	changes, err := annotateChanges(ctx, opts.Workspace.Path, allFeatures)
+	if err != nil {
+		return nil, err
+	}
 	result := &AnnotateResult{
 		Workspace:    opts.Workspace.Name,
 		FeaturesFile: featuresFile,
@@ -95,10 +99,7 @@ func Annotate(ctx context.Context, opts AnnotateOptions) (*AnnotateResult, error
 			result.FeaturesSkipped++
 			continue
 		}
-		files, err := modifiedFeatureFiles(ctx, opts.Workspace.Path, feature, allFeatures)
-		if err != nil {
-			return nil, err
-		}
+		files := modifiedFeatureFiles(changes, feature, allFeatures)
 		if len(files.report) == 0 {
 			result.Skipped = append(result.Skipped, AnnotateSkippedFeature{
 				Name:        feature.Name,
@@ -201,11 +202,23 @@ func stringSequence(node *yaml.Node, key string) []string {
 	return items
 }
 
-func modifiedFeatureFiles(ctx context.Context, workspacePath string, feature annotateFeature, allFeatures []annotateFeature) (annotateFileSet, error) {
-	changes, err := git.StatusPorcelain(ctx, workspacePath, feature.Files)
-	if err != nil {
-		return annotateFileSet{}, err
+func annotateChanges(ctx context.Context, workspacePath string, features []annotateFeature) ([]git.FileChange, error) {
+	return git.StatusPorcelain(ctx, workspacePath, annotateScope(features))
+}
+
+func annotateScope(features []annotateFeature) []string {
+	seen := map[string]bool{}
+	var scope []string
+	for _, feature := range features {
+		for _, rel := range feature.Files {
+			appendUniquePath(&scope, seen, rel)
+		}
 	}
+	slices.Sort(scope)
+	return scope
+}
+
+func modifiedFeatureFiles(changes []git.FileChange, feature annotateFeature, allFeatures []annotateFeature) annotateFileSet {
 	set := annotateFileSet{}
 	reportSeen := map[string]bool{}
 	stageSeen := map[string]bool{}
@@ -228,7 +241,7 @@ func modifiedFeatureFiles(ctx context.Context, workspacePath string, feature ann
 	slices.Sort(set.report)
 	slices.Sort(set.stage)
 	slices.Sort(set.commit)
-	return set, nil
+	return set
 }
 
 func ownerFeature(change git.FileChange, features []annotateFeature) *annotateFeature {
