@@ -43,7 +43,6 @@ function createTestApp(agentRoutes = new Hono<Env>()) {
     remoteHermes: null,
     tokenManager: null,
     turnRegistry: new TurnRegistry(),
-    onShutdown: () => {},
   })
 }
 
@@ -56,6 +55,14 @@ describe('createApiRoutes', () => {
       status: 'ok',
       cdpConnected: false,
     })
+  })
+
+  it('does not mount the removed shutdown route', async () => {
+    const response = await createTestApp().request('/shutdown', {
+      method: 'POST',
+    })
+
+    expect(response.status).toBe(404)
   })
 
   it('preserves the OAuth unavailable fallback', async () => {

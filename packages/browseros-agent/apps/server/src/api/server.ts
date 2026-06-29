@@ -48,7 +48,6 @@ async function assertPortAvailable(port: number): Promise<void> {
 export async function createHttpServer(config: HttpServerConfig) {
   const { port, host = '0.0.0.0', browserosId } = config
 
-  const { onShutdown } = config
   const tokenManager = browserosId
     ? initializeOAuth(getDb(), browserosId)
     : null
@@ -92,12 +91,6 @@ export async function createHttpServer(config: HttpServerConfig) {
     remoteHermes,
     tokenManager,
     turnRegistry,
-    onShutdown: () => {
-      shutdownOAuth()
-      void klavis.stop()
-      remoteHermes?.close()
-      onShutdown?.()
-    },
   })
 
   app.onError((err, c) => {

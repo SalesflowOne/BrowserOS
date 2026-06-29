@@ -85,6 +85,4 @@ export interface HttpServerConfig {
   executionDir: string
   resourcesDir: string
   aiSdkDevtoolsEnabled?: boolean
-
-  onShutdown?: () => void
 }
