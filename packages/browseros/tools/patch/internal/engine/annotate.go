@@ -76,7 +76,7 @@ func Annotate(ctx context.Context, opts AnnotateOptions) (*AnnotateResult, error
 		}
 		features = filtered
 	}
-	changes, err := annotateChanges(ctx, opts.Workspace.Path, allFeatures)
+	changes, err := annotateChanges(ctx, opts.Workspace.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -202,20 +202,8 @@ func stringSequence(node *yaml.Node, key string) []string {
 	return items
 }
 
-func annotateChanges(ctx context.Context, workspacePath string, features []annotateFeature) ([]git.FileChange, error) {
-	return git.StatusPorcelain(ctx, workspacePath, annotateScope(features))
-}
-
-func annotateScope(features []annotateFeature) []string {
-	seen := map[string]bool{}
-	var scope []string
-	for _, feature := range features {
-		for _, rel := range feature.Files {
-			appendUniquePath(&scope, seen, rel)
-		}
-	}
-	slices.Sort(scope)
-	return scope
+func annotateChanges(ctx context.Context, workspacePath string) ([]git.FileChange, error) {
+	return git.StatusPorcelain(ctx, workspacePath, nil)
 }
 
 func modifiedFeatureFiles(changes []git.FileChange, feature annotateFeature, allFeatures []annotateFeature) annotateFileSet {
