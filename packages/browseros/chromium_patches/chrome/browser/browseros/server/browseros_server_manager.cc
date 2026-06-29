@@ -1,9 +1,9 @@
 diff --git a/chrome/browser/browseros/server/browseros_server_manager.cc b/chrome/browser/browseros/server/browseros_server_manager.cc
 new file mode 100644
-index 0000000000000..d3744f253ca37
+index 0000000000000..67698c3e33388
 --- /dev/null
 +++ b/chrome/browser/browseros/server/browseros_server_manager.cc
-@@ -0,0 +1,1083 @@
+@@ -0,0 +1,1049 @@
 +// Copyright 2024 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -262,7 +262,6 @@ index 0000000000000..d3744f253ca37
 +    ports_.cdp = browseros_server::kDefaultCDPPort;
 +    ports_.proxy = browseros_server::kDefaultProxyPort;
 +    ports_.server = browseros_server::kDefaultServerPort;
-+    ports_.extension = browseros_server::kDefaultExtensionPort;
 +    allow_remote_in_mcp_ = false;
 +    return;
 +  }
@@ -289,12 +288,6 @@ index 0000000000000..d3744f253ca37
 +  ports_.server = local_state_->GetInteger(browseros_server::kServerPort);
 +  if (ports_.server <= 0) {
 +    ports_.server = browseros_server::kDefaultServerPort;
-+  }
-+
-+  ports_.extension =
-+      local_state_->GetInteger(browseros_server::kExtensionServerPort);
-+  if (ports_.extension <= 0) {
-+    ports_.extension = browseros_server::kDefaultExtensionPort;
 +  }
 +
 +  allow_remote_in_mcp_ =
@@ -333,7 +326,6 @@ index 0000000000000..d3744f253ca37
 +  bool cdp_fixed = command_line->HasSwitch(browseros::kCDPPort);
 +  bool proxy_fixed = command_line->HasSwitch(browseros::kProxyPort);
 +  bool server_fixed = command_line->HasSwitch(browseros::kServerPort);
-+  bool extension_fixed = command_line->HasSwitch(browseros::kExtensionPort);
 +
 +  if (cdp_fixed) {
 +    assigned_ports.insert(ports_.cdp);
@@ -356,13 +348,6 @@ index 0000000000000..d3744f253ca37
 +    ports_.server = server_utils::FindAvailablePort(
 +        browseros_server::kDefaultServerPort, assigned_ports);
 +    assigned_ports.insert(ports_.server);
-+  }
-+
-+  if (extension_fixed) {
-+    assigned_ports.insert(ports_.extension);
-+  } else {
-+    ports_.extension = server_utils::FindAvailablePort(
-+        browseros_server::kDefaultExtensionPort, assigned_ports);
 +  }
 +
 +  LOG(INFO) << "browseros: Resolved ports for startup - "
@@ -390,12 +375,6 @@ index 0000000000000..d3744f253ca37
 +    ports_.server = server_override;
 +  }
 +
-+  int extension_override = GetPortOverrideFromCommandLine(
-+      command_line, browseros::kExtensionPort, "Extension port");
-+  if (extension_override > 0) {
-+    ports_.extension = extension_override;
-+  }
-+
 +  LOG(INFO) << "browseros: Final ports after CLI overrides - "
 +            << ports_.DebugString();
 +}
@@ -410,8 +389,6 @@ index 0000000000000..d3744f253ca37
 +  local_state_->SetInteger(browseros_server::kCDPServerPort, ports_.cdp);
 +  local_state_->SetInteger(browseros_server::kProxyPort, ports_.proxy);
 +  local_state_->SetInteger(browseros_server::kServerPort, ports_.server);
-+  local_state_->SetInteger(browseros_server::kExtensionServerPort,
-+                           ports_.extension);
 +
 +  // DEPRECATED: keep mcp_port in sync with server port for backward compat
 +  local_state_->SetInteger(browseros_server::kMCPServerPort, ports_.server);
@@ -876,11 +853,6 @@ index 0000000000000..d3744f253ca37
 +  }
 +  assigned.insert(ports_.server);
 +
-+  if (!cl->HasSwitch(browseros::kExtensionPort)) {
-+    ports_.extension = server_utils::FindAvailablePort(
-+        browseros_server::kDefaultExtensionPort, assigned);
-+  }
-+
 +  LOG(INFO) << "browseros: New ephemeral ports - " << ports_.DebugString();
 +
 +  SavePortsToPrefs();
@@ -920,11 +892,6 @@ index 0000000000000..d3744f253ca37
 +        browseros_server::kDefaultServerPort, assigned);
 +  }
 +  assigned.insert(ports_.server);
-+
-+  if (!cl->HasSwitch(browseros::kExtensionPort)) {
-+    ports_.extension = server_utils::FindAvailablePort(
-+        browseros_server::kDefaultExtensionPort, assigned);
-+  }
 +
 +  SavePortsToPrefs();
 +  LaunchBrowserOSProcess();
@@ -979,8 +946,7 @@ index 0000000000000..d3744f253ca37
 +                 << " (must be 1-65535), ignoring pref change";
 +    return;
 +  }
-+  if (new_port == ports_.cdp || new_port == ports_.server ||
-+      new_port == ports_.extension) {
++  if (new_port == ports_.cdp || new_port == ports_.server) {
 +    LOG(WARNING) << "browseros: Proxy port " << new_port
 +                 << " collides with another bound port, ignoring pref change";
 +    return;

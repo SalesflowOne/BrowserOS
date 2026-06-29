@@ -1,9 +1,9 @@
 diff --git a/chrome/browser/browseros/server/browseros_server_config.cc b/chrome/browser/browseros/server/browseros_server_config.cc
 new file mode 100644
-index 0000000000000..8fc64867664b4
+index 0000000000000..fc4a5deeb7916
 --- /dev/null
 +++ b/chrome/browser/browseros/server/browseros_server_config.cc
-@@ -0,0 +1,205 @@
+@@ -0,0 +1,203 @@
 +// Copyright 2024 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -47,7 +47,6 @@ index 0000000000000..8fc64867664b4
 +  base::DictValue ports_dict;
 +  ports_dict.Set("cdp", config.ports.cdp);
 +  ports_dict.Set("server", config.ports.server);
-+  ports_dict.Set("extension", config.ports.extension);
 +  ports_dict.Set("proxy", config.ports.proxy);
 +  root.Set("ports", std::move(ports_dict));
 +
@@ -126,7 +125,7 @@ index 0000000000000..8fc64867664b4
 +}
 +
 +bool ServerPorts::IsValid() const {
-+  return cdp > 0 && server > 0 && extension > 0 && proxy > 0;
++  return cdp > 0 && server > 0 && proxy > 0;
 +}
 +
 +std::string ServerPorts::DebugString() const {
@@ -134,10 +133,9 @@ index 0000000000000..8fc64867664b4
 +      "ServerPorts{\n"
 +      "  cdp=%d\n"
 +      "  server=%d\n"
-+      "  ext=%d\n"
 +      "  proxy=%d\n"
 +      "}",
-+      cdp, server, extension, proxy);
++      cdp, server, proxy);
 +}
 +
 +ServerPaths::ServerPaths() = default;

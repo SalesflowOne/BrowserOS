@@ -1,9 +1,9 @@
 diff --git a/chrome/browser/browseros/server/browseros_server_config_unittest.cc b/chrome/browser/browseros/server/browseros_server_config_unittest.cc
 new file mode 100644
-index 0000000000000..f308d27b3bca1
+index 0000000000000..b851337b9f356
 --- /dev/null
 +++ b/chrome/browser/browseros/server/browseros_server_config_unittest.cc
-@@ -0,0 +1,142 @@
+@@ -0,0 +1,138 @@
 +// Copyright 2024 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -32,7 +32,6 @@ index 0000000000000..f308d27b3bca1
 +
 +  config.ports.cdp = 9222;
 +  config.ports.server = 9230;
-+  config.ports.extension = 9240;
 +  config.ports.proxy = 9250;
 +
 +  config.paths.exe = base::FilePath(FILE_PATH_LITERAL("server"));
@@ -91,8 +90,6 @@ index 0000000000000..f308d27b3bca1
 +  EXPECT_EQ(9222, ports->FindInt("cdp").value());
 +  ASSERT_TRUE(ports->FindInt("server").has_value());
 +  EXPECT_EQ(9230, ports->FindInt("server").value());
-+  ASSERT_TRUE(ports->FindInt("extension").has_value());
-+  EXPECT_EQ(9240, ports->FindInt("extension").value());
 +  ASSERT_TRUE(ports->FindInt("proxy").has_value());
 +  EXPECT_EQ(9250, ports->FindInt("proxy").value());
 +
@@ -131,7 +128,6 @@ index 0000000000000..f308d27b3bca1
 +  EXPECT_EQ(9230, ports->FindInt("server").value());
 +  ASSERT_TRUE(ports->FindInt("cdp").has_value());
 +  EXPECT_EQ(9222, ports->FindInt("cdp").value());
-+  EXPECT_FALSE(ports->FindInt("extension").has_value());
 +  EXPECT_FALSE(ports->FindInt("proxy").has_value());
 +
 +  const base::DictValue* directories = root.FindDict("directories");

@@ -1,9 +1,9 @@
 diff --git a/chrome/browser/browseros/server/browseros_server_config.h b/chrome/browser/browseros/server/browseros_server_config.h
 new file mode 100644
-index 0000000000000..f41e7536e90a5
+index 0000000000000..8ef87b9c85014
 --- /dev/null
 +++ b/chrome/browser/browseros/server/browseros_server_config.h
-@@ -0,0 +1,135 @@
+@@ -0,0 +1,134 @@
 +// Copyright 2024 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -54,7 +54,6 @@ index 0000000000000..f41e7536e90a5
 +struct ServerPorts {
 +  int cdp = 0;
 +  int server = 0;  // ephemeral backend port for sidecar (was "mcp")
-+  int extension = 0;
 +  int proxy = 0;  // stable MCP proxy port bound by Chromium
 +
 +  bool operator==(const ServerPorts&) const = default;

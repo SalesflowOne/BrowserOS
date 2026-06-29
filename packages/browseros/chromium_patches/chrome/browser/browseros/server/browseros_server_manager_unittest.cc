@@ -1,9 +1,9 @@
 diff --git a/chrome/browser/browseros/server/browseros_server_manager_unittest.cc b/chrome/browser/browseros/server/browseros_server_manager_unittest.cc
 new file mode 100644
-index 0000000000000..3fc74b5291c70
+index 0000000000000..aee8a1fadceaf
 --- /dev/null
 +++ b/chrome/browser/browseros/server/browseros_server_manager_unittest.cc
-@@ -0,0 +1,441 @@
+@@ -0,0 +1,431 @@
 +// Copyright 2024 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -324,7 +324,6 @@ index 0000000000000..3fc74b5291c70
 +  EXPECT_EQ(0, manager_->GetCDPPort());
 +  EXPECT_EQ(0, manager_->GetMCPPort());
 +  EXPECT_EQ(0, manager_->GetProxyPort());
-+  EXPECT_EQ(0, manager_->GetExtensionPort());
 +  EXPECT_EQ(0, manager_->GetServerPort());
 +}
 +
@@ -390,7 +389,6 @@ index 0000000000000..3fc74b5291c70
 +
 +  // Set initial known ports in prefs
 +  prefs_.SetInteger(browseros_server::kServerPort, 9200);
-+  prefs_.SetInteger(browseros_server::kExtensionServerPort, 9300);
 +
 +  // Mock WaitForExitWithTimeout (called on thread pool during restart)
 +  ON_CALL(*process_controller_, WaitForExitWithTimeout(_, _, _))
@@ -406,12 +404,8 @@ index 0000000000000..3fc74b5291c70
 +  // This is the invariant: prefs and in-memory state stay in sync.
 +  EXPECT_EQ(manager_->GetServerPort(),
 +            prefs_.GetInteger(browseros_server::kServerPort));
-+  EXPECT_EQ(manager_->GetExtensionPort(),
-+            prefs_.GetInteger(browseros_server::kExtensionServerPort));
-+  // Server and extension ports should be non-zero (resolved by
-+  // FindAvailablePort)
++  // Server port should be non-zero (resolved by FindAvailablePort)
 +  EXPECT_NE(0, prefs_.GetInteger(browseros_server::kServerPort));
-+  EXPECT_NE(0, prefs_.GetInteger(browseros_server::kExtensionServerPort));
 +}
 +
 +TEST_F(BrowserOSServerManagerTest, UpdateRestartSavesEphemeralPortsToPrefs) {
@@ -419,7 +413,6 @@ index 0000000000000..3fc74b5291c70
 +  manager_->SetRunningForTesting(true);
 +
 +  prefs_.SetInteger(browseros_server::kServerPort, 9200);
-+  prefs_.SetInteger(browseros_server::kExtensionServerPort, 9300);
 +
 +  ON_CALL(*process_controller_, WaitForExitWithTimeout(_, _, _))
 +      .WillByDefault(Return(true));
@@ -437,10 +430,7 @@ index 0000000000000..3fc74b5291c70
 +
 +  EXPECT_EQ(manager_->GetServerPort(),
 +            prefs_.GetInteger(browseros_server::kServerPort));
-+  EXPECT_EQ(manager_->GetExtensionPort(),
-+            prefs_.GetInteger(browseros_server::kExtensionServerPort));
 +  EXPECT_NE(0, prefs_.GetInteger(browseros_server::kServerPort));
-+  EXPECT_NE(0, prefs_.GetInteger(browseros_server::kExtensionServerPort));
 +}
 +
 +}  // namespace

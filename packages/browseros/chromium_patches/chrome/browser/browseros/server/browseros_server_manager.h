@@ -1,9 +1,9 @@
 diff --git a/chrome/browser/browseros/server/browseros_server_manager.h b/chrome/browser/browseros/server/browseros_server_manager.h
 new file mode 100644
-index 0000000000000..2f7e3b2c7beff
+index 0000000000000..6c9a7e03ebc0d
 --- /dev/null
 +++ b/chrome/browser/browseros/server/browseros_server_manager.h
-@@ -0,0 +1,154 @@
+@@ -0,0 +1,153 @@
 +// Copyright 2024 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -66,7 +66,6 @@ index 0000000000000..2f7e3b2c7beff
 +  int GetProxyPort() const { return ports_.proxy; }
 +
 +  int GetCDPPort() const { return ports_.cdp; }
-+  int GetExtensionPort() const { return ports_.extension; }
 +  int GetServerPort() const { return ports_.server; }
 +
 +  const ServerPorts& GetPorts() const { return ports_; }
