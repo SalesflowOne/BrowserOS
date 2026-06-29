@@ -374,6 +374,12 @@ func TestRootHelpExplainsPatchRepoAndCheckoutModel(t *testing.T) {
 	}
 }
 
+func TestRootExamplesDoNotRenderSourceTabs(t *testing.T) {
+	if strings.Contains(rootCmd.Example, "\n\t") {
+		t.Fatalf("root examples should render with spaces, got:\n%s", rootCmd.Example)
+	}
+}
+
 func TestCheckoutCommandExamplesUseNamedCheckout(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

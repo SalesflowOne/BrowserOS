@@ -122,7 +122,7 @@ func StatusPorcelain(ctx context.Context, dir string, pathspecs []string) ([]Fil
 		if len(line) < 4 {
 			continue
 		}
-		status := strings.TrimSpace(line[:2])
+		status := line[:2]
 		rel := line[3:]
 		change := FileChange{Status: status, Path: rel}
 		if strings.Contains(rel, " -> ") {

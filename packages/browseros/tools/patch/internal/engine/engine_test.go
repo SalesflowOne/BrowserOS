@@ -227,6 +227,97 @@ features:
 	}
 }
 
+func TestAnnotateAssignsOverlappingPathsToMostSpecificFeature(t *testing.T) {
+	ctx := context.Background()
+	workspacePath := initGitRepo(t)
+	writeFile(t, filepath.Join(workspacePath, "chrome", "browser", "browseros", "core", "shared.cc"), "shared\n")
+	writeFile(t, filepath.Join(workspacePath, "chrome", "browser", "browseros", "core", "browseros_prefs.cc"), "prefs\n")
+	runGit(t, workspacePath, "add", "chrome")
+	runGit(t, workspacePath, "commit", "-m", "workspace base")
+	baseCommit := gitOutput(t, workspacePath, "rev-parse", "HEAD")
+
+	writeFile(t, filepath.Join(workspacePath, "chrome", "browser", "browseros", "core", "shared.cc"), "shared changed\n")
+	writeFile(t, filepath.Join(workspacePath, "chrome", "browser", "browseros", "core", "browseros_prefs.cc"), "prefs changed\n")
+
+	repoInfo := newPatchRepo(t, baseCommit)
+	writeFeaturesYAML(t, repoInfo.Root, `version: "1.0"
+features:
+  browseros-core:
+    description: "chore: browseros core"
+    files:
+      - chrome/browser/browseros/core/
+  onboarding-import:
+    description: "feat: onboarding import"
+    files:
+      - chrome/browser/browseros/core/browseros_prefs.cc
+`)
+
+	result, err := Annotate(ctx, AnnotateOptions{
+		Workspace: workspace.Entry{Name: "ws", Path: workspacePath},
+		Repo:      repoInfo,
+	})
+	if err != nil {
+		t.Fatalf("Annotate: %v", err)
+	}
+	if result.CommitsCreated != 2 {
+		t.Fatalf("expected two commits, got %+v", result)
+	}
+	if !slices.Equal(result.Committed[0].Files, []string{"chrome/browser/browseros/core/shared.cc"}) {
+		t.Fatalf("core feature stole overlapping path: %v", result.Committed[0].Files)
+	}
+	if !slices.Equal(result.Committed[1].Files, []string{"chrome/browser/browseros/core/browseros_prefs.cc"}) {
+		t.Fatalf("specific feature did not own exact path: %v", result.Committed[1].Files)
+	}
+	if files := strings.Split(gitOutput(t, workspacePath, "show", "--name-only", "--format=", "HEAD~1"), "\n"); !slices.Equal(files, []string{"chrome/browser/browseros/core/shared.cc"}) {
+		t.Fatalf("core commit files = %v", files)
+	}
+	if files := strings.Split(gitOutput(t, workspacePath, "show", "--name-only", "--format=", "HEAD"), "\n"); !slices.Equal(files, []string{"chrome/browser/browseros/core/browseros_prefs.cc"}) {
+		t.Fatalf("specific commit files = %v", files)
+	}
+}
+
+func TestAnnotateSingleFeatureDoesNotStealMoreSpecificOverlap(t *testing.T) {
+	ctx := context.Background()
+	workspacePath := initGitRepo(t)
+	writeFile(t, filepath.Join(workspacePath, "chrome", "browser", "browseros", "core", "browseros_prefs.cc"), "prefs\n")
+	runGit(t, workspacePath, "add", "chrome")
+	runGit(t, workspacePath, "commit", "-m", "workspace base")
+	baseCommit := gitOutput(t, workspacePath, "rev-parse", "HEAD")
+
+	writeFile(t, filepath.Join(workspacePath, "chrome", "browser", "browseros", "core", "browseros_prefs.cc"), "prefs changed\n")
+
+	repoInfo := newPatchRepo(t, baseCommit)
+	writeFeaturesYAML(t, repoInfo.Root, `version: "1.0"
+features:
+  browseros-core:
+    description: "chore: browseros core"
+    files:
+      - chrome/browser/browseros/core/
+  onboarding-import:
+    description: "feat: onboarding import"
+    files:
+      - chrome/browser/browseros/core/browseros_prefs.cc
+`)
+
+	result, err := Annotate(ctx, AnnotateOptions{
+		Workspace: workspace.Entry{Name: "ws", Path: workspacePath},
+		Repo:      repoInfo,
+		Feature:   "browseros-core",
+	})
+	if err != nil {
+		t.Fatalf("Annotate: %v", err)
+	}
+	if result.CommitsCreated != 0 || result.FeaturesSkipped != 1 {
+		t.Fatalf("expected broad feature to skip specific overlap, got %+v", result)
+	}
+	if head := gitOutput(t, workspacePath, "log", "-1", "--format=%s"); head != "workspace base" {
+		t.Fatalf("broad feature should not commit overlap, got head %q", head)
+	}
+	if status := gitOutput(t, workspacePath, "status", "--porcelain"); status == "" {
+		t.Fatalf("specific overlap change should remain dirty")
+	}
+}
+
 func TestAnnotateCommitsRenamesUnderDirectoryFeature(t *testing.T) {
 	ctx := context.Background()
 	workspacePath := initGitRepo(t)

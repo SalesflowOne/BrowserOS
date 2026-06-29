@@ -50,6 +50,13 @@ type annotateFeature struct {
 	Name        string
 	Description string
 	Files       []string
+	Index       int
+}
+
+type annotateFileSet struct {
+	report []string
+	stage  []string
+	commit []string
 }
 
 // Annotate creates Chromium checkout commits grouped by build/features.yaml.
@@ -59,6 +66,7 @@ func Annotate(ctx context.Context, opts AnnotateOptions) (*AnnotateResult, error
 	if err != nil {
 		return nil, err
 	}
+	allFeatures := features
 	if opts.Feature != "" {
 		filtered := slices.DeleteFunc(slices.Clone(features), func(feature annotateFeature) bool {
 			return feature.Name != opts.Feature
@@ -87,11 +95,11 @@ func Annotate(ctx context.Context, opts AnnotateOptions) (*AnnotateResult, error
 			result.FeaturesSkipped++
 			continue
 		}
-		modified, err := modifiedFeatureFiles(ctx, opts.Workspace.Path, feature.Files)
+		files, err := modifiedFeatureFiles(ctx, opts.Workspace.Path, feature, allFeatures)
 		if err != nil {
 			return nil, err
 		}
-		if len(modified) == 0 {
+		if len(files.report) == 0 {
 			result.Skipped = append(result.Skipped, AnnotateSkippedFeature{
 				Name:        feature.Name,
 				Description: feature.Description,
@@ -100,7 +108,7 @@ func Annotate(ctx context.Context, opts AnnotateOptions) (*AnnotateResult, error
 			result.FeaturesSkipped++
 			continue
 		}
-		commit, err := commitFeatureFiles(ctx, opts.Workspace.Path, feature.Description, feature.Files)
+		commit, err := commitFeatureFiles(ctx, opts.Workspace.Path, feature.Description, files.stage, files.commit)
 		if err != nil {
 			return nil, fmt.Errorf("commit feature %s: %w", feature.Name, err)
 		}
@@ -108,7 +116,7 @@ func Annotate(ctx context.Context, opts AnnotateOptions) (*AnnotateResult, error
 			Name:        feature.Name,
 			Description: feature.Description,
 			Commit:      commit,
-			Files:       modified,
+			Files:       files.report,
 		})
 		result.CommitsCreated++
 	}
@@ -143,6 +151,7 @@ func loadAnnotateFeatures(featuresFile string) ([]annotateFeature, error) {
 			Name:        name,
 			Description: description,
 			Files:       stringSequence(data, "files"),
+			Index:       len(features),
 		})
 	}
 	return features, nil
@@ -192,30 +201,125 @@ func stringSequence(node *yaml.Node, key string) []string {
 	return items
 }
 
-func modifiedFeatureFiles(ctx context.Context, workspacePath string, files []string) ([]string, error) {
-	changes, err := git.StatusPorcelain(ctx, workspacePath, files)
+func modifiedFeatureFiles(ctx context.Context, workspacePath string, feature annotateFeature, allFeatures []annotateFeature) (annotateFileSet, error) {
+	changes, err := git.StatusPorcelain(ctx, workspacePath, feature.Files)
 	if err != nil {
-		return nil, err
+		return annotateFileSet{}, err
 	}
-	seen := map[string]bool{}
-	var modified []string
+	set := annotateFileSet{}
+	reportSeen := map[string]bool{}
+	stageSeen := map[string]bool{}
+	commitSeen := map[string]bool{}
 	for _, change := range changes {
-		for _, rel := range []string{change.Path, change.OldPath} {
-			rel = patch.NormalizeChromiumPath(rel)
-			if rel == "." || rel == "" || patch.IsInternalPath(rel) || seen[rel] {
-				continue
-			}
-			seen[rel] = true
-			modified = append(modified, rel)
+		owner := ownerFeature(change, allFeatures)
+		if owner == nil || owner.Name != feature.Name {
+			continue
+		}
+		for _, rel := range changeReportPaths(change) {
+			appendUniquePath(&set.report, reportSeen, rel)
+		}
+		for _, rel := range changeStagePaths(change) {
+			appendUniquePath(&set.stage, stageSeen, rel)
+		}
+		for _, rel := range changeReportPaths(change) {
+			appendUniquePath(&set.commit, commitSeen, rel)
 		}
 	}
-	slices.Sort(modified)
-	return modified, nil
+	slices.Sort(set.report)
+	slices.Sort(set.stage)
+	slices.Sort(set.commit)
+	return set, nil
 }
 
-func commitFeatureFiles(ctx context.Context, workspacePath string, message string, files []string) (string, error) {
-	if err := git.AddAllPaths(ctx, workspacePath, files); err != nil {
+func ownerFeature(change git.FileChange, features []annotateFeature) *annotateFeature {
+	var owner *annotateFeature
+	bestScore := -1
+	for idx := range features {
+		score := featureChangeScore(features[idx], change)
+		if score < 0 {
+			continue
+		}
+		if score > bestScore || score == bestScore && owner != nil && features[idx].Index > owner.Index {
+			bestScore = score
+			owner = &features[idx]
+		}
+	}
+	return owner
+}
+
+func featureChangeScore(feature annotateFeature, change git.FileChange) int {
+	best := -1
+	for _, rel := range changeReportPaths(change) {
+		if score := featurePathScore(feature, rel); score > best {
+			best = score
+		}
+	}
+	return best
+}
+
+func featurePathScore(feature annotateFeature, rel string) int {
+	best := -1
+	for _, scope := range feature.Files {
+		if !patch.PathMatches(rel, []string{scope}) {
+			continue
+		}
+		if len(scope) > best {
+			best = len(scope)
+		}
+	}
+	return best
+}
+
+func changeReportPaths(change git.FileChange) []string {
+	paths := []string{change.Path}
+	if change.OldPath != "" {
+		paths = append(paths, change.OldPath)
+	}
+	return normalizeAnnotatePaths(paths)
+}
+
+func changeStagePaths(change git.FileChange) []string {
+	if change.Status == "??" {
+		return normalizeAnnotatePaths([]string{change.Path})
+	}
+	if len(change.Status) < 2 {
+		return changeReportPaths(change)
+	}
+	var paths []string
+	indexStatus := change.Status[0]
+	worktreeStatus := change.Status[1]
+	if worktreeStatus != ' ' {
+		paths = append(paths, change.Path)
+		if indexStatus == ' ' && change.OldPath != "" {
+			paths = append(paths, change.OldPath)
+		}
+	}
+	return normalizeAnnotatePaths(paths)
+}
+
+func normalizeAnnotatePaths(paths []string) []string {
+	normalized := make([]string, 0, len(paths))
+	for _, raw := range paths {
+		rel := patch.NormalizeChromiumPath(raw)
+		if rel == "." || rel == "" || patch.IsInternalPath(rel) {
+			continue
+		}
+		normalized = append(normalized, rel)
+	}
+	return normalized
+}
+
+func appendUniquePath(paths *[]string, seen map[string]bool, rel string) {
+	if seen[rel] {
+		return
+	}
+	seen[rel] = true
+	*paths = append(*paths, rel)
+}
+
+func commitFeatureFiles(ctx context.Context, workspacePath string, message string, stagePaths []string, commitPaths []string) (string, error) {
+	if err := git.AddAllPaths(ctx, workspacePath, stagePaths); err != nil {
 		return "", err
 	}
-	return git.CommitPaths(ctx, workspacePath, message, files)
+	return git.CommitPaths(ctx, workspacePath, message, commitPaths)
 }
