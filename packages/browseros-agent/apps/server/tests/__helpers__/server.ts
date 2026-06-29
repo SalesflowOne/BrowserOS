@@ -149,7 +149,7 @@ export async function spawnServer(config: ServerConfig): Promise<ServerState> {
         },
         directories: {
           resources: join(MONOREPO_ROOT, 'resources'),
-          execution: MONOREPO_ROOT,
+          execution: configDir,
         },
         flags: {
           allow_remote_in_mcp: false,
@@ -194,7 +194,13 @@ export async function spawnServer(config: ServerConfig): Promise<ServerState> {
   })
 
   console.log('Waiting for server to be ready...')
-  await waitForHealth(process, config.serverPort, stdoutBuffer, stderrBuffer)
+  try {
+    await waitForHealth(process, config.serverPort, stdoutBuffer, stderrBuffer)
+  } catch (error) {
+    process.kill('SIGTERM')
+    rmSync(configDir, { recursive: true, force: true })
+    throw error
+  }
   console.log('Server is ready')
 
   serverState = { process, config, configDir }
