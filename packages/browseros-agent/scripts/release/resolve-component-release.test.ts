@@ -565,4 +565,36 @@ describe('resolve-component-release', () => {
       rmSync(bareDir, { recursive: true, force: true })
     }
   })
+
+  it('refuses to repair a server tag by downgrading the package version', async () => {
+    const dir = await initFixture('agent-server', '0.0.124')
+    const bareDir = mkdtempSync(join(tmpdir(), 'component-release-remote-'))
+    try {
+      writeServerLock(dir, '0.0.124')
+      await mustRun(dir, ['git', 'add', 'bun.lock'])
+      await mustRun(dir, ['git', 'commit', '-m', 'add server lock'])
+      await mustRun(bareDir, ['git', 'init', '--bare'])
+      await mustRun(dir, ['git', 'remote', 'add', 'origin', bareDir])
+      await mustRun(dir, ['git', 'push', '-u', 'origin', 'main'])
+
+      const currentTag = scopedTag('agent-server', '0.0.123')
+      await tag(dir, currentTag)
+      await mustRun(dir, ['git', 'push', 'origin', currentTag])
+
+      const result = await prepareServerTagRelease(dir, currentTag)
+
+      expect(result.code).toBe(1)
+      expect(result.stderr).toContain(
+        'Auto-bump requires tag version 0.0.123 to be greater than package version 0.0.124',
+      )
+      expect(
+        (
+          await mustRun(dir, ['git', 'show', 'HEAD:apps/server/package.json'])
+        ).trim(),
+      ).toContain('"version": "0.0.124"')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+      rmSync(bareDir, { recursive: true, force: true })
+    }
+  })
 })

@@ -90,6 +90,27 @@ ensure_git_identity() {
   fi
 }
 
+# Compares strict release versions before allowing the workflow to edit package files.
+version_gt() {
+  local left_major left_minor left_patch right_major right_minor right_patch
+  IFS=. read -r left_major left_minor left_patch <<< "$1"
+  IFS=. read -r right_major right_minor right_patch <<< "$2"
+
+  for part in "$left_major" "$left_minor" "$left_patch" "$right_major" "$right_minor" "$right_patch"; do
+    [[ "$part" =~ ^[0-9]+$ ]] || return 1
+  done
+
+  if [ "$left_major" -ne "$right_major" ]; then
+    [ "$left_major" -gt "$right_major" ]
+    return
+  fi
+  if [ "$left_minor" -ne "$right_minor" ]; then
+    [ "$left_minor" -gt "$right_minor" ]
+    return
+  fi
+  [ "$left_patch" -gt "$right_patch" ]
+}
+
 preflight_output="$(unset GITHUB_OUTPUT; run_resolver --allow-package-version-mismatch)"
 
 version=""
@@ -101,6 +122,11 @@ parse_release_output "$preflight_output"
 if [ "$package_version_matches" = "true" ]; then
   run_resolver
   exit 0
+fi
+
+if ! version_gt "$version" "$package_version"; then
+  echo "Auto-bump requires tag version $version to be greater than package version $package_version" >&2
+  exit 1
 fi
 
 git -C "$agent_root" fetch "$remote" "$default_branch:refs/remotes/$remote/$default_branch" --no-tags
