@@ -7,8 +7,9 @@ features:
   browseros-core:
     description: "chore: browseros core infrastructure"
     files:
-      # Directory structure + core constants/prefs/switches
+      # Directory structure + core constants/prefs/switches + product identity
       - chrome/browser/browseros/BUILD.gn
+      - chrome/browser/browseros/buildflags.gni
       - chrome/browser/browseros/core/
       # Shared pref infrastructure (settings-page + metrics + importer)
       - chrome/browser/prefs/browser_prefs.cc

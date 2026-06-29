@@ -1,0 +1,22 @@
+diff --git a/chrome/browser/browseros/buildflags.gni b/chrome/browser/browseros/buildflags.gni
+new file mode 100644
+index 0000000000000..581416a94ad10
+--- /dev/null
++++ b/chrome/browser/browseros/buildflags.gni
+@@ -0,0 +1,16 @@
++# Copyright 2024 The Chromium Authors
++# Use of this source code is governed by a BSD-style license that can be
++# found in the LICENSE file.
++
++declare_args() {
++  # Product identity to ship this build as: "browseros" or "browserclaw".
++  # Baked into the binary at build time so runtime switches and field trials
++  # cannot change product identity for shipped artifacts.
++  browseros_product = "browseros"
++}
++
++assert(browseros_product == "browseros" || browseros_product == "browserclaw",
++       "browseros_product must be 'browseros' or 'browserclaw'")
++
++browseros_product_browseros = browseros_product == "browseros"
++browseros_product_browserclaw = browseros_product == "browserclaw"
