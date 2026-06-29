@@ -44,7 +44,7 @@ class MacosServerBinariesTest(unittest.TestCase):
         )
         self.assertEqual(
             BROWSEROS_CLAW_SERVER_BUNDLE.macos_bundle_resources_root,
-            Path("Contents/Resources/BrowserOSClawServer/default/resources"),
+            Path("Contents/Resources/BrowserClawServer/default/resources"),
         )
         self.assertTrue(BROWSEROS_SERVER_BUNDLE.required_in_chromium_output)
         self.assertFalse(BROWSEROS_CLAW_SERVER_BUNDLE.required_in_chromium_output)
@@ -134,7 +134,7 @@ class WindowsServerBinariesTest(unittest.TestCase):
                 / "bin"
                 / "browseros_server.exe",
                 build_output_dir
-                / "BrowserOSClawServer"
+                / "BrowserClawServer"
                 / "default"
                 / "resources"
                 / "bin"

@@ -72,7 +72,7 @@ class CopyBrowserFilesTest(unittest.TestCase):
             out_dir.mkdir(parents=True)
             (out_dir / "browseros").write_text("browser")
 
-            for bundle_name in ("BrowserOSServer", "BrowserOSClawServer"):
+            for bundle_name in ("BrowserOSServer", "BrowserClawServer"):
                 resources = out_dir / bundle_name / "default" / "resources"
                 resources.mkdir(parents=True)
                 (resources / "marker.txt").write_text(bundle_name)
@@ -98,7 +98,7 @@ class CopyBrowserFilesTest(unittest.TestCase):
             self.assertTrue(
                 (
                     target_dir
-                    / "BrowserOSClawServer"
+                    / "BrowserClawServer"
                     / "default"
                     / "resources"
                     / "marker.txt"

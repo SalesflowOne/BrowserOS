@@ -199,7 +199,7 @@ def copy_browser_files(
         "locales",
         "MEIPreload",
         "BrowserOSServer",
-        "BrowserOSClawServer",
+        "BrowserClawServer",
     ]
     for dir_name in dirs_to_copy:
         src = join_paths(out_dir, dir_name)

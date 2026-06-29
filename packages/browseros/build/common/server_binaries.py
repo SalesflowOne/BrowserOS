@@ -63,9 +63,9 @@ BROWSEROS_CLAW_SERVER_BUNDLE = ServerBundle(
     local_resources_root=Path("resources/binaries/browseros_claw_server"),
     chromium_resources_root=Path("chrome/browser/browseros/claw_server/resources"),
     macos_bundle_resources_root=Path(
-        "Contents/Resources/BrowserOSClawServer/default/resources"
+        "Contents/Resources/BrowserClawServer/default/resources"
     ),
-    windows_bundle_resources_root=Path("BrowserOSClawServer/default/resources"),
+    windows_bundle_resources_root=Path("BrowserClawServer/default/resources"),
     macos_binaries=BROWSEROS_CLAW_SERVER_MACOS_BINARIES,
     windows_binaries=("browseros-claw-server.exe",),
     required_in_chromium_output=False,

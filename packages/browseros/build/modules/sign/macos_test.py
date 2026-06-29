@@ -55,7 +55,7 @@ class MacOSSignDiscoveryTest(unittest.TestCase):
                 app_path
                 / "Contents"
                 / "Resources"
-                / "BrowserOSClawServer"
+                / "BrowserClawServer"
                 / "default"
                 / "resources"
                 / "bin"
@@ -164,7 +164,7 @@ class VerifyServerResourcesBundleTest(unittest.TestCase):
                 app_path
                 / "Contents"
                 / "Resources"
-                / "BrowserOSClawServer"
+                / "BrowserClawServer"
                 / "default"
                 / "resources"
             )
@@ -175,7 +175,7 @@ class VerifyServerResourcesBundleTest(unittest.TestCase):
 
             self.assertEqual(len(problems), 1)
             self.assertIn(
-                "Contents/Resources/BrowserOSClawServer/default/resources",
+                "Contents/Resources/BrowserClawServer/default/resources",
                 problems[0],
             )
             self.assertIn("bin/browseros-claw-server", problems[0])

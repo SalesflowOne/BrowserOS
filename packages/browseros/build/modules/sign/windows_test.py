@@ -28,7 +28,7 @@ class WindowsSignPathsTest(unittest.TestCase):
                 / "bin"
                 / "browseros_server.exe",
                 build_output_dir
-                / "BrowserOSClawServer"
+                / "BrowserClawServer"
                 / "default"
                 / "resources"
                 / "bin"
@@ -77,7 +77,7 @@ class WindowsSignPathsTest(unittest.TestCase):
             )
             (
                 build_output_dir
-                / "BrowserOSClawServer"
+                / "BrowserClawServer"
                 / "default"
                 / "resources"
                 / "bin"
@@ -87,7 +87,7 @@ class WindowsSignPathsTest(unittest.TestCase):
                 get_missing_required_browseros_server_binary_paths(build_output_dir),
                 [
                     build_output_dir
-                    / "BrowserOSClawServer"
+                    / "BrowserClawServer"
                     / "default"
                     / "resources"
                     / "bin"
