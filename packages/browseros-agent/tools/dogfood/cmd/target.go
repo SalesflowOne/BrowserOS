@@ -99,6 +99,14 @@ func selectedTargetFlag(target config.Target) (string, error) {
 	}
 }
 
+func targetFlagOrDefault(target config.Target) string {
+	flag, err := selectedTargetFlag(target)
+	if err != nil {
+		return "--browseros"
+	}
+	return flag
+}
+
 // loadTargetConfig loads config and projects it to the requested dogfood target.
 func loadTargetConfig(target config.Target) (config.Config, error) {
 	path, err := config.Path()

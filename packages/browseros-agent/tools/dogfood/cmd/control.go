@@ -201,10 +201,7 @@ func daemonUnavailableError(paths runPaths, target config.Target, cause error) e
 		if stateErr == nil && state.Mode == "foreground" {
 			return fmt.Errorf("browseros-dogfood is running in foreground mode (pid %d); background daemon commands are unavailable", state.PID)
 		}
-		targetFlag, err := selectedTargetFlag(target)
-		if err != nil {
-			targetFlag = "--browseros"
-		}
+		targetFlag := targetFlagOrDefault(target)
 		return fmt.Errorf("browseros-dogfood background daemon is not responding; try `browseros-dogfood %s stop` if it is stuck, then `browseros-dogfood %s start-background`", targetFlag, targetFlag)
 	}
 	return err
@@ -259,10 +256,7 @@ func monitorDaemonUntilRunning(ctx context.Context, monitor daemonMonitor) error
 			if monitor.Detached != nil {
 				*monitor.Detached = true
 			}
-			targetFlag, err := selectedTargetFlag(monitor.Target)
-			if err != nil {
-				targetFlag = "--browseros"
-			}
+			targetFlag := targetFlagOrDefault(monitor.Target)
 			fmt.Fprintf(out, "%s daemon still running. Run %s to reattach.\n", warnStyle.Sprint("Detached;"), commandStyle.Sprintf("browseros-dogfood %s logs tail", targetFlag))
 			return nil
 		case err := <-followErr:
@@ -290,10 +284,7 @@ func daemonReachedTerminalState(status func() (ipc.Response, error), target conf
 		if lastError == "" {
 			lastError = "daemon entered error state"
 		}
-		targetFlag, err := selectedTargetFlag(target)
-		if err != nil {
-			targetFlag = "--browseros"
-		}
+		targetFlag := targetFlagOrDefault(target)
 		return true, fmt.Errorf("%s; run `browseros-dogfood %s logs tail` for details", lastError, targetFlag)
 	default:
 		return false, nil

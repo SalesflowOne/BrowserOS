@@ -30,7 +30,7 @@ var refreshProfileCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		lock, err := acquireRefreshProfileLock(paths)
+		lock, err := acquireRefreshProfileLock(paths, target)
 		if err != nil {
 			return err
 		}
@@ -54,7 +54,7 @@ var refreshProfileCmd = &cobra.Command{
 	},
 }
 
-func acquireRefreshProfileLock(paths runPaths) (*dogfoodruntime.Lock, error) {
+func acquireRefreshProfileLock(paths runPaths, target config.Target) (*dogfoodruntime.Lock, error) {
 	lock, err := dogfoodruntime.AcquireLock(paths.Lock)
 	if err == nil {
 		if cleanupErr := dogfoodruntime.CleanupStaleRunFiles(paths.State); cleanupErr != nil {
@@ -64,20 +64,21 @@ func acquireRefreshProfileLock(paths runPaths) (*dogfoodruntime.Lock, error) {
 		return lock, nil
 	}
 	if errors.Is(err, dogfoodruntime.ErrAlreadyRunning) {
-		return nil, refreshProfileRunningError(paths)
+		return nil, refreshProfileRunningError(paths, target)
 	}
 	return nil, err
 }
 
-func refreshProfileRunningError(paths runPaths) error {
+func refreshProfileRunningError(paths runPaths, target config.Target) error {
+	targetFlag := targetFlagOrDefault(target)
 	state, err := dogfoodruntime.ReadRunState(paths.State)
 	if err == nil {
 		if state.Mode == "background" {
-			return fmt.Errorf("cannot refresh profile while browseros-dogfood background daemon is running (pid %d); run `browseros-dogfood stop` first", state.PID)
+			return fmt.Errorf("cannot refresh profile while browseros-dogfood background daemon is running (pid %d); run `browseros-dogfood %s stop` first", state.PID, targetFlag)
 		}
 		return fmt.Errorf("cannot refresh profile while browseros-dogfood is running in foreground mode (pid %d); stop it first", state.PID)
 	}
-	return fmt.Errorf("cannot refresh profile while browseros-dogfood is running; run `browseros-dogfood stop` first")
+	return fmt.Errorf("cannot refresh profile while browseros-dogfood is running; run `browseros-dogfood %s stop` first", targetFlag)
 }
 
 func ensureDevProfileNotInUse(cfg config.Config) error {
@@ -86,30 +87,8 @@ func ensureDevProfileNotInUse(cfg config.Config) error {
 		return err
 	}
 	if inUse {
-		return fmt.Errorf("cannot refresh profile because the dogfood dev profile is in use at %s; run `browseros-dogfood stop` first", cfg.DevUserDataDir)
+		targetFlag := targetFlagOrDefault(cfg.Target)
+		return fmt.Errorf("cannot refresh profile because the dogfood dev profile is in use at %s; run `browseros-dogfood %s stop` first", cfg.DevUserDataDir, targetFlag)
 	}
 	return nil
-}
-
-func loadConfig() (config.Config, error) {
-	cfg, err := loadConfigWithoutValidation()
-	if err != nil {
-		return config.Config{}, err
-	}
-	if err := cfg.Validate(); err != nil {
-		return config.Config{}, err
-	}
-	return cfg, nil
-}
-
-func loadConfigWithoutValidation() (config.Config, error) {
-	path, err := config.Path()
-	if err != nil {
-		return config.Config{}, err
-	}
-	cfg, err := config.Load(path)
-	if err != nil {
-		return config.Config{}, fmt.Errorf("missing config at %s; run browseros-dogfood init: %w", path, err)
-	}
-	return cfg, nil
 }
