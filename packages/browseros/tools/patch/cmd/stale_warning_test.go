@@ -73,6 +73,42 @@ func TestWarnIfPatchesRepoDriftWritesPathToStderr(t *testing.T) {
 	}
 }
 
+func TestWarnIfPatchesRepoDriftPrefersChangedPatchesRepoFlag(t *testing.T) {
+	configuredRepo, _ := setupWarningRepos(t)
+	overrideRepo, overrideUpstream := setupWarningRepos(t)
+	commitWarningFile(t, overrideUpstream, "remote.txt", "remote\n", "remote change")
+	runWarningGit(t, overrideUpstream, "push", "origin", "main")
+
+	oldAppState := appState
+	t.Cleanup(func() {
+		appState = oldAppState
+	})
+	appState = &app.App{
+		CWD: t.TempDir(),
+		Config: &workspace.Config{
+			PatchesRepo: configuredRepo,
+		},
+	}
+
+	var stderr bytes.Buffer
+	cmd := &cobra.Command{Use: "add"}
+	cmd.Flags().String("patches-repo", "", "")
+	if err := cmd.Flags().Set("patches-repo", overrideRepo); err != nil {
+		t.Fatalf("set patches-repo: %v", err)
+	}
+	cmd.SetErr(&stderr)
+
+	warnIfPatchesRepoDrift(cmd)
+
+	output := stderr.String()
+	if !strings.Contains(output, overrideRepo) {
+		t.Fatalf("expected warning to use override repo %q, got:\n%s", overrideRepo, output)
+	}
+	if strings.Contains(output, configuredRepo) {
+		t.Fatalf("warning should not use configured repo %q when override is set, got:\n%s", configuredRepo, output)
+	}
+}
+
 func setupWarningRepos(t *testing.T) (string, string) {
 	t.Helper()
 

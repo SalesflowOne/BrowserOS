@@ -27,7 +27,7 @@ func (d patchesRepoDrift) hasDrift() bool {
 
 // warnIfPatchesRepoDrift prints a non-fatal freshness warning for the active patches repo.
 func warnIfPatchesRepoDrift(cmd *cobra.Command) {
-	repoPath := patchesRepoWarningPath()
+	repoPath := patchesRepoWarningPath(cmd)
 	if repoPath == "" {
 		return
 	}
@@ -45,7 +45,15 @@ func warnIfPatchesRepoDrift(cmd *cobra.Command) {
 	fmt.Fprintln(cmd.ErrOrStderr(), formatPatchesRepoDriftWarning(repoPath, drift))
 }
 
-func patchesRepoWarningPath() string {
+func patchesRepoWarningPath(cmd *cobra.Command) string {
+	if cmd != nil {
+		flag := cmd.Flags().Lookup("patches-repo")
+		if flag != nil && flag.Changed {
+			if override := strings.TrimSpace(flag.Value.String()); override != "" {
+				return override
+			}
+		}
+	}
 	if appState == nil {
 		return ""
 	}
