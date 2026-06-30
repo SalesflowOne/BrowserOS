@@ -1,9 +1,9 @@
 diff --git a/chrome/browser/browseros/server/browseros_server_config.cc b/chrome/browser/browseros/server/browseros_server_config.cc
 new file mode 100644
-index 0000000000000..108ebf4b1cb5a
+index 0000000000000..6fe71062a9c96
 --- /dev/null
 +++ b/chrome/browser/browseros/server/browseros_server_config.cc
-@@ -0,0 +1,162 @@
+@@ -0,0 +1,178 @@
 +// Copyright 2024 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -24,6 +24,13 @@ index 0000000000000..108ebf4b1cb5a
 +    FILE_PATH_LITERAL("config.json"),
 +    "/health",
 +    true,
++    {
++        // Empty state dir keeps the legacy .browseros/current_version layout.
++        FILE_PATH_LITERAL(""),
++        "https://cdn.browseros.com/appcast-server.xml",
++        "https://cdn.browseros.com/appcast-server.alpha.xml",
++        "/status",
++    },
 +};
 +
 +constexpr ManagedServerDescriptor kBrowserClawServerDescriptor = {
@@ -33,7 +40,16 @@ index 0000000000000..108ebf4b1cb5a
 +    FILE_PATH_LITERAL("browseros-claw-server"),
 +    FILE_PATH_LITERAL("config.json"),
 +    "/system/health",
-+    false,
++    true,
++    {
++        // Isolate Claw OTA state under .browseros/BrowserClawServer/.
++        FILE_PATH_LITERAL("BrowserClawServer"),
++        "https://cdn.browseros.com/appcast-claw-server.xml",
++        "https://cdn.browseros.com/appcast-claw-server.alpha.xml",
++        // Claw exposes /system/health but not the {can_update} readiness
++        // contract yet; empty skips readiness and restarts after verification.
++        "",
++    },
 +};
 +
 +}  // namespace

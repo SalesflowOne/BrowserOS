@@ -1,9 +1,9 @@
 diff --git a/chrome/browser/browseros/server/browseros_server_config.h b/chrome/browser/browseros/server/browseros_server_config.h
 new file mode 100644
-index 0000000000000..3ace523b486f4
+index 0000000000000..a98e3b74de45e
 --- /dev/null
 +++ b/chrome/browser/browseros/server/browseros_server_config.h
-@@ -0,0 +1,127 @@
+@@ -0,0 +1,147 @@
 +// Copyright 2024 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -23,13 +23,33 @@ index 0000000000000..3ace523b486f4
 +struct ServerLaunchConfig;
 +
 +struct ManagedServerDescriptor {
++  // OTA contract consumed by BrowserOSServerUpdater so a single updater can
++  // serve every sidecar product. Grouped into a nested struct to keep the
++  // descriptor under the chromium-style implicit-ctor weight limit (>=10
++  // trivial fields would force an out-of-line ctor, which a constexpr
++  // aggregate cannot have).
++  struct UpdaterConfig {
++    // Subdirectory under .browseros holding this product's OTA state
++    // (current_version file + versions/). Empty keeps the legacy BrowserOS
++    // layout directly under .browseros for backward compatibility.
++    base::FilePath::StringViewType state_dir;
++    // Stable and alpha appcast feeds.
++    std::string_view appcast_url;
++    std::string_view alpha_appcast_url;
++    // Server endpoint returning {can_update} that gates a hot-swap. Empty skips
++    // the readiness fetch and restarts right after verification.
++    std::string_view readiness_path;
++  };
++
 +  Product product;
 +  std::string_view log_name;
 +  base::FilePath::StringViewType bundle_dir;
 +  base::FilePath::StringViewType binary_name;
 +  base::FilePath::StringViewType config_file_name;
 +  std::string_view health_path;
++  // Whether the manager starts an updater for this product at all.
 +  bool enable_updater;
++  UpdaterConfig updater;
 +};
 +
 +const ManagedServerDescriptor& GetBrowserOSServerDescriptor();
