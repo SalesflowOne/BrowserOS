@@ -154,7 +154,7 @@ func Save(path string, cfg Config) error {
 	if err != nil {
 		return err
 	}
-	header := "# browseros-dogfood configuration\n# Run: browseros-dogfood init to reconfigure\n\n"
+	header := "# browseros-dogfood configuration\n# Run: browseros-dogfood --browseros init or browseros-dogfood --claw init to reconfigure\n\n"
 	return os.WriteFile(path, append([]byte(header), data...), 0644)
 }
 

@@ -137,6 +137,28 @@ func TestDaemonUnavailableErrorIncludesTargetCommands(t *testing.T) {
 	}
 }
 
+func TestDaemonUnavailableErrorIncludesTargetStartWhenNotRunning(t *testing.T) {
+	dir := t.TempDir()
+	paths := runPaths{
+		Dir:    dir,
+		Lock:   filepath.Join(dir, "run.lock"),
+		State:  filepath.Join(dir, "state.json"),
+		Socket: filepath.Join(dir, "daemon.sock"),
+	}
+
+	err := daemonUnavailableError(paths, config.TargetClaw, ipc.ErrDaemonNotRunning)
+	if err == nil {
+		t.Fatal("expected daemon unavailable error")
+	}
+	got := err.Error()
+	if !strings.Contains(got, "browseros-dogfood --claw start-background") {
+		t.Fatalf("missing target-specific start command: %v", err)
+	}
+	if strings.Contains(got, "browseros-dogfood start-background") {
+		t.Fatalf("contains targetless start command: %v", err)
+	}
+}
+
 func TestRootUsageShowsRestartPullAndOmitsUpdate(t *testing.T) {
 	usage := stripANSI(rootCmd.UsageString())
 	if !strings.Contains(usage, "restart          Rebuild/restart current checkout; --pull updates, --pull --force resets") {

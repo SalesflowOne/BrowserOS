@@ -194,6 +194,9 @@ func daemonUnavailableError(paths runPaths, target config.Target, cause error) e
 	if err == nil {
 		_ = lock.Close()
 		_ = dogfoodruntime.CleanupStaleRunFiles(paths.State)
+		if errors.Is(cause, ipc.ErrDaemonNotRunning) {
+			return fmt.Errorf("%w; start it with `browseros-dogfood %s start-background`", cause, targetFlagOrDefault(target))
+		}
 		return cause
 	}
 	if errors.Is(err, dogfoodruntime.ErrAlreadyRunning) {
