@@ -4,270 +4,244 @@ on:
   push:
     tags:
       - "agent-server/v*"
-  workflow_call:
-    inputs:
-      version:
-        description: "Release version (e.g. 0.0.123). If newer than package.json, the workflow applies it before building."
-        required: false
-        type: string
-      apply_bump:
-        description: "Patch-bump when no newer explicit version is provided; non-publishing callers commit it."
-        required: false
-        default: false
-        type: boolean
-      targets:
-        description: "Server build targets to publish to R2"
-        required: false
-        default: all
-        type: string
-      publish_github_release:
-        description: "Create or update the GitHub server release"
-        required: false
-        default: true
-        type: boolean
-    outputs:
-      server_version:
-        description: "The server version that was built and uploaded."
-        value: ${{ jobs.release.outputs.server_version }}
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version (e.g. 0.0.123). If newer than package.json, the workflow commits it before building."
+        description: "Release version, e.g. 0.0.123"
         required: true
         type: string
-      apply_bump:
-        description: "Patch-bump only when version matches package.json."
-        required: false
-        default: false
-        type: boolean
-      targets:
-        description: "Server build targets to publish to R2"
-        required: false
-        default: all
-        type: choice
-        options:
-          - all
-          - darwin-arm64
-          - darwin-x64
-          - linux-arm64
-          - linux-x64
-          - windows-x64
-      publish_github_release:
-        description: "Create or update the GitHub server release"
-        required: false
-        default: true
-        type: boolean
+
+permissions:
+  contents: write
 
 concurrency:
   group: release-server
   cancel-in-progress: false
 
 jobs:
-  authorize_manual_dispatch:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    environment: release-core
-    steps:
-      - run: echo "Manual dispatch approved through release-core."
-
   release:
-    needs: authorize_manual_dispatch
-    if: |
-      always() &&
-      github.event.deleted != true &&
-      (github.event_name != 'workflow_dispatch' || needs.authorize_manual_dispatch.result == 'success')
+    if: github.event_name != 'push' || github.event.deleted != true
     runs-on: ubuntu-latest
-    outputs:
-      server_version: ${{ steps.version.outputs.package_version }}
-    permissions:
-      contents: write
-      pull-requests: read
-    timeout-minutes: 120
-    defaults:
-      run:
-        working-directory: packages/browseros-agent
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.repository.default_branch || github.ref }}
+          ref: ${{ github.event.repository.default_branch || 'main' }}
 
-      - name: Resolve release options
-        id: options
+      - name: Resolve release
+        id: release
         env:
-          INPUT_APPLY_BUMP: ${{ inputs.apply_bump }}
-          INPUT_PUBLISH_GITHUB_RELEASE: ${{ inputs.publish_github_release }}
-          INPUT_TARGETS: ${{ inputs.targets }}
-          INPUT_VERSION: ${{ inputs.version }}
-        run: |
-          set -euo pipefail
-          apply_bump="${INPUT_APPLY_BUMP:-false}"
-          publish_github_release="${INPUT_PUBLISH_GITHUB_RELEASE:-true}"
-          targets="${INPUT_TARGETS:-all}"
-
-          {
-            echo "apply_bump=$apply_bump"
-            echo "publish_github_release=$publish_github_release"
-            echo "targets=$targets"
-            echo "version=$INPUT_VERSION"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Validate release options
-        env:
-          SERVER_RELEASE_TARGETS: ${{ steps.options.outputs.targets }}
-          PUBLISH_GITHUB_RELEASE: ${{ steps.options.outputs.publish_github_release }}
-        run: |
-          set -euo pipefail
-          if [ "$PUBLISH_GITHUB_RELEASE" = "true" ] && [ "$SERVER_RELEASE_TARGETS" != "all" ]; then
-            echo "::error::Set publish_github_release=false when releasing a subset of server targets."
-            exit 1
-          fi
-
-      - name: Resolve server version
-        id: version
-        env:
-          APPLY_BUMP: ${{ steps.options.outputs.apply_bump }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
           EVENT_NAME: ${{ github.event_name }}
-          PUBLISH_GITHUB_RELEASE: ${{ steps.options.outputs.publish_github_release }}
-          RELEASE_TAG: ${{ github.ref_name }}
-          REQUESTED_VERSION: ${{ steps.options.outputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+          REQUESTED_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
 
-          release_output="$(
-            ./scripts/release/resolve-server-release.sh \
-              --event-name "$EVENT_NAME" \
-              --default-branch "$DEFAULT_BRANCH" \
-              --requested-version "$REQUESTED_VERSION" \
-              --release-tag "$RELEASE_TAG" \
-              --apply-bump "$APPLY_BUMP" \
-              --publish-github-release "$PUBLISH_GITHUB_RELEASE"
-          )"
-          printf '%s\n' "$release_output"
+          SERVER_PACKAGE_JSON="packages/browseros-agent/apps/server/package.json"
 
-          package_version="$(printf '%s\n' "$release_output" | awk -F= '$1 == "package_version" {print $2}' | tail -n 1)"
-          release_tag="$(printf '%s\n' "$release_output" | awk -F= '$1 == "tag" {print $2}' | tail -n 1)"
-          release_sha="$(printf '%s\n' "$release_output" | awk -F= '$1 == "release_sha" {print $2}' | tail -n 1)"
+          is_semver() {
+            [[ "$1" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          }
 
-          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
-          Server release flow:
-          - Version: ${package_version}
-          - Tag: ${release_tag}
-          - Release commit: ${release_sha}
-          - Publishing releases commit apps/server/package.json and bun.lock before building when the requested/tag version is newer.
-          - Non-publishing calls keep the version update local so the caller can commit it.
-          EOF
+          read_package_version() {
+            python3 - "$SERVER_PACKAGE_JSON" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
 
-      - name: Checkout server release commit
-        if: ${{ steps.options.outputs.publish_github_release == 'true' }}
-        run: git checkout --detach "${{ steps.version.outputs.release_sha }}"
-        working-directory: ${{ github.workspace }}
+          print(json.loads(Path(sys.argv[1]).read_text())["version"])
+          PY
+          }
 
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "1.3.6"
+          read_package_version_at_ref() {
+            git show "$1:$SERVER_PACKAGE_JSON" | python3 -c '
+          import json
+          import sys
 
-      - name: Install dependencies
-        run: bun ci
+          print(json.load(sys.stdin)["version"])
+          '
+          }
 
-      - name: Prepare production env file
-        run: cp apps/claw-server/.env.example apps/claw-server/.env.production
+          compare_versions() {
+            python3 - "$1" "$2" <<'PY'
+          import sys
 
-      - name: Build and upload release artifacts
-        env:
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
-          R2_UPLOAD_PREFIX: claw-server/prod-resources
-          NODE_ENV: production
-          LOG_LEVEL: info
-          FORCE_COLOR: 1
-          SERVER_RELEASE_TARGETS: ${{ steps.options.outputs.targets }}
-        run: bun scripts/build/claw-server.ts --target="$SERVER_RELEASE_TARGETS"
+          left = tuple(int(part) for part in sys.argv[1].split("."))
+          right = tuple(int(part) for part in sys.argv[2].split("."))
+          print((left > right) - (left < right))
+          PY
+          }
 
-      - name: Verify release artifacts
-        run: |
-          mapfile -t ZIP_FILES < <(find dist/prod/claw-server -maxdepth 1 -type f -name 'browseros-claw-server-resources-*.zip' | sort)
+          previous_server_tag() {
+            python3 - "$1" <<'PY'
+          import re
+          import subprocess
+          import sys
 
-          if [ "${#ZIP_FILES[@]}" -eq 0 ]; then
-            echo "No Claw server release zip files were produced"
-            exit 1
-          fi
+          target = tuple(int(part) for part in sys.argv[1].split("."))
+          tags = subprocess.check_output(["git", "tag", "-l"], text=True).splitlines()
+          candidates = []
 
-          printf 'Found release artifacts:\n%s\n' "${ZIP_FILES[@]}"
+          for tag in tags:
+              for prefix in ("agent-server/v", "browseros-server-v"):
+                  if not tag.startswith(prefix):
+                      continue
+                  version = tag[len(prefix):]
+                  if not re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version):
+                      continue
+                  parsed = tuple(int(part) for part in version.split("."))
+                  if parsed < target:
+                      candidates.append((parsed, tag))
 
-      - name: Generate release notes
-        if: ${{ steps.options.outputs.publish_github_release == 'true' }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PACKAGE_VERSION: ${{ steps.version.outputs.package_version }}
-          PREVIOUS_TAG: ${{ steps.version.outputs.previous_tag }}
-          RELEASE_SHA: ${{ steps.version.outputs.release_sha }}
-        run: |
-          set -euo pipefail
-          SERVER_APP_PATH="packages/browseros-agent/apps/claw-server"
-          SERVER_BUILD_DIR="packages/browseros-agent/scripts/build/claw-server"
-          SERVER_BUILD_ENTRY="packages/browseros-agent/scripts/build/claw-server.ts"
-          SERVER_RESOURCE_MANIFEST="packages/browseros-agent/scripts/build/config/claw-server-prod-resources.json"
-          SERVER_VERSION_PKG="packages/browseros-agent/apps/server/package.json"
-          SERVER_WORKSPACE_PKG="packages/browseros-agent/package.json"
-          PREV_TAG="$PREVIOUS_TAG"
+          if candidates:
+              print(max(candidates)[1])
+          PY
+          }
 
-          if [ -z "$PREV_TAG" ]; then
-            echo "Initial release of browseros-claw-server." > /tmp/release-notes.md
+          update_package_version() {
+            python3 - "$SERVER_PACKAGE_JSON" "$1" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          version = sys.argv[2]
+          data = json.loads(path.read_text())
+          data["version"] = version
+          path.write_text(json.dumps(data, indent=2) + "\n")
+          PY
+          }
+
+          require_annotated_tag() {
+            local tag="$1"
+            local tag_type
+            tag_type="$(git cat-file -t "refs/tags/$tag" 2>/dev/null || true)"
+            if [ -z "$tag_type" ]; then
+              echo "::error::Tag does not exist: $tag"
+              exit 1
+            fi
+            if [ "$tag_type" != "tag" ]; then
+              echo "::error::Tag $tag must be an annotated tag."
+              exit 1
+            fi
+          }
+
+          git fetch origin "$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH" --no-tags
+          git fetch origin --tags --prune
+
+          if [ "$EVENT_NAME" = "push" ]; then
+            TAG="$REF_NAME"
+            VERSION="${TAG#agent-server/v}"
+
+            if [ "$TAG" = "$VERSION" ] || ! is_semver "$VERSION"; then
+              echo "::error::Expected server release tag like agent-server/vX.Y.Z, got: $TAG"
+              exit 1
+            fi
+
+            require_annotated_tag "$TAG"
+            RELEASE_SHA="$(git rev-list -n 1 "$TAG")"
+            PACKAGE_VERSION="$(read_package_version_at_ref "$RELEASE_SHA")"
+
+            if [ "$PACKAGE_VERSION" != "$VERSION" ]; then
+              echo "::error::$SERVER_PACKAGE_JSON at $TAG is $PACKAGE_VERSION, expected $VERSION. Bump package.json before tagging."
+              exit 1
+            fi
           else
-            COMMITS=$(git log "$PREV_TAG..$RELEASE_SHA" --pretty=format:"%H" -- \
-              "$SERVER_APP_PATH" \
-              "$SERVER_BUILD_DIR" \
-              "$SERVER_BUILD_ENTRY" \
-              "$SERVER_RESOURCE_MANIFEST" \
-              "$SERVER_VERSION_PKG" \
-              "$SERVER_WORKSPACE_PKG")
+            VERSION="$REQUESTED_VERSION"
+            if ! is_semver "$VERSION"; then
+              echo "::error::Version must be MAJOR.MINOR.PATCH, got: $VERSION"
+              exit 1
+            fi
 
-            if [ -z "$COMMITS" ]; then
-              echo "No notable changes." > /tmp/release-notes.md
+            TAG="agent-server/v$VERSION"
+            if git rev-parse --verify --quiet "refs/tags/$TAG" >/dev/null; then
+              require_annotated_tag "$TAG"
+              RELEASE_SHA="$(git rev-list -n 1 "$TAG")"
+              PACKAGE_VERSION="$(read_package_version_at_ref "$RELEASE_SHA")"
+
+              if [ "$PACKAGE_VERSION" != "$VERSION" ]; then
+                echo "::error::$SERVER_PACKAGE_JSON at $TAG is $PACKAGE_VERSION, expected $VERSION."
+                exit 1
+              fi
             else
-              echo "## What's Changed" > /tmp/release-notes.md
-              echo "" >> /tmp/release-notes.md
+              git checkout -B "$DEFAULT_BRANCH" "origin/$DEFAULT_BRANCH"
+              CURRENT_VERSION="$(read_package_version)"
 
-              while IFS= read -r SHA; do
-                SUBJECT=$(git log -1 --pretty=format:"%s" "$SHA")
-                PR_NUM=$(gh api "/repos/${{ github.repository }}/commits/${SHA}/pulls" --jq '.[0].number // empty' 2>/dev/null)
+              if [ "$(compare_versions "$VERSION" "$CURRENT_VERSION")" = "-1" ]; then
+                echo "::error::Requested server version $VERSION is lower than $SERVER_PACKAGE_JSON ($CURRENT_VERSION)."
+                exit 1
+              fi
 
-                if [ -n "$PR_NUM" ] && ! echo "$SUBJECT" | grep -qF "(#${PR_NUM})"; then
-                  echo "- ${SUBJECT} (#${PR_NUM})" >> /tmp/release-notes.md
-                else
-                  echo "- ${SUBJECT}" >> /tmp/release-notes.md
-                fi
-              done <<< "$COMMITS"
+              if [ "$CURRENT_VERSION" != "$VERSION" ]; then
+                update_package_version "$VERSION"
+                git config user.name "github-actions[bot]"
+                git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+                git add "$SERVER_PACKAGE_JSON"
+                git commit -m "chore: bump server version to $VERSION"
+                git push origin "HEAD:refs/heads/$DEFAULT_BRANCH"
+              fi
+
+              RELEASE_SHA="$(git rev-parse HEAD)"
+              git tag -a "$TAG" -m "BrowserOS Server - v$VERSION" "$RELEASE_SHA"
+              git push origin "refs/tags/$TAG"
+              PACKAGE_VERSION="$VERSION"
             fi
           fi
-        working-directory: ${{ github.workspace }}
 
-      - name: Create GitHub release
-        if: ${{ steps.options.outputs.publish_github_release == 'true' }}
+          PREVIOUS_TAG="$(previous_server_tag "$VERSION")"
+
+          {
+            echo "version=$VERSION"
+            echo "tag=$TAG"
+            echo "release_sha=$RELEASE_SHA"
+            echo "previous_tag=$PREVIOUS_TAG"
+          } >> "$GITHUB_OUTPUT"
+
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          Server release:
+          - Version: $VERSION
+          - Tag: $TAG
+          - Release commit: $RELEASE_SHA
+          - Package path: $SERVER_PACKAGE_JSON
+          - Assets: GitHub source archives only
+          EOF
+
+      - name: Generate release notes
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PACKAGE_VERSION: ${{ steps.version.outputs.package_version }}
-          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          PREVIOUS_TAG: ${{ steps.release.outputs.previous_tag }}
+          RELEASE_SHA: ${{ steps.release.outputs.release_sha }}
         run: |
           set -euo pipefail
-          TAG="$RELEASE_TAG"
-          TITLE="BrowserOS Claw Server - v$PACKAGE_VERSION"
-          mapfile -t ZIP_FILES < <(find packages/browseros-agent/dist/prod/claw-server -maxdepth 1 -type f -name 'browseros-claw-server-resources-*.zip' | sort)
 
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG already exists, updating"
-            gh release edit "$TAG" --title "$TITLE" --notes-file /tmp/release-notes.md
-            gh release upload "$TAG" "${ZIP_FILES[@]}" --clobber
+          if [ -z "$PREVIOUS_TAG" ]; then
+            echo "Initial BrowserOS Server release." > /tmp/release-notes.md
           else
-            gh release create "$TAG" \
+            git log "$PREVIOUS_TAG..$RELEASE_SHA" --pretty=format:"- %s (%h)" > /tmp/release-notes.md
+            if [ ! -s /tmp/release-notes.md ]; then
+              echo "No commits since $PREVIOUS_TAG." > /tmp/release-notes.md
+            fi
+          fi
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          TITLE="BrowserOS Server - v$VERSION"
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" \
+              --title "$TITLE" \
+              --notes-file /tmp/release-notes.md
+          else
+            gh release create "$RELEASE_TAG" \
               --verify-tag \
               --title "$TITLE" \
-              --notes-file /tmp/release-notes.md \
-              "${ZIP_FILES[@]}"
+              --notes-file /tmp/release-notes.md
           fi
-        working-directory: ${{ github.workspace }}
