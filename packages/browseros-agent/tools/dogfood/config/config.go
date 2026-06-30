@@ -97,6 +97,7 @@ func Defaults(home string) Config {
 	return cfg
 }
 
+// DefaultTargets returns isolated BrowserOS and BrowserClaw runtime settings.
 func DefaultTargets(home string) map[string]TargetConfig {
 	cfgDir := DefaultConfigDir(home)
 	return map[string]TargetConfig{
@@ -129,11 +130,12 @@ func Load(path string) (Config, error) {
 }
 
 func Save(path string, cfg Config) error {
+	target := cfg.Target
 	cfg.FillProductionEnvDefaults()
 	cfg.CaptureTarget()
 	cfg.Resolve()
-	if cfg.Target != "" {
-		if err := cfg.ApplyTarget(cfg.Target); err != nil {
+	if target != "" {
+		if err := cfg.ApplyTarget(target); err != nil {
 			return err
 		}
 	}
@@ -227,6 +229,7 @@ func mergeTargetConfig(value TargetConfig, fallback TargetConfig, home string) T
 	return out
 }
 
+// ApplyTarget projects one target's runtime settings onto the active config view.
 func (c *Config) ApplyTarget(target Target) error {
 	settings, ok := c.Targets[string(target)]
 	if !ok {
@@ -240,6 +243,7 @@ func (c *Config) ApplyTarget(target Target) error {
 	return nil
 }
 
+// CaptureTarget stores the active runtime settings back under their selected target.
 func (c *Config) CaptureTarget() {
 	if c.Target == "" {
 		return

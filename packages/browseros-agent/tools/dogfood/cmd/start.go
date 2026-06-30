@@ -159,6 +159,7 @@ func runEnvironment(cfg config.Config, opts environmentOptions) error {
 	return nil
 }
 
+// buildAndStartEnvironment prepares the selected target and starts its supervised processes.
 func buildAndStartEnvironment(ctx context.Context, cfg config.Config, opts environmentOptions) (*environment, error) {
 	if opts.Runner == nil {
 		opts.Runner = pipeline.ExecRunner{}
@@ -431,6 +432,7 @@ func serverRuntimeEnv(base []string, cfg config.Config) []string {
 	)
 }
 
+// clawRuntimeEnv wires the WXT app and standalone Claw server to the same BrowserOS session.
 func clawRuntimeEnv(base []string, cfg config.Config) []string {
 	env := make([]string, 0, len(base)+7)
 	for _, entry := range base {

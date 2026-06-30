@@ -32,6 +32,7 @@ func init() {
 	rootCmd.PersistentPreRunE = requireTargetForLifecycleCommand
 }
 
+// requireTargetForLifecycleCommand enforces explicit target choice for runtime commands.
 func requireTargetForLifecycleCommand(cmd *cobra.Command, args []string) error {
 	if _, _, err := resolveTargetFlags(targetBrowserOS, targetClaw); err != nil {
 		return err
@@ -86,6 +87,7 @@ func selectedTargetFlag(target config.Target) (string, error) {
 	}
 }
 
+// loadTargetConfig loads config and projects it to the requested dogfood target.
 func loadTargetConfig(target config.Target) (config.Config, error) {
 	path, err := config.Path()
 	if err != nil {
@@ -151,6 +153,7 @@ func defaultTargetRunPaths(target config.Target) (runPaths, error) {
 	return newTargetRunPaths(path, target), nil
 }
 
+// newTargetRunPaths keeps daemon IPC and logs isolated per dogfood target.
 func newTargetRunPaths(configPath string, target config.Target) runPaths {
 	dir := filepath.Join(filepath.Dir(configPath), string(target))
 	return runPaths{
