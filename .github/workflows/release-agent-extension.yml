@@ -49,7 +49,7 @@ jobs:
           RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
-          ./scripts/release/resolve-component-release.sh \
+          "$GITHUB_WORKSPACE/scripts/ci/resolve-component-release.sh" \
             --component agent-extension \
             --tag "$RELEASE_TAG" \
             --default-branch "$DEFAULT_BRANCH"

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 
 const repoRoot = resolve(import.meta.dir, '../..')
-const resolver = join(repoRoot, 'scripts/release/resolve-component-release.sh')
+const resolver = join(repoRoot, '../../scripts/ci/resolve-component-release.sh')
 const serverReleaseResolver = join(
   repoRoot,
   'scripts/release/resolve-server-release.sh',
