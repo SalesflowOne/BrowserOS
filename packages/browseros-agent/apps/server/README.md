@@ -155,14 +155,14 @@ bun scripts/build/server.ts --target=all --no-upload
 
 Server releases are GitHub Releases for annotated component tags. They do not build or upload server binaries; GitHub provides the source zip and tarball for the tag.
 
-Bump `packages/browseros-agent/apps/server/package.json` in a PR, merge it, then tag the merged commit:
+Bump `packages/browseros-agent/apps/server/package.json` and the matching `bun.lock` entry in a PR, merge it, then tag the merged commit:
 
 ```bash
 git tag -a agent-server/v0.0.123 -m "BrowserOS Server - v0.0.123"
 git push origin agent-server/v0.0.123
 ```
 
-The workflow validates the tag against the hardcoded package path. A tag push fails if the tagged commit's package version does not match the tag version. Manual dispatch can set the package version on the default branch, create the annotated tag, and publish the GitHub Release.
+The workflow validates the tag against the hardcoded package path. A tag push fails if the tagged commit's package version does not match the tag version. Manual dispatch can set the package version on the default branch, update the matching lockfile entry, create the annotated tag, and publish the GitHub Release.
 
 ## Sidecar Config
 
