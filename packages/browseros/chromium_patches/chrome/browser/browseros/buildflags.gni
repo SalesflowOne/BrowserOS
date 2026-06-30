@@ -1,6 +1,6 @@
 diff --git a/chrome/browser/browseros/buildflags.gni b/chrome/browser/browseros/buildflags.gni
 new file mode 100644
-index 0000000000000..0a4b34ea72336
+index 0000000000000..8c87fe61ab738
 --- /dev/null
 +++ b/chrome/browser/browseros/buildflags.gni
 @@ -0,0 +1,25 @@
@@ -15,13 +15,13 @@ index 0000000000000..0a4b34ea72336
 +  browseros_product = "browseros"
 +
 +  # Dev/test only. Official builds should leave this false.
-+  browseros_allow_runtime_product_override = false
++  # // TODO: nikhil - before prod claw release, set this to false
++  browseros_allow_runtime_product_override = true
 +}
 +
 +declare_args() {
 +  # Usually follows runtime override, but can be forced on for packaging tests.
-+  browseros_package_all_server_resources =
-+      browseros_allow_runtime_product_override
++  browseros_package_all_server_resources = true
 +}
 +
 +assert(browseros_product == "browseros" || browseros_product == "browserclaw",
