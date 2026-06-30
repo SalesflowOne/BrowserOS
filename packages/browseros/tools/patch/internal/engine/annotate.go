@@ -48,7 +48,6 @@ type annotateFeature struct {
 	Name        string
 	Description string
 	Files       []string
-	Index       int
 }
 
 type annotateFileSet struct {
@@ -61,10 +60,6 @@ type annotateFileSet struct {
 func Annotate(ctx context.Context, opts AnnotateOptions) (*AnnotateResult, error) {
 	featuresFile := filepath.Join(opts.Repo.Root, "build", "features.yaml")
 	features, err := loadAnnotateFeatures(featuresFile)
-	if err != nil {
-		return nil, err
-	}
-	changes, err := annotateChanges(ctx, opts.Workspace.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +81,11 @@ func Annotate(ctx context.Context, opts AnnotateOptions) (*AnnotateResult, error
 			result.FeaturesSkipped++
 			continue
 		}
-		files := modifiedFeatureFiles(changes, feature, features)
+		changes, err := annotateChanges(ctx, opts.Workspace.Path)
+		if err != nil {
+			return nil, err
+		}
+		files := modifiedFeatureFiles(changes, feature)
 		if len(files.report) == 0 {
 			result.Skipped = append(result.Skipped, AnnotateSkippedFeature{
 				Name:        feature.Name,
@@ -96,15 +95,24 @@ func Annotate(ctx context.Context, opts AnnotateOptions) (*AnnotateResult, error
 			result.FeaturesSkipped++
 			continue
 		}
-		commit, err := commitFeatureFiles(ctx, opts.Workspace.Path, feature.Description, files.stage, files.commit)
+		commit, committedFiles, committed, err := commitFeatureFiles(ctx, opts.Workspace.Path, feature.Description, files.stage, files.commit)
 		if err != nil {
 			return nil, fmt.Errorf("commit feature %s: %w", feature.Name, err)
+		}
+		if !committed {
+			result.Skipped = append(result.Skipped, AnnotateSkippedFeature{
+				Name:        feature.Name,
+				Description: feature.Description,
+				Reason:      "no changes",
+			})
+			result.FeaturesSkipped++
+			continue
 		}
 		result.Committed = append(result.Committed, AnnotateCommittedFeature{
 			Name:        feature.Name,
 			Description: feature.Description,
 			Commit:      commit,
-			Files:       files.report,
+			Files:       committedFiles,
 		})
 		result.CommitsCreated++
 	}
@@ -139,7 +147,6 @@ func loadAnnotateFeatures(featuresFile string) ([]annotateFeature, error) {
 			Name:        name,
 			Description: description,
 			Files:       stringSequence(data, "files"),
-			Index:       len(features),
 		})
 	}
 	return features, nil
@@ -193,14 +200,13 @@ func annotateChanges(ctx context.Context, workspacePath string) ([]git.FileChang
 	return git.StatusPorcelain(ctx, workspacePath, nil)
 }
 
-func modifiedFeatureFiles(changes []git.FileChange, feature annotateFeature, allFeatures []annotateFeature) annotateFileSet {
+func modifiedFeatureFiles(changes []git.FileChange, feature annotateFeature) annotateFileSet {
 	set := annotateFileSet{}
 	reportSeen := map[string]bool{}
 	stageSeen := map[string]bool{}
 	commitSeen := map[string]bool{}
 	for _, change := range changes {
-		owner := ownerFeature(change, allFeatures)
-		if owner == nil || owner.Name != feature.Name {
+		if !featureMatchesChange(feature, change) {
 			continue
 		}
 		for _, rel := range changeReportPaths(change) {
@@ -219,43 +225,13 @@ func modifiedFeatureFiles(changes []git.FileChange, feature annotateFeature, all
 	return set
 }
 
-func ownerFeature(change git.FileChange, features []annotateFeature) *annotateFeature {
-	var owner *annotateFeature
-	bestScore := -1
-	for idx := range features {
-		score := featureChangeScore(features[idx], change)
-		if score < 0 {
-			continue
-		}
-		if score > bestScore || score == bestScore && owner != nil && features[idx].Index > owner.Index {
-			bestScore = score
-			owner = &features[idx]
-		}
-	}
-	return owner
-}
-
-func featureChangeScore(feature annotateFeature, change git.FileChange) int {
-	best := -1
+func featureMatchesChange(feature annotateFeature, change git.FileChange) bool {
 	for _, rel := range changeReportPaths(change) {
-		if score := featurePathScore(feature, rel); score > best {
-			best = score
+		if patch.PathMatches(rel, feature.Files) {
+			return true
 		}
 	}
-	return best
-}
-
-func featurePathScore(feature annotateFeature, rel string) int {
-	best := -1
-	for _, scope := range feature.Files {
-		if !patch.PathMatches(rel, []string{scope}) {
-			continue
-		}
-		if len(scope) > best {
-			best = len(scope)
-		}
-	}
-	return best
+	return false
 }
 
 func changeReportPaths(change git.FileChange) []string {
@@ -305,9 +281,41 @@ func appendUniquePath(paths *[]string, seen map[string]bool, rel string) {
 	*paths = append(*paths, rel)
 }
 
-func commitFeatureFiles(ctx context.Context, workspacePath string, message string, stagePaths []string, commitPaths []string) (string, error) {
+// commitFeatureFiles normalizes selected paths into the index and commits only real HEAD deltas.
+func commitFeatureFiles(ctx context.Context, workspacePath string, message string, stagePaths []string, commitPaths []string) (string, []string, bool, error) {
 	if err := git.AddAllPaths(ctx, workspacePath, stagePaths); err != nil {
-		return "", err
+		return "", nil, false, err
 	}
-	return git.CommitPaths(ctx, workspacePath, message, commitPaths)
+	dirty, err := git.IsDirtyPaths(ctx, workspacePath, commitPaths)
+	if err != nil {
+		return "", nil, false, err
+	}
+	if !dirty {
+		return "", nil, false, nil
+	}
+	commit, err := git.CommitPaths(ctx, workspacePath, message, commitPaths)
+	if err != nil {
+		return "", nil, false, err
+	}
+	committedFiles, err := committedFeatureFiles(ctx, workspacePath, commit, commitPaths)
+	if err != nil {
+		return "", nil, false, err
+	}
+	return commit, committedFiles, true, nil
+}
+
+func committedFeatureFiles(ctx context.Context, workspacePath string, commit string, commitPaths []string) ([]string, error) {
+	changes, err := git.DiffTreeNameStatus(ctx, workspacePath, commit, commitPaths)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	var paths []string
+	for _, change := range changes {
+		for _, rel := range changeReportPaths(change) {
+			appendUniquePath(&paths, seen, rel)
+		}
+	}
+	slices.Sort(paths)
+	return paths, nil
 }
