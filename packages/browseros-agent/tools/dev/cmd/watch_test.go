@@ -61,6 +61,41 @@ func TestResolveWatchDefaultPortsUsesStandaloneClawServerPort(t *testing.T) {
 	}
 }
 
+func TestBuildWatchEnvSelectsBrowserOSProduct(t *testing.T) {
+	env := buildWatchEnv(proc.Ports{
+		CDP:       9012,
+		Server:    9123,
+		Extension: 9321,
+	}, "/tmp/browseros-dev", false)
+
+	for _, want := range []string{
+		"BROWSEROS_PRODUCT=browseros",
+		"BROWSEROS_USER_DATA_DIR=/tmp/browseros-dev",
+	} {
+		if !hasEnvEntry(env, want) {
+			t.Fatalf("expected env to contain %q, got %#v", want, env)
+		}
+	}
+}
+
+func TestBuildWatchEnvSelectsBrowserClawProduct(t *testing.T) {
+	env := buildWatchEnv(proc.Ports{
+		CDP:       9012,
+		Server:    9123,
+		Extension: 9321,
+	}, "/tmp/browseros-dev", true)
+
+	for _, want := range []string{
+		"BROWSEROS_PRODUCT=browserclaw",
+		"BROWSEROS_CLAW_CDP_PORT=9012",
+		"VITE_BROWSEROS_CLAW_API_URL=http://127.0.0.1:9123",
+	} {
+		if !hasEnvEntry(env, want) {
+			t.Fatalf("expected env to contain %q, got %#v", want, env)
+		}
+	}
+}
+
 func TestBuildClawWatchEnvIncludesSelectedPorts(t *testing.T) {
 	env := buildClawWatchEnv([]string{"BASE=1"}, proc.Ports{
 		CDP:       9012,

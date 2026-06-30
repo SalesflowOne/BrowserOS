@@ -149,6 +149,7 @@ func runTest(cmd *cobra.Command, args []string) error {
 			UserDataDir:       tempDir,
 			Headless:          testHeadless,
 			LoadDevExtensions: false,
+			Product:           browser.ProductBrowserOS,
 		}),
 	}))
 

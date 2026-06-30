@@ -148,11 +148,7 @@ func runWatch(cmd *cobra.Command, args []string) error {
 	proc.LogMsg(proc.TagInfo, proc.DimColor.Sprint("Press Ctrl+C to stop, double Ctrl+C to force kill"))
 	fmt.Println()
 
-	env := proc.BuildEnv(p, "development")
-	env = append(env, fmt.Sprintf("BROWSEROS_USER_DATA_DIR=%s", userDataDir))
-	if watchClaw {
-		env = buildClawWatchEnv(env, p)
-	}
+	env := buildWatchEnv(p, userDataDir, watchClaw)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -221,6 +217,26 @@ func resolveWatchDefaultPorts(root string, claw bool) (proc.Ports, error) {
 	return ports, nil
 }
 
+// buildWatchEnv forwards the selected product into WXT's Chromium launcher config.
+func buildWatchEnv(p proc.Ports, userDataDir string, claw bool) []string {
+	env := proc.BuildEnv(p, "development")
+	env = append(env,
+		fmt.Sprintf("BROWSEROS_USER_DATA_DIR=%s", userDataDir),
+		fmt.Sprintf("BROWSEROS_PRODUCT=%s", watchProduct(claw)),
+	)
+	if claw {
+		env = buildClawWatchEnv(env, p)
+	}
+	return env
+}
+
+func watchProduct(claw bool) string {
+	if claw {
+		return browser.ProductBrowserClaw
+	}
+	return browser.ProductBrowserOS
+}
+
 // buildClawWatchEnv bridges shared dev ports into the standalone BrowserClaw apps.
 func buildClawWatchEnv(env []string, p proc.Ports) []string {
 	apiURL := fmt.Sprintf("http://127.0.0.1:%d", p.Server)
@@ -253,6 +269,7 @@ func startBrowserOSWatch(ctx context.Context, wg *sync.WaitGroup, root string, e
 				Ports:             p,
 				UserDataDir:       userDataDir,
 				LoadDevExtensions: true,
+				Product:           browser.ProductBrowserOS,
 			}),
 		}))
 	} else {

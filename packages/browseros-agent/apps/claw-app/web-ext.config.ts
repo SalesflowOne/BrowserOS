@@ -43,6 +43,16 @@ function chromiumProfile(): string {
   return profile
 }
 
+function browserOSProduct(defaultProduct: 'browseros' | 'browserclaw') {
+  const product = env.BROWSEROS_PRODUCT?.trim() || defaultProduct
+  if (product !== 'browseros' && product !== 'browserclaw') {
+    throw new Error(
+      `BROWSEROS_PRODUCT must be browseros or browserclaw: ${product}`,
+    )
+  }
+  return product
+}
+
 const chromiumArgs = [
   '--use-mock-keychain',
   '--show-component-extension-options',
@@ -52,6 +62,7 @@ const chromiumArgs = [
   '--disable-browseros-server',
   '--disable-browseros-extensions',
   '--browseros-dock-icon=dev',
+  `--browseros-product=${browserOSProduct('browserclaw')}`,
 ]
 
 if (env.BROWSEROS_CLAW_CDP_PORT) {

@@ -13,10 +13,21 @@ type ArgsConfig struct {
 	UserDataDir       string
 	Headless          bool
 	LoadDevExtensions bool
+	Product           string
 }
 
+const (
+	ProductBrowserOS   = "browseros"
+	ProductBrowserClaw = "browserclaw"
+)
+
+// BuildArgs returns the BrowserOS Chromium command for non-WXT dev/test launches.
 func BuildArgs(cfg ArgsConfig) []string {
 	binary := "/Applications/BrowserOS.app/Contents/MacOS/BrowserOS"
+	product := cfg.Product
+	if product == "" {
+		product = ProductBrowserOS
+	}
 
 	args := []string{binary}
 
@@ -29,6 +40,7 @@ func BuildArgs(cfg ArgsConfig) []string {
 		"--show-component-extension-options",
 		"--disable-browseros-server",
 		"--browseros-dock-icon=dev",
+		fmt.Sprintf("--browseros-product=%s", product),
 	)
 
 	if cfg.LoadDevExtensions {

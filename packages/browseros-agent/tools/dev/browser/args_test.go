@@ -19,3 +19,17 @@ func TestBuildArgsUsesDevDockIcon(t *testing.T) {
 		t.Fatalf("missing dev dock icon arg in\n%s", joined)
 	}
 }
+
+func TestBuildArgsUsesProductFlag(t *testing.T) {
+	args := BuildArgs(ArgsConfig{
+		Root:              "/repo/packages/browseros-agent",
+		Ports:             proc.Ports{CDP: 9005, Server: 9105, Extension: 9305},
+		UserDataDir:       "/tmp/browseros-dev",
+		LoadDevExtensions: true,
+		Product:           ProductBrowserClaw,
+	})
+	joined := strings.Join(args, "\n")
+	if !strings.Contains(joined, "--browseros-product=browserclaw") {
+		t.Fatalf("missing BrowserClaw product arg in\n%s", joined)
+	}
+}
