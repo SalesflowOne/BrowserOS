@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import {
-  mkdirSync,
-  mkdtempSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 
@@ -705,9 +700,9 @@ describe('resolve-component-release', () => {
           .trimEnd()
           .split('\n'),
       ).toEqual([' M apps/server/package.json', ' M bun.lock'])
-      expect(
-        (await mustRun(dir, ['git', 'rev-parse', 'HEAD'])).trim(),
-      ).toBe(oldSha)
+      expect((await mustRun(dir, ['git', 'rev-parse', 'HEAD'])).trim()).toBe(
+        oldSha,
+      )
       expect(
         (
           await mustRun(dir, ['git', 'show', 'HEAD:apps/server/package.json'])
