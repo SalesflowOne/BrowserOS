@@ -36,11 +36,15 @@ var initCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		cfg := config.Defaults(home)
-		if err := cfg.ApplyTarget(target); err != nil {
+		path, err := config.Path()
+		if err != nil {
 			return err
 		}
-		if cwd, err := os.Getwd(); err == nil && looksLikeRepo(cwd) {
+		cfg, err := loadInitConfig(home, path, target)
+		if err != nil {
+			return err
+		}
+		if cwd, err := os.Getwd(); err == nil && cfg.RepoPath == "" && looksLikeRepo(cwd) {
 			cfg.RepoPath = cwd
 		}
 		reader := bufio.NewReader(os.Stdin)
@@ -62,10 +66,6 @@ var initCmd = &cobra.Command{
 		if err := cfg.Validate(); err != nil {
 			return err
 		}
-		path, err := config.Path()
-		if err != nil {
-			return err
-		}
 		if err := config.Save(path, cfg); err != nil {
 			return err
 		}
@@ -75,6 +75,20 @@ var initCmd = &cobra.Command{
 		printInitNextSteps(cmd.OutOrStdout(), path, target)
 		return nil
 	},
+}
+
+// loadInitConfig preserves existing target settings while allowing first-run defaults.
+func loadInitConfig(home string, path string, target config.Target) (config.Config, error) {
+	cfg := config.Defaults(home)
+	if existing, err := config.Load(path); err == nil {
+		cfg = existing
+	} else if !os.IsNotExist(err) {
+		return config.Config{}, fmt.Errorf("load existing config: %w", err)
+	}
+	if err := cfg.ApplyTarget(target); err != nil {
+		return config.Config{}, err
+	}
+	return cfg, nil
 }
 
 func printInitNextSteps(out io.Writer, path string, target config.Target) {

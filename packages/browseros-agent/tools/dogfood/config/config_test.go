@@ -197,6 +197,24 @@ func TestResolveDefaultsBranch(t *testing.T) {
 	}
 }
 
+func TestResolvePreservesSelectedTarget(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	cfg := Defaults(home)
+	if err := cfg.ApplyTarget(TargetClaw); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg.Resolve()
+
+	if cfg.Target != TargetClaw {
+		t.Fatalf("target got %q want claw", cfg.Target)
+	}
+	if cfg.DevUserDataDir != filepath.Join(home, ".config/browseros-dogfood/claw/profile") {
+		t.Fatalf("dev profile got %q", cfg.DevUserDataDir)
+	}
+}
+
 func TestExpandTilde(t *testing.T) {
 	got := ExpandTilde("~/x", "/Users/test")
 	want := filepath.Join("/Users/test", "x")

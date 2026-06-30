@@ -159,6 +159,10 @@ func Save(path string, cfg Config) error {
 }
 
 func (c *Config) Resolve() {
+	target := c.Target
+	if target == "" {
+		target = TargetBrowserOS
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		home = ""
@@ -171,7 +175,7 @@ func (c *Config) Resolve() {
 		c.Branch = DefaultBranch
 	}
 	c.Targets = c.resolveTargets(home)
-	_ = c.ApplyTarget(TargetBrowserOS)
+	_ = c.ApplyTarget(target)
 	c.FillProductionEnvDefaults()
 }
 
