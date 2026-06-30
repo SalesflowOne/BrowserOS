@@ -44,7 +44,7 @@ var statusCmd = &cobra.Command{
 	Short:   "Show dogfood background daemon status",
 	GroupID: groupInspect,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		target, _, err := loadSelectedTargetConfigWithoutValidation()
+		target, err := selectedRequiredTarget()
 		if err != nil {
 			return err
 		}
@@ -62,7 +62,7 @@ var stopCmd = &cobra.Command{
 	Short:   "Stop the dogfood background daemon",
 	GroupID: groupRun,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		target, _, err := loadSelectedTargetConfigWithoutValidation()
+		target, err := selectedRequiredTarget()
 		if err != nil {
 			return err
 		}
@@ -79,7 +79,7 @@ var restartCmd = &cobra.Command{
 	Short:   "Rebuild/restart current checkout; --pull updates, --pull --force resets",
 	GroupID: groupRun,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		target, _, err := loadSelectedTargetConfigWithoutValidation()
+		target, err := selectedRequiredTarget()
 		if err != nil {
 			return err
 		}
@@ -91,7 +91,7 @@ var restartCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if _, err := sendControlWithPaths(paths, request); err != nil {
+		if _, err := sendControlWithPaths(paths, target, request); err != nil {
 			return err
 		}
 		fmt.Fprintln(os.Stdout, successStyle.Sprint("Restart requested."))
@@ -118,7 +118,7 @@ var logsTailCmd = &cobra.Command{
 	Use:   "tail",
 	Short: "Tail daemon, chromium, and server logs from the background daemon",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		target, _, err := loadSelectedTargetConfigWithoutValidation()
+		target, err := selectedRequiredTarget()
 		if err != nil {
 			return err
 		}
@@ -126,7 +126,7 @@ var logsTailCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		resp, err := sendControlWithPaths(paths, ipc.Request{Command: ipc.CmdStatus})
+		resp, err := sendControlWithPaths(paths, target, ipc.Request{Command: ipc.CmdStatus})
 		if err != nil {
 			return err
 		}
@@ -175,13 +175,13 @@ func sendControl(target config.Target, req ipc.Request) (ipc.Response, error) {
 	if err != nil {
 		return ipc.Response{}, err
 	}
-	return sendControlWithPaths(paths, req)
+	return sendControlWithPaths(paths, target, req)
 }
 
-func sendControlWithPaths(paths runPaths, req ipc.Request) (ipc.Response, error) {
+func sendControlWithPaths(paths runPaths, target config.Target, req ipc.Request) (ipc.Response, error) {
 	resp, err := ipc.NewClient(paths.Socket).Send(req)
 	if err != nil {
-		return ipc.Response{}, daemonUnavailableError(paths, err)
+		return ipc.Response{}, daemonUnavailableError(paths, target, err)
 	}
 	if resp.Error != "" {
 		return ipc.Response{}, errors.New(resp.Error)
@@ -189,7 +189,7 @@ func sendControlWithPaths(paths runPaths, req ipc.Request) (ipc.Response, error)
 	return resp, nil
 }
 
-func daemonUnavailableError(paths runPaths, cause error) error {
+func daemonUnavailableError(paths runPaths, target config.Target, cause error) error {
 	lock, err := dogfoodruntime.AcquireLock(paths.Lock)
 	if err == nil {
 		_ = lock.Close()
@@ -201,7 +201,11 @@ func daemonUnavailableError(paths runPaths, cause error) error {
 		if stateErr == nil && state.Mode == "foreground" {
 			return fmt.Errorf("browseros-dogfood is running in foreground mode (pid %d); background daemon commands are unavailable", state.PID)
 		}
-		return fmt.Errorf("browseros-dogfood background daemon is not responding; try `browseros-dogfood stop` if it is stuck, then `browseros-dogfood start-background`")
+		targetFlag, err := selectedTargetFlag(target)
+		if err != nil {
+			targetFlag = "--browseros"
+		}
+		return fmt.Errorf("browseros-dogfood background daemon is not responding; try `browseros-dogfood %s stop` if it is stuck, then `browseros-dogfood %s start-background`", targetFlag, targetFlag)
 	}
 	return err
 }
@@ -225,7 +229,7 @@ func monitorDaemonUntilRunning(ctx context.Context, monitor daemonMonitor) error
 	status := monitor.Status
 	if status == nil {
 		status = func() (ipc.Response, error) {
-			return sendControlWithPaths(monitor.Paths, ipc.Request{Command: ipc.CmdStatus})
+			return sendControlWithPaths(monitor.Paths, monitor.Target, ipc.Request{Command: ipc.CmdStatus})
 		}
 	}
 	follow := monitor.Follow
@@ -242,7 +246,7 @@ func monitorDaemonUntilRunning(ctx context.Context, monitor daemonMonitor) error
 		})
 	}()
 
-	if done, err := daemonReachedTerminalState(status); done || err != nil {
+	if done, err := daemonReachedTerminalState(status, monitor.Target); done || err != nil {
 		return err
 	}
 	ticker := time.NewTicker(pollInterval)
@@ -266,14 +270,14 @@ func monitorDaemonUntilRunning(ctx context.Context, monitor daemonMonitor) error
 				return err
 			}
 		case <-ticker.C:
-			if done, err := daemonReachedTerminalState(status); done || err != nil {
+			if done, err := daemonReachedTerminalState(status, monitor.Target); done || err != nil {
 				return err
 			}
 		}
 	}
 }
 
-func daemonReachedTerminalState(status func() (ipc.Response, error)) (bool, error) {
+func daemonReachedTerminalState(status func() (ipc.Response, error), target config.Target) (bool, error) {
 	resp, err := status()
 	if err != nil {
 		return false, err
@@ -286,7 +290,11 @@ func daemonReachedTerminalState(status func() (ipc.Response, error)) (bool, erro
 		if lastError == "" {
 			lastError = "daemon entered error state"
 		}
-		return true, fmt.Errorf("%s; run `browseros-dogfood logs tail` for details", lastError)
+		targetFlag, err := selectedTargetFlag(target)
+		if err != nil {
+			targetFlag = "--browseros"
+		}
+		return true, fmt.Errorf("%s; run `browseros-dogfood %s logs tail` for details", lastError, targetFlag)
 	default:
 		return false, nil
 	}

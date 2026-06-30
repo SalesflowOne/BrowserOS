@@ -63,6 +63,18 @@ func selectedTarget() (config.Target, bool, error) {
 	return resolveTargetFlags(targetBrowserOS, targetClaw)
 }
 
+// selectedRequiredTarget returns the flag-selected target without reading config.
+func selectedRequiredTarget() (config.Target, error) {
+	target, ok, err := selectedTarget()
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", fmt.Errorf("choose a dogfood target with --browseros or --claw")
+	}
+	return target, nil
+}
+
 func resolveTargetFlags(browserOS bool, claw bool) (config.Target, bool, error) {
 	switch {
 	case browserOS && claw:
@@ -107,12 +119,9 @@ func loadTargetConfig(target config.Target) (config.Config, error) {
 }
 
 func loadSelectedTargetConfig() (config.Target, config.Config, error) {
-	target, ok, err := selectedTarget()
+	target, err := selectedRequiredTarget()
 	if err != nil {
 		return "", config.Config{}, err
-	}
-	if !ok {
-		return "", config.Config{}, fmt.Errorf("choose a dogfood target with --browseros or --claw")
 	}
 	cfg, err := loadTargetConfig(target)
 	return target, cfg, err
@@ -134,12 +143,9 @@ func loadTargetConfigWithoutValidation(target config.Target) (config.Config, err
 }
 
 func loadSelectedTargetConfigWithoutValidation() (config.Target, config.Config, error) {
-	target, ok, err := selectedTarget()
+	target, err := selectedRequiredTarget()
 	if err != nil {
 		return "", config.Config{}, err
-	}
-	if !ok {
-		return "", config.Config{}, fmt.Errorf("choose a dogfood target with --browseros or --claw")
 	}
 	cfg, err := loadTargetConfigWithoutValidation(target)
 	return target, cfg, err
