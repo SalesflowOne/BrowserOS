@@ -72,19 +72,8 @@ jobs:
             echo "upload_to_r2=$upload_to_r2"
           } >> "$GITHUB_OUTPUT"
 
-  authorize_manual_dispatch:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: [self-hosted, macOS, ARM64, browseros-builder]
-    environment: release-core
-    steps:
-      - run: echo "Manual dispatch approved through release-core."
-
   build:
-    needs: [authorize_manual_dispatch, resolve_inputs]
-    if: |
-      always() &&
-      needs.resolve_inputs.result == 'success' &&
-      (github.event_name == 'schedule' || needs.authorize_manual_dispatch.result == 'success')
+    needs: resolve_inputs
     runs-on: [self-hosted, macOS, ARM64, browseros-builder]
     permissions:
       contents: write

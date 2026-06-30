@@ -12,7 +12,6 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
-    environment: release-core
     permissions:
       contents: write
       pull-requests: write
