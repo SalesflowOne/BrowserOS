@@ -113,6 +113,17 @@ jobs:
             echo "version=$INPUT_VERSION"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Validate release options
+        env:
+          SERVER_RELEASE_TARGETS: ${{ steps.options.outputs.targets }}
+          PUBLISH_GITHUB_RELEASE: ${{ steps.options.outputs.publish_github_release }}
+        run: |
+          set -euo pipefail
+          if [ "$PUBLISH_GITHUB_RELEASE" = "true" ] && [ "$SERVER_RELEASE_TARGETS" != "all" ]; then
+            echo "::error::Set publish_github_release=false when releasing a subset of server targets."
+            exit 1
+          fi
+
       - name: Resolve server version
         id: version
         env:
@@ -163,17 +174,6 @@ jobs:
 
       - name: Prepare production env file
         run: cp apps/claw-server/.env.example apps/claw-server/.env.production
-
-      - name: Validate release options
-        env:
-          SERVER_RELEASE_TARGETS: ${{ steps.options.outputs.targets }}
-          PUBLISH_GITHUB_RELEASE: ${{ steps.options.outputs.publish_github_release }}
-        run: |
-          set -euo pipefail
-          if [ "$PUBLISH_GITHUB_RELEASE" = "true" ] && [ "$SERVER_RELEASE_TARGETS" != "all" ]; then
-            echo "::error::Set publish_github_release=false when releasing a subset of server targets."
-            exit 1
-          fi
 
       - name: Build and upload release artifacts
         env:
