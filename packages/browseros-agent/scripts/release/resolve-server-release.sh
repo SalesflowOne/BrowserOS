@@ -155,6 +155,20 @@ print(json.loads(Path(sys.argv[1]).read_text())["version"])
 PY
 }
 
+read_package_version_at_ref() {
+  local ref="$1"
+  git -C "$agent_root" show "$ref:apps/server/package.json" | python3 -c '
+import json
+import sys
+
+try:
+    print(json.load(sys.stdin)["version"])
+except Exception as exc:
+    print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
+    sys.exit(1)
+'
+}
+
 emit() {
   printf '%s=%s\n' "$1" "$2"
   if [ -n "${GITHUB_OUTPUT:-}" ]; then
@@ -293,31 +307,60 @@ if [ "$publish_github_release" = "true" ]; then
   ensure_git_identity
 
   branch_changed=false
-  if [ "$target_version" != "$current_version" ]; then
-    apply_version "$target_version"
-    git -C "$agent_root" add apps/server/package.json bun.lock
-    if git -C "$agent_root" diff --cached --quiet; then
-      echo "No server version changes produced for $target_version" >&2
-      exit 1
-    fi
-    git -C "$agent_root" commit -m "chore: bump server version to $target_version"
-    branch_changed=true
-  fi
-
-  release_sha="$(git -C "$agent_root" rev-parse HEAD)"
   tag_changed=false
+  release_sha=""
   existing_tag_sha="$(git -C "$agent_root" rev-list -n 1 "$release_tag" 2>/dev/null || true)"
   existing_tag_type="$(git -C "$agent_root" cat-file -t "refs/tags/$release_tag" 2>/dev/null || true)"
-  if [ "$existing_tag_sha" != "$release_sha" ] || [ "$existing_tag_type" != "tag" ]; then
-    git -C "$agent_root" tag -f -a "$release_tag" -m "agent-server v$target_version"
-    tag_changed=true
+
+  if [ -n "$existing_tag_sha" ]; then
+    existing_tag_version="$(read_package_version_at_ref "$release_tag" || true)"
+    if [ -z "$existing_tag_version" ]; then
+      echo "Could not read apps/server/package.json version from $release_tag" >&2
+      exit 1
+    fi
+
+    if [ "$existing_tag_version" = "$target_version" ]; then
+      if ! git -C "$agent_root" merge-base \
+        --is-ancestor "$existing_tag_sha" "$remote/$default_branch"; then
+        echo "Existing $release_tag ($existing_tag_sha) is not reachable from $remote/$default_branch" >&2
+        exit 1
+      fi
+
+      release_sha="$existing_tag_sha"
+      if [ "$existing_tag_type" != "tag" ]; then
+        git -C "$agent_root" tag -f -a "$release_tag" "$release_sha" \
+          -m "agent-server v$target_version"
+        tag_changed=true
+      fi
+    fi
   fi
 
-  if [ "$branch_changed" = "true" ] || [ "$tag_changed" = "true" ]; then
+  if [ -z "$release_sha" ]; then
+    if [ "$target_version" != "$current_version" ]; then
+      apply_version "$target_version"
+      git -C "$agent_root" add apps/server/package.json bun.lock
+      if git -C "$agent_root" diff --cached --quiet; then
+        echo "No server version changes produced for $target_version" >&2
+        exit 1
+      fi
+      git -C "$agent_root" commit -m "chore: bump server version to $target_version"
+      branch_changed=true
+    fi
+
+    release_sha="$(git -C "$agent_root" rev-parse HEAD)"
+    if [ "$existing_tag_sha" != "$release_sha" ] || [ "$existing_tag_type" != "tag" ]; then
+      git -C "$agent_root" tag -f -a "$release_tag" -m "agent-server v$target_version"
+      tag_changed=true
+    fi
+  fi
+
+  if [ "$branch_changed" = "true" ]; then
     git -C "$agent_root" push --atomic "$remote" \
       "HEAD:refs/heads/$default_branch" \
       "+refs/tags/$release_tag:refs/tags/$release_tag"
     fetch_default_branch
+  elif [ "$tag_changed" = "true" ]; then
+    git -C "$agent_root" push "$remote" "+refs/tags/$release_tag:refs/tags/$release_tag"
   fi
 else
   if [ "$target_version" != "$current_version" ]; then

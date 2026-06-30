@@ -649,6 +649,46 @@ describe('resolve-component-release', () => {
     }
   })
 
+  it('reuses an existing server tag when its package version already matches', async () => {
+    const { dir, bareDir } = await initServerReleaseFixture('0.0.123')
+    try {
+      const releaseSha = (
+        await mustRun(dir, ['git', 'rev-parse', 'HEAD'])
+      ).trim()
+      const currentTag = scopedTag('agent-server', '0.0.123')
+      await tag(dir, currentTag)
+      await mustRun(dir, ['git', 'push', 'origin', currentTag])
+      writeFileSync(join(dir, 'README.md'), 'advance main\n')
+      await mustRun(dir, ['git', 'add', 'README.md'])
+      await mustRun(dir, ['git', 'commit', '-m', 'advance main'])
+      await mustRun(dir, ['git', 'push', 'origin', 'main'])
+      const defaultSha = (
+        await mustRun(dir, ['git', 'rev-parse', 'HEAD'])
+      ).trim()
+
+      const result = await resolveServerRelease(dir, {
+        requestedVersion: '0.0.123',
+      })
+
+      expect(result.code, result.stderr).toBe(0)
+      const output = parseOutput(result.stdout)
+      expect(output).toMatchObject({
+        package_version: '0.0.123',
+        tag: currentTag,
+        release_sha: releaseSha,
+      })
+      expect(
+        (await mustRun(dir, ['git', 'rev-parse', 'origin/main'])).trim(),
+      ).toBe(defaultSha)
+      expect(
+        (await mustRun(dir, ['git', 'rev-list', '-n', '1', currentTag])).trim(),
+      ).toBe(releaseSha)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+      rmSync(bareDir, { recursive: true, force: true })
+    }
+  })
+
   it('refuses a manual server release that would downgrade package.json', async () => {
     const { dir, bareDir } = await initServerReleaseFixture('0.0.124')
     try {
