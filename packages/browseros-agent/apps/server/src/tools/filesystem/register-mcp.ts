@@ -47,6 +47,30 @@ export interface RegisterFilesystemMcpToolsOptions {
   outputFileAccess?: BrowserOutputFileAccess
 }
 
+const ERROR_PREVIEW_CHARS = 500
+
+function summarizeFilesystemArgs(
+  args: Record<string, unknown>,
+): Record<string, unknown> {
+  const summary: Record<string, unknown> = {
+    argKeys: Object.keys(args).sort(),
+  }
+  if (typeof args.path === 'string') summary.path = args.path
+  if (typeof args.pattern === 'string')
+    summary.patternLength = args.pattern.length
+  if (typeof args.glob === 'string') summary.glob = args.glob
+  if (typeof args.limit === 'number') summary.limit = args.limit
+  if (typeof args.command === 'string') {
+    summary.commandLength = args.command.length
+  }
+  return summary
+}
+
+function previewText(text: string): string {
+  if (text.length <= ERROR_PREVIEW_CHARS) return text
+  return `${text.slice(0, ERROR_PREVIEW_CHARS)}... (+${text.length - ERROR_PREVIEW_CHARS} chars)`
+}
+
 export function registerFilesystemMcpTools(
   server: McpServer,
   cwd: string,
@@ -68,8 +92,42 @@ export function registerFilesystemMcpTools(
         inputSchema: tool.inputSchema.shape,
       },
       async (args, extra) => {
-        const result = await tool.execute(args, { signal: extra?.signal })
+        const startTime = performance.now()
+        const duration = () => Math.round(performance.now() - startTime)
+        const logBase = {
+          toolName: name,
+          source: 'mcp',
+          cwd,
+        }
+        logger.debug('MCP filesystem tool started', {
+          ...logBase,
+          args: summarizeFilesystemArgs(args),
+        })
+        let result: FilesystemToolResult
+        try {
+          result = await tool.execute(args, { signal: extra?.signal })
+        } catch (error) {
+          const errorText =
+            error instanceof Error ? error.message : String(error)
+          logger.info('MCP filesystem tool threw', {
+            ...logBase,
+            durationMs: duration(),
+            error: errorText,
+          })
+          throw error
+        }
+        logger.debug('MCP filesystem tool completed', {
+          ...logBase,
+          durationMs: duration(),
+          isError: Boolean(result.isError),
+          imageCount: result.images?.length ?? 0,
+        })
         if (result.isError) {
+          logger.info('MCP filesystem tool returned error', {
+            ...logBase,
+            durationMs: duration(),
+            error: previewText(result.text),
+          })
           return {
             content: [{ type: 'text', text: result.text }],
             isError: true,
