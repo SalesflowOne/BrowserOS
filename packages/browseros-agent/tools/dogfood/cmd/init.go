@@ -22,14 +22,24 @@ func init() {
 
 var initCmd = &cobra.Command{
 	Use:     "init",
-	Short:   "Create or update browseros-dogfood config",
+	Short:   "Create or update dogfood config",
 	GroupID: groupSetup,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		target, ok, err := selectedTarget()
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return fmt.Errorf("choose a dogfood target with --browseros or --claw")
+		}
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return err
 		}
 		cfg := config.Defaults(home)
+		if err := cfg.ApplyTarget(target); err != nil {
+			return err
+		}
 		if cwd, err := os.Getwd(); err == nil && looksLikeRepo(cwd) {
 			cfg.RepoPath = cwd
 		}
@@ -62,16 +72,17 @@ var initCmd = &cobra.Command{
 		if err := pipeline.WriteProductionEnvFiles(cfg.AgentRoot(), cfg); err != nil {
 			return err
 		}
-		printInitNextSteps(cmd.OutOrStdout(), path)
+		printInitNextSteps(cmd.OutOrStdout(), path, target)
 		return nil
 	},
 }
 
-func printInitNextSteps(out io.Writer, path string) {
+func printInitNextSteps(out io.Writer, path string, target config.Target) {
+	targetFlag, _ := selectedTargetFlag(target)
 	fmt.Fprintf(out, "%s %s\n", successStyle.Sprint("Config written:"), pathStyle.Sprint(path))
-	fmt.Fprintln(out, labelStyle.Sprint("Start BrowserOS dogfood:"))
-	fmt.Fprintf(out, "  %s     %s\n", labelStyle.Sprint("Inline:"), commandStyle.Sprint("browseros-dogfood start"))
-	fmt.Fprintf(out, "  %s %s\n", labelStyle.Sprint("Background:"), commandStyle.Sprint("browseros-dogfood start-background"))
+	fmt.Fprintf(out, "%s %s\n", labelStyle.Sprint("Start dogfood:"), targetLabel(target))
+	fmt.Fprintf(out, "  %s     %s\n", labelStyle.Sprint("Inline:"), commandStyle.Sprintf("browseros-dogfood %s start", targetFlag))
+	fmt.Fprintf(out, "  %s %s\n", labelStyle.Sprint("Background:"), commandStyle.Sprintf("browseros-dogfood %s start-background", targetFlag))
 }
 
 func printRepoPathHelp(out io.Writer) {

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"browseros-dogfood/config"
 	"browseros-dogfood/ipc"
 	"browseros-dogfood/runlog"
 )
@@ -35,6 +36,33 @@ func TestFormatStatusDataUsesHumanReadableSummary(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("formatted status missing %q:\n%s", want, got)
 		}
+	}
+}
+
+func TestFormatStatusDataForClawOmitsExtensionPort(t *testing.T) {
+	got := formatStatus(map[string]any{
+		"target":    string(config.TargetClaw),
+		"state":     "running",
+		"state_dir": "/tmp/browseros-claw-dogfood",
+		"log_path":  "/tmp/browseros-dogfood/claw/daemon.jsonl",
+		"ports": map[string]any{
+			"CDP":       float64(49337),
+			"Server":    float64(9200),
+			"Extension": float64(9315),
+		},
+	})
+	for _, want := range []string{
+		"Target: claw",
+		"Ports: CDP=49337 API=9200",
+		"Claw state: /tmp/browseros-claw-dogfood",
+		"Logs: /tmp/browseros-dogfood/claw/daemon.jsonl",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("formatted status missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "Extension") {
+		t.Fatalf("claw status should not show extension port:\n%s", got)
 	}
 }
 
