@@ -13,7 +13,7 @@ Usage:
 """
 import typer
 
-from .cli import build, dev, ota, release, storage
+from .cli import build, dev, ota, release
 
 app = typer.Typer(
     help="BrowserOS Build System",
@@ -31,7 +31,6 @@ app.add_typer(build_app, name="build", help="Build BrowserOS browser")
 app.add_typer(dev.app, name="dev", help="Dev patch management")
 app.add_typer(release.app, name="release", help="Release automation")
 app.add_typer(ota.app, name="ota", help="OTA update automation")
-app.add_typer(storage.app, name="upload", help="Upload third-party resources to R2")
 
 
 if __name__ == "__main__":

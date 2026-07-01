@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 from unittest import mock
 
-from bos_build.cli import storage
+from vendor_uploads import main as storage
 
 
 def _build_lima_tarball(
@@ -394,8 +394,9 @@ class BuildManifestTest(unittest.TestCase):
 
 class ServerResourceManifestContractTest(unittest.TestCase):
     def test_server_resource_manifest_does_not_package_codex(self) -> None:
+        # packages/browseros/tools/vendor_uploads/vendor_uploads/ -> packages/
         manifest_path = (
-            Path(__file__).resolve().parents[3]
+            Path(__file__).resolve().parents[4]
             / "browseros-agent"
             / "scripts"
             / "build"
