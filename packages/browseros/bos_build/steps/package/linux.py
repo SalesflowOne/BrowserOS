@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 from typing import List, Optional
 
-from ...core.server_binaries import SERVER_BUNDLES, server_bundles_for_product
+from ...core.server_binaries import all_server_bundles, server_bundles_for_product
 from ...core.step import Step, ValidationError, step
 from ...core.context import Context
 from ...core.utils import (
@@ -229,7 +229,7 @@ def copy_browser_files(
 def _server_output_roots(ctx: Context) -> list[str]:
     """Return final server bundle roots for the active product."""
     product = getattr(ctx, "product", None)
-    bundles = server_bundles_for_product(product.id) if product else SERVER_BUNDLES
+    bundles = server_bundles_for_product(product.id) if product else all_server_bundles()
     return [bundle.chromium_output_root for bundle in bundles]
 
 

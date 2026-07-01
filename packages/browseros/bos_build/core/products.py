@@ -1,11 +1,26 @@
 #!/usr/bin/env python3
-"""Product descriptors for BrowserOS Chromium builds."""
+"""Product descriptor type and the define() authoring factory.
 
-from dataclasses import dataclass
+The runtime type stays a fully explicit frozen dataclass (typed,
+greppable). Authoring goes through ProductDescriptor.define(): ~8
+irreducible inputs, everything else derived by convention, keyword
+overrides for genuine deviations. Product instances live in
+bos_build/products/<id>/product.py — one file answers "what is X".
+"""
+
+from dataclasses import dataclass, fields
+from typing import Any, Dict, Optional, Tuple
 
 BROWSEROS_AGENT_EXTENSION_ID = "bflpfmnmnokmjhmgnolecpppdbdophmk"
 BROWSEROS_BUG_REPORTER_EXTENSION_ID = "adlpneommgkgeanpaekgoaolcpncohkf"
 BROWSERCLAW_EXTENSION_ID = "pjimfkbpehlcllblajnpfamdfjhhlgkc"
+
+# TODO: nikhil - remove packaging all extensions after chromium fix
+DEFAULT_REQUIRED_EXTENSIONS: Tuple[Tuple[str, str], ...] = (
+    (BROWSEROS_BUG_REPORTER_EXTENSION_ID, "BrowserOS bug reporter"),
+    (BROWSEROS_AGENT_EXTENSION_ID, "BrowserOS agent"),
+    (BROWSERCLAW_EXTENSION_ID, "BrowserClaw app"),
+)
 
 
 @dataclass(frozen=True)
@@ -90,6 +105,85 @@ class ProductDescriptor:
             return self.mac.dev_framework_name
         return self.mac.framework_name
 
+    @classmethod
+    def define(
+        cls,
+        *,
+        id: str,
+        display_name: str,
+        windows_installer_guid: str,
+        summary: str,
+        description: str,
+        mac_bundle_domain: str = "com.browseros",
+        company: str = "BrowserOS",
+        homepage_url: str = "https://www.browseros.com/",
+        support_url: str = "https://docs.browseros.com/",
+        bugtracker_url: str = "https://github.com/browseros-ai/BrowserOS/issues",
+        required_extensions: Tuple[Tuple[str, str], ...] = DEFAULT_REQUIRED_EXTENSIONS,
+        **overrides,
+    ) -> "ProductDescriptor":
+        """Build a descriptor from irreducible inputs; derive the rest.
+
+        Any top-level descriptor field can be overridden by keyword —
+        a deviation from convention is then visible at the definition
+        site. Unknown override names raise so typos fail loudly.
+        """
+        base = display_name
+        derived: Dict[str, Any] = dict(
+            id=id,
+            gn_product=id,
+            display_name=display_name,
+            dev_display_name=f"{display_name} Dev",
+            company_full_name=company,
+            company_short_name=company,
+            installer_full_name=f"{display_name} Installer",
+            dev_installer_full_name=f"{display_name} Dev Installer",
+            app_base_name=base,
+            artifact_prefix=base,
+            release_prefix=id,
+            homepage_url=homepage_url,
+            support_url=support_url,
+            bugtracker_url=bugtracker_url,
+            summary=summary,
+            description=description,
+            string_replacements=_replacements(display_name),
+            required_extension_ids=required_extensions,
+            server_bundle_ids=(f"{id}-server",),
+            mac=MacProductIdentity(
+                bundle_id=f"{mac_bundle_domain}.{base}",
+                dev_bundle_id=f"{mac_bundle_domain}.dev.{base}",
+                signing_identifier=f"{mac_bundle_domain}.{base}",
+                dev_signing_identifier=f"{mac_bundle_domain}.dev.{base}",
+                framework_name=f"{display_name} Framework.framework",
+                dev_framework_name=f"{display_name} Dev Framework.framework",
+                dmg_volume_name=display_name,
+            ),
+            linux=LinuxProductIdentity(
+                package_name=id,
+                launcher_name=id,
+                desktop_id=f"{id}.desktop",
+                icon_name=id,
+                lib_dir=f"/usr/lib/{id}",
+                appimage_dir=f"/opt/{id}",
+                apparmor_profile_name=id,
+                metainfo_id=f"{id}.desktop",
+            ),
+            windows=WindowsProductIdentity(
+                app_user_model_id=f"{company}.{base}",
+                installer_app_id=windows_installer_guid,
+            ),
+        )
+
+        valid_fields = {f.name for f in fields(cls)}
+        unknown = set(overrides) - valid_fields
+        if unknown:
+            raise TypeError(
+                f"Unknown ProductDescriptor override(s) for '{id}': "
+                f"{', '.join(sorted(unknown))}"
+            )
+        derived.update(overrides)
+        return cls(**derived)
+
 
 def _replacements(product_name: str) -> tuple[tuple[str, str], ...]:
     return (
@@ -109,117 +203,15 @@ def _replacements(product_name: str) -> tuple[tuple[str, str], ...]:
     )
 
 
-BROWSEROS_PRODUCT = ProductDescriptor(
-    id="browseros",
-    gn_product="browseros",
-    display_name="BrowserOS",
-    dev_display_name="BrowserOS Dev",
-    company_full_name="BrowserOS",
-    company_short_name="BrowserOS",
-    installer_full_name="BrowserOS Installer",
-    dev_installer_full_name="BrowserOS Dev Installer",
-    app_base_name="BrowserOS",
-    artifact_prefix="BrowserOS",
-    release_prefix="browseros",
-    homepage_url="https://www.browseros.com/",
-    support_url="https://docs.browseros.com/",
-    bugtracker_url="https://github.com/browseros-ai/BrowserOS/issues",
-    summary="The open source agentic browser",
-    description="BrowserOS is a privacy-focused web browser built on Chromium.",
-    string_replacements=_replacements("BrowserOS"),
-    # TODO: nikhil - remove packaging all extensions after chromium fix
-    required_extension_ids=(
-        (BROWSEROS_BUG_REPORTER_EXTENSION_ID, "BrowserOS bug reporter"),
-        (BROWSEROS_AGENT_EXTENSION_ID, "BrowserOS agent"),
-        (BROWSERCLAW_EXTENSION_ID, "BrowserClaw app"),
-    ),
-    server_bundle_ids=("browseros-server",),
-    mac=MacProductIdentity(
-        bundle_id="com.browseros.BrowserOS",
-        dev_bundle_id="com.browseros.dev.BrowserOS",
-        signing_identifier="com.browseros.BrowserOS",
-        dev_signing_identifier="com.browseros.dev.BrowserOS",
-        framework_name="BrowserOS Framework.framework",
-        dev_framework_name="BrowserOS Dev Framework.framework",
-        dmg_volume_name="BrowserOS",
-    ),
-    linux=LinuxProductIdentity(
-        package_name="browseros",
-        launcher_name="browseros",
-        desktop_id="browseros.desktop",
-        icon_name="browseros",
-        lib_dir="/usr/lib/browseros",
-        appimage_dir="/opt/browseros",
-        apparmor_profile_name="browseros",
-        metainfo_id="browseros.desktop",
-    ),
-    windows=WindowsProductIdentity(
-        app_user_model_id="BrowserOS.BrowserOS",
-        installer_app_id="{5d8d08af-2df9-4da2-86c1-eac353a0ca32}",
-    ),
-)
+def get_product_descriptor(product_id: Optional[str]) -> ProductDescriptor:
+    """Resolve a product id to a registered product descriptor.
 
+    Deferred import: products/<id>/product.py files import this module
+    for the descriptor type, so the registry loads lazily.
+    """
+    from ..products import DEFAULT_PRODUCT_ID, PRODUCTS
 
-BROWSERCLAW_PRODUCT = ProductDescriptor(
-    id="browserclaw",
-    gn_product="browserclaw",
-    display_name="BrowserClaw",
-    dev_display_name="BrowserClaw Dev",
-    company_full_name="BrowserOS",
-    company_short_name="BrowserOS",
-    installer_full_name="BrowserClaw Installer",
-    dev_installer_full_name="BrowserClaw Dev Installer",
-    app_base_name="BrowserClaw",
-    artifact_prefix="BrowserClaw",
-    release_prefix="browserclaw",
-    homepage_url="https://www.browseros.com/",
-    support_url="https://docs.browseros.com/",
-    bugtracker_url="https://github.com/browseros-ai/BrowserOS/issues",
-    summary="The open source browser for web agents",
-    description="BrowserClaw is a Chromium-based browser for agent workflows.",
-    string_replacements=_replacements("BrowserClaw"),
-    # TODO: nikhil - remove packaging all extensions after chromium fix
-    required_extension_ids=(
-        (BROWSEROS_BUG_REPORTER_EXTENSION_ID, "BrowserOS bug reporter"),
-        (BROWSEROS_AGENT_EXTENSION_ID, "BrowserOS agent"),
-        (BROWSERCLAW_EXTENSION_ID, "BrowserClaw app"),
-    ),
-    server_bundle_ids=("browserclaw-server",),
-    mac=MacProductIdentity(
-        bundle_id="com.browseros.BrowserClaw",
-        dev_bundle_id="com.browseros.dev.BrowserClaw",
-        signing_identifier="com.browseros.BrowserClaw",
-        dev_signing_identifier="com.browseros.dev.BrowserClaw",
-        framework_name="BrowserClaw Framework.framework",
-        dev_framework_name="BrowserClaw Dev Framework.framework",
-        dmg_volume_name="BrowserClaw",
-    ),
-    linux=LinuxProductIdentity(
-        package_name="browserclaw",
-        launcher_name="browserclaw",
-        desktop_id="browserclaw.desktop",
-        icon_name="browserclaw",
-        lib_dir="/usr/lib/browserclaw",
-        appimage_dir="/opt/browserclaw",
-        apparmor_profile_name="browserclaw",
-        metainfo_id="browserclaw.desktop",
-    ),
-    windows=WindowsProductIdentity(
-        app_user_model_id="BrowserOS.BrowserClaw",
-        installer_app_id="{FA2AFFF8-647B-477C-A5D2-905BA8DB9B82}",
-    ),
-)
-
-
-PRODUCTS = {
-    BROWSEROS_PRODUCT.id: BROWSEROS_PRODUCT,
-    BROWSERCLAW_PRODUCT.id: BROWSERCLAW_PRODUCT,
-}
-
-
-def get_product_descriptor(product_id: str | None) -> ProductDescriptor:
-    """Resolve a product id to a committed product descriptor."""
-    resolved_id = product_id or BROWSEROS_PRODUCT.id
+    resolved_id = product_id or DEFAULT_PRODUCT_ID
     try:
         return PRODUCTS[resolved_id]
     except KeyError as exc:
@@ -231,4 +223,4 @@ def get_product_descriptor(product_id: str | None) -> ProductDescriptor:
 
 def default_product_descriptor() -> ProductDescriptor:
     """Return the default product used outside config mode."""
-    return BROWSEROS_PRODUCT
+    return get_product_descriptor(None)

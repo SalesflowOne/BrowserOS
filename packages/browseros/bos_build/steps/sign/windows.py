@@ -8,7 +8,7 @@ from ...core.step import Step, ValidationError, step
 from ...core.context import Context
 from ...core.env import EnvConfig
 from ...core.server_binaries import (
-    SERVER_BUNDLES,
+    all_server_bundles,
     expected_windows_bundle_binary_paths,
     server_bundles_for_product,
 )
@@ -146,7 +146,7 @@ def get_missing_required_browseros_server_binary_paths(
 ) -> List[Path]:
     """Return missing bundled server binaries that should already be packaged."""
     missing: List[Path] = []
-    bundles = server_bundles_for_product(product_id) if product_id else SERVER_BUNDLES
+    bundles = server_bundles_for_product(product_id) if product_id else all_server_bundles()
     for bundle in bundles:
         bundle_root = build_output_dir / bundle.windows_bundle_resources_root
         should_exist = (

@@ -5,16 +5,24 @@ import unittest
 from pathlib import Path
 
 from .server_binaries import (
-    BROWSEROS_CLAW_SERVER_BUNDLE,
-    BROWSEROS_SERVER_BUNDLE,
-    MACOS_SERVER_BINARIES,
-    SERVER_BUNDLES,
-    WINDOWS_SERVER_BINARIES,
+    all_server_bundles,
     expected_windows_bundle_binary_paths,
     expected_windows_binary_paths,
     macos_sign_spec_for,
     server_bundles_for_product,
 )
+from ..products.browserclaw.product import (
+    BROWSERCLAW_SERVER_BUNDLE as BROWSEROS_CLAW_SERVER_BUNDLE,
+)
+from ..products.browseros.product import BROWSEROS_SERVER_BUNDLE
+
+SERVER_BUNDLES = all_server_bundles()
+MACOS_SERVER_BINARIES = {
+    stem: spec
+    for bundle in SERVER_BUNDLES
+    for stem, spec in bundle.macos_binaries.items()
+}
+WINDOWS_SERVER_BINARIES = list(BROWSEROS_SERVER_BUNDLE.windows_binaries)
 
 ENTITLEMENTS_DIR = Path(__file__).resolve().parents[2] / "resources" / "entitlements"
 

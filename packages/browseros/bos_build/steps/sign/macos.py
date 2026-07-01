@@ -12,7 +12,7 @@ from ...core.step import Step, ValidationError, step
 from ...core.context import Context
 from ...core.env import EnvConfig
 from ...core.server_binaries import (
-    SERVER_BUNDLES,
+    all_server_bundles,
     ServerBundle,
     macos_sign_spec_for,
     server_bundles_for_product,
@@ -42,8 +42,8 @@ def get_browseros_server_binary_info(component_path: Path) -> Optional[Dict[str,
     return info
 
 
-SERVER_RESOURCES_SOURCE_REL = SERVER_BUNDLES[0].chromium_resources_root
-SERVER_RESOURCES_BUNDLE_REL = SERVER_BUNDLES[0].macos_bundle_resources_root
+SERVER_RESOURCES_SOURCE_REL = all_server_bundles()[0].chromium_resources_root
+SERVER_RESOURCES_BUNDLE_REL = all_server_bundles()[0].macos_bundle_resources_root
 # Finder droppings in the staged tree must not fail the nightly sign.
 SERVER_RESOURCES_JUNK_FILES = {".DS_Store"}
 
@@ -53,7 +53,7 @@ def verify_server_resources_bundle(
 ) -> List[str]:
     """Check bundled server resources match what the build staged."""
     problems: List[str] = []
-    bundles = server_bundles_for_product(product_id) if product_id else SERVER_BUNDLES
+    bundles = server_bundles_for_product(product_id) if product_id else all_server_bundles()
     for bundle in bundles:
         problems.extend(_verify_server_resource_bundle(bundle, app_path, chromium_src))
     return problems
@@ -376,7 +376,7 @@ def find_components_to_sign(
         if nested_app not in components["helpers"]:
             components["apps"].append(nested_app)
 
-    bundles = server_bundles_for_product(ctx.product.id) if ctx else SERVER_BUNDLES
+    bundles = server_bundles_for_product(ctx.product.id) if ctx else all_server_bundles()
     for bundle in bundles:
         bundle_root = app_path / bundle.macos_bundle_resources_root
         if not bundle_root.exists():
