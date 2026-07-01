@@ -123,9 +123,10 @@ jobs:
           pkg.version = version;
           fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
           let lock = fs.readFileSync(lockPath, "utf8");
-          const re = /("apps\/server":\s*\{\s*"name":\s*"@browseros\/server",\s*"version":\s*")(\d+\.\d+\.\d+)(")/;
-          if (!re.test(lock)) {
-            console.error("Expected exactly one apps/server version entry in bun.lock");
+          const re = /("apps\/server":\s*\{\s*"name":\s*"@browseros\/server",\s*"version":\s*")(\d+\.\d+\.\d+)(")/g;
+          const matches = lock.match(re);
+          if (!matches || matches.length !== 1) {
+            console.error("Expected exactly one apps/server version entry in bun.lock, found " + (matches ? matches.length : 0));
             process.exit(1);
           }
           fs.writeFileSync(lockPath, lock.replace(re, (match, prefix, _old, suffix) => prefix + version + suffix));
