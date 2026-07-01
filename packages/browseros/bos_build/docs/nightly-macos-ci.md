@@ -10,13 +10,13 @@ Slack updates to the existing BrowserOS build notifier.
 Nightly runs execute this command from the persistent build repo clone:
 
 ```bash
-uv run browseros build --config bos_build/config/release.macos.arm64.yaml --chromium-src "$CHROMIUM_SRC"
+uv run browseros build --preset release --arch arm64 --chromium-src "$CHROMIUM_SRC"
 ```
 
 Manual runs default to the same publishing config:
 
 ```bash
-uv run browseros build --config bos_build/config/release.macos.arm64.yaml --chromium-src "$CHROMIUM_SRC"
+uv run browseros build --preset release --arch arm64 --chromium-src "$CHROMIUM_SRC"
 ```
 
 Set `upload_to_r2=false` in the manual dispatch form to run an artifact-only

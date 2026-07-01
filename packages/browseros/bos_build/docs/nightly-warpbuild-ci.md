@@ -81,21 +81,21 @@ the build job leave `queued` within ~5 minutes (`gh run watch`).
 
 1. `actions/checkout` + `astral-sh/setup-uv`.
 2. Restore the pinned chromium checkout from cache (see below).
-3. `scripts/ci/setup_chromium.py --step checkout` — ensures depot_tools and
+3. `browseros source ensure --step checkout` — ensures depot_tools and
    `src` at the tag from `packages/browseros/CHROMIUM_VERSION`. No-op when
    the cache is warm and the pin unchanged.
 4. `uv run browseros build --modules clean ...` — the standard clean module
    resets the tree (it also deletes hook-managed toolchains like
    `third_party/llvm-build`, which the next step restores).
-5. `scripts/ci/setup_chromium.py --step sync` — `gclient sync -D
+5. `browseros source ensure --step sync` — `gclient sync -D
    --no-history --shallow`, exactly what the git_setup module runs.
 6. Save the cache (only when the restore missed, i.e. first run per pin).
-7. `uv run browseros build --config bos_build/config/release.<os>.ci.yaml
+7. `uv run browseros build --profile nightly-ci --arch <arch>
    --chromium-src .../src`.
 8. Upload artifacts (14-day retention); a follow-up job recreates the
    rolling `nightly` prerelease for scheduled main runs.
 
-The `release.*.ci.yaml` configs are the release configs minus `clean`/
+The `nightly-ci` profile is the release preset minus `clean`/
 `git_setup` (steps 4-5 replace them), minus `sign_*`/`upload`. Why not run
 `git_setup` as-is: it does `git fetch --tags`, which on the shallow CI clone
 would pull objects for all ~70k chromium tags; the script instead fetches
@@ -114,7 +114,7 @@ is one cold sync per chromium bump per platform.
   `actions/cache` with no size cap (entries expire 7 days after last use;
   storage $0.20/GB-month). Restore-keys fall back to the previous pin's
   cache, then the script fast-forwards `src` with a single-tag fetch.
-- **Windows — R2 tarball** (`scripts/ci/r2_cache.py`): WarpCache does not
+- **Windows — R2 tarball** (`browseros source cache`): WarpCache does not
   support Windows runners and `actions/cache` caps at 10 GB/repo. The tree
   is zstd-tarred (~25-30 GB) into `ci-cache/chromium/` in the existing R2
   bucket using the same `R2_*` secrets the build already needs for
@@ -155,13 +155,13 @@ cache storage.
 The workflow leaves named-but-unused secret placeholders documented next to
 the build step. To enable signing:
 
-- **macOS**: add `sign_macos` (and optionally `sparkle_sign`) back to
-  `release.macos.arm64.ci.yaml`, provide `MACOS_CERTIFICATE_P12` +
+- **macOS**: enable signing on
+  the macOS build invocation (`--sign`), provide `MACOS_CERTIFICATE_P12` +
   `MACOS_CERTIFICATE_PWD` (import into a temporary CI keychain in a step
   before the build), `MACOS_CERTIFICATE_NAME`, `MACOS_KEYCHAIN_PASSWORD`,
   `PROD_MACOS_NOTARIZATION_APPLE_ID/_TEAM_ID/_PWD`, `SPARKLE_PRIVATE_KEY`.
-- **Windows**: replace `mini_installer` with `sign_windows` in
-  `release.windows.ci.yaml`, install SSL.com CodeSignTool in a step, set
+- **Windows**: enable signing on
+  the Windows build invocation (`--sign`), install SSL.com CodeSignTool in a step, set
   `CODE_SIGN_TOOL_PATH` and `ESIGNER_USERNAME/_PASSWORD/_TOTP_SECRET`
   (+ `ESIGNER_CREDENTIAL_ID`).
 - **Linux**: unsigned by design (no sign module in the release config).
