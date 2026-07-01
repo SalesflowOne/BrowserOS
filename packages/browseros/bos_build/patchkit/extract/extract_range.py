@@ -352,7 +352,7 @@ class ExtractRangeModule(Step):
 
     def _add_to_feature(self, ctx: Context, commit: str, files: List[str]) -> None:
         """Prompt user to add extracted files to a feature."""
-        from ..feature import prompt_feature_selection, add_files_to_feature
+        from ..features_io import prompt_feature_selection, add_files_to_feature
         from .utils import get_commit_info
 
         # Get commit info for context (use the end commit)

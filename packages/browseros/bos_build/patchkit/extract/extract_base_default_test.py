@@ -49,15 +49,15 @@ class ExtractBaseDefaultTest(unittest.TestCase):
 
             with (
                 patch(
-                    "bos_build.steps.extract.extract_commit.validate_commit_exists",
+                    "bos_build.patchkit.extract.extract_commit.validate_commit_exists",
                     return_value=True,
                 ),
                 patch(
-                    "bos_build.steps.extract.extract_commit.get_commit_info",
+                    "bos_build.patchkit.extract.extract_commit.get_commit_info",
                     return_value=None,
                 ),
                 patch(
-                    "bos_build.steps.extract.extract_commit.extract_with_base",
+                    "bos_build.patchkit.extract.extract_commit.extract_with_base",
                     return_value=(1, ["chrome/foo.cc"]),
                 ) as extract_with_base_mock,
             ):
@@ -83,19 +83,19 @@ class ExtractBaseDefaultTest(unittest.TestCase):
 
             with (
                 patch(
-                    "bos_build.steps.extract.extract_patch.validate_commit_exists",
+                    "bos_build.patchkit.extract.extract_patch.validate_commit_exists",
                     return_value=True,
                 ) as validate_mock,
                 patch(
-                    "bos_build.steps.extract.extract_patch.run_git_command",
+                    "bos_build.patchkit.extract.extract_patch.run_git_command",
                     return_value=diff_result,
                 ) as git_mock,
                 patch(
-                    "bos_build.steps.extract.extract_patch.parse_diff_output",
+                    "bos_build.patchkit.extract.extract_patch.parse_diff_output",
                     return_value={"chrome/foo.cc": patch_file},
                 ),
                 patch(
-                    "bos_build.steps.extract.extract_patch.write_patch_file",
+                    "bos_build.patchkit.extract.extract_patch.write_patch_file",
                     return_value=True,
                 ),
             ):
@@ -120,15 +120,15 @@ class ExtractBaseDefaultTest(unittest.TestCase):
 
             with (
                 patch(
-                    "bos_build.steps.extract.extract_range.validate_commit_exists",
+                    "bos_build.patchkit.extract.extract_range.validate_commit_exists",
                     return_value=True,
                 ),
                 patch(
-                    "bos_build.steps.extract.extract_range.run_git_command",
+                    "bos_build.patchkit.extract.extract_range.run_git_command",
                     return_value=rev_list,
                 ),
                 patch(
-                    "bos_build.steps.extract.extract_range.extract_with_base",
+                    "bos_build.patchkit.extract.extract_range.extract_with_base",
                     return_value=(1, ["chrome/foo.cc"]),
                 ) as extract_with_base_mock,
                 patch(

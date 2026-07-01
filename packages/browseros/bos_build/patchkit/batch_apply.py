@@ -1,14 +1,37 @@
-"""
-Common functions shared across apply module commands.
+"""Non-interactive batch application of chromium_patches/.
 
-Contains core patch application logic used by apply_all, apply_feature, and apply_patch.
+The build pipeline's patch step runs this on pristine pinned trees;
+patches either apply cleanly or the build fails loudly. Interactive
+conflict workflows belong to the Go bpatch tool — runners must never
+need it, so this stays in Python.
 """
 
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
-from .utils import run_git_command, file_exists_in_commit, reset_file_to_commit
-from ...core.utils import log_info, log_error, log_success, log_warning
+from ..core.utils import log_info, log_error, log_success, log_warning
+from .extract.utils import run_git_command
+
+if TYPE_CHECKING:
+    from ..core.context import Context
+
+
+def file_exists_in_commit(file_path: str, commit: str, chromium_src: Path) -> bool:
+    """Check if file exists in a commit."""
+    result = run_git_command(
+        ["git", "cat-file", "-e", f"{commit}:{file_path}"],
+        cwd=chromium_src,
+    )
+    return result.returncode == 0
+
+
+def reset_file_to_commit(file_path: str, commit: str, chromium_src: Path) -> bool:
+    """Reset a single file to a specific commit state."""
+    result = run_git_command(
+        ["git", "checkout", commit, "--", file_path],
+        cwd=chromium_src,
+    )
+    return result.returncode == 0
 
 
 def find_patch_files(patches_dir: Path) -> List[Path]:
@@ -244,5 +267,54 @@ def process_patch_list(
                         break
                     else:
                         log_error("Invalid choice.")
+
+    return applied, failed
+
+
+def apply_all_patches(
+    build_ctx: "Context",
+    dry_run: bool = False,
+    interactive: bool = False,
+    reset_to: Optional[str] = None,
+) -> Tuple[int, List[str]]:
+    """Apply every patch under chromium_patches/ in sorted order.
+
+    Returns (applied_count, failed_list); the pipeline step treats a
+    non-empty failed list as a build failure.
+    """
+    patches_dir = build_ctx.get_patches_dir()
+
+    if not patches_dir.exists():
+        log_warning(f"Patches directory does not exist: {patches_dir}")
+        return 0, []
+
+    patch_files = find_patch_files(patches_dir)
+
+    if not patch_files:
+        log_warning("No patch files found")
+        return 0, []
+
+    log_info(f"Found {len(patch_files)} patches")
+
+    if dry_run:
+        log_info("DRY RUN - No changes will be made")
+
+    patch_list = [(p, p.relative_to(patches_dir)) for p in patch_files]
+
+    applied, failed = process_patch_list(
+        patch_list,
+        build_ctx.chromium_src,
+        patches_dir,
+        dry_run,
+        interactive,
+        reset_to=reset_to,
+    )
+
+    log_info(f"\nSummary: {applied} applied, {len(failed)} failed")
+
+    if failed:
+        log_error("Failed patches:")
+        for p in failed:
+            log_error(f"  - {p}")
 
     return applied, failed

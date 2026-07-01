@@ -9,7 +9,7 @@ from typing import cast
 from unittest import mock
 
 from . import patches
-from ..apply import apply_all
+from ...patchkit import batch_apply
 from ...core.context import Context
 from ...core.step import ValidationError
 from ...core.testing import MockBrowserOSRoot, MockChromium, make_context
@@ -53,7 +53,7 @@ class ApplyPatchesImplTest(unittest.TestCase):
     def test_failures_raise_runtime_error_in_non_interactive_mode(self):
         ctx = self._ctx()
         with mock.patch.object(
-            apply_all, "apply_all_patches", return_value=(1, ["broken.patch"])
+            batch_apply, "apply_all_patches", return_value=(1, ["broken.patch"])
         ):
             with self.assertRaises(RuntimeError) as err:
                 patches.apply_patches_impl(ctx, interactive=False)
@@ -62,7 +62,7 @@ class ApplyPatchesImplTest(unittest.TestCase):
     def test_success_returns_true(self):
         ctx = self._ctx()
         with mock.patch.object(
-            apply_all, "apply_all_patches", return_value=(3, [])
+            batch_apply, "apply_all_patches", return_value=(3, [])
         ) as apply_mock:
             self.assertTrue(patches.apply_patches_impl(ctx, interactive=False))
         apply_mock.assert_called_once_with(

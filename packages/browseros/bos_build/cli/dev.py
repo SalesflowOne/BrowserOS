@@ -1,25 +1,24 @@
 #!/usr/bin/env python3
 """
-Dev CLI - Chromium patch management tool
+Dev CLI - Chromium patch extraction
 
-A git-like patch management system for maintaining patches against Chromium.
-Enables extracting, applying, and managing patches across Chromium upgrades.
+Extracts commits or files from a Chromium checkout into chromium_patches/.
+Interactive patch application, sync, and conflict handling live in the Go
+tool (tools/patch, `bpatch`) — this CLI deliberately keeps only extract.
 """
 
-import yaml
 from pathlib import Path
 from typing import Optional
 
 import typer
 from typer import Typer, Option, Argument
 
-# Import from common and utils
 from ..core.context import Context
 from ..core.utils import log_info, log_error, log_success, log_warning
 
 
 def create_build_context(chromium_src: Optional[Path] = None) -> Optional[Context]:
-    """Create BuildContext for dev CLI operations"""
+    """Create Context for dev CLI operations"""
     try:
         if not chromium_src:
             log_error("Chromium source directory not specified")
@@ -32,19 +31,16 @@ def create_build_context(chromium_src: Optional[Path] = None) -> Optional[Contex
             log_error(f"Chromium source directory does not exist: {chromium_src}")
             return None
 
-        ctx = Context(
+        return Context(
             chromium_src=chromium_src,
             architecture="",  # Not needed for patch operations
             build_type="debug",  # Not needed for patch operations
         )
-
-        return ctx
     except Exception as e:
         log_error(f"Failed to create build context: {e}")
         return None
 
 
-# Create the Typer app
 app = Typer(
     name="dev",
     help="BrowserOS dev CLI",
@@ -54,7 +50,6 @@ app = Typer(
 )
 
 
-# State class to hold global options
 class State:
     def __init__(self):
         self.chromium_src: Optional[Path] = None
@@ -78,86 +73,31 @@ def main(
     quiet: bool = Option(False, "--quiet", "-q", help="Suppress non-essential output"),
 ):
     """
-    Dev CLI - Chromium patch management tool
-
-    This tool provides git-like commands for managing patches against Chromium:
+    Dev CLI - Chromium patch extraction
 
     Extract patches from commits:
       browseros dev extract commit HEAD
       browseros dev extract range HEAD~5 HEAD
+      browseros dev extract patch chrome/common/foo.h
 
-    Apply patches:
-      browseros dev apply all
-      browseros dev apply feature llm-chat
-
-    Manage features:
-      browseros dev feature list
-      browseros dev feature add my-feature HEAD
-      browseros dev feature show my-feature
+    Applying and syncing patches is handled by the Go tool: bpatch
+    (packages/browseros/tools/patch).
     """
     state.chromium_src = chromium_src
     state.verbose = verbose
     state.quiet = quiet
 
 
-@app.command()
-def status():
-    """Show dev CLI status"""
-    log_info("Dev CLI Status")
-    log_info("-" * 40)
-
-    build_ctx = create_build_context(state.chromium_src)
-    if build_ctx:
-        log_success(f"Chromium source: {build_ctx.chromium_src}")
-
-        # Check for patches directory
-        patches_dir = build_ctx.root_dir / "chromium_patches"
-        if patches_dir.exists():
-            patch_count = len(list(patches_dir.rglob("*.patch")))
-            log_info(f"Individual patches: {patch_count}")
-        else:
-            log_warning("No patches directory found")
-
-        # Check for features.yaml
-        features_file = build_ctx.root_dir / "features.yaml"
-        if features_file.exists():
-            with open(features_file) as f:
-                features = yaml.safe_load(f)
-                feature_count = len(features.get("features", {}))
-                log_info(f"Features defined: {feature_count}")
-        else:
-            log_warning("No features.yaml found")
-    else:
-        log_error("Failed to create build context")
-
-
-# Create sub-apps for extract, apply, and feature commands
 extract_app = Typer(
-    name="extract",
     help="Extract patches from commits",
-    pretty_exceptions_enable=False,
-    pretty_exceptions_show_locals=False,
-)
-apply_app = Typer(
-    name="apply",
-    help="Apply patches to Chromium",
-    pretty_exceptions_enable=False,
-    pretty_exceptions_show_locals=False,
-)
-feature_app = Typer(
-    name="feature",
-    help="Manage features",
+    no_args_is_help=True,
     pretty_exceptions_enable=False,
     pretty_exceptions_show_locals=False,
 )
 
-# Add sub-apps to main app
 app.add_typer(extract_app, name="extract")
-app.add_typer(apply_app, name="apply")
-app.add_typer(feature_app, name="feature")
 
 
-# Extract commands
 @extract_app.command(name="commit")
 def extract_commit(
     commit: str = Argument(..., help="Git commit reference (e.g., HEAD)"),
@@ -183,7 +123,7 @@ def extract_commit(
     if not ctx:
         raise typer.Exit(1)
 
-    from ..steps.extract import ExtractCommitModule
+    from ..patchkit.extract import ExtractCommitModule
 
     module = ExtractCommitModule()
     try:
@@ -227,7 +167,7 @@ def extract_patch_cmd(
     if not ctx:
         raise typer.Exit(1)
 
-    from ..steps.extract import extract_single_file_patch
+    from ..patchkit.extract import extract_single_file_patch
 
     success, error = extract_single_file_patch(ctx, chromium_path, base, force)
     if not success:
@@ -235,11 +175,13 @@ def extract_patch_cmd(
         raise typer.Exit(1)
     log_success(f"Successfully extracted patch for: {chromium_path}")
 
-    # Handle --feature flag
     if feature:
-        from ..steps.extract.common import resolve_base_commit
-        from ..steps.extract.utils import GitError
-        from ..steps.feature import prompt_feature_selection, add_files_to_feature
+        from ..patchkit.extract.common import resolve_base_commit
+        from ..patchkit.extract.utils import GitError
+        from ..patchkit.features_io import (
+            add_files_to_feature,
+            prompt_feature_selection,
+        )
 
         try:
             resolved_base = resolve_base_commit(ctx, base)
@@ -284,7 +226,7 @@ def extract_range(
     if not ctx:
         raise typer.Exit(1)
 
-    from ..steps.extract import ExtractRangeModule
+    from ..patchkit.extract import ExtractRangeModule
 
     module = ExtractRangeModule()
     try:
@@ -304,301 +246,6 @@ def extract_range(
         )
     except Exception as e:
         log_error(f"Failed to extract range: {e}")
-        raise typer.Exit(1)
-
-
-# Apply commands
-@apply_app.command(name="all")
-def apply_all(
-    interactive: bool = Option(
-        True, "--interactive/--no-interactive", "-i/-n", help="Interactive mode"
-    ),
-    reset_to: Optional[str] = Option(
-        None, "--reset-to", "-r", help="Reset files to this commit before applying patches"
-    ),
-    annotate: bool = Option(
-        False, "--annotate", "-a", help="Create git commits per feature after applying"
-    ),
-):
-    """Apply all patches from chromium_patches/"""
-    ctx = create_build_context(state.chromium_src)
-    if not ctx:
-        raise typer.Exit(1)
-
-    from ..steps.apply import ApplyAllModule
-
-    module = ApplyAllModule()
-    try:
-        module.validate(ctx)
-        module.execute(ctx, interactive=interactive, reset_to=reset_to, annotate=annotate)
-    except Exception as e:
-        log_error(f"Failed to apply patches: {e}")
-        raise typer.Exit(1)
-
-
-@apply_app.command(name="feature")
-def apply_feature(
-    feature_name: str = Argument(..., help="Feature name to apply"),
-    interactive: bool = Option(
-        True, "--interactive/--no-interactive", "-i/-n", help="Interactive mode"
-    ),
-    reset_to: Optional[str] = Option(
-        None, "--reset-to", "-r", help="Reset files to this commit before applying patches"
-    ),
-    annotate: bool = Option(
-        False, "--annotate", "-a", help="Create git commit for this feature after applying"
-    ),
-):
-    """Apply patches for a specific feature"""
-    ctx = create_build_context(state.chromium_src)
-    if not ctx:
-        raise typer.Exit(1)
-
-    from ..steps.apply import ApplyFeatureModule
-
-    module = ApplyFeatureModule()
-    try:
-        module.validate(ctx)
-        module.execute(
-            ctx, feature_name=feature_name, interactive=interactive, reset_to=reset_to, annotate=annotate
-        )
-    except Exception as e:
-        log_error(f"Failed to apply feature: {e}")
-        raise typer.Exit(1)
-
-
-@apply_app.command(name="patch")
-def apply_patch_cmd(
-    chromium_path: str = Argument(..., help="Chromium file path (e.g., chrome/common/foo.h)"),
-    reset_to: Optional[str] = Option(
-        None, "--reset-to", "-r", help="Reset file to this commit before applying patch"
-    ),
-    dry_run: bool = Option(False, "--dry-run", help="Test without applying"),
-):
-    """Apply patch for a specific file"""
-    ctx = create_build_context(state.chromium_src)
-    if not ctx:
-        raise typer.Exit(1)
-
-    from ..steps.apply import apply_single_file_patch
-
-    success, error = apply_single_file_patch(ctx, chromium_path, reset_to, dry_run)
-    if not success:
-        log_error(error or "Unknown error")
-        raise typer.Exit(1)
-    log_success(f"Successfully applied patch for: {chromium_path}")
-
-
-@apply_app.command(name="force")
-def apply_force(
-    reset_to: Optional[str] = Option(
-        None, "--reset-to", "-r", help="Reset files to this commit before applying patches"
-    ),
-):
-    """Apply all patches non-interactively, writing .rej files for conflicts.
-
-    Applies every patch without prompting. When a patch conflicts, uses
-    git apply --reject to apply what it can and write .rej files for
-    failed hunks, then continues to the next patch.
-
-    Examples:
-        browseros dev apply force -S /chromium
-        browseros dev apply force --reset-to base -S /chromium
-    """
-    ctx = create_build_context(state.chromium_src)
-    if not ctx:
-        raise typer.Exit(1)
-
-    from ..steps.apply import ApplyForceModule
-
-    module = ApplyForceModule()
-    try:
-        module.validate(ctx)
-        module.execute(ctx, reset_to=reset_to)
-    except Exception as e:
-        log_error(f"Failed to apply patches: {e}")
-        raise typer.Exit(1)
-
-
-@apply_app.command(name="changed")
-def apply_changed(
-    commit: Optional[str] = Option(
-        None, "--commit", "-c", help="Single commit hash to get changed patches from"
-    ),
-    range_start: Optional[str] = Option(
-        None, "--range-start", help="Start commit of range (exclusive)"
-    ),
-    range_end: Optional[str] = Option(
-        None, "--range-end", help="End commit of range (inclusive)"
-    ),
-    reset_to: str = Option(
-        ..., "--reset-to", "-r", help="Reset chromium files to this commit before applying (required)"
-    ),
-    dry_run: bool = Option(False, "--dry-run", help="Preview changes without applying"),
-):
-    """Apply only patches that changed in specific commits.
-
-    Useful for testing changes on another machine without full rebuild.
-    Only resets and applies files that were modified in the specified commits.
-
-    Examples:
-        # Apply patches changed in a single commit
-        browseros dev apply changed --commit 1c78477 --reset-to base -S /chromium
-
-        # Apply patches changed in a range of commits
-        browseros dev apply changed --range-start HEAD~5 --range-end HEAD --reset-to base -S /chromium
-    """
-    ctx = create_build_context(state.chromium_src)
-    if not ctx:
-        raise typer.Exit(1)
-
-    from ..steps.apply import ApplyChangedModule
-
-    module = ApplyChangedModule()
-    try:
-        module.validate(ctx)
-        module.execute(
-            ctx,
-            reset_to=reset_to,
-            commit=commit,
-            range_start=range_start,
-            range_end=range_end,
-            dry_run=dry_run,
-        )
-    except Exception as e:
-        log_error(f"Failed to apply changed patches: {e}")
-        raise typer.Exit(1)
-
-
-# Feature commands
-@feature_app.command(name="list")
-def feature_list():
-    """List all defined features"""
-    ctx = create_build_context(state.chromium_src)
-    if not ctx:
-        raise typer.Exit(1)
-
-    from ..steps.feature import ListFeaturesModule
-
-    module = ListFeaturesModule()
-    try:
-        module.validate(ctx)
-        module.execute(ctx)
-    except Exception as e:
-        log_error(f"Failed to list features: {e}")
-        raise typer.Exit(1)
-
-
-@feature_app.command(name="show")
-def feature_show(
-    feature_name: str = Argument(..., help="Feature name to show"),
-):
-    """Show details of a specific feature"""
-    ctx = create_build_context(state.chromium_src)
-    if not ctx:
-        raise typer.Exit(1)
-
-    from ..steps.feature import ShowFeatureModule
-
-    module = ShowFeatureModule()
-    try:
-        module.validate(ctx)
-        module.execute(ctx, feature_name=feature_name)
-    except Exception as e:
-        log_error(f"Failed to show feature: {e}")
-        raise typer.Exit(1)
-
-
-@feature_app.command(name="add-update")
-def feature_add_update(
-    name: str = Option(
-        ..., "--name", "-n", help="Feature name (lowercase kebab-case, e.g., 'llm-chat')"
-    ),
-    commit: str = Option(..., "--commit", "-c", help="Git commit reference"),
-    description: str = Option(
-        ...,
-        "--description",
-        "-d",
-        help="Feature description with prefix (feat:, fix:, build:, chore:, series:)",
-    ),
-):
-    """Add or update a feature with files from a commit.
-
-    If the feature exists, merges new files into it.
-    If the feature is new, creates it.
-
-    Examples:
-        browseros dev feature add-update --name llm-chat --commit HEAD -d "feat: LLM chat panel"
-        browseros dev feature add-update -n api -c HEAD~3 -d "feat: browseros API updates"
-    """
-    ctx = create_build_context(state.chromium_src)
-    if not ctx:
-        raise typer.Exit(1)
-
-    from ..steps.feature import AddUpdateFeatureModule
-
-    module = AddUpdateFeatureModule()
-    try:
-        module.validate(ctx)
-        module.execute(ctx, name=name, commit=commit, description=description)
-    except Exception as e:
-        log_error(f"Failed to add/update feature: {e}")
-        raise typer.Exit(1)
-
-
-@feature_app.command(name="classify")
-def feature_classify():
-    """Classify unclassified patch files into features
-
-    Lists all patches in chromium_patches/ that are not in any feature,
-    then prompts one-by-one to assign each to a feature.
-
-    Examples:
-        browseros dev feature classify
-    """
-    ctx = create_build_context(state.chromium_src)
-    if not ctx:
-        raise typer.Exit(1)
-
-    from ..steps.feature import ClassifyFeaturesModule
-
-    module = ClassifyFeaturesModule()
-    try:
-        module.validate(ctx)
-        module.execute(ctx)
-    except Exception as e:
-        log_error(f"Failed to classify features: {e}")
-        raise typer.Exit(1)
-
-
-# Annotate command
-@app.command(name="annotate")
-def annotate_cmd(
-    feature_name: Optional[str] = Argument(
-        None, help="Optional: specific feature to annotate (default: all features)"
-    ),
-):
-    """Create git commits organized by features from features.yaml
-
-    For each feature with modified files, creates a commit with the format:
-    "{feature_name}: {description}"
-
-    Examples:
-        browseros dev annotate -S /path/to/chromium
-        browseros dev annotate llm-chat -S /path/to/chromium
-    """
-    ctx = create_build_context(state.chromium_src)
-    if not ctx:
-        raise typer.Exit(1)
-
-    from ..steps.annotate import AnnotateModule
-
-    module = AnnotateModule()
-    try:
-        module.validate(ctx)
-        module.execute(ctx, feature_name=feature_name)
-    except Exception as e:
-        log_error(f"Failed to annotate: {e}")
         raise typer.Exit(1)
 
 

@@ -47,7 +47,7 @@ def apply_patches_impl(ctx: Context, interactive: bool = False) -> bool:
         raise RuntimeError("Git not found in PATH")
 
     # Import apply module via package path so relative imports work
-    from bos_build.steps.apply.apply_all import apply_all_patches
+    from bos_build.patchkit.batch_apply import apply_all_patches
 
     # Call the dev CLI function directly
     _, failed = apply_all_patches(
