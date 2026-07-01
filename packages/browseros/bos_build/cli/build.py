@@ -9,11 +9,10 @@ from typing import List, Optional, Tuple
 
 import typer
 
-from ..core.config import validate_required_envs
 from ..core.context import Context
 from ..core.paths import get_package_root
 from ..core.pipeline import validate_pipeline, show_available_modules
-from ..core.planner import Switches, load_profile, plan, required_env
+from ..core.planner import Switches, load_profile, plan, preflight
 from ..core.resolver import resolve_config, resolve_pipeline
 from ..core.notify import (
     notify_pipeline_end,
@@ -246,18 +245,18 @@ def main(
         log_info(f"  Pipeline: {' → '.join(runs[0][1])}")
         log_info("-" * 70)
 
-    # Env requirements derive from the selected steps' metadata
-    all_step_names: List[str] = []
-    for _, run_steps in runs:
-        for name in run_steps:
-            if name not in all_step_names:
-                all_step_names.append(name)
-    needed_env = required_env(all_step_names)
-    if needed_env:
-        validate_required_envs(needed_env)
-
     for _, run_steps in runs:
         validate_pipeline(run_steps, AVAILABLE_MODULES)
+
+    # Whole-pipeline static preflight (env from step metadata, platform,
+    # per-step static checks) for EVERY arch before any run starts — a
+    # misconfigured second arch must not surface after hours of arch one.
+    try:
+        for run_ctx, run_steps in runs:
+            preflight(run_steps, ctx=run_ctx)
+    except ValueError as e:
+        log_error(str(e))
+        raise typer.Exit(1)
 
     if IS_WINDOWS():
         os.environ["DEPOT_TOOLS_WIN_TOOLCHAIN"] = "0"

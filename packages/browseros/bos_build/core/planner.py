@@ -217,3 +217,49 @@ def load_profile(path: Path) -> Switches:
         sign=data.get("sign"),
         upload=data.get("upload"),
     )
+
+
+def preflight(step_names: List[str], platform: Optional[str] = None, ctx=None) -> None:
+    """Static whole-pipeline checks before anything executes.
+
+    Fails fast (listing every problem, not just the first) on: planned
+    steps that don't apply to this platform, missing env vars from step
+    metadata, and per-step preflight() hooks. Dynamic state produced
+    mid-run is deliberately NOT checked here — that stays in each
+    step's just-in-time validate().
+    """
+    import os
+
+    platform = platform or get_platform()
+    registry = all_steps()
+    problems: List[str] = []
+
+    for name in step_names:
+        cls = registry.get(name)
+        if cls is None:
+            problems.append(f"unknown step: {name}")
+            continue
+        if cls.platforms is not None and platform not in cls.platforms:
+            problems.append(
+                f"step '{name}' does not apply to platform '{platform}' "
+                f"(applies to: {', '.join(cls.platforms)})"
+            )
+
+    for var in required_env(step_names):
+        if not os.environ.get(var):
+            problems.append(f"missing required environment variable: {var}")
+
+    if ctx is not None:
+        for name in step_names:
+            cls = registry.get(name)
+            if cls is None:
+                continue
+            try:
+                cls().preflight(ctx)
+            except Exception as e:
+                problems.append(f"preflight failed for '{name}': {e}")
+
+    if problems:
+        raise ValueError(
+            "Preflight failed:\n" + "\n".join(f"  - {p}" for p in problems)
+        )

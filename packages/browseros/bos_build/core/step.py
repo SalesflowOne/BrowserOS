@@ -78,13 +78,26 @@ class Step:
     requires: List[str] = []
     description: str = "No description provided"
 
+    def preflight(self, context) -> None:
+        """
+        Static plan-time checks, run for the WHOLE pipeline before step 1
+        executes (a misconfigured nightly fails in seconds, not at hour 3).
+
+        Only check state that exists before the run starts (tools on PATH,
+        static files, SDK versions). Env vars and platform come free from
+        the env=/platforms= metadata — don't recheck them here. State
+        produced mid-run (the built app, artifacts) belongs in validate().
+        Raise ValidationError on failure.
+        """
+
     def validate(self, context) -> None:
         """
         Validate that this step can run successfully
 
-        Check preconditions: platform requirements, required artifacts,
-        environment variables, files/directories. Called before execute();
-        the pipeline stops immediately on ValidationError.
+        Runs just-in-time before execute() — the right place for dynamic
+        state produced earlier in the run (e.g. sign checks the app that
+        compile just built). Static env/platform checks belong to
+        metadata + preflight. The pipeline stops on ValidationError.
         """
         raise NotImplementedError(
             f"{self.__class__.__name__} must implement validate()"

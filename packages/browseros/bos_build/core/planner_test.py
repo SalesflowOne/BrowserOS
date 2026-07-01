@@ -279,3 +279,65 @@ class ProfileTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PreflightTest(unittest.TestCase):
+    def test_lists_all_missing_env_vars_not_first_only(self):
+        import os
+        from unittest import mock
+
+        from bos_build.core.planner import preflight
+
+        clean = {
+            k: v
+            for k, v in os.environ.items()
+            if not k.startswith(("MACOS_", "PROD_MACOS_"))
+        }
+        with mock.patch.dict(os.environ, clean, clear=True):
+            with self.assertRaises(ValueError) as err:
+                preflight(plan(RELEASE, "arm64", "macos"), platform="macos")
+
+        message = str(err.exception)
+        self.assertIn("MACOS_CERTIFICATE_NAME", message)
+        self.assertIn("PROD_MACOS_NOTARIZATION_APPLE_ID", message)
+        self.assertIn("PROD_MACOS_NOTARIZATION_TEAM_ID", message)
+        self.assertIn("PROD_MACOS_NOTARIZATION_PWD", message)
+
+    def test_platform_mismatch_rejected(self):
+        from bos_build.core.planner import preflight
+
+        with self.assertRaisesRegex(ValueError, "does not apply to platform 'linux'"):
+            preflight(["clean", "sign_macos"], platform="linux")
+
+    def test_unknown_step_rejected(self):
+        from bos_build.core.planner import preflight
+
+        with self.assertRaisesRegex(ValueError, "unknown step: nonsense"):
+            preflight(["nonsense"], platform="linux")
+
+    def test_unsigned_ci_pipeline_preflights_clean(self):
+        from bos_build.core.planner import preflight
+
+        preflight(plan(CI, "x64", "linux"), platform="linux")
+
+    def test_step_preflight_hook_failures_reported(self):
+        from types import SimpleNamespace
+        from unittest import mock
+
+        from bos_build.core import step as step_mod
+        from bos_build.core.planner import preflight
+        from bos_build.core.step import Step, ValidationError
+
+        class NeedsTool(Step):
+            def preflight(self, context):
+                raise ValidationError("xcode 26 required")
+
+            def validate(self, context):
+                pass
+
+            def execute(self, context):
+                pass
+
+        with mock.patch.dict(step_mod._REGISTRY, {"needs_tool": NeedsTool}):
+            with self.assertRaisesRegex(ValueError, "xcode 26 required"):
+                preflight(["needs_tool"], platform="linux", ctx=SimpleNamespace())

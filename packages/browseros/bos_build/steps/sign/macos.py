@@ -170,16 +170,11 @@ class MacOSSignModule(Step):
     description = "Sign and notarize macOS application"
 
     def validate(self, ctx: Context) -> None:
-        if not IS_MACOS:
-            raise ValidationError("macOS signing requires macOS")
-
+        # Platform + env vars are declared in @step metadata and checked
+        # at plan time; the app is a mid-run artifact, so it stays here.
         app_path = ctx.get_app_path()
         if not app_path.exists():
             raise ValidationError(f"App not found at: {app_path}")
-
-        env_ok, env_vars = check_environment(ctx.env)
-        if not env_ok:
-            raise ValidationError("Required signing environment variables not set")
 
     def execute(self, ctx: Context) -> None:
         log_info("=" * 70)
@@ -232,7 +227,7 @@ def check_signing_environment(env: Optional[EnvConfig] = None) -> bool:
         env: Optional EnvConfig instance. If not provided, creates a new one.
     """
     # Only check on macOS
-    if not IS_MACOS:
+    if not IS_MACOS():
         return True
 
     if env is None:
