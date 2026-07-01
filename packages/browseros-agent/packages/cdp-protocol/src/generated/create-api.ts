@@ -12,12 +12,53 @@ export type RawOn = (
   handler: (params: unknown) => void,
 ) => () => void
 
+// Generator note: the metaproperty guard below is a hand-added
+// runtime safety net. When regenerating this file, port the guard
+// verbatim into the template. Without it, any code that walks a
+// domain proxy for JS metaproperties (JSON.stringify, `await`,
+// util.inspect, console.log, structured clone, pino / bun loggers)
+// synthesises real CDP requests with method names like
+// `Runtime.toJSON` or `HeapProfiler.then`, which BrowserOS silently
+// drops and our client eventually rejects with
+// `CDP request timeout: <Domain>.<meta>` after 30 s.
 function createDomainProxy(domain: string, send: RawSend, on: RawOn): unknown {
   return new Proxy(Object.create(null), {
-    get(_, method: string) {
+    get(_, method) {
+      // Symbol probes (Symbol.iterator, Symbol.toPrimitive,
+      // Symbol.for('nodejs.util.inspect.custom'), Symbol.asyncIterator,
+      // etc.) never map to real CDP methods. Short-circuit before
+      // the catch-all so serialisers and iterators do not fabricate
+      // sends.
+      if (typeof method !== 'string') return undefined
       if (method === 'on') {
         return (event: string, handler: (params: unknown) => void) =>
           on(`${domain}.${event}`, handler)
+      }
+      // JSON.stringify probes `.toJSON`. Returning a function that
+      // yields a string tag keeps serialisers happy AND produces
+      // readable output when a session accidentally lands in a log
+      // payload.
+      if (method === 'toJSON') return () => `[CDP:${domain}]`
+      // `await value` and Promise assimilation probe `.then`. If we
+      // returned a function here, `await` would call it, firing a
+      // CDP send. Returning undefined tells the runtime the proxy
+      // is NOT a thenable.
+      if (method === 'then') return undefined
+      // Well-known runtime / DOM introspection touch points. Devtools
+      // inspectors, structured-clone, error printers, and template
+      // engines all touch a subset of these. CDP method names are
+      // camelCase like `enable` / `evaluate` / `getProperties` and
+      // never collide with this list.
+      if (
+        method === 'nodeType' ||
+        method === 'nodeName' ||
+        method === 'tagName' ||
+        method === 'constructor' ||
+        method === 'toString' ||
+        method === 'valueOf' ||
+        method === 'inspect'
+      ) {
+        return undefined
       }
       return (params?: Record<string, unknown>) =>
         send(`${domain}.${method}`, params)
