@@ -10,11 +10,11 @@ from typing import Optional
 import typer
 
 # Import common modules
-from ..common.context import Context
-from ..common.config import load_config, validate_required_envs
-from ..common.pipeline import validate_pipeline, show_available_modules
-from ..common.resolver import resolve_config, resolve_pipeline
-from ..common.notify import (
+from ..core.context import Context
+from ..core.config import load_config, validate_required_envs
+from ..core.pipeline import validate_pipeline, show_available_modules
+from ..core.resolver import resolve_config, resolve_pipeline
+from ..core.notify import (
     notify_pipeline_start,
     notify_pipeline_end,
     notify_pipeline_error,
@@ -22,8 +22,8 @@ from ..common.notify import (
     notify_module_completion,
     set_build_context,
 )
-from ..common.module import ValidationError
-from ..common.utils import (
+from ..core.module import ValidationError
+from ..core.utils import (
     log_error,
     log_info,
     log_success,
@@ -34,30 +34,30 @@ from ..common.utils import (
 )
 
 # Import all module classes
-from ..modules.setup.clean import CleanModule
-from ..modules.setup.git import (
+from ..steps.setup.clean import CleanModule
+from ..steps.setup.git import (
     GitSetupModule,
     SparkleSetupModule,
     WinSparkleSetupModule,
 )
-from ..modules.setup.configure import ConfigureModule
-from ..modules.compile import CompileModule, UniversalBuildModule
-from ..modules.patches.patches import PatchesModule
-from ..modules.patches.series_patches import SeriesPatchesModule
-from ..modules.resources.chromium_replace import ChromiumReplaceModule
-from ..modules.resources.string_replaces import StringReplacesModule
-from ..modules.resources.resources import ResourcesModule
-from ..modules.extensions import BundledExtensionsModule
-from ..modules.storage import UploadModule, DownloadResourcesModule
+from ..steps.setup.configure import ConfigureModule
+from ..steps.compile import CompileModule, UniversalBuildModule
+from ..steps.patches.patches import PatchesModule
+from ..steps.patches.series_patches import SeriesPatchesModule
+from ..steps.resources.chromium_replace import ChromiumReplaceModule
+from ..steps.resources.string_replaces import StringReplacesModule
+from ..steps.resources.resources import ResourcesModule
+from ..steps.extensions import BundledExtensionsModule
+from ..steps.storage import UploadModule, DownloadResourcesModule
 
 # Platform-specific modules (imported unconditionally - validation handles platform checks)
-from ..modules.sign.macos import MacOSSignModule
-from ..modules.sign.windows import WindowsSignModule
-from ..modules.sign.linux import LinuxSignModule
-from ..modules.sign.sparkle import SparkleSignModule
-from ..modules.package.macos import MacOSPackageModule
-from ..modules.package.windows import WindowsPackageModule, MiniInstallerModule
-from ..modules.package.linux import LinuxPackageModule
+from ..steps.sign.macos import MacOSSignModule
+from ..steps.sign.windows import WindowsSignModule
+from ..steps.sign.linux import LinuxSignModule
+from ..steps.sign.sparkle import SparkleSignModule
+from ..steps.package.macos import MacOSPackageModule
+from ..steps.package.windows import WindowsPackageModule, MiniInstallerModule
+from ..steps.package.linux import LinuxPackageModule
 
 AVAILABLE_MODULES = {
     # Setup & Environment

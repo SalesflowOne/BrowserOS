@@ -274,7 +274,7 @@ jobs:
           import shutil
           from pathlib import Path
 
-          from bos_build.modules.storage.download import extract_artifact_zip
+          from bos_build.steps.storage.download import extract_artifact_zip
 
           agent_root = Path(os.environ["AGENT_ROOT"])
           browseros_root = Path(os.environ["BROWSEROS_ROOT"])

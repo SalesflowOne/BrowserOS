@@ -6,18 +6,18 @@ from typing import Optional
 
 import typer
 
-from ..common.context import Context
-from ..common.env import EnvConfig
-from ..common.module import ValidationError
-from ..common.sparkle import sparkle_sign_file
-from ..common.utils import log_info, log_error, log_success
+from ..core.context import Context
+from ..core.env import EnvConfig
+from ..core.module import ValidationError
+from ..core.sparkle import sparkle_sign_file
+from ..core.utils import log_info, log_error, log_success
 
-from ..modules.ota import ServerOTAModule
-from ..modules.ota.common import (
+from ..steps.ota import ServerOTAModule
+from ..steps.ota.common import (
     get_appcast_path,
     SERVER_PLATFORMS,
 )
-from ..modules.storage import get_r2_client, upload_file_to_r2
+from ..steps.storage import get_r2_client, upload_file_to_r2
 
 app = typer.Typer(
     help="OTA (Over-The-Air) update automation",

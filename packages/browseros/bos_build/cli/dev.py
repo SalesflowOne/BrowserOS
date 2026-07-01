@@ -14,8 +14,8 @@ import typer
 from typer import Typer, Option, Argument
 
 # Import from common and utils
-from ..common.context import Context
-from ..common.utils import log_info, log_error, log_success, log_warning
+from ..core.context import Context
+from ..core.utils import log_info, log_error, log_success, log_warning
 
 
 def create_build_context(chromium_src: Optional[Path] = None) -> Optional[Context]:
@@ -183,7 +183,7 @@ def extract_commit(
     if not ctx:
         raise typer.Exit(1)
 
-    from ..modules.extract import ExtractCommitModule
+    from ..steps.extract import ExtractCommitModule
 
     module = ExtractCommitModule()
     try:
@@ -227,7 +227,7 @@ def extract_patch_cmd(
     if not ctx:
         raise typer.Exit(1)
 
-    from ..modules.extract import extract_single_file_patch
+    from ..steps.extract import extract_single_file_patch
 
     success, error = extract_single_file_patch(ctx, chromium_path, base, force)
     if not success:
@@ -237,9 +237,9 @@ def extract_patch_cmd(
 
     # Handle --feature flag
     if feature:
-        from ..modules.extract.common import resolve_base_commit
-        from ..modules.extract.utils import GitError
-        from ..modules.feature import prompt_feature_selection, add_files_to_feature
+        from ..steps.extract.common import resolve_base_commit
+        from ..steps.extract.utils import GitError
+        from ..steps.feature import prompt_feature_selection, add_files_to_feature
 
         try:
             resolved_base = resolve_base_commit(ctx, base)
@@ -284,7 +284,7 @@ def extract_range(
     if not ctx:
         raise typer.Exit(1)
 
-    from ..modules.extract import ExtractRangeModule
+    from ..steps.extract import ExtractRangeModule
 
     module = ExtractRangeModule()
     try:
@@ -325,7 +325,7 @@ def apply_all(
     if not ctx:
         raise typer.Exit(1)
 
-    from ..modules.apply import ApplyAllModule
+    from ..steps.apply import ApplyAllModule
 
     module = ApplyAllModule()
     try:
@@ -354,7 +354,7 @@ def apply_feature(
     if not ctx:
         raise typer.Exit(1)
 
-    from ..modules.apply import ApplyFeatureModule
+    from ..steps.apply import ApplyFeatureModule
 
     module = ApplyFeatureModule()
     try:
@@ -380,7 +380,7 @@ def apply_patch_cmd(
     if not ctx:
         raise typer.Exit(1)
 
-    from ..modules.apply import apply_single_file_patch
+    from ..steps.apply import apply_single_file_patch
 
     success, error = apply_single_file_patch(ctx, chromium_path, reset_to, dry_run)
     if not success:
@@ -409,7 +409,7 @@ def apply_force(
     if not ctx:
         raise typer.Exit(1)
 
-    from ..modules.apply import ApplyForceModule
+    from ..steps.apply import ApplyForceModule
 
     module = ApplyForceModule()
     try:
@@ -452,7 +452,7 @@ def apply_changed(
     if not ctx:
         raise typer.Exit(1)
 
-    from ..modules.apply import ApplyChangedModule
+    from ..steps.apply import ApplyChangedModule
 
     module = ApplyChangedModule()
     try:
@@ -478,7 +478,7 @@ def feature_list():
     if not ctx:
         raise typer.Exit(1)
 
-    from ..modules.feature import ListFeaturesModule
+    from ..steps.feature import ListFeaturesModule
 
     module = ListFeaturesModule()
     try:
@@ -498,7 +498,7 @@ def feature_show(
     if not ctx:
         raise typer.Exit(1)
 
-    from ..modules.feature import ShowFeatureModule
+    from ..steps.feature import ShowFeatureModule
 
     module = ShowFeatureModule()
     try:
@@ -535,7 +535,7 @@ def feature_add_update(
     if not ctx:
         raise typer.Exit(1)
 
-    from ..modules.feature import AddUpdateFeatureModule
+    from ..steps.feature import AddUpdateFeatureModule
 
     module = AddUpdateFeatureModule()
     try:
@@ -560,7 +560,7 @@ def feature_classify():
     if not ctx:
         raise typer.Exit(1)
 
-    from ..modules.feature import ClassifyFeaturesModule
+    from ..steps.feature import ClassifyFeaturesModule
 
     module = ClassifyFeaturesModule()
     try:
@@ -591,7 +591,7 @@ def annotate_cmd(
     if not ctx:
         raise typer.Exit(1)
 
-    from ..modules.annotate import AnnotateModule
+    from ..steps.annotate import AnnotateModule
 
     module = AnnotateModule()
     try:

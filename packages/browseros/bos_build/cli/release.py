@@ -6,11 +6,11 @@ from typing import Optional
 
 import typer
 
-from ..common.context import Context
-from ..common.module import ValidationError
-from ..common.utils import log_info, log_error
+from ..core.context import Context
+from ..core.module import ValidationError
+from ..core.utils import log_info, log_error
 
-from ..modules.release import (
+from ..steps.release import (
     AVAILABLE_MODULES,
     ListModule,
     AppcastModule,
