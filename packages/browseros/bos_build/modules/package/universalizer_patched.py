@@ -70,25 +70,25 @@ def _file_type_for_stat(st):
     if stat.S_ISDIR(st.st_mode):
         return "directory"
 
-    raise Exception("unknown file type for mode 0o%o" % mode)
+    raise Exception("unknown file type for mode 0o%o" % st.st_mode)
 
 
-def _sole_list_element(l, exception_message):
+def _sole_list_element(values, exception_message):
     """Assures that every element in a list is identical.
 
     Args:
-        l: The list to consider.
+        values: The list to consider.
         exception_message: A message used to convey failure if every element in
-            l is not identical.
+            values is not identical.
 
     Returns:
         The value of each identical element in the list.
     """
-    s = set(l)
+    s = set(values)
     if len(s) != 1:
         raise Exception(exception_message)
 
-    return l[0]
+    return values[0]
 
 
 def _read_plist(path):

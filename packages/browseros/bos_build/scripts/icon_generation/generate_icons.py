@@ -435,7 +435,7 @@ def main():
             source_path = SCRIPT_DIR / op["source"]
             print(f"COPY {op['source']} -> {op['dest']}")
             if copy_static(source_path, dest_path):
-                print(f"  ✓ Copied")
+                print("  ✓ Copied")
                 success_count += 1
             else:
                 fail_count += 1
@@ -480,7 +480,7 @@ def main():
             print(f"ICNS {op['source']} -> {op['dest']}")
             img = get_source(op["source"])
             if generate_icns(img, dest_path):
-                print(f"  ✓ Generated ICNS")
+                print("  ✓ Generated ICNS")
                 success_count += 1
             else:
                 fail_count += 1
@@ -489,7 +489,7 @@ def main():
             print(f"XCASSETS {op['source']} -> {op['dest']}")
             img = get_source(op["source"])
             if generate_xcassets(img, dest_path):
-                print(f"  ✓ Generated Assets.xcassets")
+                print("  ✓ Generated Assets.xcassets")
                 success_count += 1
             else:
                 fail_count += 1
@@ -497,7 +497,7 @@ def main():
         elif op_type == "assets_car":
             print(f"ASSETS_CAR -> {op['dest']}")
             if generate_assets_car(dest_path):
-                print(f"  ✓ Generated Assets.car")
+                print("  ✓ Generated Assets.car")
                 success_count += 1
             else:
                 fail_count += 1

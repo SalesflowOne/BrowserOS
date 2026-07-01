@@ -11,7 +11,7 @@ from typing import List, Tuple, Optional
 
 from ...common.context import Context
 from ...common.module import CommandModule, ValidationError
-from ...common.utils import log_info, log_error, log_warning, log_success
+from ...common.utils import log_info, log_warning, log_success
 from .common import find_patch_files
 from .utils import run_git_command, file_exists_in_commit, reset_file_to_commit
 

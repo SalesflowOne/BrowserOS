@@ -8,7 +8,7 @@ import typer
 
 from ..common.context import Context
 from ..common.module import ValidationError
-from ..common.utils import log_info, log_error, log_success
+from ..common.utils import log_info, log_error
 
 from ..modules.release import (
     AVAILABLE_MODULES,

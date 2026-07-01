@@ -5,12 +5,12 @@ Simple feature management with YAML persistence.
 """
 
 import yaml
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 from ...common.context import Context
 from ...common.module import CommandModule, ValidationError
 from ..extract.utils import get_commit_changed_files
 from ...common.utils import log_info, log_error, log_success, log_warning
-from .validation import validate_description, validate_feature_name, VALID_PREFIXES
+from .validation import validate_description, validate_feature_name
 
 
 def add_or_update_feature(

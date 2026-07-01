@@ -5,7 +5,6 @@ Contains core extraction logic used by extract_commit and extract_range.
 """
 
 import click
-from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from ...common.context import Context

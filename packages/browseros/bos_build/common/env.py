@@ -9,7 +9,6 @@ The module automatically loads .env files from the project root on import.
 """
 
 import os
-from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv

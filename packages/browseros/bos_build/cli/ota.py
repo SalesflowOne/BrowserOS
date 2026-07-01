@@ -191,7 +191,7 @@ def test_signing(
         log_error("SPARKLE_PRIVATE_KEY not set")
         raise typer.Exit(1)
 
-    log_info(f"\n🔐 Testing Sparkle Ed25519 signing")
+    log_info("\n🔐 Testing Sparkle Ed25519 signing")
     log_info(f"File: {file_path}")
     log_info("-" * 60)
 
@@ -200,7 +200,7 @@ def test_signing(
         log_error("Signing failed")
         raise typer.Exit(1)
 
-    log_success(f"✅ Signed successfully")
+    log_success("✅ Signed successfully")
     log_info(f"   Signature: {sig[:50]}...")
     log_info(f"   Length: {length}")
 
