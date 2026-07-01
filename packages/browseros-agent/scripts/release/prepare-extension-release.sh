@@ -274,8 +274,8 @@ else
 
     ensure_git_identity
 
-    if [ "$current_version" != "$version" ]; then
-      update_release_version_files "$version"
+    update_release_version_files "$version"
+    if ! git diff --quiet -- "$EXTENSION_PACKAGE_JSON" "$EXTENSION_LOCK"; then
       git add "$EXTENSION_PACKAGE_JSON" "$EXTENSION_LOCK"
       git commit -m "chore: bump extension version to $version"
     fi

@@ -72,7 +72,10 @@ async function tag(dir: string, name: string): Promise<void> {
   await mustRun(dir, ['git', 'tag', '-a', name, '-m', name])
 }
 
-async function initFixture(version: string): Promise<{
+async function initFixture(
+  version: string,
+  lockVersion = version,
+): Promise<{
   dir: string
   bareDir: string
 }> {
@@ -82,7 +85,7 @@ async function initFixture(version: string): Promise<{
   await mustRun(dir, ['git', 'config', 'user.name', 'BrowserOS Test'])
   await mustRun(dir, ['git', 'config', 'user.email', 'test@browseros.com'])
   writePackage(dir, version)
-  writeLock(dir, version)
+  writeLock(dir, lockVersion)
   await mustRun(dir, ['git', 'add', '.'])
   await mustRun(dir, ['git', 'commit', '-m', `version ${version}`])
   await mustRun(bareDir, ['git', 'init', '--bare', '--initial-branch=main'])
@@ -210,6 +213,38 @@ describe('prepare-extension-release', () => {
       expect(
         (await mustRun(dir, ['git', 'rev-parse', 'origin/main'])).trim(),
       ).toBe(releaseSha)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+      rmSync(bareDir, { recursive: true, force: true })
+    }
+  })
+
+  it('repairs a stale lockfile entry before tagging an already-bumped package', async () => {
+    const { dir, bareDir } = await initFixture('0.0.101', '0.0.100')
+    try {
+      const result = await prepare(dir, {
+        eventName: 'workflow_dispatch',
+        requestedVersion: '0.0.101',
+      })
+
+      expect(result.code, result.stderr || result.stdout).toBe(0)
+      expect(
+        await mustRun(dir, ['git', 'show', `origin/main:${packagePath}`]),
+      ).toContain('"version": "0.0.101"')
+      expect(
+        await mustRun(dir, ['git', 'show', `origin/main:${lockPath}`]),
+      ).toContain('"version": "0.0.101"')
+      expect(
+        (
+          await mustRun(dir, [
+            'git',
+            'rev-list',
+            '-n',
+            '1',
+            'agent-extension/v0.0.101',
+          ])
+        ).trim(),
+      ).toBe((await mustRun(dir, ['git', 'rev-parse', 'origin/main'])).trim())
     } finally {
       rmSync(dir, { recursive: true, force: true })
       rmSync(bareDir, { recursive: true, force: true })
