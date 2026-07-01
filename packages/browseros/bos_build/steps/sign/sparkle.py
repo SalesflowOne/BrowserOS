@@ -22,7 +22,7 @@ def find_signable_artifacts(dist_dir: Path) -> List[Path]:
     return sorted(dist_dir.glob("*.dmg")) + sorted(dist_dir.glob("*.exe"))
 
 
-@step("sparkle_sign", phase="sign", optional=True)
+@step("sparkle_sign", phase="sign", optional=True, env=("SPARKLE_PRIVATE_KEY",))
 class SparkleSignModule(Step):
     """Sign update artifacts with the Sparkle Ed25519 key"""
 

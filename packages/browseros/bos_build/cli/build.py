@@ -3,14 +3,17 @@
 
 import os
 import time
+from dataclasses import replace
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional, Tuple
 
 import typer
 
-# Import common modules
-from ..core.config import load_config, validate_required_envs
+from ..core.config import validate_required_envs
+from ..core.context import Context
+from ..core.paths import get_package_root
 from ..core.pipeline import validate_pipeline, show_available_modules
+from ..core.planner import Switches, load_profile, plan, required_env
 from ..core.resolver import resolve_config, resolve_pipeline
 from ..core.notify import (
     notify_pipeline_end,
@@ -45,12 +48,21 @@ NOTIFY_MODULES = notify_step_names()
 
 
 def main(
-    config: Optional[Path] = typer.Option(
+    preset: Optional[str] = typer.Option(
         None,
-        "--config",
-        "-c",
-        help="Load configuration from YAML file",
-        exists=True,
+        "--preset",
+        help="Pipeline preset: release or debug (planner composes the steps)",
+    ),
+    profile: Optional[Path] = typer.Option(
+        None,
+        "--profile",
+        help="Profile file of saved switches (bos_build/profiles/*.yaml or a path)",
+    ),
+    product: Optional[str] = typer.Option(
+        None,
+        "--product",
+        "-p",
+        help="Product to build (browseros, browserclaw)",
     ),
     modules: Optional[str] = typer.Option(
         None,
@@ -80,22 +92,34 @@ def main(
         "--build",
         help="Run build phase (compile)",
     ),
-    sign: bool = typer.Option(
-        False,
-        "--sign",
-        help="Run sign phase (platform-specific: sign_macos/windows/linux)",
-    ),
     package: bool = typer.Option(
         False,
         "--package",
         help="Run package phase (platform-specific: package_macos/windows/linux)",
     ),
-    upload: bool = typer.Option(
-        False,
-        "--upload",
-        help="Run upload phase (upload artifacts)",
+    # Tri-state toggles: phase flag when used alone (--sign / --upload);
+    # switch override in preset/profile mode (--no-sign / --no-upload).
+    sign: Optional[bool] = typer.Option(
+        None,
+        "--sign/--no-sign",
+        help="Phase mode: run sign phase. Preset mode: toggle signing",
     ),
-    # Global options that override config
+    upload: Optional[bool] = typer.Option(
+        None,
+        "--upload/--no-upload",
+        help="Phase mode: run upload phase. Preset mode: toggle upload",
+    ),
+    clean: Optional[bool] = typer.Option(
+        None,
+        "--clean/--no-clean",
+        help="Preset mode: toggle the clean step",
+    ),
+    provision: Optional[str] = typer.Option(
+        None,
+        "--provision",
+        help="Preset mode: chromium provisioning (none, full)",
+    ),
+    # Global options
     arch: Optional[str] = typer.Option(
         None,
         "--arch",
@@ -106,7 +130,7 @@ def main(
         None,
         "--build-type",
         "-t",
-        help="Build type (debug or release)",
+        help="Build type for --modules/phase mode (debug or release)",
     ),
     chromium_src: Optional[Path] = typer.Option(
         None,
@@ -117,190 +141,162 @@ def main(
 ):
     """BrowserOS Build System - Modular pipeline executor
 
-    Build BrowserOS using phase flags (auto-ordered), explicit modules, or configs.
+    Build BrowserOS with a preset (planner-composed), phase flags, or
+    explicit modules.
 
     \b
-    Phase Flags (Recommended - Auto-Ordered):
+    Presets (Recommended - one pipeline definition, switches select):
+      browseros build --preset release --product browseros --arch arm64
+      browseros build --preset release --product browserclaw --no-upload
+      browseros build --profile nightly-ci --arch x64
+      browseros build --preset debug
+
+    \b
+    Phase Flags (Auto-Ordered):
       browseros build --setup --build --sign --package
       browseros build --build --sign           # Skip setup
-      browseros build --package --sign         # Flags work in any order!
 
     \b
     Explicit Modules (Power Users):
       browseros build --modules clean,compile,sign_macos
 
     \b
-    Config Files (CI/CD):
-      browseros build --config release.yaml --arch arm64
-
-    \b
     List Available:
       browseros build --list                   # Show all modules and phases
-
-    Note: Phase flags always execute in correct order regardless of how you write them.
-          --sign and --package auto-select platform (macos/windows/linux)
     """
 
-    # Handle --list flag
     if list_modules:
         show_available_modules(AVAILABLE_MODULES)
         return
 
-    # Check for mutually exclusive options
-    has_config = config is not None
+    has_preset = preset is not None or profile is not None
     has_modules = modules is not None
-    has_flags = any([setup, prep, build, sign, package, upload])
+    # --sign/--upload given affirmatively without a preset are phase flags
+    phase_sign = sign is True and not has_preset
+    phase_upload = upload is True and not has_preset
+    has_flags = any([setup, prep, build, package, phase_sign, phase_upload])
 
-    options_provided = sum([has_config, has_modules, has_flags])
+    options_provided = sum([has_preset, has_modules, has_flags])
 
     if options_provided == 0:
         typer.echo(
-            "Error: Specify --config, --modules, or phase flags (--setup, --build, etc.)\n"
+            "Error: Specify --preset/--profile, --modules, or phase flags (--setup, --build, etc.)\n"
         )
         typer.echo("Use --help for usage information")
         typer.echo("Use --list to see available modules")
         raise typer.Exit(1)
 
     if options_provided > 1:
-        log_error("Specify only ONE of: --config, --modules, or phase flags")
+        log_error("Specify only ONE of: --preset/--profile, --modules, or phase flags")
         log_error("Examples:")
+        log_error("  browseros build --preset release --product browserclaw")
         log_error("  browseros build --setup --build --sign")
         log_error("  browseros build --modules clean,compile")
-        log_error("  browseros build --config release.yaml")
         raise typer.Exit(1)
-
-    # CONFIG MODE validation: YAML controls everything, CLI build flags not allowed
-    if has_config:
-        conflicting_flags = []
-        if arch is not None:
-            conflicting_flags.append("--arch")
-        if build_type is not None:
-            conflicting_flags.append("--build-type")
-
-        if conflicting_flags:
-            log_error(
-                f"CONFIG MODE: Cannot use {', '.join(conflicting_flags)} with --config"
-            )
-            log_error("When using --config, ALL build parameters come from YAML")
-            log_error("Remove the conflicting flags or don't use --config")
-            raise typer.Exit(1)
 
     log_info("🚀 BrowserOS Build System")
     log_info("=" * 70)
 
-    # Load YAML config if provided
-    config_data = load_config(config) if config else None
+    root_dir = get_package_root()
 
-    # Build CLI arguments dictionary for resolver
-    root_dir = Path(__file__).parent.parent.parent
-    cli_args = {
-        "chromium_src": chromium_src,
-        "arch": arch,
-        "build_type": build_type,
-        "modules": modules,
-        "setup": setup,
-        "prep": prep,
-        "build": build,
-        "sign": sign,
-        "package": package,
-        "upload": upload,
-    }
-
-    # Resolve build context (CONFIG mode or DIRECT mode).
-    # Returns one Context per architecture — single-element for normal
-    # builds, multi-element when YAML declares `architecture: [x64, arm64]`.
-    try:
-        arch_ctxs = resolve_config(cli_args, config_data)
-    except ValueError as e:
-        log_error(str(e))
-        raise typer.Exit(1)
-
-    # Resolve pipeline (CONFIG mode or DIRECT mode)
-    try:
-        pipeline = resolve_pipeline(
-            cli_args,
-            config_data,
-            execution_order=EXECUTION_ORDER,
+    if has_preset:
+        if build_type is not None:
+            log_error("--build-type is owned by the preset (release/debug); drop it")
+            raise typer.Exit(1)
+        runs = _resolve_preset_runs(
+            preset=preset,
+            profile=profile,
+            product=product,
+            arch=arch,
+            clean=clean,
+            provision=provision,
+            sign=sign,
+            upload=upload,
+            chromium_src=chromium_src,
         )
-    except ValueError as e:
-        log_error(str(e))
-        raise typer.Exit(1)
+    else:
+        cli_args = {
+            "chromium_src": chromium_src,
+            "arch": arch,
+            "build_type": build_type,
+            "product": product,
+            "modules": modules,
+            "setup": setup,
+            "prep": prep,
+            "build": build,
+            "sign": phase_sign,
+            "package": package,
+            "upload": phase_upload,
+        }
+        try:
+            arch_ctxs = resolve_config(cli_args)
+            pipeline = resolve_pipeline(cli_args, execution_order=EXECUTION_ORDER)
+        except ValueError as e:
+            log_error(str(e))
+            raise typer.Exit(1)
+        runs = [(ctx, pipeline) for ctx in arch_ctxs]
 
-    # Show execution plan for flag-based mode
     if has_flags:
         log_info("\n📋 Execution Plan (auto-ordered):")
         log_info("-" * 70)
-        phase_names = []
-        if setup:
-            phase_names.append("setup")
         if prep:
-            phase_names.append("prep")
-            log_warning("⚠️  --prep does NOT apply series_patches. Run 'browseros build -m series_patches' separately if needed.")
-        if build:
-            phase_names.append("build")
-        if sign:
-            phase_names.append(f"sign (→ {', '.join(phase_steps('sign'))})")
-        if package:
-            phase_names.append(f"package (→ {', '.join(phase_steps('package'))})")
-        if upload:
-            phase_names.append("upload")
-
-        for phase_name in phase_names:
-            log_info(f"  ✓ {phase_name}")
-
-        log_info(f"\n  Pipeline: {' → '.join(pipeline)}")
+            log_warning(
+                "⚠️  --prep does NOT apply series_patches. Run 'browseros build -m series_patches' separately if needed."
+            )
+        log_info(f"  Pipeline: {' → '.join(runs[0][1])}")
         log_info("-" * 70)
 
-    # Validate required environment variables (YAML-specific)
-    if config_data:
-        required_envs = config_data.get("required_envs", [])
-        if required_envs:
-            validate_required_envs(required_envs)
+    # Env requirements derive from the selected steps' metadata
+    all_step_names: List[str] = []
+    for _, run_steps in runs:
+        for name in run_steps:
+            if name not in all_step_names:
+                all_step_names.append(name)
+    needed_env = required_env(all_step_names)
+    if needed_env:
+        validate_required_envs(needed_env)
 
-    # Validate pipeline modules exist
-    validate_pipeline(pipeline, AVAILABLE_MODULES)
+    for _, run_steps in runs:
+        validate_pipeline(run_steps, AVAILABLE_MODULES)
 
-    # Set Windows-specific environment
     if IS_WINDOWS():
         os.environ["DEPOT_TOOLS_WIN_TOOLCHAIN"] = "0"
         log_info("Set DEPOT_TOOLS_WIN_TOOLCHAIN=0 for Windows build")
 
     # Print build summary using the first context — versions and paths
-    # are identical across per-arch contexts. Architecture is logged again
-    # inside the loop below for multi-arch runs.
-    summary_ctx = arch_ctxs[0]
+    # are identical across per-arch contexts.
+    summary_ctx = runs[0][0]
     log_info(f"📍 Root: {root_dir}")
     log_info(f"📍 Chromium: {summary_ctx.chromium_src}")
-    if len(arch_ctxs) > 1:
+    if len(runs) > 1:
         log_info(
-            f"📍 Architectures: {[c.architecture for c in arch_ctxs]} (multi-arch loop)"
+            f"📍 Architectures: {[c.architecture for c, _ in runs]} (multi-arch loop)"
         )
     else:
         log_info(f"📍 Architecture: {summary_ctx.architecture}")
+    log_info(f"📍 Product: {summary_ctx.product.id}")
     log_info(f"📍 Build type: {summary_ctx.build_type}")
     log_info(f"📍 Semantic version: {summary_ctx.semantic_version}")
     log_info(f"📍 Chromium version: {summary_ctx.chromium_version}")
     log_info(f"📍 Build offset: {summary_ctx.browseros_build_offset}")
-    log_info(f"📍 Pipeline: {' → '.join(pipeline)}")
+    log_info(f"📍 Pipeline: {' → '.join(runs[0][1])}")
     log_info("=" * 70)
 
     os_name = "macOS" if IS_MACOS() else "Windows" if IS_WINDOWS() else "Linux"
 
-    # Execute the pipeline once per architecture. Steps see a normal
-    # single-arch ctx; only this loop knows about multi-arch. For
-    # multi-arch invocations one extra whole-run terminal notification
-    # fires in the finally, so an interrupted second arch still reports.
-    multi_arch = len(arch_ctxs) > 1
+    # Execute once per architecture. Steps see a normal single-arch ctx;
+    # only this loop knows about multi-arch. For multi-arch invocations
+    # one extra whole-run terminal notification fires in the finally, so
+    # an interrupted second arch still reports.
+    multi_arch = len(runs) > 1
     overall_status = "failed"
     overall_error: Optional[str] = None
     overall_start = time.time()
     try:
-        for i, arch_ctx in enumerate(arch_ctxs, start=1):
+        for i, (arch_ctx, run_steps) in enumerate(runs, start=1):
             if multi_arch:
                 log_info("\n" + "#" * 70)
-                log_info(
-                    f"# Architecture {i}/{len(arch_ctxs)}: {arch_ctx.architecture}"
-                )
+                log_info(f"# Architecture {i}/{len(runs)}: {arch_ctx.architecture}")
                 log_info(f"# Output: {arch_ctx.out_dir}")
                 log_info("#" * 70)
 
@@ -309,7 +305,7 @@ def main(
             try:
                 run_pipeline(
                     arch_ctx,
-                    pipeline,
+                    run_steps,
                     name=run_name,
                     subscribers=(slack_subscriber,),
                     available=AVAILABLE_MODULES,
@@ -331,3 +327,91 @@ def main(
                 notify_pipeline_error(
                     "build (all architectures)", overall_error or overall_status
                 )
+
+
+def _resolve_preset_runs(
+    *,
+    preset: Optional[str],
+    profile: Optional[Path],
+    product: Optional[str],
+    arch: Optional[str],
+    clean: Optional[bool],
+    provision: Optional[str],
+    sign: Optional[bool],
+    upload: Optional[bool],
+    chromium_src: Optional[Path],
+) -> List[Tuple[Context, List[str]]]:
+    """Resolve preset/profile + CLI overrides into per-arch (ctx, steps) runs.
+
+    Precedence: CLI > profile > preset defaults.
+    """
+    try:
+        switches = load_profile(_resolve_profile_path(profile)) if profile else Switches()
+        overrides = {}
+        if preset is not None:
+            overrides["preset"] = preset
+        if product is not None:
+            overrides["product"] = product
+        if arch is not None:
+            overrides["architectures"] = (arch,)
+        if clean is not None:
+            overrides["clean"] = clean
+        if provision is not None:
+            overrides["provision"] = provision
+        if sign is not None:
+            overrides["sign"] = sign
+        if upload is not None:
+            overrides["upload"] = upload
+        switches = replace(switches, **overrides).resolved()
+
+        src = _resolve_chromium_src(chromium_src)
+
+        log_info(f"✓ PRESET MODE: preset={switches.preset} product={switches.product}")
+        log_info(
+            f"✓ PRESET MODE: clean={switches.clean} provision={switches.provision} "
+            f"sign={switches.sign} upload={switches.upload}"
+        )
+
+        runs: List[Tuple[Context, List[str]]] = []
+        for run_arch in switches.architectures:
+            ctx = Context(
+                chromium_src=src,
+                architecture=run_arch,
+                build_type=switches.build_type,
+                product=switches.product,
+            )
+            runs.append((ctx, plan(switches, run_arch)))
+        return runs
+    except ValueError as e:
+        log_error(str(e))
+        raise typer.Exit(1)
+
+
+def _resolve_profile_path(profile: Path) -> Path:
+    """Accept a bare profile name (nightly-ci) or a path to a yaml file."""
+    if profile.exists():
+        return profile
+    candidate = get_package_root() / "bos_build" / "profiles" / f"{profile.name}.yaml"
+    if candidate.exists():
+        return candidate
+    raise ValueError(
+        f"Profile not found: {profile} (also tried {candidate})"
+    )
+
+
+def _resolve_chromium_src(chromium_src: Optional[Path]) -> Path:
+    """chromium_src: CLI > CHROMIUM_SRC env > error (same as direct mode)."""
+    from ..core.env import EnvConfig
+
+    src = chromium_src or EnvConfig().chromium_src
+    if not src:
+        raise ValueError(
+            "chromium_src required!\n"
+            "Provide via one of:\n"
+            "  --chromium-src PATH\n"
+            "  CHROMIUM_SRC environment variable"
+        )
+    src = Path(src)
+    if not src.exists():
+        raise ValueError(f"chromium_src does not exist: {src}")
+    return src

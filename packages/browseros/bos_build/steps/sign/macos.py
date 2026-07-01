@@ -152,7 +152,18 @@ def unlock_keychain(env: Optional[EnvConfig] = None) -> None:
     )
 
 
-@step("sign_macos", phase="sign", platforms=("macos",), notify=True)
+@step(
+    "sign_macos",
+    phase="sign",
+    platforms=("macos",),
+    notify=True,
+    env=(
+        "MACOS_CERTIFICATE_NAME",
+        "PROD_MACOS_NOTARIZATION_APPLE_ID",
+        "PROD_MACOS_NOTARIZATION_TEAM_ID",
+        "PROD_MACOS_NOTARIZATION_PWD",
+    ),
+)
 class MacOSSignModule(Step):
     produces = ["signed_app"]
     requires = ["built_app"]
