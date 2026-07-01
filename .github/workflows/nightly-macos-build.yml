@@ -171,7 +171,7 @@ jobs:
           cd "$BROWSEROS_REPO"
           version_files=(
             packages/browseros/resources/BROWSEROS_VERSION
-            packages/browseros/build/config/BROWSEROS_BUILD_OFFSET
+            packages/browseros/bos_build/config/BROWSEROS_BUILD_OFFSET
           )
           git add "${version_files[@]}"
           if git diff --cached --quiet; then
@@ -274,7 +274,7 @@ jobs:
           import shutil
           from pathlib import Path
 
-          from build.modules.storage.download import extract_artifact_zip
+          from bos_build.modules.storage.download import extract_artifact_zip
 
           agent_root = Path(os.environ["AGENT_ROOT"])
           browseros_root = Path(os.environ["BROWSEROS_ROOT"])
@@ -306,9 +306,9 @@ jobs:
         run: |
           set -euo pipefail
           cd "$BROWSEROS_REPO/packages/browseros"
-          config="build/config/release.macos.arm64.yaml"
+          config="bos_build/config/release.macos.arm64.yaml"
           if [ "$UPLOAD_TO_R2" != "true" ]; then
-            config="build/config/release.macos.arm64.noupload.yaml"
+            config="bos_build/config/release.macos.arm64.noupload.yaml"
           fi
           output_config="${RUNNER_TEMP:-/tmp}/browseros-release-macos-arm64-local-resources.yaml"
           BASE_CONFIG="$config" OUTPUT_CONFIG="$output_config" uv run python - <<'PY'
