@@ -62,10 +62,17 @@ function writeLock(dir: string, version: string): void {
   )
 }
 
+async function commitReleaseFiles(dir: string, version: string): Promise<void> {
+  writePackage(dir, version)
+  writeLock(dir, version)
+  await mustRun(dir, ['git', 'add', packagePath, lockPath])
+  await mustRun(dir, ['git', 'commit', '-m', `version ${version}`])
+}
+
 async function commitPackage(dir: string, version: string): Promise<void> {
   writePackage(dir, version)
   await mustRun(dir, ['git', 'add', packagePath])
-  await mustRun(dir, ['git', 'commit', '-m', `version ${version}`])
+  await mustRun(dir, ['git', 'commit', '-m', `package version ${version}`])
 }
 
 async function tag(dir: string, name: string): Promise<void> {
@@ -255,9 +262,9 @@ describe('prepare-extension-release', () => {
     const { dir, bareDir } = await initFixture('0.0.100')
     try {
       await tag(dir, 'agent-extension-v0.0.100')
-      await commitPackage(dir, '0.0.101')
+      await commitReleaseFiles(dir, '0.0.101')
       await tag(dir, 'agent-extension/v0.0.101')
-      await commitPackage(dir, '0.0.102')
+      await commitReleaseFiles(dir, '0.0.102')
       await tag(dir, 'agent-extension/v0.0.102')
       await mustRun(dir, ['git', 'push', 'origin', 'main', '--tags'])
 
@@ -282,7 +289,7 @@ describe('prepare-extension-release', () => {
     const { dir, bareDir } = await initFixture('0.0.100')
     try {
       await mustRun(dir, ['git', 'checkout', '-b', 'release-side'])
-      await commitPackage(dir, '0.0.101')
+      await commitReleaseFiles(dir, '0.0.101')
       await tag(dir, 'agent-extension/v0.0.101')
       await mustRun(dir, ['git', 'push', 'origin', 'agent-extension/v0.0.101'])
 
@@ -325,7 +332,7 @@ describe('prepare-extension-release', () => {
     const { dir, bareDir } = await initFixture('0.0.102')
     try {
       await tag(dir, 'agent-extension-v0.0.102')
-      await commitPackage(dir, '0.0.101')
+      await commitReleaseFiles(dir, '0.0.101')
       await tag(dir, 'agent-extension/v0.0.101')
       await mustRun(dir, ['git', 'push', 'origin', 'main', '--tags'])
 
@@ -376,6 +383,28 @@ describe('prepare-extension-release', () => {
       expect(result.code).toBe(1)
       expect(outputText(result)).toContain(
         'packages/browseros-agent/apps/app/package.json at agent-extension/v0.0.101 is 0.0.100, expected 0.0.101',
+      )
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+      rmSync(bareDir, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a pushed tag whose lockfile version does not match', async () => {
+    const { dir, bareDir } = await initFixture('0.0.100')
+    try {
+      await commitPackage(dir, '0.0.101')
+      await tag(dir, 'agent-extension/v0.0.101')
+      await mustRun(dir, ['git', 'push', 'origin', 'main', '--tags'])
+
+      const result = await prepare(dir, {
+        eventName: 'push',
+        refName: 'agent-extension/v0.0.101',
+      })
+
+      expect(result.code).toBe(1)
+      expect(outputText(result)).toContain(
+        'packages/browseros-agent/bun.lock at agent-extension/v0.0.101 has apps/app version 0.0.100, expected 0.0.101',
       )
     } finally {
       rmSync(dir, { recursive: true, force: true })

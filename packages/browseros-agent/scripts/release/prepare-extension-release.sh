@@ -84,6 +84,45 @@ print(json.load(sys.stdin)["version"])
 '
 }
 
+read_lock_version_at_ref() {
+  git show "$1:$EXTENSION_LOCK" | python3 -c '
+import re
+import sys
+
+match = re.search(r"\"apps/app\":\s*\{\s*\"name\":\s*\"@browseros/app\",\s*\"version\":\s*\"([^\"]+)\"", sys.stdin.read())
+if not match:
+    raise SystemExit(1)
+print(match.group(1))
+'
+}
+
+validate_release_version_files_at_ref() {
+  local sha="$1"
+  local release_label="$2"
+  local package_version
+  local lock_version
+
+  if ! package_version="$(read_package_version_at_ref "$sha")"; then
+    echo "::error::Could not read $EXTENSION_PACKAGE_JSON version from $release_label ($sha)"
+    exit 1
+  fi
+
+  if [ "$package_version" != "$version" ]; then
+    echo "::error::$EXTENSION_PACKAGE_JSON at $release_label is $package_version, expected $version. Bump package.json before tagging."
+    exit 1
+  fi
+
+  if ! lock_version="$(read_lock_version_at_ref "$sha")"; then
+    echo "::error::Could not read apps/app version from $EXTENSION_LOCK at $release_label ($sha)"
+    exit 1
+  fi
+
+  if [ "$lock_version" != "$version" ]; then
+    echo "::error::$EXTENSION_LOCK at $release_label has apps/app version $lock_version, expected $version."
+    exit 1
+  fi
+}
+
 compare_versions() {
   python3 - "$1" "$2" <<'PY'
 import sys
@@ -235,13 +274,7 @@ if [ "$event_name" = "push" ]; then
 
   require_annotated_tag "$tag"
   release_sha="$(git rev-list -n 1 "$tag")"
-  package_version="$(read_package_version_at_ref "$release_sha")"
-
-  if [ "$package_version" != "$version" ]; then
-    echo "::error::$EXTENSION_PACKAGE_JSON at $tag is $package_version, expected $version. Bump package.json before tagging."
-    exit 1
-  fi
-
+  validate_release_version_files_at_ref "$release_sha" "$tag"
   ensure_default_branch_release "$release_sha"
   resolve_previous_tag
 else
@@ -256,12 +289,7 @@ else
   if git rev-parse --verify --quiet "refs/tags/$tag" >/dev/null; then
     require_annotated_tag "$tag"
     release_sha="$(git rev-list -n 1 "$tag")"
-    package_version="$(read_package_version_at_ref "$release_sha")"
-
-    if [ "$package_version" != "$version" ]; then
-      echo "::error::$EXTENSION_PACKAGE_JSON at $tag is $package_version, expected $version."
-      exit 1
-    fi
+    validate_release_version_files_at_ref "$release_sha" "$tag"
     ensure_default_branch_release "$release_sha"
   else
     git checkout -B "$default_branch" "$remote/$default_branch"
