@@ -128,7 +128,7 @@ uv run browseros build --help
 
 The build typically takes 1-3 hours on modern hardware (M4 Max, Ryzen 9, etc.).
 
-**For detailed instructions, see [Browser Build Guide](docs/BUILD.md).**
+**For the build system architecture and more invocations, see [packages/browseros/bos_build/README.md](packages/browseros/bos_build/README.md).**
 
 ## Making Your First Contribution
 

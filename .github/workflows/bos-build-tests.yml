@@ -8,6 +8,7 @@ on:
     paths:
       - "packages/browseros/bos_build/**"
       - "packages/browseros/tools/vendor_uploads/**"
+      - "packages/browseros/chromium_files/products/**"
       - "packages/browseros/pyproject.toml"
       - "packages/browseros/uv.lock"
       - ".github/workflows/bos-build-tests.yml"
