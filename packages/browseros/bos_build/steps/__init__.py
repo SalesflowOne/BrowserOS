@@ -5,6 +5,7 @@ preserves registration (import) order within each phase, so reordering
 these imports reorders the pipeline.
 """
 
+from .source.provision import SourceCheckoutModule, SourceSyncModule
 from .setup.clean import CleanModule
 from .setup.git import GitSetupModule, SparkleSetupModule, WinSparkleSetupModule
 from .storage.download import DownloadResourcesModule
@@ -27,6 +28,8 @@ from .package.linux import LinuxPackageModule
 from .storage.upload import UploadModule
 
 __all__ = [
+    "SourceCheckoutModule",
+    "SourceSyncModule",
     "CleanModule",
     "GitSetupModule",
     "SparkleSetupModule",

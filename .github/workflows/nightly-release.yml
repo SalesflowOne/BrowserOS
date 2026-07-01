@@ -8,7 +8,7 @@ name: Nightly Release Build
 # The pinned chromium checkout (packages/browseros/CHROMIUM_VERSION) is
 # cached post-`gclient sync`:
 #   - Linux/macOS: WarpCache (WarpBuilds/cache, no size cap)
-#   - Windows:     R2 tarball via scripts/ci/r2_cache.py (WarpCache does
+#   - Windows:     R2 tarball via `browseros source cache` (WarpCache does
 #                  not support Windows runners; actions/cache caps at 10GB)
 
 on:
@@ -203,15 +203,15 @@ jobs:
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
           set -euo pipefail
-          uv run --project packages/browseros python scripts/ci/r2_cache.py restore \
+          uv run --project packages/browseros browseros source cache restore \
             --key "${{ steps.pin.outputs.cache_key }}" \
             --root "$CHROMIUM_ROOT"
 
       - name: Ensure chromium checkout at pinned tag
         run: |
           set -euo pipefail
-          uv run --project packages/browseros python scripts/ci/setup_chromium.py \
-            --chromium-root "$CHROMIUM_ROOT" --step checkout
+          uv run --project packages/browseros browseros source ensure \
+            --root "$CHROMIUM_ROOT" --step checkout
 
       - name: Reset chromium tree (clean module)
         working-directory: packages/browseros
@@ -225,8 +225,8 @@ jobs:
       - name: Sync chromium dependencies (gclient)
         run: |
           set -euo pipefail
-          uv run --project packages/browseros python scripts/ci/setup_chromium.py \
-            --chromium-root "$CHROMIUM_ROOT" --step sync
+          uv run --project packages/browseros browseros source ensure \
+            --root "$CHROMIUM_ROOT" --step sync
 
       # Save immediately after sync: the tree is pristine (no BrowserOS
       # patches, no out/ dir), which keeps the cache deterministic and as
@@ -247,7 +247,7 @@ jobs:
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
           set -euo pipefail
-          uv run --project packages/browseros python scripts/ci/r2_cache.py save \
+          uv run --project packages/browseros browseros source cache save \
             --key "${{ steps.pin.outputs.cache_key }}" \
             --root "$CHROMIUM_ROOT"
 

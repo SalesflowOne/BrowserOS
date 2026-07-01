@@ -18,7 +18,7 @@ from .step import all_steps
 from .utils import get_platform, get_platform_arch
 
 PRESETS = ("release", "debug")
-PROVISION_MODES = ("none", "full")
+PROVISION_MODES = ("none", "full", "shallow")
 VALID_ARCHITECTURES = ("x64", "arm64", "universal")
 
 
@@ -96,10 +96,7 @@ def plan(switches: Switches, arch: str, platform: Optional[str] = None) -> List[
 
 def _plan_release(switches: Switches, arch: str, platform: str) -> List[str]:
     steps: List[str] = []
-    if switches.clean:
-        steps.append("clean")
-    if switches.provision == "full":
-        steps.append("git_setup")
+    steps.extend(_provision_steps(switches))
     if platform == "macos":
         steps.append("sparkle_setup")
     if platform == "windows" and switches.sign:
@@ -145,10 +142,7 @@ def _plan_debug(switches: Switches, arch: str, platform: str) -> List[str]:
     if arch == "universal":
         raise ValueError("universal architecture is not supported for debug builds")
     steps: List[str] = []
-    if switches.clean:
-        steps.append("clean")
-    if switches.provision == "full":
-        steps.append("git_setup")
+    steps.extend(_provision_steps(switches))
     if switches.download:
         steps.append("download_resources")
     steps.extend(
@@ -166,6 +160,27 @@ def _plan_debug(switches: Switches, arch: str, platform: str) -> List[str]:
     steps.append(f"package_{platform}")
     if switches.upload:
         steps.append("upload")
+    return steps
+
+
+def _provision_steps(switches: Switches) -> List[str]:
+    """Provisioning prefix per strategy.
+
+    shallow interleaves clean BETWEEN checkout and sync: clean deletes
+    hook-managed toolchains (third_party/llvm-build) that sync restores.
+    """
+    if switches.provision == "shallow":
+        steps = ["source_checkout"]
+        if switches.clean:
+            steps.append("clean")
+        steps.append("source_sync")
+        return steps
+
+    steps = []
+    if switches.clean:
+        steps.append("clean")
+    if switches.provision == "full":
+        steps.append("git_setup")
     return steps
 
 

@@ -19,6 +19,8 @@ class RegistryContentTest(unittest.TestCase):
         self.assertEqual(
             names,
             {
+                "source_checkout",
+                "source_sync",
                 "clean",
                 "git_setup",
                 "sparkle_setup",

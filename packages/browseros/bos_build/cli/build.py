@@ -372,12 +372,16 @@ def _resolve_preset_runs(
             overrides["upload"] = upload
         switches = replace(switches, **overrides).resolved()
 
-        src = _resolve_chromium_src(chromium_src)
+        # Shallow provisioning creates the checkout itself, so the src
+        # dir may not exist yet on a fresh runner.
+        src = _resolve_chromium_src(
+            chromium_src, allow_missing=switches.provision == "shallow"
+        )
 
         log_info(f"✓ PRESET MODE: preset={switches.preset} product={switches.product}")
         log_info(
             f"✓ PRESET MODE: clean={switches.clean} provision={switches.provision} "
-            f"sign={switches.sign} upload={switches.upload}"
+            f"download={switches.download} sign={switches.sign} upload={switches.upload}"
         )
 
         runs: List[Tuple[Context, List[str]]] = []
@@ -407,7 +411,9 @@ def _resolve_profile_path(profile: Path) -> Path:
     )
 
 
-def _resolve_chromium_src(chromium_src: Optional[Path]) -> Path:
+def _resolve_chromium_src(
+    chromium_src: Optional[Path], allow_missing: bool = False
+) -> Path:
     """chromium_src: CLI > CHROMIUM_SRC env > error (same as direct mode)."""
     from ..core.env import EnvConfig
 
@@ -420,6 +426,6 @@ def _resolve_chromium_src(chromium_src: Optional[Path]) -> Path:
             "  CHROMIUM_SRC environment variable"
         )
     src = Path(src)
-    if not src.exists():
+    if not src.exists() and not allow_missing:
         raise ValueError(f"chromium_src does not exist: {src}")
     return src
