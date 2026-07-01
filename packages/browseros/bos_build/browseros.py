@@ -13,7 +13,7 @@ Usage:
 """
 import typer
 
-from .cli import build, dev, ota, release, source
+from .cli import build, dev, ota, product, release, source
 
 app = typer.Typer(
     help="BrowserOS Build System",
@@ -29,6 +29,7 @@ build_app.callback(invoke_without_command=True)(build.main)
 
 app.add_typer(build_app, name="build", help="Build BrowserOS browser")
 app.add_typer(source.app, name="source", help="Chromium checkout provisioning")
+app.add_typer(product.app, name="product", help="Product definitions")
 app.add_typer(dev.app, name="dev", help="Dev patch management")
 app.add_typer(release.app, name="release", help="Release automation")
 app.add_typer(ota.app, name="ota", help="OTA update automation")
