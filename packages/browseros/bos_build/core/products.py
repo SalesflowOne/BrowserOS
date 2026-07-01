@@ -105,6 +105,24 @@ class ProductDescriptor:
             return self.mac.dev_framework_name
         return self.mac.framework_name
 
+    def artifact_filename(self, artifact_type: str, version: str, arch: str) -> str:
+        """Standardized artifact filename, e.g. "BrowserOS_v0.31.0_arm64.dmg"."""
+        base = self.artifact_prefix
+        match artifact_type:
+            case "dmg":
+                return f"{base}_v{version}_{arch}.dmg"
+            case "appimage":
+                return f"{base}_v{version}_{arch}.AppImage"
+            case "deb":
+                deb_arch = {"x64": "amd64", "arm64": "arm64"}.get(arch, arch)
+                return f"{base}_v{version}_{deb_arch}.deb"
+            case "installer":
+                return f"{base}_v{version}_{arch}_installer.exe"
+            case "installer_zip":
+                return f"{base}_v{version}_{arch}_installer.zip"
+            case _:
+                raise ValueError(f"Unknown artifact type: {artifact_type}")
+
     @classmethod
     def define(
         cls,

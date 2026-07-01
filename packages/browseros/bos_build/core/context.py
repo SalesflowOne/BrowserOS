@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
-"""
-Build context dataclass to hold all build state
+"""Build context: resolved state shared across pipeline steps.
 
-REFACTOR NOTE: This module is being refactored to use sub-components (PathConfig,
-BuildConfig, ArtifactRegistry, EnvConfig) to avoid god object anti-pattern.
-The old interface is maintained for backward compatibility during the migration.
+Single-sourced by design — the earlier PathConfig/BuildConfig
+sub-objects and SCREAMING name fields duplicated this state and had to
+be manually synced; they are gone. App names derive from the product
+descriptor on access, version data is parsed by core.versions, and the
+artifact registry is the only artifact channel.
 """
 
 import time
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Any, Dict, Optional
 
+from . import versions as versions_mod
+from .env import EnvConfig
+from .paths import get_package_root
 from .products import (
     ProductDescriptor,
     default_product_descriptor,
@@ -25,373 +29,124 @@ from .utils import (
     IS_WINDOWS,
     IS_MACOS,
 )
-from .env import EnvConfig
-from .paths import get_package_root
-
-
-# =============================================================================
-# Sub-Components - New modular structure
-# =============================================================================
 
 
 class ArtifactRegistry:
     """
-    Simple artifact tracking registry
+    Artifact tracking registry — the only artifact channel between steps.
 
-    Tracks artifacts produced during the build process. Each artifact has a unique
-    name (string) and a path (Path object). If you need to track multiple paths
-    for the same logical artifact, use different names (e.g., "signed_app_arm64",
-    "signed_app_x64").
-
-    Example:
-        artifacts = ArtifactRegistry()
-        artifacts.add("built_app", Path("/path/to/BrowserOS.app"))
-        app_path = artifacts.get("built_app")
-        if artifacts.has("signed_app"):
-            ...
+    Values are usually Paths, but steps may register richer objects
+    (e.g. the OTA step stores its signed-artifact map).
     """
 
     def __init__(self):
-        self._artifacts: Dict[str, Path] = {}
+        self._artifacts: Dict[str, Any] = {}
 
-    def add(self, name: str, path: Path) -> None:
-        """
-        Register an artifact
+    def add(self, name: str, value: Any) -> None:
+        """Register an artifact; an existing name is overwritten."""
+        self._artifacts[name] = value
 
-        Args:
-            name: Unique artifact name (e.g., "built_app", "signed_dmg")
-            path: Path to the artifact
-
-        Note:
-            If an artifact with the same name already exists, it will be overwritten.
-        """
-        self._artifacts[name] = path
-
-    def get(self, name: str) -> Path:
-        """
-        Get artifact path by name
-
-        Args:
-            name: Artifact name
-
-        Returns:
-            Path to the artifact
-
-        Raises:
-            KeyError: If artifact not found
-        """
-        return self._artifacts[name]
+    def get(self, name: str, default: Any = None) -> Any:
+        """Get artifact by name, or default when absent."""
+        return self._artifacts.get(name, default)
 
     def has(self, name: str) -> bool:
-        """
-        Check if artifact exists
-
-        Args:
-            name: Artifact name
-
-        Returns:
-            True if artifact exists, False otherwise
-        """
         return name in self._artifacts
 
-    def all(self) -> Dict[str, Path]:
-        """Get all artifacts as a dictionary"""
+    def all(self) -> Dict[str, Any]:
         return self._artifacts.copy()
-
-
-class PathConfig:
-    """
-    Path-related configuration
-
-    Centralizes all path construction and validation logic. This prevents the
-    BuildContext from becoming a god object with dozens of path-related methods.
-    """
-
-    def __init__(
-        self,
-        root_dir: Path,
-        chromium_src: Optional[Path] = None,
-        gn_flags_file: Optional[Path] = None,
-    ):
-        self.root_dir = root_dir
-        self._chromium_src = chromium_src or Path()
-        self._out_dir = "out/Default"
-        self.gn_flags_file = gn_flags_file
-
-    @property
-    def chromium_src(self) -> Path:
-        """Chromium source directory"""
-        return self._chromium_src
-
-    @chromium_src.setter
-    def chromium_src(self, value: Path):
-        """Set chromium source directory"""
-        self._chromium_src = value
-
-    @property
-    def out_dir(self) -> str:
-        """Output directory (relative to chromium_src)"""
-        return self._out_dir
-
-    @out_dir.setter
-    def out_dir(self, value: str):
-        """Set output directory"""
-        self._out_dir = value
-
-
-class BuildConfig:
-    def __init__(
-        self,
-        architecture: Optional[str] = None,
-        build_type: str = "debug",
-        app_base_name: str = "BrowserOS",
-    ):
-        self.architecture = architecture or get_platform_arch()
-        self.build_type = build_type
-        self.chromium_version = ""
-        self.browseros_version = ""
-        self.browseros_chromium_version = ""
-
-        # App names - will be set based on platform
-        self.CHROMIUM_APP_NAME = ""
-        self.BROWSEROS_APP_NAME = ""
-        self.BROWSEROS_APP_BASE_NAME = app_base_name
-
-        # Third party versions
-        self.SPARKLE_VERSION = "2.7.0"
-        self.WINSPARKLE_VERSION = "0.9.3"
-
-        # Set platform-specific app names
-        self._set_app_names()
-
-    def _set_app_names(self):
-        """Set platform-specific application names"""
-        if IS_WINDOWS():
-            self.CHROMIUM_APP_NAME = f"chrome{get_executable_extension()}"
-            self.BROWSEROS_APP_NAME = (
-                f"{self.BROWSEROS_APP_BASE_NAME}{get_executable_extension()}"
-            )
-        elif IS_MACOS():
-            self.CHROMIUM_APP_NAME = "Chromium.app"
-            self.BROWSEROS_APP_NAME = f"{self.BROWSEROS_APP_BASE_NAME}.app"
-        else:
-            self.CHROMIUM_APP_NAME = "chrome"
-            self.BROWSEROS_APP_NAME = self.BROWSEROS_APP_BASE_NAME.lower()
 
 
 @dataclass
 class Context:
-    """Resolved build state shared across build modules."""
+    """Resolved build state shared across build steps."""
 
     root_dir: Path = field(default_factory=get_package_root)
     chromium_src: Path = Path()
     out_dir: str = "out/Default"
-    architecture: str = ""  # Will be set in __post_init__
+    architecture: str = ""  # Defaults to host arch in __post_init__
     build_type: str = "debug"
     chromium_version: str = ""
     browseros_build_offset: str = ""
     browseros_chromium_version: str = ""
-    semantic_version: str = ""  # e.g., "0.31.0" from resources/BROWSEROS_VERSION
+    semantic_version: str = ""  # e.g. "0.31.0" from resources/BROWSEROS_VERSION
     release_version: str = (
         ""  # Explicit version for release operations (overrides semantic_version)
     )
     github_repo: str = ""  # GitHub repo for release operations (owner/repo)
     start_time: float = 0.0
     product: ProductDescriptor = field(default_factory=default_product_descriptor)
+    gn_flags_file: Optional[Path] = None
 
-    # App names - will be set based on platform
-    CHROMIUM_APP_NAME: str = ""
-    BROWSEROS_APP_NAME: str = ""
-    BROWSEROS_APP_BASE_NAME: str = "BrowserOS"  # Base name without extension
-
-    # Third party
+    # Third party pins
     SPARKLE_VERSION: str = "2.7.0"
     WINSPARKLE_VERSION: str = "0.9.3"
-
-    # Legacy artifacts dict - kept for backward compatibility
-    # New code should use ctx.artifacts (ArtifactRegistry) instead
-    artifacts: Dict[str, List[Path]] = field(default_factory=dict)
 
     # When set, get_app_path() returns this directly — UniversalBuildModule
     # pins per-arch and universal app paths through it.
     _fixed_app_path: Optional[Path] = None
 
-    paths: PathConfig = field(init=False)
-    build: BuildConfig = field(init=False)
     artifact_registry: ArtifactRegistry = field(init=False)
     env: EnvConfig = field(init=False)
 
     def __post_init__(self):
-        """Load version files and set platform/architecture-specific configurations"""
         if not isinstance(self.product, ProductDescriptor):
             self.product = get_product_descriptor(self.product)
 
-        self.paths = PathConfig(self.root_dir, self.chromium_src)
-        self.BROWSEROS_APP_BASE_NAME = self.product.app_base_name
-        self.build = BuildConfig(
-            self.architecture, self.build_type, self.BROWSEROS_APP_BASE_NAME
-        )
         self.artifact_registry = ArtifactRegistry()
         self.env = EnvConfig()
 
-        # Set default gn_flags_file if not provided
-        if not self.paths.gn_flags_file:
-            self.paths.gn_flags_file = self.get_gn_flags_file()
-
-        # Set platform-specific defaults
         if not self.architecture:
             self.architecture = get_platform_arch()
-            self.build.architecture = self.architecture
 
-        # Set platform-specific app names
-        if IS_WINDOWS():
-            self.CHROMIUM_APP_NAME = f"chrome{get_executable_extension()}"
-            self.BROWSEROS_APP_NAME = (
-                f"{self.BROWSEROS_APP_BASE_NAME}{get_executable_extension()}"
-            )
-        elif IS_MACOS():
-            self.CHROMIUM_APP_NAME = "Chromium.app"
-            self.BROWSEROS_APP_NAME = f"{self.BROWSEROS_APP_BASE_NAME}.app"
-        else:
-            self.CHROMIUM_APP_NAME = "chrome"
-            self.BROWSEROS_APP_NAME = self.BROWSEROS_APP_BASE_NAME.lower()
+        if not self.gn_flags_file:
+            self.gn_flags_file = self.get_gn_flags_file()
 
-        # Sync with BuildConfig
-        self.build.CHROMIUM_APP_NAME = self.CHROMIUM_APP_NAME
-        self.build.BROWSEROS_APP_NAME = self.BROWSEROS_APP_NAME
+        # Architecture- and product-specific output directory
+        sep = "\\" if IS_WINDOWS() else "/"
+        self.out_dir = f"out{sep}Default_{self.product.id}_{self.architecture}"
 
-        # Set architecture-specific output directory with platform separator
-        if IS_WINDOWS():
-            self.out_dir = f"out\\Default_{self.product.id}_{self.architecture}"
-        else:
-            self.out_dir = f"out/Default_{self.product.id}_{self.architecture}"
-
-        # Sync with PathConfig
-        self.paths.out_dir = self.out_dir
-
-        # Load version information using static methods
+        version_dict: Dict[str, str] = {}
         if not self.chromium_version:
-            self.chromium_version, version_dict = self._load_chromium_version(
+            self.chromium_version, version_dict = versions_mod.load_chromium_version(
                 self.root_dir
             )
-        else:
-            # If chromium_version was provided, we still need to parse it for version_dict
-            version_dict = {}
 
         if not self.browseros_build_offset:
-            self.browseros_build_offset = self._load_browseros_build_offset(
-                self.root_dir
-            )
+            self.browseros_build_offset = versions_mod.load_build_offset(self.root_dir)
 
-        # Load semantic version from resources/BROWSEROS_VERSION
         if not self.semantic_version:
-            self.semantic_version = self._load_semantic_version(self.root_dir)
+            self.semantic_version = versions_mod.load_semantic_version(self.root_dir)
 
-        # Set nxtscape_chromium_version as chromium version with BUILD + nxtscape_version
-        if self.chromium_version and self.browseros_build_offset and version_dict:
-            # Calculate new BUILD number by adding nxtscape_version to original BUILD
-            new_build = int(version_dict["BUILD"]) + int(self.browseros_build_offset)
-            self.browseros_chromium_version = f"{version_dict['MAJOR']}.{version_dict['MINOR']}.{new_build}.{version_dict['PATCH']}"
-
-        # Sync versions with BuildConfig
-        self.build.chromium_version = self.chromium_version
-        self.build.browseros_version = self.browseros_build_offset
-        self.build.browseros_chromium_version = self.browseros_chromium_version
-
-        # Sync chromium_src with PathConfig (validation done by resolver)
-        self.paths.chromium_src = self.chromium_src
+        if not self.browseros_chromium_version:
+            self.browseros_chromium_version = (
+                versions_mod.derive_browseros_chromium_version(
+                    version_dict, self.browseros_build_offset
+                )
+            )
 
         self.start_time = time.time()
 
-    @classmethod
-    def init_context(cls, config: Dict) -> "Context":
-        """Initialize a context from config values."""
-        chromium_src = (
-            Path(config.get("chromium_src", ""))
-            if config.get("chromium_src")
-            else Path()
-        )
+    # App names derive from the product descriptor per platform.
+    @property
+    def BROWSEROS_APP_BASE_NAME(self) -> str:
+        return self.product.app_base_name
 
-        arch = config.get("architecture") or get_platform_arch()
+    @property
+    def BROWSEROS_APP_NAME(self) -> str:
+        if IS_WINDOWS():
+            return f"{self.product.app_base_name}{get_executable_extension()}"
+        if IS_MACOS():
+            return f"{self.product.app_base_name}.app"
+        return self.product.app_base_name.lower()
 
-        ctx = cls(
-            chromium_src=chromium_src,
-            architecture=arch,
-            build_type=config.get("build_type") or config.get("type", "debug"),
-            product=(
-                config["product"]
-                if isinstance(config.get("product"), ProductDescriptor)
-                else get_product_descriptor(config.get("product"))
-            ),
-        )
-
-        return ctx
-
-    @staticmethod
-    def _load_chromium_version(root_dir: Path):
-        """
-        Load chromium version from CHROMIUM_VERSION file
-        Returns: (version_string, version_dict)
-        """
-        version_dict = {}
-        version_file = join_paths(root_dir, "CHROMIUM_VERSION")
-
-        if version_file.exists():
-            # Parse VERSION file format: MAJOR=137\nMINOR=0\nBUILD=7151\nPATCH=69
-            for line in version_file.read_text().strip().split("\n"):
-                key, value = line.split("=")
-                version_dict[key] = value
-
-            # Construct chromium_version as MAJOR.MINOR.BUILD.PATCH
-            chromium_version = f"{version_dict['MAJOR']}.{version_dict['MINOR']}.{version_dict['BUILD']}.{version_dict['PATCH']}"
-            return chromium_version, version_dict
-
-        return "", version_dict
-
-    @staticmethod
-    def _load_browseros_build_offset(root_dir: Path) -> str:
-        """Load browseros build offset from config/BROWSEROS_BUILD_OFFSET"""
-        version_file = join_paths(root_dir, "bos_build", "config", "BROWSEROS_BUILD_OFFSET")
-        if version_file.exists():
-            return version_file.read_text().strip()
-        return ""
-
-    @staticmethod
-    def _load_semantic_version(root_dir: Path) -> str:
-        """Load semantic version from resources/BROWSEROS_VERSION
-
-        File format:
-            BROWSEROS_MAJOR=0
-            BROWSEROS_MINOR=31
-            BROWSEROS_BUILD=0
-            BROWSEROS_PATCH=0
-
-        Returns: "0.31.0" (PATCH only included if non-zero)
-        """
-        version_file = join_paths(root_dir, "resources", "BROWSEROS_VERSION")
-        if not version_file.exists():
-            return ""
-
-        version_dict = {}
-        for line in version_file.read_text().strip().split("\n"):
-            line = line.strip()
-            if not line or "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            version_dict[key.strip()] = value.strip()
-
-        major = version_dict.get("BROWSEROS_MAJOR", "0")
-        minor = version_dict.get("BROWSEROS_MINOR", "0")
-        build = version_dict.get("BROWSEROS_BUILD", "0")
-        patch = version_dict.get("BROWSEROS_PATCH", "0")
-
-        # Include patch only if non-zero
-        if patch != "0":
-            return f"{major}.{minor}.{build}.{patch}"
-        elif build != "0":
-            return f"{major}.{minor}.{build}"
-        else:
-            return f"{major}.{minor}.0"
+    @property
+    def CHROMIUM_APP_NAME(self) -> str:
+        if IS_WINDOWS():
+            return f"chrome{get_executable_extension()}"
+        if IS_MACOS():
+            return "Chromium.app"
+        return "chrome"
 
     # Path getter methods
     def get_config_dir(self) -> Path:
@@ -454,19 +209,16 @@ class Context:
         builds' sign/package stages. Universal flows resolve here too, since
         architecture="universal" derives the product-specific universal out_dir.
         """
-        # If fixed path is set (for arch-specific operations), use it directly
         if self._fixed_app_path:
             return self._fixed_app_path
 
-        # For debug builds, check if the app has a different name
+        # Debug builds may carry the dev-branded app name
         if self.build_type == "debug" and IS_MACOS():
-            # Check for debug-branded app name
-            debug_app_name = f"{self.BROWSEROS_APP_BASE_NAME} Dev.app"
+            debug_app_name = f"{self.product.app_base_name} Dev.app"
             debug_app_path = join_paths(self.chromium_src, self.out_dir, debug_app_name)
             if debug_app_path.exists():
                 return debug_app_path
 
-        # Return architecture-specific path
         return join_paths(self.chromium_src, self.out_dir, self.BROWSEROS_APP_NAME)
 
     def get_chromium_app_path(self) -> Path:
@@ -482,35 +234,12 @@ class Context:
         return join_paths(self.chromium_src, self.out_dir, "notarize.zip")
 
     def get_artifact_name(self, artifact_type: str) -> str:
-        """Get standardized artifact filename
-
-        Args:
-            artifact_type: One of "dmg", "appimage", "deb", "installer", "installer_zip"
-
-        Returns:
-            Standardized filename, e.g., "BrowserOS_v0.31.0_arm64.dmg"
-        """
+        """Get standardized artifact filename for this product/version/arch."""
         if not self.semantic_version:
             raise ValueError("semantic_version is not set to generate artifact name")
-
-        version = self.semantic_version
-        base = self.BROWSEROS_APP_BASE_NAME
-        arch = self.architecture
-
-        match artifact_type:
-            case "dmg":
-                return f"{base}_v{version}_{arch}.dmg"
-            case "appimage":
-                return f"{base}_v{version}_{arch}.AppImage"
-            case "deb":
-                deb_arch = {"x64": "amd64", "arm64": "arm64"}.get(arch, arch)
-                return f"{base}_v{version}_{deb_arch}.deb"
-            case "installer":
-                return f"{base}_v{version}_{arch}_installer.exe"
-            case "installer_zip":
-                return f"{base}_v{version}_{arch}_installer.zip"
-            case _:
-                raise ValueError(f"Unknown artifact type: {artifact_type}")
+        return self.product.artifact_filename(
+            artifact_type, self.semantic_version, self.architecture
+        )
 
     def get_browseros_chromium_version(self) -> str:
         """Get browseros chromium version string"""
@@ -521,36 +250,15 @@ class Context:
         return self.browseros_build_offset
 
     def get_semantic_version(self) -> str:
-        """Get semantic version from resources/BROWSEROS_VERSION
-
-        Returns: e.g., "0.31.0"
-        """
+        """Get semantic version from resources/BROWSEROS_VERSION"""
         return self.semantic_version
 
     def get_sparkle_version(self) -> str:
-        """Get Sparkle-compatible version from browseros_chromium_version
-
-        Sparkle uses BUILD.PATCH format for version comparison.
-        Returns: e.g., "7231.69"
-        """
-        if not self.browseros_chromium_version:
-            raise ValueError("browseros_chromium_version is not set")
-
-        parts = self.browseros_chromium_version.split(".")
-        if len(parts) < 4:
-            raise ValueError(
-                f"Invalid browseros_chromium_version format: {self.browseros_chromium_version}"
-            )
-        return f"{parts[2]}.{parts[3]}"
+        """Get Sparkle-compatible BUILD.PATCH version, e.g. "7231.69"."""
+        return versions_mod.sparkle_version_from(self.browseros_chromium_version)
 
     def get_release_path(self, platform: str) -> str:
-        """Get R2 path for release artifacts
-
-        Args:
-            platform: "macos", "win", or "linux"
-
-        Returns: e.g., "releases/0.31.0/macos/"
-        """
+        """Get R2 path for release artifacts, e.g. "releases/browseros/0.31.0/macos/"."""
         return (
             f"releases/{self.product.release_prefix}/"
             f"{self.semantic_version}/{platform}/"
@@ -558,7 +266,7 @@ class Context:
 
     def get_app_base_name(self) -> str:
         """Get app base name without extension"""
-        return self.BROWSEROS_APP_BASE_NAME
+        return self.product.app_base_name
 
     def get_dist_dir(self) -> Path:
         """Get distribution output directory with semantic version"""

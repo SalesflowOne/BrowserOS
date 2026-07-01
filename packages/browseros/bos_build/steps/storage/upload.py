@@ -62,7 +62,7 @@ class UploadModule(Step):
         extra_metadata = {}
         sparkle_signatures = cast(
             Optional[dict[str, tuple[str, int]]],
-            ctx.artifacts.get("sparkle_signatures"),
+            ctx.artifact_registry.get("sparkle_signatures"),
         )
         if sparkle_signatures:
             for filename, (sig, length) in sparkle_signatures.items():

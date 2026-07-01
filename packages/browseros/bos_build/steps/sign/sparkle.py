@@ -57,8 +57,8 @@ class SparkleSignModule(Step):
             ctx.artifact_registry.add(f"sparkle_sig_{filename}", Path(filename))
             log_info(f"  {filename}: sig={sig[:20]}... length={length}")
 
-        # Store signatures for upload module to access via ctx.artifacts
-        ctx.artifacts["sparkle_signatures"] = signatures
+        # Stored for the upload step
+        ctx.artifact_registry.add("sparkle_signatures", signatures)
 
         log_success(f"✅ Signed {len(signatures)} artifact(s) with Sparkle")
 
@@ -97,4 +97,4 @@ def get_sparkle_signatures(ctx: Context) -> Dict[str, Tuple[str, int]]:
     Returns:
         Dict mapping filename to (signature, length) tuple
     """
-    return ctx.artifacts.get("sparkle_signatures", {})
+    return ctx.artifact_registry.get("sparkle_signatures", {})

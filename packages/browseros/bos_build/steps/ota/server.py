@@ -216,8 +216,8 @@ class ServerOTAModule(Step):
             if not upload_file_to_r2(r2_client, artifact.zip_path, r2_key, bucket):
                 raise RuntimeError(f"Failed to upload {artifact.zip_path.name}")
 
-        ctx.artifacts["server_ota_artifacts"] = signed_artifacts
-        ctx.artifacts["server_appcast"] = appcast_path
+        ctx.artifact_registry.add("server_ota_artifacts", signed_artifacts)
+        ctx.artifact_registry.add("server_appcast", appcast_path)
 
         log_info("\n" + "=" * 70)
         log_success(f"✅ Server OTA v{self.version} ({self.channel}) artifacts ready!")

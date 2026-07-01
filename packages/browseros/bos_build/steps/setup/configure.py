@@ -26,10 +26,10 @@ class ConfigureModule(Step):
         if not ctx.chromium_src.exists():
             raise ValidationError(f"Chromium source not found: {ctx.chromium_src}")
 
-        if not ctx.paths.gn_flags_file:
+        if not ctx.gn_flags_file:
             raise ValidationError("GN flags file not set")
 
-        flags_file = join_paths(ctx.root_dir, ctx.paths.gn_flags_file)
+        flags_file = join_paths(ctx.root_dir, ctx.gn_flags_file)
         if not flags_file.exists():
             raise ValidationError(f"GN flags file not found: {flags_file}")
 
@@ -49,7 +49,7 @@ class ConfigureModule(Step):
         out_path = join_paths(ctx.chromium_src, ctx.out_dir)
         out_path.mkdir(parents=True, exist_ok=True)
 
-        gn_flags_file = ctx.paths.gn_flags_file
+        gn_flags_file = ctx.gn_flags_file
         if gn_flags_file is None:
             raise RuntimeError("GN flags file not set")
 

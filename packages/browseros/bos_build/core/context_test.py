@@ -102,18 +102,17 @@ class GetAppPathTest(unittest.TestCase):
         self.assertEqual(ctx.product.id, "browserclaw")
         self.assertEqual(ctx.BROWSEROS_APP_NAME, "BrowserClaw.app")
 
-    def test_init_context_accepts_type_alias_and_product(self):
-        ctx = Context.init_context(
-            {
-                "chromium_src": "/nonexistent-src",
-                "architecture": "arm64",
-                "type": "release",
-                "product": "browserclaw",
-            }
+    def test_context_accepts_product_id_string(self):
+        ctx = Context(
+            chromium_src=Path("/nonexistent-src"),
+            architecture="arm64",
+            build_type="release",
+            product="browserclaw",
         )
 
         self.assertEqual(ctx.build_type, "release")
         self.assertEqual(ctx.product.id, "browserclaw")
+        self.assertEqual(ctx.BROWSEROS_APP_BASE_NAME, "BrowserClaw")
 
     def test_debug_gn_args_allow_runtime_override(self):
         ctx = Context(
