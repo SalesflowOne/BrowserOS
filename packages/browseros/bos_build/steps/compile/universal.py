@@ -49,7 +49,18 @@ from ...core.utils import log_info, log_success, log_warning, IS_MACOS
 UNIVERSAL_ARCHITECTURES = ["arm64", "x64"]
 
 
-@step("universal_build", phase="build", platforms=("macos",), optional=True)
+@step(
+    "universal_build",
+    phase="build",
+    platforms=("macos",),
+    optional=True,
+    env=(
+        "MACOS_CERTIFICATE_NAME",
+        "PROD_MACOS_NOTARIZATION_APPLE_ID",
+        "PROD_MACOS_NOTARIZATION_TEAM_ID",
+        "PROD_MACOS_NOTARIZATION_PWD",
+    ),
+)
 class UniversalBuildModule(Step):
     """Build, sign, package, and upload universal binary (arm64 + x64) for macOS
 

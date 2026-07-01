@@ -277,8 +277,6 @@ class ProfileTest(unittest.TestCase):
             self._load("preset: release\nmodules: [clean]\n")
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class PreflightTest(unittest.TestCase):
@@ -364,3 +362,22 @@ class DownloadSwitchTest(unittest.TestCase):
                 plan(CI, arch, platform),
                 f"profile drift on {platform}/{arch}",
             )
+
+
+
+class UniversalEnvTest(unittest.TestCase):
+    def test_universal_release_requires_signing_env_upfront(self):
+        # parity with the deleted release.*.macos.universal.yaml required_envs
+        env = required_env(plan(RELEASE, "universal", "macos"))
+        self.assertEqual(
+            env,
+            [
+                "MACOS_CERTIFICATE_NAME",
+                "PROD_MACOS_NOTARIZATION_APPLE_ID",
+                "PROD_MACOS_NOTARIZATION_TEAM_ID",
+                "PROD_MACOS_NOTARIZATION_PWD",
+            ],
+        )
+
+if __name__ == "__main__":
+    unittest.main()

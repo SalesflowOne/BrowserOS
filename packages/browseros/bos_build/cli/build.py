@@ -23,7 +23,6 @@ from ..core.notify import (
 from ..core.runner import StepExecutionError, run as run_pipeline
 from ..core.step import (
     all_steps,
-    notify_step_names,
     phase_steps,
 )
 from ..core.utils import (
@@ -43,7 +42,6 @@ EXECUTION_ORDER = [
     for phase in ("setup", "prep", "build", "sign", "package", "upload")
 ]
 
-NOTIFY_MODULES = notify_step_names()
 
 
 def main(
@@ -116,7 +114,7 @@ def main(
     provision: Optional[str] = typer.Option(
         None,
         "--provision",
-        help="Preset mode: chromium provisioning (none, full)",
+        help="Preset mode: chromium provisioning (none, full, shallow)",
     ),
     download: Optional[bool] = typer.Option(
         None,

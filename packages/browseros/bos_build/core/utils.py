@@ -6,7 +6,6 @@ Shared utilities for the build system
 import os
 import sys
 import subprocess
-import yaml
 import shutil
 from pathlib import Path
 from typing import Optional, List, Dict, Union
@@ -122,18 +121,6 @@ def run_command(
             log_error(f"Unexpected error running command: {cmd_str}")
             log_error(f"Error: {str(e)}")
         raise
-
-
-def load_config(config_path: Path) -> Dict:
-    """Load configuration from YAML file"""
-    if not config_path.exists():
-        log_error(f"Config file not found: {config_path}")
-        raise FileNotFoundError(f"Config file not found: {config_path}")
-
-    with open(config_path, "r") as f:
-        config = yaml.safe_load(f)
-
-    return config
 
 
 # Platform-specific utilities
