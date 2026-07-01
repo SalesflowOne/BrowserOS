@@ -68,6 +68,7 @@ class Context:
     build_type: str = "debug"
     chromium_version: str = ""
     browseros_build_offset: str = ""
+    browseros_version_parts: tuple = ()  # (major, minor, build, patch) ints
     browseros_chromium_version: str = ""
     semantic_version: str = ""  # e.g. "0.31.0" from resources/BROWSEROS_VERSION
     release_version: str = (
@@ -117,6 +118,11 @@ class Context:
 
         if not self.semantic_version:
             self.semantic_version = versions_mod.load_semantic_version(self.root_dir)
+
+        if not self.browseros_version_parts:
+            self.browseros_version_parts = versions_mod.load_browseros_version_parts(
+                self.root_dir
+            )
 
         if not self.browseros_chromium_version:
             self.browseros_chromium_version = (
@@ -254,8 +260,15 @@ class Context:
         return self.semantic_version
 
     def get_sparkle_version(self) -> str:
-        """Get Sparkle-compatible BUILD.PATCH version, e.g. "7231.69"."""
-        return versions_mod.sparkle_version_from(self.browseros_chromium_version)
+        """Update feed version compared by Sparkle/WinSparkle.
+
+        Epoch-prefixed BrowserOS version (see the derivation notes in
+        core/versions.py). Stamped into CFBundleVersion at signing,
+        mirrored by chrome/browser/win/winsparkle_glue.cc, and carried in
+        the appcast's sparkle:version — the three must stay in lockstep.
+        Returns: e.g., "10000.0.47.0.2"
+        """
+        return versions_mod.update_feed_version(self.browseros_version_parts)
 
     def get_release_path(self, platform: str) -> str:
         """Get R2 path for release artifacts, e.g. "releases/browseros/0.31.0/macos/"."""

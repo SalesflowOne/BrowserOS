@@ -85,14 +85,48 @@ def derive_browseros_chromium_version(
     )
 
 
-def sparkle_version_from(browseros_chromium_version: str) -> str:
-    """Sparkle compares BUILD.PATCH — e.g. "7231.69"."""
-    if not browseros_chromium_version:
-        raise ValueError("browseros_chromium_version is not set")
+# resources/BROWSEROS_VERSION is the single source of update identity. The
+# feed version is "10000.MAJOR.MINOR.BUILD.PATCH": carried in the appcast's
+# sparkle:version, stamped into CFBundleVersion before signing (what Sparkle
+# compares), and mirrored by chrome/browser/win/winsparkle_glue.cc for
+# WinSparkle. The fixed 10000 epoch sorts above the retired feed scheme
+# (chromium BUILD.PATCH inflated by BROWSEROS_BUILD_OFFSET, ~7950.97 at
+# cutover) so already-shipped clients keep seeing new releases as upgrades.
+#
+# chrome/VERSION deliberately keeps the BUILD+offset scheme on every
+# platform: the Windows installer needs a unique, monotonically increasing
+# install version per release (versioned install dir + downgrade guard
+# against registry versions already shipped in the offset space), and one
+# uniform scheme everywhere beats a per-platform split. The updaters no
+# longer read it — which also means a release that bumps only the offset is
+# invisible to updaters; every release must bump the BrowserOS version.
+UPDATE_FEED_EPOCH = 10000
 
-    parts = browseros_chromium_version.split(".")
-    if len(parts) < 4:
-        raise ValueError(
-            f"Invalid browseros_chromium_version format: {browseros_chromium_version}"
-        )
-    return f"{parts[2]}.{parts[3]}"
+
+def load_browseros_version_parts(root_dir: Path) -> tuple:
+    """Load (major, minor, build, patch) ints from resources/BROWSEROS_VERSION."""
+    version_file = join_paths(root_dir, "resources", "BROWSEROS_VERSION")
+    if not version_file.exists():
+        return ()
+
+    version_dict = {}
+    for line in version_file.read_text().strip().split("\n"):
+        line = line.strip()
+        if not line or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        version_dict[key.strip()] = value.strip()
+
+    return tuple(
+        int(version_dict.get(f"BROWSEROS_{key}", "0"))
+        for key in ("MAJOR", "MINOR", "BUILD", "PATCH")
+    )
+
+
+def update_feed_version(browseros_version_parts: tuple) -> str:
+    """Epoch-prefixed feed version compared by Sparkle/WinSparkle."""
+    if not browseros_version_parts:
+        raise ValueError("resources/BROWSEROS_VERSION was not loaded")
+
+    major, minor, build, patch = browseros_version_parts
+    return f"{UPDATE_FEED_EPOCH}.{major}.{minor}.{build}.{patch}"

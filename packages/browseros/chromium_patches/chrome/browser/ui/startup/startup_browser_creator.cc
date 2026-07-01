@@ -1,5 +1,5 @@
 diff --git a/chrome/browser/ui/startup/startup_browser_creator.cc b/chrome/browser/ui/startup/startup_browser_creator.cc
-index 597bd5bfdcbbf..9f4392215e04e 100644
+index 597bd5bfdcbbf..9b8998497b560 100644
 --- a/chrome/browser/ui/startup/startup_browser_creator.cc
 +++ b/chrome/browser/ui/startup/startup_browser_creator.cc
 @@ -39,6 +39,7 @@
@@ -10,11 +10,14 @@ index 597bd5bfdcbbf..9f4392215e04e 100644
  #include "chrome/browser/browser_features.h"
  #include "chrome/browser/browser_process.h"
  #include "chrome/browser/extensions/startup_helper.h"
-@@ -474,6 +475,26 @@ void OpenNewWindowForFirstRun(const base::CommandLine& command_line,
+@@ -474,6 +475,46 @@ void OpenNewWindowForFirstRun(const base::CommandLine& command_line,
  }
  #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
  
 +#if !BUILDFLAG(IS_CHROMEOS)
++// Exit callback for the BrowserOS onboarding first-run flow. Opens a browser
++// window whether onboarding completed or was dismissed (close/cancel/crash),
++// so the user is never left without a window.
 +void OpenNewWindowForBrowserOSOnboarding(
 +    const base::CommandLine& command_line,
 +    Profile* profile,
@@ -23,12 +26,29 @@ index 597bd5bfdcbbf..9f4392215e04e 100644
 +    chrome::startup::IsProcessStartup process_startup,
 +    chrome::startup::IsFirstRun is_first_run,
 +    ProfilePicker::FirstRunExitStatus status) {
-+  if (status != ProfilePicker::FirstRunExitStatus::kCompleted) {
++  // kAbortTask: a newer first-run attempt took over the picker and owns the
++  // launch. kAbandonedFlow: the user reached a browser window some other way
++  // or quit the app from the onboarding window.
++  if (status == ProfilePicker::FirstRunExitStatus::kAbortTask ||
++      status == ProfilePicker::FirstRunExitStatus::kAbandonedFlow) {
++    return;
++  }
++
++  // On Mac, Cmd+Q closes the onboarding window and reports kQuitAtEnd here;
++  // opening a window would fight the in-flight shutdown.
++  if (browser_shutdown::IsTryingToQuit() ||
++      browser_shutdown::HasShutdownStarted()) {
 +    return;
 +  }
 +
 +  StartupBrowserCreator browser_creator;
-+  browser_creator.AddFirstRunTabs(first_run_urls);
++  if (status == ProfilePicker::FirstRunExitStatus::kCompleted) {
++    browser_creator.AddFirstRunTabs(first_run_urls);
++  } else {
++    // Must precede LaunchBrowser(): it re-checks ShouldShow() and would
++    // re-open the onboarding picker mid-teardown.
++    browseros::onboarding::MarkCompleted(profile);
++  }
 +  browser_creator.LaunchBrowser(command_line, profile, cur_dir, process_startup,
 +                                is_first_run, /*restore_tabbed_browser=*/true);
 +}
@@ -37,7 +57,7 @@ index 597bd5bfdcbbf..9f4392215e04e 100644
  #if BUILDFLAG(IS_CHROMEOS)
  // Returns the app id of the kiosk app associated with the current user session.
  // Returns nullopt for non-kiosk user sessions and for ARCVM kiosk sessions,
-@@ -712,6 +733,18 @@ void StartupBrowserCreator::LaunchBrowser(
+@@ -712,6 +753,18 @@ void StartupBrowserCreator::LaunchBrowser(
        command_line, {profile, StartupProfileMode::kBrowserWindow});
  
    if (!IsSilentLaunchEnabled(command_line, profile)) {

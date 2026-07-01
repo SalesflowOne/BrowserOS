@@ -60,12 +60,24 @@ class VersionsTest(unittest.TestCase):
         self.assertEqual(versions.derive_browseros_chromium_version({}, "80"), "")
         self.assertEqual(versions.derive_browseros_chromium_version(parts, ""), "")
 
-    def test_sparkle_version_is_build_dot_patch(self):
-        self.assertEqual(versions.sparkle_version_from("148.0.7482.57"), "7482.57")
+    def test_browseros_version_parts_parsed_as_ints(self):
+        res = self.root / "resources"
+        res.mkdir(exist_ok=True)
+        (res / "BROWSEROS_VERSION").write_text(
+            "BROWSEROS_MAJOR=0\nBROWSEROS_MINOR=47\nBROWSEROS_BUILD=0\nBROWSEROS_PATCH=2\n"
+        )
+        self.assertEqual(
+            versions.load_browseros_version_parts(self.root), (0, 47, 0, 2)
+        )
+        self.assertEqual(versions.load_browseros_version_parts(self.root / "x"), ())
+
+    def test_update_feed_version_is_epoch_prefixed(self):
+        # parity with main's update-feed scheme (PR #1496)
+        self.assertEqual(
+            versions.update_feed_version((0, 47, 0, 2)), "10000.0.47.0.2"
+        )
         with self.assertRaises(ValueError):
-            versions.sparkle_version_from("")
-        with self.assertRaises(ValueError):
-            versions.sparkle_version_from("1.2.3")
+            versions.update_feed_version(())
 
 
 if __name__ == "__main__":
