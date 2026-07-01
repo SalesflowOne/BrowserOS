@@ -67,6 +67,22 @@ describe('createDomainProxy metaproperty guard', () => {
     expect(resolved).toBe(api.Runtime)
   })
 
+  it('is-promise / is-thenable duck-typing probes do not fire send', () => {
+    // `await` only probes `.then`, but many is-promise-style
+    // helpers (is-promise, is-thenable, error serialisers,
+    // structured loggers, test assertion utilities) probe the
+    // full duck-typing surface: `.then`, `.catch`, `.finally`.
+    // Each must return undefined so those helpers see a
+    // non-thenable and the domain proxy does not fabricate
+    // `<Domain>.catch` / `<Domain>.finally` CDP requests.
+    const { api, send } = makeApiWithSpies()
+    const runtime = api.Runtime as Record<string, unknown>
+    expect(runtime.then).toBeUndefined()
+    expect(runtime.catch).toBeUndefined()
+    expect(runtime.finally).toBeUndefined()
+    expect(send).not.toHaveBeenCalled()
+  })
+
   it('Symbol probes return undefined and do not fire send', () => {
     const { api, send } = makeApiWithSpies()
     const runtime = api.Runtime as Record<symbol, unknown>

@@ -1,4 +1,12 @@
-// ── AUTO-GENERATED from CDP protocol. DO NOT EDIT. ──
+// ── AUTO-GENERATED from CDP protocol. ──
+//
+// Do not hand-edit the domain listing (`createProtocolApi` body):
+// that block is emitted verbatim from a generator against the CDP
+// spec. The `createDomainProxy` factory below IS hand-maintained
+// and contains a runtime safety net that the generator must NOT
+// overwrite; see the "Generator note" comment above `createDomain
+// Proxy`. When a generator run is performed, port the guard block
+// forward verbatim.
 
 import type { ProtocolApi } from './protocol-api'
 
@@ -42,8 +50,15 @@ function createDomainProxy(domain: string, send: RawSend, on: RawOn): unknown {
       // `await value` and Promise assimilation probe `.then`. If we
       // returned a function here, `await` would call it, firing a
       // CDP send. Returning undefined tells the runtime the proxy
-      // is NOT a thenable.
-      if (method === 'then') return undefined
+      // is NOT a thenable. `.catch` and `.finally` are not on the
+      // native `await` unwrap path (ECMA only checks `.then`), but
+      // is-promise / is-thenable duck-typing helpers, some
+      // structured loggers, and test-framework assertion helpers
+      // probe them to decide whether to treat the value as a
+      // Promise. Guard the full surface.
+      if (method === 'then' || method === 'catch' || method === 'finally') {
+        return undefined
+      }
       // Well-known runtime / DOM introspection touch points. Devtools
       // inspectors, structured-clone, error printers, and template
       // engines all touch a subset of these. CDP method names are
