@@ -5,7 +5,7 @@ Apply All - Apply all patches from patches directory.
 from typing import List, Tuple, Optional
 
 from ...core.context import Context
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError
 from ...core.utils import log_info, log_error, log_warning, log_success
 from .common import find_patch_files, process_patch_list
 
@@ -69,7 +69,7 @@ def apply_all_patches(
     return applied, failed
 
 
-class ApplyAllModule(CommandModule):
+class ApplyAllModule(Step):
     """Apply all patches from chromium_patches/"""
 
     produces = []

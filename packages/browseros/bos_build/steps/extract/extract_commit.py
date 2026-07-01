@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from ...core.context import Context
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError
 from ...core.utils import log_info, log_success, log_warning
 from .utils import (
     GitError,
@@ -56,7 +56,7 @@ def extract_single_commit(
     )
 
 
-class ExtractCommitModule(CommandModule):
+class ExtractCommitModule(Step):
     """Extract patches from a single commit"""
 
     produces = []

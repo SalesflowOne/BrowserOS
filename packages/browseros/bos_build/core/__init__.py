@@ -3,7 +3,7 @@
 from .context import Context, ArtifactRegistry, PathConfig, BuildConfig
 from .config import load_config, validate_required_envs
 from .notify import Notifier, get_notifier
-from .module import CommandModule, ValidationError
+from .step import Step, ValidationError
 from .env import EnvConfig
 
 __all__ = [
@@ -13,7 +13,7 @@ __all__ = [
     'ArtifactRegistry',
     'PathConfig',
     'BuildConfig',
-    'CommandModule',
+    'Step',
     'ValidationError',
     'EnvConfig',
     # Config loading

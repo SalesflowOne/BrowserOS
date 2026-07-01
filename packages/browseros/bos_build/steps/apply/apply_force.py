@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import List, Tuple, Optional
 
 from ...core.context import Context
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError
 from ...core.utils import log_info, log_warning, log_success
 from .common import find_patch_files
 from .utils import run_git_command, file_exists_in_commit, reset_file_to_commit
@@ -168,7 +168,7 @@ def apply_all_force(
     return applied, rejected, failed
 
 
-class ApplyForceModule(CommandModule):
+class ApplyForceModule(Step):
     """Non-interactive apply with --reject for conflicts"""
 
     produces = []

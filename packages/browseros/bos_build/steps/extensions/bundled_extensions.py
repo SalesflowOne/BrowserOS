@@ -10,7 +10,7 @@ from typing import Dict, List, NamedTuple
 import requests
 
 from ...core.context import Context
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError, step
 from ...core.utils import log_info, log_success
 
 
@@ -22,7 +22,8 @@ class ExtensionInfo(NamedTuple):
     codebase: str
 
 
-class BundledExtensionsModule(CommandModule):
+@step("bundled_extensions", phase="prep")
+class BundledExtensionsModule(Step):
     """Download extensions from CDN manifest and create bundled_extensions.json"""
 
     produces = ["bundled_extensions"]

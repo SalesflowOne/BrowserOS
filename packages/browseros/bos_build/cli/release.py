@@ -7,7 +7,7 @@ from typing import Optional
 import typer
 
 from ..core.context import Context
-from ..core.module import ValidationError
+from ..core.step import ValidationError
 from ..core.utils import log_info, log_error
 
 from ..steps.release import (

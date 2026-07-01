@@ -2,12 +2,13 @@
 """Linux signing module for BrowserOS"""
 
 from typing import List
-from ...core.module import CommandModule
+from ...core.step import Step, step
 from ...core.context import Context
 from ...core.utils import log_info, log_warning
 
 
-class LinuxSignModule(CommandModule):
+@step("sign_linux", phase="sign", platforms=("linux",), notify=True)
+class LinuxSignModule(Step):
     produces = []
     requires = []
     description = "Linux code signing (no-op)"

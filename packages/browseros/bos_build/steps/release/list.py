@@ -2,7 +2,7 @@
 """List module - Display release artifacts from R2"""
 
 from ...core.context import Context
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError
 from ...core.utils import log_info
 from ..storage import BOTO3_AVAILABLE
 from .common import (
@@ -14,7 +14,7 @@ from .common import (
 )
 
 
-class ListModule(CommandModule):
+class ListModule(Step):
     """List release artifacts from R2 for a version"""
 
     produces = []

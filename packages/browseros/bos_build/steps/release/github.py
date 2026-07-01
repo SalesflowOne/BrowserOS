@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from ...core.context import Context
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError
 from ...core.utils import log_info, log_error, log_success, log_warning
 from ..storage import BOTO3_AVAILABLE
 from .common import (
@@ -128,7 +128,7 @@ def download_and_upload_artifacts(
     return results
 
 
-class GithubModule(CommandModule):
+class GithubModule(Step):
     """Create GitHub release from R2 artifacts"""
 
     produces = []

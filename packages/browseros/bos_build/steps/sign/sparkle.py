@@ -4,7 +4,7 @@
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError, step
 from ...core.context import Context
 from ...core.sparkle import sparkle_sign_file
 from ...core.utils import (
@@ -22,7 +22,8 @@ def find_signable_artifacts(dist_dir: Path) -> List[Path]:
     return sorted(dist_dir.glob("*.dmg")) + sorted(dist_dir.glob("*.exe"))
 
 
-class SparkleSignModule(CommandModule):
+@step("sparkle_sign", phase="sign", optional=True)
+class SparkleSignModule(Step):
     """Sign update artifacts with the Sparkle Ed25519 key"""
 
     produces = ["sparkle_signatures"]

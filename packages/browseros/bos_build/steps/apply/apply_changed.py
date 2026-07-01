@@ -11,7 +11,7 @@ from enum import Enum
 from dataclasses import dataclass
 
 from ...core.context import Context
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError
 from ...core.utils import log_info, log_error, log_success, log_warning
 from .common import apply_single_patch
 from .utils import (
@@ -261,7 +261,7 @@ def apply_changed_patches(
     return applied, reset_only, failed
 
 
-class ApplyChangedModule(CommandModule):
+class ApplyChangedModule(Step):
     """Apply patches that changed in specific commits"""
 
     produces = []

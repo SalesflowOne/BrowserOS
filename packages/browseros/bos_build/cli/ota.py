@@ -8,7 +8,7 @@ import typer
 
 from ..core.context import Context
 from ..core.env import EnvConfig
-from ..core.module import ValidationError
+from ..core.step import ValidationError
 from ..core.sparkle import sparkle_sign_file
 from ..core.utils import log_info, log_error, log_success
 

@@ -41,7 +41,7 @@ Then merges and processes the universal binary.
 
 from pathlib import Path
 
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError, step
 from ...core.context import Context
 from ...core.utils import log_info, log_success, log_warning, IS_MACOS
 
@@ -49,7 +49,8 @@ from ...core.utils import log_info, log_success, log_warning, IS_MACOS
 UNIVERSAL_ARCHITECTURES = ["arm64", "x64"]
 
 
-class UniversalBuildModule(CommandModule):
+@step("universal_build", phase="build", platforms=("macos",), optional=True)
+class UniversalBuildModule(Step):
     """Build, sign, package, and upload universal binary (arm64 + x64) for macOS
 
     This module handles the complete multi-architecture build, sign, package,

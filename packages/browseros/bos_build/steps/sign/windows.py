@@ -4,7 +4,7 @@
 import subprocess
 from pathlib import Path
 from typing import List, Optional
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError, step
 from ...core.context import Context
 from ...core.env import EnvConfig
 from ...core.server_binaries import (
@@ -22,7 +22,8 @@ from ...core.utils import (
 )
 
 
-class WindowsSignModule(CommandModule):
+@step("sign_windows", phase="sign", platforms=("windows",), notify=True)
+class WindowsSignModule(Step):
     produces = ["signed_installer"]
     requires = ["built_app"]
     description = "Sign Windows binaries and create signed installer"

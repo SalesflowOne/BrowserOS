@@ -11,7 +11,7 @@ from unittest import mock
 from . import patches
 from ..apply import apply_all
 from ...core.context import Context
-from ...core.module import ValidationError
+from ...core.step import ValidationError
 from ...core.testing import MockBrowserOSRoot, MockChromium, make_context
 
 

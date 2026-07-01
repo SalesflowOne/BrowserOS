@@ -9,7 +9,7 @@ from typing import Optional
 import requests
 
 from ...core.context import Context
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError
 from ...core.utils import log_info, log_error
 from .common import (
     PLATFORMS,
@@ -27,7 +27,7 @@ OS_NAME_MAP = {
 }
 
 
-class DownloadModule(CommandModule):
+class DownloadModule(Step):
     """Download release artifacts from CDN"""
 
     produces = []

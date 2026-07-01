@@ -9,7 +9,7 @@ from typing import cast
 
 from .string_replaces import StringReplacesModule, apply_string_replacements_impl
 from ...core.context import Context
-from ...core.module import ValidationError
+from ...core.step import ValidationError
 from ...core.testing import MockBrowserOSRoot, MockChromium, make_context
 
 

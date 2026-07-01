@@ -8,7 +8,7 @@ import shutil
 import tempfile
 from pathlib import Path
 from typing import Optional, List, Dict, Tuple
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError, step
 from ...core.context import Context
 from ...core.env import EnvConfig
 from ...core.server_binaries import (
@@ -152,7 +152,8 @@ def unlock_keychain(env: Optional[EnvConfig] = None) -> None:
     )
 
 
-class MacOSSignModule(CommandModule):
+@step("sign_macos", phase="sign", platforms=("macos",), notify=True)
+class MacOSSignModule(Step):
     produces = ["signed_app"]
     requires = ["built_app"]
     description = "Sign and notarize macOS application"

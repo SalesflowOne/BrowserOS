@@ -2,7 +2,6 @@
 """Build CLI - Modular build system for BrowserOS"""
 
 import os
-import sys
 import time
 from pathlib import Path
 from typing import Optional
@@ -22,7 +21,12 @@ from ..core.notify import (
     notify_module_completion,
     set_build_context,
 )
-from ..core.module import ValidationError
+from ..core.step import (
+    ValidationError,
+    all_steps,
+    notify_step_names,
+    phase_steps,
+)
 from ..core.utils import (
     log_error,
     log_info,
@@ -30,142 +34,18 @@ from ..core.utils import (
     log_warning,
     IS_MACOS,
     IS_WINDOWS,
-    IS_LINUX,
 )
 
-# Import all module classes
-from ..steps.setup.clean import CleanModule
-from ..steps.setup.git import (
-    GitSetupModule,
-    SparkleSetupModule,
-    WinSparkleSetupModule,
-)
-from ..steps.setup.configure import ConfigureModule
-from ..steps.compile import CompileModule, UniversalBuildModule
-from ..steps.patches.patches import PatchesModule
-from ..steps.patches.series_patches import SeriesPatchesModule
-from ..steps.resources.chromium_replace import ChromiumReplaceModule
-from ..steps.resources.string_replaces import StringReplacesModule
-from ..steps.resources.resources import ResourcesModule
-from ..steps.extensions import BundledExtensionsModule
-from ..steps.storage import UploadModule, DownloadResourcesModule
+# All of these derive from step registration metadata (core/step.py);
+# pipeline order within a phase comes from steps/__init__.py import order.
+AVAILABLE_MODULES = all_steps()
 
-# Platform-specific modules (imported unconditionally - validation handles platform checks)
-from ..steps.sign.macos import MacOSSignModule
-from ..steps.sign.windows import WindowsSignModule
-from ..steps.sign.linux import LinuxSignModule
-from ..steps.sign.sparkle import SparkleSignModule
-from ..steps.package.macos import MacOSPackageModule
-from ..steps.package.windows import WindowsPackageModule, MiniInstallerModule
-from ..steps.package.linux import LinuxPackageModule
-
-AVAILABLE_MODULES = {
-    # Setup & Environment
-    "clean": CleanModule,
-    "git_setup": GitSetupModule,
-    "sparkle_setup": SparkleSetupModule,
-    "winsparkle_setup": WinSparkleSetupModule,
-    "configure": ConfigureModule,
-    # Patches & Resources
-    "patches": PatchesModule,
-    "series_patches": SeriesPatchesModule,
-    "chromium_replace": ChromiumReplaceModule,
-    "string_replaces": StringReplacesModule,
-    "download_resources": DownloadResourcesModule,  # Download binaries from R2
-    "resources": ResourcesModule,
-    "bundled_extensions": BundledExtensionsModule,
-    # Build
-    "compile": CompileModule,
-    "universal_build": UniversalBuildModule,  # macOS universal binary (arm64 + x64)
-    # Sign (platform-specific, validated at runtime)
-    "sign_macos": MacOSSignModule,
-    "sign_windows": WindowsSignModule,
-    "sign_linux": LinuxSignModule,
-    "sparkle_sign": SparkleSignModule,  # Sparkle/WinSparkle Ed25519 signing for auto-update
-    # Package (platform-specific, validated at runtime)
-    "mini_installer": MiniInstallerModule,  # Unsigned installer build (CI)
-    "package_macos": MacOSPackageModule,
-    "package_windows": WindowsPackageModule,
-    "package_linux": LinuxPackageModule,
-    # Storage (upload/download)
-    "upload": UploadModule,
-}
-
-
-def _get_sign_module():
-    """Get platform-specific sign module name"""
-    if IS_MACOS():
-        return "sign_macos"
-    elif IS_WINDOWS():
-        return "sign_windows"
-    elif IS_LINUX():
-        return "sign_linux"
-    else:
-        log_error("Unsupported platform for packaging")
-        sys.exit(1)
-
-
-def _get_package_module():
-    """Get platform-specific package module name"""
-    if IS_MACOS():
-        return "package_macos"
-    elif IS_WINDOWS():
-        return "package_windows"
-    elif IS_LINUX():
-        return "package_linux"
-    else:
-        log_error("Unsupported platform for packaging")
-        sys.exit(1)
-
-
-def _get_setup_modules():
-    """Setup phase modules; the Sparkle/WinSparkle download is platform-bound."""
-    modules = ["clean", "git_setup"]
-    if IS_MACOS():
-        modules.append("sparkle_setup")
-    elif IS_WINDOWS():
-        modules.append("winsparkle_setup")
-    return modules
-
-
-# Fixed execution order - flags enable/disable phases, order is always the same
 EXECUTION_ORDER = [
-    # Phase 1: Setup & Clean
-    ("setup", _get_setup_modules()),
-    # Phase 2: Patches & Resources
-    (
-        "prep",
-        [
-            "download_resources",
-            "resources",
-            "bundled_extensions",
-            "chromium_replace",
-            "string_replaces",
-            "patches",
-            "configure",
-        ],
-    ),
-    # Phase 3: Build
-    ("build", ["compile"]),
-    # Phase 4: Code Signing (platform-aware)
-    ("sign", [_get_sign_module()]),
-    # Phase 5: Packaging (platform-aware)
-    ("package", [_get_package_module()]),
-    # Phase 6: Upload
-    ("upload", ["upload"]),
+    (phase, phase_steps(phase))
+    for phase in ("setup", "prep", "build", "sign", "package", "upload")
 ]
 
-# Modules that trigger Slack notifications (to reduce verbosity)
-NOTIFY_MODULES = [
-    "compile",
-    "sign_macos",
-    "sign_windows",
-    "sign_linux",
-    "package_macos",
-    "package_windows",
-    "package_linux",
-    "upload",
-]
+NOTIFY_MODULES = notify_step_names()
 
 
 def execute_pipeline(
@@ -451,9 +331,9 @@ def main(
         if build:
             phase_names.append("build")
         if sign:
-            phase_names.append(f"sign (→ {_get_sign_module()})")
+            phase_names.append(f"sign (→ {', '.join(phase_steps('sign'))})")
         if package:
-            phase_names.append(f"package (→ {_get_package_module()})")
+            phase_names.append(f"package (→ {', '.join(phase_steps('package'))})")
         if upload:
             phase_names.append("upload")
 

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from ...core.context import Context
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError
 from ...core.utils import log_info, log_error, log_success, log_warning
 from .utils import (
     FileOperation,
@@ -271,7 +271,7 @@ def extract_commits_individually(
     return total_extracted, unique_files
 
 
-class ExtractRangeModule(CommandModule):
+class ExtractRangeModule(Step):
     """Extract patches from a range of commits"""
 
     produces = []

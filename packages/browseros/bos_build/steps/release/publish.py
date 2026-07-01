@@ -4,7 +4,7 @@
 from typing import List, Optional, Tuple
 
 from ...core.context import Context
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError
 from ...core.utils import log_info, log_error, log_success, log_warning
 from ..storage import BOTO3_AVAILABLE, get_r2_client
 from .common import (
@@ -34,7 +34,7 @@ def copy_to_download_path(
         return False
 
 
-class PublishModule(CommandModule):
+class PublishModule(Step):
     """Copy versioned artifacts to download/ paths (make release "live")"""
 
     produces = []

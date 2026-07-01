@@ -4,7 +4,7 @@
 import shutil
 import zipfile
 from pathlib import Path
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError, step
 from ...core.context import Context
 from ...core.utils import (
     run_command,
@@ -19,7 +19,8 @@ from ...core.notify import get_notifier, COLOR_GREEN
 from ..compile.standard import autoninja_command
 
 
-class MiniInstallerModule(CommandModule):
+@step("mini_installer", phase="sign", platforms=("windows",), optional=True)
+class MiniInstallerModule(Step):
     """Build mini_installer.exe without signing.
 
     The signed release flow builds mini_installer inside WindowsSignModule
@@ -47,7 +48,8 @@ class MiniInstallerModule(CommandModule):
             raise RuntimeError("Failed to build mini_installer")
 
 
-class WindowsPackageModule(CommandModule):
+@step("package_windows", phase="package", platforms=("windows",), notify=True)
+class WindowsPackageModule(Step):
     produces = ["installer", "installer_zip"]
     requires = []
     description = "Create Windows installer and portable ZIP"

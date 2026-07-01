@@ -8,7 +8,7 @@ from unittest import mock
 
 from .git import GitSetupModule, BROWSEROS_BRANCH
 from ...core.context import Context
-from ...core.module import ValidationError
+from ...core.step import ValidationError
 from ...core.testing import MockBrowserOSRoot, MockChromium, make_context
 
 

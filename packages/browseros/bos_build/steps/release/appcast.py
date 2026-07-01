@@ -2,13 +2,13 @@
 """Appcast module - Generate Sparkle appcast XML snippets"""
 
 from ...core.context import Context
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError
 from ...core.utils import log_info, log_warning
 from ..storage import BOTO3_AVAILABLE
 from .common import fetch_all_release_metadata, generate_appcast_item
 
 
-class AppcastModule(CommandModule):
+class AppcastModule(Step):
     """Generate appcast XML snippets for macOS auto-update"""
 
     produces = []

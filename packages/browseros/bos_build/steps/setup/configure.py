@@ -3,7 +3,7 @@
 
 import sys
 
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError, step
 from ...core.context import Context
 from ...core.utils import (
     run_command,
@@ -16,7 +16,8 @@ from ...core.utils import (
 )
 
 
-class ConfigureModule(CommandModule):
+@step("configure", phase="prep")
+class ConfigureModule(Step):
     produces = []
     requires = []
     description = "Configure build with GN"

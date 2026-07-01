@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 from . import git
-from ...core.module import ValidationError
+from ...core.step import ValidationError
 from ...core.testing import MockBrowserOSRoot, MockChromium, make_context
 
 

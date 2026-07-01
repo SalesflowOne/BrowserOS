@@ -10,7 +10,7 @@ import zipfile
 from pathlib import Path
 from typing import List
 
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError, step
 from ...core.context import Context
 from ...core.utils import (
     run_command,
@@ -26,7 +26,8 @@ from ...core.utils import (
 BROWSEROS_BRANCH = "browseros"
 
 
-class GitSetupModule(CommandModule):
+@step("git_setup", phase="setup")
+class GitSetupModule(Step):
     produces = []
     requires = []
     description = "Checkout Chromium version and sync dependencies"
@@ -142,7 +143,8 @@ class GitSetupModule(CommandModule):
             raise ValidationError(f"Git tag {ctx.chromium_version} not found")
 
 
-class SparkleSetupModule(CommandModule):
+@step("sparkle_setup", phase="setup", platforms=("macos",))
+class SparkleSetupModule(Step):
     produces = []
     requires = []
     description = "Download and setup Sparkle framework (macOS only)"
@@ -178,7 +180,8 @@ class SparkleSetupModule(CommandModule):
         log_success("Sparkle setup complete")
 
 
-class WinSparkleSetupModule(CommandModule):
+@step("winsparkle_setup", phase="setup", platforms=("windows",))
+class WinSparkleSetupModule(Step):
     produces = []
     requires = []
     description = "Download and setup WinSparkle library (Windows only)"

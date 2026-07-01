@@ -7,7 +7,7 @@ Simple feature management with YAML persistence.
 import yaml
 from typing import Dict, Optional, Tuple
 from ...core.context import Context
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError
 from ..extract.utils import get_commit_changed_files
 from ...core.utils import log_info, log_error, log_success, log_warning
 from .validation import validate_description, validate_feature_name
@@ -177,9 +177,9 @@ def show_feature(ctx: Context, feature_name: str):
         log_info(f"  - {file_path}")
 
 
-# CommandModule wrappers for dev CLI
+# Step wrappers for dev CLI
 
-class ListFeaturesModule(CommandModule):
+class ListFeaturesModule(Step):
     """List all defined features"""
     produces = []
     requires = []
@@ -193,7 +193,7 @@ class ListFeaturesModule(CommandModule):
         list_features(ctx)
 
 
-class ShowFeatureModule(CommandModule):
+class ShowFeatureModule(Step):
     """Show details of a specific feature"""
     produces = []
     requires = []
@@ -207,7 +207,7 @@ class ShowFeatureModule(CommandModule):
         show_feature(ctx, feature_name)
 
 
-class AddUpdateFeatureModule(CommandModule):
+class AddUpdateFeatureModule(Step):
     """Add or update a feature with files from a commit"""
     produces = []
     requires = []
@@ -238,7 +238,7 @@ class AddUpdateFeatureModule(CommandModule):
 AddFeatureModule = AddUpdateFeatureModule
 
 
-class ClassifyFeaturesModule(CommandModule):
+class ClassifyFeaturesModule(Step):
     """Classify unclassified patch files into features"""
     produces = []
     requires = []

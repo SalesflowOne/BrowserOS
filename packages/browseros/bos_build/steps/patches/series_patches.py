@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 from typing import Iterator
 
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError, step
 from ...core.context import Context
 from ...core.utils import log_info, log_success, log_error, get_platform
 
@@ -14,7 +14,8 @@ from ...core.utils import log_info, log_success, log_error, get_platform
 ENCODING = "UTF-8"
 
 
-class SeriesPatchesModule(CommandModule):
+@step("series_patches", phase="prep", optional=True)
+class SeriesPatchesModule(Step):
     produces = []
     requires = []
     description = "Apply series-based patches (GNU Quilt format)"

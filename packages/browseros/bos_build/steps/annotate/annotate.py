@@ -12,7 +12,7 @@ from typing import List, Tuple, Optional, Dict
 
 from ..apply.utils import run_git_command
 from ...core.context import Context
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError
 from ...core.utils import log_info, log_error, log_success, log_warning
 
 
@@ -258,7 +258,7 @@ def annotate_single_feature(
     return commits > 0
 
 
-class AnnotateModule(CommandModule):
+class AnnotateModule(Step):
     """Create git commits organized by features from features.yaml"""
 
     produces = []

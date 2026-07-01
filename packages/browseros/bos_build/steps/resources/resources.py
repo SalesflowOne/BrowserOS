@@ -6,12 +6,13 @@ import shutil
 import yaml
 import subprocess
 from pathlib import Path
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError, step
 from ...core.context import Context
 from ...core.utils import log_info, log_success, log_error, log_warning, get_platform
 
 
-class ResourcesModule(CommandModule):
+@step("resources", phase="prep")
+class ResourcesModule(Step):
     produces = []
     requires = []
     description = "Copy resources (icons, extensions) to Chromium"

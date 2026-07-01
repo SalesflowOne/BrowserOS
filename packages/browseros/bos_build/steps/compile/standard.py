@@ -7,7 +7,7 @@ import tempfile
 import shutil
 from pathlib import Path
 from typing import List, Mapping, Optional
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError, step
 from ...core.context import Context
 from ...core.utils import (
     run_command,
@@ -102,7 +102,8 @@ def autoninja_command(
     return cmd + list(targets)
 
 
-class CompileModule(CommandModule):
+@step("compile", phase="build", notify=True)
+class CompileModule(Step):
     produces = ["built_app"]
     requires = []
     description = "Build BrowserOS using autoninja"

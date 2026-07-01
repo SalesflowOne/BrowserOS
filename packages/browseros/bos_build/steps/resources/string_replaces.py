@@ -2,12 +2,13 @@
 """String replacement module for BrowserOS build system"""
 
 import re
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError, step
 from ...core.context import Context
 from ...core.utils import log_info, log_success, log_error, log_warning
 
 
-class StringReplacesModule(CommandModule):
+@step("string_replaces", phase="prep")
+class StringReplacesModule(Step):
     produces = []
     requires = []
     description = "Apply branding string replacements in Chromium"

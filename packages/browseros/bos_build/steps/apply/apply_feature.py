@@ -6,7 +6,7 @@ import yaml
 from typing import List, Tuple, Optional
 
 from ...core.context import Context
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError
 from ...core.utils import log_info, log_error, log_warning, log_success
 from .common import process_patch_list
 
@@ -85,7 +85,7 @@ def apply_feature_patches(
     return applied, failed
 
 
-class ApplyFeatureModule(CommandModule):
+class ApplyFeatureModule(Step):
     """Apply patches for a specific feature"""
 
     produces = []

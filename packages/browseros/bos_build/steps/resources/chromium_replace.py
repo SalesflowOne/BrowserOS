@@ -3,12 +3,13 @@
 
 import shutil
 from pathlib import Path
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError, step
 from ...core.context import Context
 from ...core.utils import log_info, log_success, log_error
 
 
-class ChromiumReplaceModule(CommandModule):
+@step("chromium_replace", phase="prep")
+class ChromiumReplaceModule(Step):
     produces = []
     requires = []
     description = "Replace Chromium source files with custom versions"

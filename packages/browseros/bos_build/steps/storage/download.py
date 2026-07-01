@@ -10,7 +10,7 @@ import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Any, List
 
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError, step
 from ...core.context import Context
 from ...core.utils import (
     log_info,
@@ -187,7 +187,8 @@ def _clear_destination(dest_path: Path) -> None:
     dest_path.unlink()
 
 
-class DownloadResourcesModule(CommandModule):
+@step("download_resources", phase="prep")
+class DownloadResourcesModule(Step):
     """Download resources from Cloudflare R2 before build
 
     This module downloads binaries and other resources from R2 that are

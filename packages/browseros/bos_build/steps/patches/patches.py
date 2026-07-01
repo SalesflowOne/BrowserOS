@@ -2,12 +2,13 @@
 """Patch management module for BrowserOS build system"""
 
 import shutil
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError, step
 from ...core.context import Context
 from ...core.utils import log_info, log_error
 
 
-class PatchesModule(CommandModule):
+@step("patches", phase="prep")
+class PatchesModule(Step):
     produces = []
     requires = []
     description = "Apply BrowserOS patches to Chromium"

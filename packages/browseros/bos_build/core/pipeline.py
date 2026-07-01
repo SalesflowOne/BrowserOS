@@ -2,11 +2,11 @@
 """Pipeline validation for BrowserOS build system"""
 
 from typing import Dict, List, Type
-from .module import CommandModule
+from .step import PHASES, Step
 from .utils import log_error, log_info
 
 
-def validate_pipeline(pipeline: List[str], available_modules: Dict[str, Type[CommandModule]]) -> None:
+def validate_pipeline(pipeline: List[str], available_modules: Dict[str, Type[Step]]) -> None:
     """Validate that all modules in pipeline exist in available_modules
     
     Raises SystemExit if validation fails
@@ -30,40 +30,37 @@ def validate_pipeline(pipeline: List[str], available_modules: Dict[str, Type[Com
         raise SystemExit(1)
 
 
-def show_available_modules(available_modules: Dict[str, Type[CommandModule]]) -> None:
-    """Display all available modules with descriptions, grouped by category"""
-
-    # Group modules by prefix
-    groups = {
-        "Setup & Environment": ["clean", "git_setup", "sparkle_setup", "winsparkle_setup", "configure"],
-        "Patches & Resources": ["patches", "chromium_replace", "string_replaces", "resources"],
-        "Build": ["compile"],
-        "Code Signing": ["sign_macos", "sign_windows", "sign_linux"],
-        "Packaging": ["package_macos", "package_windows", "package_linux"],
-        "Upload": ["upload"],
-    }
+def show_available_modules(available_modules: Dict[str, Type[Step]]) -> None:
+    """Display all available modules with descriptions, grouped by phase"""
 
     log_info("\n" + "=" * 70)
     log_info("Available Build Modules")
     log_info("=" * 70)
 
-    for group_name, module_names in groups.items():
-        # Only show group if it has modules
-        group_modules = [m for m in module_names if m in available_modules]
-        if not group_modules:
+    for phase in PHASES:
+        phase_modules = [
+            (name, cls)
+            for name, cls in available_modules.items()
+            if cls.phase == phase
+        ]
+        if not phase_modules:
             continue
 
-        log_info(f"\n{group_name}:")
+        log_info(f"\n{phase.capitalize()}:")
         log_info("-" * 70)
 
-        for module_name in group_modules:
-            module_class = available_modules[module_name]
-            log_info(f"  {module_name:20} {module_class.description}")
+        for module_name, module_class in phase_modules:
+            extras = []
+            if module_class.platforms is not None:
+                extras.append("/".join(module_class.platforms))
+            if module_class.optional:
+                extras.append("optional")
+            suffix = f"  [{', '.join(extras)}]" if extras else ""
+            log_info(f"  {module_name:20} {module_class.description}{suffix}")
 
-    # Show any modules not in groups (for extensibility)
-    all_grouped = set(m for group in groups.values() for m in group)
-    ungrouped = sorted(set(available_modules.keys()) - all_grouped)
-
+    ungrouped = sorted(
+        name for name, cls in available_modules.items() if not cls.phase
+    )
     if ungrouped:
         log_info("\nOther:")
         log_info("-" * 70)

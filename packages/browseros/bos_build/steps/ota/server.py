@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 from typing import List, Optional
 
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError
 from ...core.context import Context
 from ...core.utils import (
     log_info,
@@ -38,7 +38,7 @@ from ..storage.download import extract_artifact_zip
 ARTIFACT_R2_KEY = "artifacts/server/latest/browseros-server-resources-{target}.zip"
 
 
-class ServerOTAModule(CommandModule):
+class ServerOTAModule(Step):
     """OTA update module for BrowserOS Server binaries
 
     Downloads server binaries from R2 (artifacts/server/latest/),

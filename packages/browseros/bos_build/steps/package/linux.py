@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from ...core.server_binaries import SERVER_BUNDLES, server_bundles_for_product
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError, step
 from ...core.context import Context
 from ...core.utils import (
     log_info,
@@ -77,7 +77,8 @@ def get_host_appimagetool() -> tuple[str, str]:
     return tool
 
 
-class LinuxPackageModule(CommandModule):
+@step("package_linux", phase="package", platforms=("linux",), notify=True)
+class LinuxPackageModule(Step):
     produces = ["appimage", "deb"]
     requires = []
     description = "Create AppImage and .deb packages for Linux"

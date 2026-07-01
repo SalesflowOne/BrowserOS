@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Clean module for BrowserOS build system"""
 
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError, step
 from ...core.context import Context
 from ...core.utils import run_command, log_info, log_success, safe_rmtree
 
 
-class CleanModule(CommandModule):
+@step("clean", phase="setup")
+class CleanModule(Step):
     produces = []
     requires = []
     description = "Clean build artifacts and reset git state"

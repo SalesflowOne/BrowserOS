@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, cast
 
-from ...core.module import CommandModule, ValidationError
+from ...core.step import Step, ValidationError, step
 from ...core.context import Context
 from ...core.utils import (
     log_info,
@@ -36,7 +36,8 @@ def _get_platform() -> str:
         return "linux"
 
 
-class UploadModule(CommandModule):
+@step("upload", phase="upload", notify=True)
+class UploadModule(Step):
     """Upload build artifacts to Cloudflare R2"""
 
     produces = []
