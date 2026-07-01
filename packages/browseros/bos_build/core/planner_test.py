@@ -341,3 +341,26 @@ class PreflightTest(unittest.TestCase):
         with mock.patch.dict(step_mod._REGISTRY, {"needs_tool": NeedsTool}):
             with self.assertRaisesRegex(ValueError, "xcode 26 required"):
                 preflight(["needs_tool"], platform="linux", ctx=SimpleNamespace())
+
+
+class DownloadSwitchTest(unittest.TestCase):
+    def test_no_download_drops_resource_download_only(self):
+        # nightly-macos-build.yml stages server resources locally and used
+        # to rewrite the yaml to drop download_resources
+        with_dl = plan(RELEASE, "arm64", "macos")
+        without = plan(Switches(preset="release", download=False), "arm64", "macos")
+        self.assertEqual(
+            [s for s in with_dl if s != "download_resources"], without
+        )
+
+    def test_shipped_nightly_ci_profile_matches_ci_switches(self):
+        shipped = (
+            Path(__file__).resolve().parents[1] / "profiles" / "nightly-ci.yaml"
+        )
+        sw = load_profile(shipped)
+        for platform, arch in (("macos", "arm64"), ("windows", "x64"), ("linux", "x64")):
+            self.assertEqual(
+                plan(sw, arch, platform),
+                plan(CI, arch, platform),
+                f"profile drift on {platform}/{arch}",
+            )

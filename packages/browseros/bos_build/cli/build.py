@@ -118,6 +118,11 @@ def main(
         "--provision",
         help="Preset mode: chromium provisioning (none, full)",
     ),
+    download: Optional[bool] = typer.Option(
+        None,
+        "--download/--no-download",
+        help="Preset mode: toggle downloading server resources from R2",
+    ),
     # Global options
     arch: Optional[str] = typer.Option(
         None,
@@ -209,6 +214,7 @@ def main(
             arch=arch,
             clean=clean,
             provision=provision,
+            download=download,
             sign=sign,
             upload=upload,
             chromium_src=chromium_src,
@@ -336,6 +342,7 @@ def _resolve_preset_runs(
     arch: Optional[str],
     clean: Optional[bool],
     provision: Optional[str],
+    download: Optional[bool],
     sign: Optional[bool],
     upload: Optional[bool],
     chromium_src: Optional[Path],
@@ -357,6 +364,8 @@ def _resolve_preset_runs(
             overrides["clean"] = clean
         if provision is not None:
             overrides["provision"] = provision
+        if download is not None:
+            overrides["download"] = download
         if sign is not None:
             overrides["sign"] = sign
         if upload is not None:

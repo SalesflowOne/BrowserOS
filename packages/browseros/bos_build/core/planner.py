@@ -31,6 +31,7 @@ class Switches:
     architectures: Tuple[str, ...] = ()
     clean: Optional[bool] = None
     provision: Optional[str] = None
+    download: Optional[bool] = None
     sign: Optional[bool] = None
     upload: Optional[bool] = None
 
@@ -46,6 +47,7 @@ class Switches:
             architectures=self.architectures or (get_platform_arch(),),
             clean=self.clean if self.clean is not None else defaults["clean"],
             provision=self.provision or defaults["provision"],
+            download=self.download if self.download is not None else True,
             sign=self.sign if self.sign is not None else defaults["sign"],
             upload=self.upload if self.upload is not None else defaults["upload"],
         )
@@ -103,7 +105,8 @@ def _plan_release(switches: Switches, arch: str, platform: str) -> List[str]:
     if platform == "windows" and switches.sign:
         steps.append("winsparkle_setup")
 
-    steps.append("download_resources")
+    if switches.download:
+        steps.append("download_resources")
     if arch != "universal":
         steps.append("resources")
     steps.extend(
@@ -146,9 +149,10 @@ def _plan_debug(switches: Switches, arch: str, platform: str) -> List[str]:
         steps.append("clean")
     if switches.provision == "full":
         steps.append("git_setup")
+    if switches.download:
+        steps.append("download_resources")
     steps.extend(
         [
-            "download_resources",
             "resources",
             "chromium_replace",
             "string_replaces",
@@ -191,7 +195,7 @@ def load_profile(path: Path) -> Switches:
     if not isinstance(data, dict):
         raise ValueError(f"Profile {path} must be a flat mapping")
 
-    known = {"preset", "product", "arch", "clean", "provision", "sign", "upload"}
+    known = {"preset", "product", "arch", "clean", "provision", "download", "sign", "upload"}
     unknown = set(data) - known
     if unknown:
         raise ValueError(
@@ -214,6 +218,7 @@ def load_profile(path: Path) -> Switches:
         architectures=architectures,
         clean=data.get("clean"),
         provision=data.get("provision"),
+        download=data.get("download"),
         sign=data.get("sign"),
         upload=data.get("upload"),
     )
