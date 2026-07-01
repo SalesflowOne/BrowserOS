@@ -47,8 +47,6 @@ export interface RegisterFilesystemMcpToolsOptions {
   outputFileAccess?: BrowserOutputFileAccess
 }
 
-const ERROR_PREVIEW_CHARS = 500
-
 function summarizeFilesystemArgs(
   args: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -66,9 +64,26 @@ function summarizeFilesystemArgs(
   return summary
 }
 
-function previewText(text: string): string {
-  if (text.length <= ERROR_PREVIEW_CHARS) return text
-  return `${text.slice(0, ERROR_PREVIEW_CHARS)}... (+${text.length - ERROR_PREVIEW_CHARS} chars)`
+function summarizeFilesystemErrorText(
+  toolName: string,
+  text: string,
+): Record<string, unknown> {
+  const summary: Record<string, unknown> = {
+    textLength: text.length,
+    lineCount: text.length ? text.split('\n').length : 0,
+  }
+  if (toolName !== 'filesystem_bash') return summary
+
+  const exitCodeMatch = text.match(/\n\n\[Exit code: (-?\d+)\]\s*$/)
+  if (exitCodeMatch) {
+    summary.exitCode = Number(exitCodeMatch[1])
+  }
+  const timeoutMatch = text.match(/^Command timed out after ([0-9.]+)s\b/)
+  if (timeoutMatch) {
+    summary.timedOut = true
+    summary.timeoutSeconds = Number(timeoutMatch[1])
+  }
+  return summary
 }
 
 export function registerFilesystemMcpTools(
@@ -126,7 +141,7 @@ export function registerFilesystemMcpTools(
           logger.info('MCP filesystem tool returned error', {
             ...logBase,
             durationMs: duration(),
-            error: previewText(result.text),
+            errorSummary: summarizeFilesystemErrorText(name, result.text),
           })
           return {
             content: [{ type: 'text', text: result.text }],

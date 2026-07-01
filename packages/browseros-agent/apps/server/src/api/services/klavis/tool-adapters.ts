@@ -47,8 +47,6 @@ type ConnectorToolPayload =
       message?: string
     }
 
-const ERROR_PREVIEW_CHARS = 500
-
 function connectorInputSchema(catalog: readonly ConnectorCatalogItem[]) {
   const names = catalog.map((server) => server.name) as [string, ...string[]]
   const serverDescriptions = getConnectorCatalogDescription()
@@ -64,11 +62,6 @@ function connectorInputSchema(catalog: readonly ConnectorCatalogItem[]) {
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
-}
-
-function previewText(text: string): string {
-  if (text.length <= ERROR_PREVIEW_CHARS) return text
-  return `${text.slice(0, ERROR_PREVIEW_CHARS)}... (+${text.length - ERROR_PREVIEW_CHARS} chars)`
 }
 
 function summarizeKlavisArgs(args: Record<string, unknown>) {
@@ -100,11 +93,13 @@ function summarizeConnectorPayload(payload: ConnectorToolPayload) {
   }
 }
 
-function callToolResultTextPreview(result: unknown): string | undefined {
+function summarizeCallToolError(
+  result: unknown,
+): Record<string, unknown> | undefined {
   if (!isObjectRecord(result) || !Array.isArray(result.content)) {
     return undefined
   }
-  const text = result.content
+  const textBlocks = result.content
     .filter(
       (item): item is { type: 'text'; text: string } =>
         typeof item === 'object' &&
@@ -115,8 +110,13 @@ function callToolResultTextPreview(result: unknown): string | undefined {
         typeof item.text === 'string',
     )
     .map((item) => item.text)
-    .join('\n')
-  return text ? previewText(text) : undefined
+  const text = textBlocks.join('\n')
+  return {
+    contentCount: result.content.length,
+    textBlockCount: textBlocks.length,
+    textLength: text.length,
+    lineCount: text.length ? text.split('\n').length : 0,
+  }
 }
 
 async function buildConnectorToolPayload(
@@ -358,7 +358,7 @@ export function registerKlavisTools(
             logger.info('MCP Klavis tool returned error', {
               ...logBase,
               durationMs,
-              error: callToolResultTextPreview(result),
+              errorSummary: summarizeCallToolError(result),
             })
           }
 

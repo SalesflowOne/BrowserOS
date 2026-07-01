@@ -267,10 +267,14 @@ describe('registerTools', () => {
           toolName: 'filesystem_read',
           source: 'mcp',
           cwd: '/tmp/browseros-execution',
-          error: expect.any(String),
+          errorSummary: expect.objectContaining({
+            textLength: expect.any(Number),
+            lineCount: expect.any(Number),
+          }),
         }),
       }),
     )
+    expect(JSON.stringify(infoLogs)).not.toContain(textOf(result))
   })
 
   it('applies scoped defaults to tab creation', async () => {

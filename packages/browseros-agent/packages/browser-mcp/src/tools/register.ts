@@ -52,8 +52,6 @@ export interface BrowserToolExecutionEvent extends Record<string, unknown> {
   error_message?: string
 }
 
-const ERROR_PREVIEW_CHARS = 500
-
 function summarizeBrowserToolArgs(
   args: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -76,14 +74,18 @@ function summarizeBrowserToolArgs(
   return summary
 }
 
-function previewText(text: string): string {
-  if (text.length <= ERROR_PREVIEW_CHARS) return text
-  return `${text.slice(0, ERROR_PREVIEW_CHARS)}... (+${text.length - ERROR_PREVIEW_CHARS} chars)`
+function summarizeText(text: string): Record<string, unknown> {
+  return {
+    textLength: text.length,
+    lineCount: text.length ? text.split('\n').length : 0,
+  }
 }
 
-function resultTextPreview(content: unknown): string | undefined {
+function resultTextSummary(
+  content: unknown,
+): Record<string, unknown> | undefined {
   if (!Array.isArray(content)) return undefined
-  const text = content
+  const textBlocks = content
     .filter(
       (item): item is { type: 'text'; text: string } =>
         typeof item === 'object' &&
@@ -94,8 +96,19 @@ function resultTextPreview(content: unknown): string | undefined {
         typeof item.text === 'string',
     )
     .map((item) => item.text)
-    .join('\n')
-  return text ? previewText(text) : undefined
+  if (textBlocks.length === 0) {
+    return {
+      contentCount: content.length,
+      textBlockCount: 0,
+      textLength: 0,
+      lineCount: 0,
+    }
+  }
+  return {
+    contentCount: content.length,
+    textBlockCount: textBlocks.length,
+    ...summarizeText(textBlocks.join('\n')),
+  }
 }
 
 /** Registers the browser tool surface on an MCP server bound to one BrowserSession. */
@@ -149,8 +162,8 @@ export function registerBrowserTools(
             source,
           })
           const durationMs = duration()
-          const errorText = result.isError
-            ? resultTextPreview(result.content)
+          const errorSummary = result.isError
+            ? resultTextSummary(result.content)
             : undefined
           options.logger?.debug?.('MCP browser tool completed', {
             ...logBase,
@@ -162,7 +175,7 @@ export function registerBrowserTools(
             options.logger?.info?.('MCP browser tool returned error', {
               ...logBase,
               durationMs,
-              error: errorText,
+              errorSummary,
             })
           }
           return {

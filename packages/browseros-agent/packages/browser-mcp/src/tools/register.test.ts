@@ -123,10 +123,16 @@ describe('registerBrowserTools', () => {
         meta: expect.objectContaining({
           toolName: 'tabs',
           source: 'unit-test',
-          error: expect.stringContaining('tab creation failed'),
+          errorSummary: expect.objectContaining({
+            contentCount: expect.any(Number),
+            textBlockCount: expect.any(Number),
+            textLength: expect.any(Number),
+            lineCount: expect.any(Number),
+          }),
         }),
       },
     ])
+    expect(JSON.stringify(infoLogs)).not.toContain('tab creation failed')
     expect(debugLogs.map((log) => log.message)).toEqual([
       'MCP browser tool started',
       'MCP browser tool completed',

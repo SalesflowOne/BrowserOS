@@ -49,15 +49,8 @@ export interface AiSdkAgentConfig {
   outputFileAccess?: BrowserOutputFileAccess
 }
 
-const TOOL_ERROR_PREVIEW_CHARS = 500
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
-}
-
-function previewToolText(text: string): string {
-  if (text.length <= TOOL_ERROR_PREVIEW_CHARS) return text
-  return `${text.slice(0, TOOL_ERROR_PREVIEW_CHARS)}... (+${text.length - TOOL_ERROR_PREVIEW_CHARS} chars)`
 }
 
 function summarizeToolInput(input: unknown): Record<string, unknown> {
@@ -86,11 +79,13 @@ function toolResultIsError(result: unknown): boolean {
   return isRecord(result) && result.isError === true
 }
 
-function toolResultErrorPreview(result: unknown): string | undefined {
+function summarizeToolResultError(
+  result: unknown,
+): Record<string, unknown> | undefined {
   if (!isRecord(result) || !Array.isArray(result.content)) {
     return undefined
   }
-  const text = result.content
+  const textBlocks = result.content
     .filter(
       (item): item is { type: 'text'; text: string } =>
         typeof item === 'object' &&
@@ -101,8 +96,13 @@ function toolResultErrorPreview(result: unknown): string | undefined {
         typeof item.text === 'string',
     )
     .map((item) => item.text)
-    .join('\n')
-  return text ? previewToolText(text) : undefined
+  const text = textBlocks.join('\n')
+  return {
+    contentCount: result.content.length,
+    textBlockCount: textBlocks.length,
+    textLength: text.length,
+    lineCount: text.length ? text.split('\n').length : 0,
+  }
 }
 
 /** Builds filesystem tools for model-backed sessions, with scoped readback outside full workspace mode. */
@@ -253,22 +253,23 @@ export class AiSdkAgent {
               try {
                 const result = await originalExecute(...args)
                 const durationMs = Math.round(performance.now() - startTime)
+                const isError = toolResultIsError(result)
                 metrics.log('tool_executed', {
                   tool_name: name,
                   duration_ms: durationMs,
-                  success: true,
+                  success: !isError,
                   source: 'chat',
                 })
                 logger.debug('External MCP chat tool completed', {
                   ...logBase,
                   durationMs,
-                  isError: toolResultIsError(result),
+                  isError,
                 })
-                if (toolResultIsError(result)) {
+                if (isError) {
                   logger.info('External MCP chat tool returned error', {
                     ...logBase,
                     durationMs,
-                    error: toolResultErrorPreview(result),
+                    errorSummary: summarizeToolResultError(result),
                   })
                 }
                 return result

@@ -27,12 +27,6 @@ interface ToolExecuteOptions {
 }
 
 const BROWSER_TOOL_TIMEOUT_MS = 120_000
-const ERROR_PREVIEW_CHARS = 500
-
-function previewText(text: string): string {
-  if (text.length <= ERROR_PREVIEW_CHARS) return text
-  return `${text.slice(0, ERROR_PREVIEW_CHARS)}... (+${text.length - ERROR_PREVIEW_CHARS} chars)`
-}
 
 function summarizeBrowserToolParams(params: unknown): Record<string, unknown> {
   if (!params || typeof params !== 'object') {
@@ -57,14 +51,21 @@ function summarizeBrowserToolParams(params: unknown): Record<string, unknown> {
   return summary
 }
 
-function browserToolErrorPreview(content: ContentBlock[]): string | undefined {
-  const text = content
+function summarizeBrowserToolError(
+  content: ContentBlock[],
+): Record<string, unknown> {
+  const textBlocks = content
     .filter(
       (item): item is ContentBlock & { type: 'text' } => item.type === 'text',
     )
     .map((item) => item.text)
-    .join('\n')
-  return text ? previewText(text) : undefined
+  const text = textBlocks.join('\n')
+  return {
+    contentCount: content.length,
+    textBlockCount: textBlocks.length,
+    textLength: text.length,
+    lineCount: text.length ? text.split('\n').length : 0,
+  }
 }
 
 function withBrowserToolTimeout(signal?: AbortSignal): AbortSignal {
@@ -157,7 +158,7 @@ export function buildBrowserToolSet(
             logger.info('Browser chat tool returned error', {
               ...logBase,
               durationMs,
-              error: browserToolErrorPreview(result.content),
+              errorSummary: summarizeBrowserToolError(result.content),
             })
           }
           return { content: result.content, isError: result.isError ?? false }
