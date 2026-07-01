@@ -49,16 +49,20 @@ class BundledExtensionsManifestTest(unittest.TestCase):
         )
 
     def test_required_ids_cover_agent_bug_reporter_and_claw(self) -> None:
+        # Both products bundle all three until the chromium-side fix lands
+        # (see the required_extension_ids TODO in common/products.py).
+        expected = {
+            "adlpneommgkgeanpaekgoaolcpncohkf": "BrowserOS bug reporter",
+            "bflpfmnmnokmjhmgnolecpppdbdophmk": "BrowserOS agent",
+            CLAW_EXTENSION_ID: "BrowserClaw app",
+        }
         self.assertEqual(
             dict(get_product_descriptor("browseros").required_extension_ids),
-            {
-                "adlpneommgkgeanpaekgoaolcpncohkf": "BrowserOS bug reporter",
-                "bflpfmnmnokmjhmgnolecpppdbdophmk": "BrowserOS agent",
-            },
+            expected,
         )
         self.assertEqual(
             dict(get_product_descriptor("browserclaw").required_extension_ids),
-            {CLAW_EXTENSION_ID: "BrowserClaw app"},
+            expected,
         )
 
     def test_generated_json_maps_claw_id_to_crx(self) -> None:
@@ -110,7 +114,7 @@ class BundledExtensionsManifestTest(unittest.TestCase):
                 extensions, self._ctx("browserclaw")
             )
 
-    def test_browserclaw_selects_only_claw_extension(self) -> None:
+    def test_browserclaw_selects_all_required_extensions(self) -> None:
         extensions = [
             ExtensionInfo(
                 id="adlpneommgkgeanpaekgoaolcpncohkf",
@@ -133,7 +137,15 @@ class BundledExtensionsManifestTest(unittest.TestCase):
             extensions, self._ctx("browserclaw")
         )
 
-        self.assertEqual([ext.id for ext in selected], [CLAW_EXTENSION_ID])
+        # All three ship for browserclaw too while the packaging TODO stands.
+        self.assertEqual(
+            [ext.id for ext in selected],
+            [
+                "adlpneommgkgeanpaekgoaolcpncohkf",
+                "bflpfmnmnokmjhmgnolecpppdbdophmk",
+                CLAW_EXTENSION_ID,
+            ],
+        )
 
     def _ctx(self, product: str):
         return cast(
