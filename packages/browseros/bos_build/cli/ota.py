@@ -8,7 +8,8 @@ import typer
 
 from ..core.context import Context
 from ..core.env import EnvConfig
-from ..core.step import ValidationError
+from ..core.notify import slack_subscriber
+from ..core.runner import StepExecutionError, run as run_steps
 from ..core.sparkle import sparkle_sign_file
 from ..core.utils import log_info, log_error, log_success
 
@@ -43,16 +44,14 @@ def create_ota_context() -> Context:
 
 
 def execute_module(ctx: Context, module) -> None:
-    """Execute a single module with validation"""
+    """Run a single OTA step through the shared runner"""
     try:
-        module.validate(ctx)
-        module.execute(ctx)
-    except ValidationError as e:
-        log_error(f"Validation failed: {e}")
+        run_steps(ctx, [module], name="ota", subscribers=(slack_subscriber,))
+    except StepExecutionError as e:
+        log_error(str(e))
         raise typer.Exit(1)
-    except Exception as e:
-        log_error(f"Module failed: {e}")
-        raise typer.Exit(1)
+    except KeyboardInterrupt:
+        raise typer.Exit(130)
 
 
 @server_app.command("release")

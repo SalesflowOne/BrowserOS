@@ -9,20 +9,17 @@ from typing import Optional
 import typer
 
 # Import common modules
-from ..core.context import Context
 from ..core.config import load_config, validate_required_envs
 from ..core.pipeline import validate_pipeline, show_available_modules
 from ..core.resolver import resolve_config, resolve_pipeline
 from ..core.notify import (
-    notify_pipeline_start,
     notify_pipeline_end,
     notify_pipeline_error,
-    notify_module_start,
-    notify_module_completion,
     set_build_context,
+    slack_subscriber,
 )
+from ..core.runner import StepExecutionError, run as run_pipeline
 from ..core.step import (
-    ValidationError,
     all_steps,
     notify_step_names,
     phase_steps,
@@ -30,7 +27,6 @@ from ..core.step import (
 from ..core.utils import (
     log_error,
     log_info,
-    log_success,
     log_warning,
     IS_MACOS,
     IS_WINDOWS,
@@ -46,94 +42,6 @@ EXECUTION_ORDER = [
 ]
 
 NOTIFY_MODULES = notify_step_names()
-
-
-def execute_pipeline(
-    ctx: Context,
-    pipeline: list[str],
-    available_modules: dict,
-    pipeline_name: str = "build",
-) -> None:
-    """Execute a build pipeline by running modules sequentially.
-
-    Args:
-        ctx: Build context with paths and configuration
-        pipeline: List of module names to execute in order
-        available_modules: Dictionary mapping module names to module classes
-        pipeline_name: Name of pipeline for notifications (default: "build")
-
-    Raises:
-        typer.Exit: On module validation failure, execution failure, or interrupt
-
-    Design:
-        - Executes modules sequentially in pipeline order
-        - Validates each module before execution (fail fast)
-        - Tracks timing for each module and total pipeline
-        - Sends notifications at key lifecycle events
-        - Handles interrupts (Ctrl+C) gracefully with cleanup
-    """
-    start_time = time.time()
-    notify_pipeline_start(pipeline_name, pipeline)
-
-    try:
-        for module_name in pipeline:
-            log_info(f"\n{'='*70}")
-            log_info(f"🔧 Running module: {module_name}")
-            log_info(f"{'='*70}")
-
-            # Instantiate module
-            module_class = available_modules[module_name]
-            module = module_class()
-
-            # Notify module start and track timing (only for key modules)
-            if module_name in NOTIFY_MODULES:
-                notify_module_start(module_name)
-            module_start = time.time()
-
-            # Validate right before executing (fail fast)
-            try:
-                module.validate(ctx)
-            except ValidationError as e:
-                log_error(f"Validation failed for {module_name}: {e}")
-                notify_pipeline_error(
-                    pipeline_name, f"{module_name} validation failed: {e}"
-                )
-                raise typer.Exit(1)
-
-            # Execute module
-            try:
-                module.execute(ctx)
-                module_duration = time.time() - module_start
-                if module_name in NOTIFY_MODULES:
-                    notify_module_completion(module_name, module_duration)
-                log_success(f"Module {module_name} completed in {module_duration:.1f}s")
-            except Exception as e:
-                log_error(f"Module {module_name} failed: {e}")
-                notify_pipeline_error(pipeline_name, f"{module_name} failed: {e}")
-                raise typer.Exit(1)
-
-        # Pipeline completed successfully
-        duration = time.time() - start_time
-        mins = int(duration / 60)
-        secs = int(duration % 60)
-
-        log_info("\n" + "=" * 70)
-        log_success(f"✅ Pipeline completed successfully in {mins}m {secs}s")
-        log_info("=" * 70)
-
-        notify_pipeline_end(pipeline_name, duration)
-
-    except KeyboardInterrupt:
-        log_error("\n❌ Pipeline interrupted")
-        notify_pipeline_error(pipeline_name, "Interrupted by user")
-        raise typer.Exit(130)
-    except typer.Exit:
-        # Re-raise typer.Exit (from validation/execution failures)
-        raise
-    except Exception as e:
-        log_error(f"\n❌ Pipeline failed: {e}")
-        notify_pipeline_error(pipeline_name, str(e))
-        raise typer.Exit(1)
 
 
 def main(
@@ -378,19 +286,48 @@ def main(
 
     os_name = "macOS" if IS_MACOS() else "Windows" if IS_WINDOWS() else "Linux"
 
-    # Execute the pipeline once per architecture. Modules see a normal
-    # single-arch ctx; the runner is the only thing that knows about the
-    # multi-arch loop.
-    for i, arch_ctx in enumerate(arch_ctxs, start=1):
-        if len(arch_ctxs) > 1:
-            log_info("\n" + "#" * 70)
-            log_info(
-                f"# Architecture {i}/{len(arch_ctxs)}: {arch_ctx.architecture}"
-            )
-            log_info(f"# Output: {arch_ctx.out_dir}")
-            log_info("#" * 70)
+    # Execute the pipeline once per architecture. Steps see a normal
+    # single-arch ctx; only this loop knows about multi-arch. For
+    # multi-arch invocations one extra whole-run terminal notification
+    # fires in the finally, so an interrupted second arch still reports.
+    multi_arch = len(arch_ctxs) > 1
+    overall_status = "failed"
+    overall_error: Optional[str] = None
+    overall_start = time.time()
+    try:
+        for i, arch_ctx in enumerate(arch_ctxs, start=1):
+            if multi_arch:
+                log_info("\n" + "#" * 70)
+                log_info(
+                    f"# Architecture {i}/{len(arch_ctxs)}: {arch_ctx.architecture}"
+                )
+                log_info(f"# Output: {arch_ctx.out_dir}")
+                log_info("#" * 70)
 
-        set_build_context(os_name, arch_ctx.architecture)
-        execute_pipeline(
-            arch_ctx, pipeline, AVAILABLE_MODULES, pipeline_name="build"
-        )
+            set_build_context(os_name, arch_ctx.architecture)
+            run_name = f"build[{arch_ctx.architecture}]" if multi_arch else "build"
+            try:
+                run_pipeline(
+                    arch_ctx,
+                    pipeline,
+                    name=run_name,
+                    subscribers=(slack_subscriber,),
+                    available=AVAILABLE_MODULES,
+                )
+            except StepExecutionError as e:
+                overall_error = str(e)
+                raise typer.Exit(1)
+            except KeyboardInterrupt:
+                overall_status = "interrupted"
+                overall_error = "Interrupted by user"
+                raise typer.Exit(130)
+        overall_status = "success"
+    finally:
+        if multi_arch:
+            duration = time.time() - overall_start
+            if overall_status == "success":
+                notify_pipeline_end("build (all architectures)", duration)
+            else:
+                notify_pipeline_error(
+                    "build (all architectures)", overall_error or overall_status
+                )

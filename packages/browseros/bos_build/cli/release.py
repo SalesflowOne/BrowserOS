@@ -7,7 +7,9 @@ from typing import Optional
 import typer
 
 from ..core.context import Context
-from ..core.step import ValidationError
+from ..core.notify import slack_subscriber
+from ..core.paths import get_package_root
+from ..core.runner import StepExecutionError, run as run_steps
 from ..core.utils import log_info, log_error
 
 from ..steps.release import (
@@ -38,10 +40,15 @@ def create_release_context(
     version: str,
     repo: Optional[str] = None,
 ) -> Context:
-    """Create Context for release operations"""
+    """Create Context for release operations.
+
+    Anchored on the package root (not cwd) so release commands work from
+    any directory; chromium_src is unused by release steps.
+    """
+    root = get_package_root()
     ctx = Context(
-        root_dir=Path.cwd(),
-        chromium_src=Path.cwd(),  # Not used for release ops
+        root_dir=root,
+        chromium_src=root,
         architecture="",
         build_type="release",
     )
@@ -51,16 +58,14 @@ def create_release_context(
 
 
 def execute_module(ctx: Context, module) -> None:
-    """Execute a single module with validation"""
+    """Run a single release step through the shared runner"""
     try:
-        module.validate(ctx)
-        module.execute(ctx)
-    except ValidationError as e:
-        log_error(f"Validation failed: {e}")
+        run_steps(ctx, [module], name="release", subscribers=(slack_subscriber,))
+    except StepExecutionError as e:
+        log_error(str(e))
         raise typer.Exit(1)
-    except Exception as e:
-        log_error(f"Module failed: {e}")
-        raise typer.Exit(1)
+    except KeyboardInterrupt:
+        raise typer.Exit(130)
 
 
 @app.callback(invoke_without_command=True)

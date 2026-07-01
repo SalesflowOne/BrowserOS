@@ -41,12 +41,28 @@ class Notifier:
         self.slack_webhook_url = os.environ.get("SLACK_WEBHOOK_URL")
         self.enabled = bool(self.slack_webhook_url)
 
-    def notify(self, event: str, message: str, details: Optional[Dict[str, Any]] = None, color: str = "#36a64f") -> None:
-        """Send notification asynchronously (fire-and-forget)"""
+    def notify(
+        self,
+        event: str,
+        message: str,
+        details: Optional[Dict[str, Any]] = None,
+        color: str = "#36a64f",
+        wait: bool = False,
+    ) -> None:
+        """Send notification; fire-and-forget unless wait=True.
+
+        Terminal (end-of-run) notifications must pass wait=True: daemon
+        threads die with the process, and the final send historically
+        raced process exit — the cause of runs that never notified at
+        the end.
+        """
         if not self.enabled:
             return
 
-        # Fire and forget - run in background thread
+        if wait:
+            self._send_notification(event, message, details, color)
+            return
+
         thread = threading.Thread(
             target=self._send_notification,
             args=(event, message, details, color),
@@ -123,9 +139,10 @@ def notify_pipeline_end(pipeline_name: str, duration: float) -> None:
     secs = int(duration % 60)
     notifier.notify(
         "🏁 Pipeline Completed",
-        "Build pipeline completed successfully",
+        f"Pipeline '{pipeline_name}' completed successfully",
         {"Duration": f"{mins}m {secs}s"},
-        color=COLOR_GREEN
+        color=COLOR_GREEN,
+        wait=True,
     )
 
 
@@ -134,9 +151,10 @@ def notify_pipeline_error(pipeline_name: str, error: str) -> None:
     notifier = get_notifier()
     notifier.notify(
         "❌ Pipeline Failed",
-        "Build pipeline failed",
+        f"Pipeline '{pipeline_name}' failed",
         {"Error": error},
-        color=COLOR_RED
+        color=COLOR_RED,
+        wait=True,
     )
 
 
@@ -162,3 +180,27 @@ def notify_module_completion(module_name: str, duration: float) -> None:
         {"Duration": f"{duration:.1f}s"},
         color=COLOR_GREEN
     )
+
+
+def slack_subscriber(event) -> None:
+    """Route runner lifecycle events to Slack.
+
+    Attach to core.runner.run(subscribers=...). Step-level pings honor
+    each step's notify flag; run start/end always fire. Import is local
+    to avoid a notify → events cycle at module import time.
+    """
+    from .events import RunFinished, RunStarted, StepFinished, StepStarted
+
+    if isinstance(event, RunStarted):
+        notify_pipeline_start(event.run, list(event.steps))
+    elif isinstance(event, StepStarted):
+        if event.notify:
+            notify_module_start(event.step)
+    elif isinstance(event, StepFinished):
+        if event.notify and event.status == "success":
+            notify_module_completion(event.step, event.duration)
+    elif isinstance(event, RunFinished):
+        if event.status == "success":
+            notify_pipeline_end(event.run, event.duration)
+        else:
+            notify_pipeline_error(event.run, event.error or event.status)
