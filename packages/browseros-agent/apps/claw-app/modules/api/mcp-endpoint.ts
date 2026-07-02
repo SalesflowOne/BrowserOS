@@ -25,7 +25,7 @@ import {
 import { resolveApiBaseUrlFromSources } from './client.helpers'
 
 /** Resolves the MCP proxy base URL from BrowserOS prefs or trusted fallbacks. */
-async function resolveMcpBaseUrl(): Promise<string> {
+export async function resolveMcpBaseUrl(): Promise<string> {
   return resolveBrowserOSMcpBaseUrl(apiBaseUrlSourcesFromWindow())
 }
 

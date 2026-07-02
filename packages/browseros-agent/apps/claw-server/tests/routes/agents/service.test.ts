@@ -60,6 +60,21 @@ describe('agents service', () => {
     })
   })
 
+  test('create stores and installs the caller-provided public MCP base URL', async () => {
+    await withTempBrowserosDir(async () => {
+      const created = await agents.create({
+        ...makeInput({ name: 'Proxy Split' }),
+        publicMcpBaseUrl: 'http://127.0.0.1:9512',
+      })
+      expect(created.mcpUrl).toBe('http://127.0.0.1:9512/mcp/proxy-split')
+      const stored = await readJson(
+        `agents/${created.id}.json`,
+        storedAgentProfileSchema,
+      )
+      expect(stored.mcpUrl).toBe(created.mcpUrl)
+    })
+  })
+
   test('list returns the directory projection with derived fields', async () => {
     await withTempBrowserosDir(async () => {
       await agents.create(
@@ -82,6 +97,14 @@ describe('agents service', () => {
       expect(row.lastRunAt).toBe('Never run')
       expect(row.status).toBe('configured')
       expect(row.mcpUrl).toMatch(/\/mcp\/selective-agent$/)
+    })
+  })
+
+  test('list derives visible MCP URLs from the caller-provided public MCP base URL', async () => {
+    await withTempBrowserosDir(async () => {
+      await agents.create(makeInput({ name: 'Listed Proxy' }))
+      const rows = await agents.list('http://127.0.0.1:9512')
+      expect(rows[0]?.mcpUrl).toBe('http://127.0.0.1:9512/mcp/listed-proxy')
     })
   })
 
@@ -197,6 +220,20 @@ describe('agents service', () => {
       expect(result.mcpUrl).toMatch(/\/mcp\/rotate-[a-z0-9-]+$/)
       const detail = await agents.getDetail(created.id)
       expect(detail).not.toBeNull()
+    })
+  })
+
+  test('regenerateMcpUrl uses the caller-provided public MCP base URL', async () => {
+    await withTempBrowserosDir(async () => {
+      const created = await agents.create(makeInput({ name: 'Rotate Public' }))
+      const result = await agents.regenerateMcpUrl(
+        created.id,
+        'http://127.0.0.1:9512',
+      )
+      expect(result).not.toBeNull()
+      expect(result?.mcpUrl).toMatch(
+        /^http:\/\/127\.0\.0\.1:9512\/mcp\/rotate-public-[a-z0-9-]+$/,
+      )
     })
   })
 

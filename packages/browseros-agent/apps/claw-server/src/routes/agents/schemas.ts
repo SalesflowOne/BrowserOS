@@ -51,6 +51,30 @@ export const customAclRuleSchema = z.object({
 })
 export type CustomAclRule = z.infer<typeof customAclRuleSchema>
 
+function isLoopbackUrl(value: string, path: string): boolean {
+  try {
+    const url = new URL(value)
+    return (
+      url.protocol === 'http:' &&
+      url.hostname === '127.0.0.1' &&
+      url.port !== '' &&
+      url.pathname === path &&
+      url.search === '' &&
+      url.hash === ''
+    )
+  } catch {
+    return false
+  }
+}
+
+export const publicMcpBaseUrlSchema = z
+  .string()
+  .refine((value) => isLoopbackUrl(value, '/'), 'Must be a loopback origin')
+
+export const publicMcpUrlSchema = z
+  .string()
+  .refine((value) => isLoopbackUrl(value, '/mcp'), 'Must be a loopback MCP URL')
+
 /** Wire shape: POST / PATCH body, also GET /:id response. Mirrors UI's NewAgentValues. */
 export const newAgentValuesSchema = z.object({
   name: z.string().trim().min(1),
@@ -62,6 +86,19 @@ export const newAgentValuesSchema = z.object({
   customAclRules: z.array(customAclRuleSchema),
 })
 export type NewAgentValues = z.infer<typeof newAgentValuesSchema>
+
+export const agentMutationSchema = newAgentValuesSchema.extend({
+  publicMcpBaseUrl: publicMcpBaseUrlSchema.optional(),
+})
+export type AgentMutationValues = z.infer<typeof agentMutationSchema>
+
+export const agentListQuerySchema = z.object({
+  publicMcpBaseUrl: publicMcpBaseUrlSchema.optional(),
+})
+
+export const regenerateMcpUrlRequestSchema = z.object({
+  publicMcpBaseUrl: publicMcpBaseUrlSchema.optional(),
+})
 
 /** On-disk shape under <browserosDir>/claw-server/agents/<id>.json. */
 export const storedAgentProfileSchema = newAgentValuesSchema.extend({

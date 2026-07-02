@@ -64,6 +64,17 @@ describe('connectBrowserosToHarness', () => {
     expect(payload.spec.url).not.toContain('/cockpit')
   })
 
+  it('uses the caller-provided public MCP URL when server and proxy ports differ', async () => {
+    const stub = createStubMcpManager()
+    setMcpManagerForTesting(stub)
+    await connectBrowserosToHarness('Claude Code', 'http://127.0.0.1:9512/mcp')
+    const add = stub.calls.find((c) => c.method === 'add')
+    const payload = add?.payload as {
+      spec: { transport: string; url?: string }
+    }
+    expect(payload.spec.url).toBe('http://127.0.0.1:9512/mcp')
+  })
+
   it('short-circuits as a no-op for BrowserOS-internal harnesses (Hermes, OpenClaw)', async () => {
     const stub = createStubMcpManager()
     setMcpManagerForTesting(stub)

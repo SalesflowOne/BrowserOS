@@ -14,6 +14,7 @@
 import { createMutation, createQuery } from 'react-query-kit'
 import type { Harness } from '@/screens/new-agent/new-agent.schemas'
 import { api } from './client'
+import { resolveCanonicalMcpEndpointUrl } from './mcp-endpoint'
 import { parseResponse } from './parseResponse'
 
 export interface ConnectionState {
@@ -47,8 +48,10 @@ export const useConnectBrowseros = createMutation<
   ConnectVariables
 >({
   mutationFn: async ({ harness }) => {
+    const mcpUrl = await resolveCanonicalMcpEndpointUrl()
     const response = await api.connections[':harness'].connect.$post({
       param: { harness },
+      json: { mcpUrl },
     })
     return parseResponse<ConnectionState>(response)
   },

@@ -28,10 +28,16 @@ describe('/connections route chain', () => {
   })
 
   it('POST /connections/:harness/connect connects a single harness', async () => {
+    const stub = createStubMcpManager()
+    setMcpManagerForTesting(stub)
     const res = await app.fetch(
       new Request(
         `http://localhost/connections/${encodeURIComponent('Claude Code')}/connect`,
-        { method: 'POST' },
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ mcpUrl: 'http://127.0.0.1:9512/mcp' }),
+        },
       ),
     )
     expect(res.status).toBe(200)
@@ -41,6 +47,10 @@ describe('/connections route chain', () => {
     }
     expect(body.installed).toBe(true)
     expect(body.agentId).toBe('claude-code')
+    const add = stub.calls.find((c) => c.method === 'add')
+    expect((add?.payload as { spec: { url?: string } }).spec.url).toBe(
+      'http://127.0.0.1:9512/mcp',
+    )
   })
 
   it('POST /connections/:harness/disconnect disconnects a single harness', async () => {
@@ -63,7 +73,23 @@ describe('/connections route chain', () => {
     const res = await app.fetch(
       new Request('http://localhost/connections/NotAHarness/connect', {
         method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mcpUrl: 'http://127.0.0.1:9512/mcp' }),
       }),
+    )
+    expect(res.status).toBe(400)
+  })
+
+  it('rejects a non-loopback MCP URL', async () => {
+    const res = await app.fetch(
+      new Request(
+        `http://localhost/connections/${encodeURIComponent('Claude Code')}/connect`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ mcpUrl: 'https://example.com/mcp' }),
+        },
+      ),
     )
     expect(res.status).toBe(400)
   })

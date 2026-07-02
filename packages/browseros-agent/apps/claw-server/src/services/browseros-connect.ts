@@ -58,6 +58,7 @@ function canonicalMcpUrl(): string {
 
 export async function connectBrowserosToHarness(
   harness: Harness,
+  publicMcpUrl?: string,
 ): Promise<ConnectionState> {
   const agentId = HARNESS_TO_AGENT_ID[harness]
   if (agentId === null) {
@@ -69,7 +70,7 @@ export async function connectBrowserosToHarness(
     }
   }
   const mgr = getMcpManager()
-  const url = canonicalMcpUrl()
+  const url = publicMcpUrl ?? canonicalMcpUrl()
   try {
     await mgr.add({
       name: BROWSEROS_MCP_SERVER_NAME,

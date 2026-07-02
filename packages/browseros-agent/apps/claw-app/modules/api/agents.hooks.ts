@@ -5,6 +5,7 @@ import type {
   NewAgentValues,
 } from '@/screens/new-agent/new-agent.schemas'
 import { api } from './client'
+import { resolveMcpBaseUrl } from './mcp-endpoint'
 import { parseResponse } from './parseResponse'
 
 /**
@@ -102,7 +103,10 @@ export interface CreatedAgent {
 
 export const useCreateAgent = createMutation<CreatedAgent, NewAgentValues>({
   mutationFn: async (values) => {
-    const response = await api.agents.$post({ json: values })
+    const publicMcpBaseUrl = await resolveMcpBaseUrl()
+    const response = await api.agents.$post({
+      json: { ...values, publicMcpBaseUrl },
+    })
     return parseResponse<CreatedAgent>(response)
   },
 })
@@ -133,7 +137,8 @@ export interface AgentProfile {
 export const useAgentProfiles = createQuery<AgentProfile[]>({
   queryKey: ['agent-profiles'],
   fetcher: async () => {
-    const response = await api.agents.$get()
+    const publicMcpBaseUrl = await resolveMcpBaseUrl()
+    const response = await api.agents.$get({ query: { publicMcpBaseUrl } })
     return parseResponse<AgentProfile[]>(response)
   },
 })
@@ -166,8 +171,10 @@ export const useRegenerateMcpUrl = createMutation<
   RegenerateMcpVariables
 >({
   mutationFn: async ({ id }) => {
+    const publicMcpBaseUrl = await resolveMcpBaseUrl()
     const response = await api.agents[':id']['mcp-url:regenerate'].$post({
       param: { id },
+      json: { publicMcpBaseUrl },
     })
     return parseResponse<RegenerateMcpResult>(response)
   },
@@ -198,9 +205,10 @@ export const useUpdateAgent = createMutation<
   UpdateAgentVariables
 >({
   mutationFn: async ({ id, ...values }) => {
+    const publicMcpBaseUrl = await resolveMcpBaseUrl()
     const response = await api.agents[':id'].$patch({
       param: { id },
-      json: values,
+      json: { ...values, publicMcpBaseUrl },
     })
     return parseResponse<UpdateAgentVariables>(response)
   },

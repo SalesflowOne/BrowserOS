@@ -20,9 +20,10 @@ import {
   disconnectBrowserosFromHarness,
   listBrowserosConnections,
 } from '../../services/browseros-connect'
-import { harnessEnum } from '../agents/schemas'
+import { harnessEnum, publicMcpUrlSchema } from '../agents/schemas'
 
 const harnessParamSchema = z.object({ harness: harnessEnum })
+const connectBodySchema = z.object({ mcpUrl: publicMcpUrlSchema })
 
 export const connectionsRoute = new Hono()
   .get('/connections', async (c) => {
@@ -31,9 +32,11 @@ export const connectionsRoute = new Hono()
   .post(
     '/connections/:harness/connect',
     zValidator('param', harnessParamSchema),
+    zValidator('json', connectBodySchema),
     async (c) => {
       const { harness } = c.req.valid('param')
-      const state = await connectBrowserosToHarness(harness)
+      const { mcpUrl } = c.req.valid('json')
+      const state = await connectBrowserosToHarness(harness, mcpUrl)
       return c.json(state)
     },
   )
