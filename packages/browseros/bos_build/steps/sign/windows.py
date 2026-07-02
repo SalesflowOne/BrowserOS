@@ -7,7 +7,7 @@ from typing import List, Optional
 from ...core.step import Step, ValidationError, step
 from ...core.context import Context
 from ...lib.env import EnvConfig
-from ...core.server_binaries import (
+from ...products.server_binaries import (
     all_server_bundles,
     expected_windows_bundle_binary_paths,
     server_bundles_for_product,

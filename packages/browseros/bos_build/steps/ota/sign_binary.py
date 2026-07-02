@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from ...lib.env import EnvConfig
-from ...core.server_binaries import (
+from ...products.server_binaries import (
     expected_windows_binary_paths,
     macos_sign_spec_for,
 )

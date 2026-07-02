@@ -11,10 +11,10 @@ from .server_binaries import (
     macos_sign_spec_for,
     server_bundles_for_product,
 )
-from ..products.browserclaw.product import (
+from .browserclaw.product import (
     BROWSERCLAW_SERVER_BUNDLE as BROWSEROS_CLAW_SERVER_BUNDLE,
 )
-from ..products.browseros.product import BROWSEROS_SERVER_BUNDLE
+from .browseros.product import BROWSEROS_SERVER_BUNDLE
 
 SERVER_BUNDLES = all_server_bundles()
 MACOS_SERVER_BINARIES = {

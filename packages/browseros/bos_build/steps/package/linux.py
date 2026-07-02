@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 from typing import List, Optional
 
-from ...core.server_binaries import all_server_bundles, server_bundles_for_product
+from ...products.server_binaries import all_server_bundles, server_bundles_for_product
 from ...core.step import Step, ValidationError, step
 from ...core.context import Context
 from ...lib.utils import (

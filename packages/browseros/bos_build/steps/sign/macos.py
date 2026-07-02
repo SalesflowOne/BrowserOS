@@ -10,7 +10,7 @@ from typing import Optional, List, Dict, Tuple
 from ...core.step import Step, ValidationError, step
 from ...core.context import Context
 from ...lib.env import EnvConfig
-from ...core.server_binaries import (
+from ...products.server_binaries import (
     all_server_bundles,
     ServerBundle,
     macos_sign_spec_for,

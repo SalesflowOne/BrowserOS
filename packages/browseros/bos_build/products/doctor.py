@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from ..core.products import ProductDescriptor
-from ..core.server_binaries import server_bundles_for_product
+from .server_binaries import server_bundles_for_product
 
 # Every product's chromium overlay must carry its branding files.
 REQUIRED_OVERLAY_FILES = (

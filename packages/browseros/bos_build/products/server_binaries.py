@@ -40,7 +40,7 @@ class ServerBundle:
 
 def all_server_bundles() -> Tuple[ServerBundle, ...]:
     """Every product's server bundles, in product registry order."""
-    from ..products import SERVER_BUNDLES
+    from . import SERVER_BUNDLES
 
     return SERVER_BUNDLES
 

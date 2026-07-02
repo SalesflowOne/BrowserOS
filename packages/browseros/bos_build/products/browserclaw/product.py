@@ -4,7 +4,7 @@
 from pathlib import Path
 
 from ...core.products import ProductDescriptor
-from ...core.server_binaries import ServerBundle, SignSpec
+from ..server_binaries import ServerBundle, SignSpec
 
 BROWSERCLAW_PRODUCT = ProductDescriptor.define(
     id="browserclaw",

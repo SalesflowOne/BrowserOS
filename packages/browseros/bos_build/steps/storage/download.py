@@ -19,7 +19,7 @@ from ...lib.utils import (
     get_platform,
 )
 
-from .r2 import (
+from ...lib.r2 import (
     BOTO3_AVAILABLE,
     get_r2_client,
     download_file_from_r2,

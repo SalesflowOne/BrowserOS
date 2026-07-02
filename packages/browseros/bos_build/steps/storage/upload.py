@@ -18,7 +18,7 @@ from ...lib.utils import (
 )
 from ...lib.notify import get_notifier, COLOR_GREEN
 
-from .r2 import (
+from ...lib.r2 import (
     BOTO3_AVAILABLE,
     get_r2_client,
     get_release_json,

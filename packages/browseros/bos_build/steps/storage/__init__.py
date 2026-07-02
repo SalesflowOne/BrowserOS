@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Storage modules for R2 upload/download operations"""
 
-from .r2 import (
+from ...lib.r2 import (
     BOTO3_AVAILABLE,
     get_r2_client,
     upload_file_to_r2,
