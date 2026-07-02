@@ -104,6 +104,17 @@ class BuildPipelineTest(unittest.TestCase):
                     chrome_binary=None,
                 )
 
+    def test_dash_prefixed_branch_rejected_at_assembly(self):
+        with self.assertRaisesRegex(ValueError, "branch"):
+            build_pipeline(
+                version="1.0.0",
+                name="controller",
+                channel="alpha",
+                publish_manifest=False,
+                branch="--upload-pack=/bin/sh",
+                chrome_binary=None,
+            )
+
     def test_malformed_version_rejected_at_assembly(self):
         for version in ("1.0.0-beta", "abc", "", "1..2"):
             with self.assertRaisesRegex(ValueError, "version"):
@@ -240,7 +251,7 @@ class ExecuteTest(unittest.TestCase):
         self.assertEqual(
             commands,
             [
-                ("bun install", Path("/src/agent")),
+                ("bun ci", Path("/src/agent")),
                 ("bun run build:agent", Path("/src/agent")),
             ],
         )

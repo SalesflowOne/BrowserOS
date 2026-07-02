@@ -21,7 +21,13 @@ from ...lib.utils import log_info, log_success, log_warning
 from ..feeds.spec import CDN_BASE_URL, EXTENSIONS as FEED_EXTENSIONS
 from .crx import find_chrome_binary, pack_crx
 from .manifests import CHANNELS, ExtensionsFeedModule
-from .specs import ExtensionSpec, InRepoSource, select_specs, spec_by_name
+from .specs import (
+    ExtensionSpec,
+    ExternalRepoSource,
+    InRepoSource,
+    select_specs,
+    spec_by_name,
+)
 from .workspace import (
     resolve_source,
     run_command,
@@ -90,6 +96,15 @@ class ExtensionReleaseModule(Step):
         if not ctx.env.has_r2_config():
             raise ValidationError("R2 configuration not set")
 
+        # Public repos clone fine without it — warn, don't fail.
+        if not os.environ.get("GH_TOKEN") and any(
+            isinstance(spec.source, ExternalRepoSource) for spec in specs
+        ):
+            log_warning(
+                "GH_TOKEN is not set — cloning external extension repos "
+                "will fail if any of them is private"
+            )
+
         try:
             find_chrome_binary(self.chrome_binary)
         except RuntimeError as e:
@@ -119,9 +134,12 @@ class ExtensionReleaseModule(Step):
                 source_root / spec.manifest_path, self.version
             )
             if isinstance(spec.source, InRepoSource):
+                touched = spec.manifest_path
+                if spec.env:
+                    touched += f" and {spec.env_dir or '.'}/.env"
                 log_warning(
-                    f"stamped {spec.manifest_path} in the working tree — "
-                    "revert it if this was a local test run"
+                    f"stamped {touched} in the working tree — "
+                    "revert them if this was a local test run"
                 )
             if spec.env:
                 env_dir = (
@@ -172,6 +190,9 @@ def build_pipeline(
             f"Invalid version '{version}' — Chrome extension versions are "
             "1-4 dot-separated integers (e.g. 0.0.118)"
         )
+    # A '-'-prefixed value would be parsed as a git option, not a branch.
+    if branch and branch.startswith("-"):
+        raise ValueError(f"Invalid branch name '{branch}'")
     specs = select_specs(name)
     steps: List[Step] = [
         ExtensionReleaseModule(

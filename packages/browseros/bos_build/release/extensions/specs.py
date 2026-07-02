@@ -69,7 +69,9 @@ EXTENSION_SPECS: Tuple[ExtensionSpec, ...] = (
     ExtensionSpec(
         name="agent",
         source=InRepoSource(path="packages/browseros-agent"),
-        pre_build="bun install",
+        # bun ci (frozen lockfile) for in-repo builds: a release must not
+        # resolve fresh deps or mutate the working-tree lockfile.
+        pre_build="bun ci",
         build="bun run build:agent",
         dist_path="apps/app/dist/chrome-mv3",
         manifest_path="apps/app/package.json",
@@ -116,7 +118,7 @@ EXTENSION_SPECS: Tuple[ExtensionSpec, ...] = (
     ExtensionSpec(
         name="browserclaw",
         source=InRepoSource(path="packages/browseros-agent"),
-        pre_build="bun install",
+        pre_build="bun ci",
         build="bun run --filter @browseros/claw-app build",
         dist_path="apps/claw-app/dist/chrome-mv3",
         manifest_path="apps/claw-app/package.json",
