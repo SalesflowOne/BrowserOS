@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -69,6 +70,17 @@ func HeadRev(ctx context.Context, dir string) (string, error) {
 	return strings.TrimSpace(result.Stdout), nil
 }
 
+func RevParse(ctx context.Context, dir string, ref string) (string, error) {
+	result, err := Run(ctx, dir, nil, "rev-parse", ref)
+	if err != nil {
+		return "", err
+	}
+	if result.Code != 0 {
+		return "", errors.New(strings.TrimSpace(result.Stderr))
+	}
+	return strings.TrimSpace(result.Stdout), nil
+}
+
 func CurrentBranch(ctx context.Context, dir string) (string, error) {
 	result, err := Run(ctx, dir, nil, "branch", "--show-current")
 	if err != nil {
@@ -82,6 +94,17 @@ func CurrentBranch(ctx context.Context, dir string) (string, error) {
 
 func IsDirty(ctx context.Context, dir string) (bool, error) {
 	return IsDirtyPaths(ctx, dir, nil)
+}
+
+func IsTrackedDirty(ctx context.Context, dir string) (bool, error) {
+	result, err := Run(ctx, dir, nil, "status", "--porcelain", "--untracked-files=no")
+	if err != nil {
+		return false, err
+	}
+	if result.Code != 0 {
+		return false, errors.New(strings.TrimSpace(result.Stderr))
+	}
+	return strings.TrimSpace(result.Stdout) != "", nil
 }
 
 func IsDirtyPaths(ctx context.Context, dir string, pathspecs []string) (bool, error) {
@@ -150,6 +173,42 @@ func CommitPaths(ctx context.Context, dir string, message string, paths []string
 		return "", errors.New(strings.TrimSpace(result.Stderr))
 	}
 	return HeadRev(ctx, dir)
+}
+
+func CommitPathsWithBody(ctx context.Context, dir string, subject string, body string, paths []string) (string, error) {
+	args := []string{"commit", "-m", subject}
+	if body != "" {
+		args = append(args, "-m", body)
+	}
+	if len(paths) > 0 {
+		args = append(args, "--")
+		args = append(args, paths...)
+	}
+	result, err := Run(ctx, dir, nil, args...)
+	if err != nil {
+		return "", err
+	}
+	if result.Code != 0 {
+		return "", errors.New(strings.TrimSpace(result.Stderr))
+	}
+	return HeadRev(ctx, dir)
+}
+
+func CommitTrailer(ctx context.Context, dir string, ref string, key string) (string, error) {
+	result, err := Run(ctx, dir, nil, "log", "-1", "--format=%B", ref)
+	if err != nil {
+		return "", err
+	}
+	if result.Code != 0 {
+		return "", errors.New(strings.TrimSpace(result.Stderr))
+	}
+	prefix := key + ":"
+	for _, line := range strings.Split(result.Stdout, "\n") {
+		if strings.HasPrefix(line, prefix) {
+			return strings.TrimSpace(strings.TrimPrefix(line, prefix)), nil
+		}
+	}
+	return "", nil
 }
 
 func CommitExists(ctx context.Context, dir string, ref string) (bool, error) {
@@ -309,6 +368,21 @@ func RevListRange(ctx context.Context, dir string, start string, end string) ([]
 		return nil, errors.New(strings.TrimSpace(result.Stderr))
 	}
 	return splitLines(result.Stdout), nil
+}
+
+func RevListCount(ctx context.Context, dir string, start string, end string) (int, error) {
+	result, err := Run(ctx, dir, nil, "rev-list", "--count", fmt.Sprintf("%s..%s", start, end))
+	if err != nil {
+		return 0, err
+	}
+	if result.Code != 0 {
+		return 0, errors.New(strings.TrimSpace(result.Stderr))
+	}
+	count, err := strconv.Atoi(strings.TrimSpace(result.Stdout))
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 func ApplyPatch(ctx context.Context, dir string, patch []byte) (string, error) {
@@ -676,6 +750,50 @@ func PullRebase(ctx context.Context, dir string, remote string, branch string) e
 		}
 	}
 	result, err := Run(ctx, dir, nil, args...)
+	if err != nil {
+		return err
+	}
+	if result.Code != 0 {
+		return errors.New(strings.TrimSpace(result.Stderr))
+	}
+	return nil
+}
+
+func ResetHard(ctx context.Context, dir string) error {
+	result, err := Run(ctx, dir, nil, "reset", "--hard")
+	if err != nil {
+		return err
+	}
+	if result.Code != 0 {
+		return errors.New(strings.TrimSpace(result.Stderr))
+	}
+	return nil
+}
+
+func CheckoutDetached(ctx context.Context, dir string, ref string) error {
+	result, err := Run(ctx, dir, nil, "checkout", "--detach", ref)
+	if err != nil {
+		return err
+	}
+	if result.Code != 0 {
+		return errors.New(strings.TrimSpace(result.Stderr))
+	}
+	return nil
+}
+
+func CheckoutBranch(ctx context.Context, dir string, branch string) error {
+	result, err := Run(ctx, dir, nil, "checkout", branch)
+	if err != nil {
+		return err
+	}
+	if result.Code != 0 {
+		return errors.New(strings.TrimSpace(result.Stderr))
+	}
+	return nil
+}
+
+func ForceBranch(ctx context.Context, dir string, branch string, ref string) error {
+	result, err := Run(ctx, dir, nil, "branch", "-f", branch, ref)
 	if err != nil {
 		return err
 	}

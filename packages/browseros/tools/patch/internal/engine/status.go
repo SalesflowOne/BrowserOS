@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -13,19 +14,25 @@ import (
 )
 
 type WorkspaceStatus struct {
-	Workspace      workspace.Entry `json:"workspace"`
-	RepoHead       string          `json:"repo_head"`
-	BaseCommit     string          `json:"base_commit"`
-	LastApplyRev   string          `json:"last_apply_rev,omitempty"`
-	LastSyncRev    string          `json:"last_sync_rev,omitempty"`
-	LastExtractRev string          `json:"last_extract_rev,omitempty"`
-	PendingStash   string          `json:"pending_stash,omitempty"`
-	ActiveResolve  bool            `json:"active_resolve"`
-	NeedsApply     []string        `json:"needs_apply"`
-	NeedsUpdate    []string        `json:"needs_update"`
-	Orphaned       []string        `json:"orphaned"`
-	UpToDate       []string        `json:"up_to_date"`
-	SyncState      string          `json:"sync_state"`
+	Workspace              workspace.Entry `json:"workspace"`
+	RepoHead               string          `json:"repo_head"`
+	BaseCommit             string          `json:"base_commit"`
+	LastApplyRev           string          `json:"last_apply_rev,omitempty"`
+	LastSyncRev            string          `json:"last_sync_rev,omitempty"`
+	LastExtractRev         string          `json:"last_extract_rev,omitempty"`
+	LastRefreshRev         string          `json:"last_refresh_rev,omitempty"`
+	PatchesRev             string          `json:"patches_rev,omitempty"`
+	PatchesHead            string          `json:"patches_head"`
+	PatchesFreshness       string          `json:"patches_freshness"`
+	PatchesBehind          int             `json:"patches_behind,omitempty"`
+	BrowserOSTipPatchesRev string          `json:"browseros_tip_patches_rev,omitempty"`
+	PendingStash           string          `json:"pending_stash,omitempty"`
+	ActiveResolve          bool            `json:"active_resolve"`
+	NeedsApply             []string        `json:"needs_apply"`
+	NeedsUpdate            []string        `json:"needs_update"`
+	Orphaned               []string        `json:"orphaned"`
+	UpToDate               []string        `json:"up_to_date"`
+	SyncState              string          `json:"sync_state"`
 }
 
 // InSyncButUnreproducible flags the "patches agree but orphans exist" state:
@@ -104,9 +111,12 @@ func InspectWorkspace(ctx context.Context, opts InspectWorkspaceOptions) (*Works
 		LastApplyRev:   state.LastApplyRev,
 		LastSyncRev:    state.LastSyncRev,
 		LastExtractRev: state.LastExtractRev,
+		LastRefreshRev: state.LastRefreshRev,
+		PatchesHead:    head,
 		PendingStash:   state.PendingStash,
 		ActiveResolve:  resolve.Exists(opts.Workspace.Path),
 	}
+	status.PatchesRev, status.BrowserOSTipPatchesRev, status.PatchesFreshness, status.PatchesBehind = materializedFreshness(ctx, opts.Repo.Root, opts.Workspace.Path, state, head)
 	for _, delta := range patch.Compare(repoSet, localSet) {
 		switch delta.Kind {
 		case patch.NeedsApply:
@@ -121,6 +131,33 @@ func InspectWorkspace(ctx context.Context, opts InspectWorkspaceOptions) (*Works
 	}
 	status.SyncState = inferSyncState(status)
 	return status, nil
+}
+
+func materializedFreshness(ctx context.Context, repoRoot string, workspacePath string, state *workspace.State, repoHead string) (string, string, string, int) {
+	tipRev := ""
+	if exists, err := git.CommitExists(ctx, workspacePath, browserOSBranch); err == nil && exists {
+		if trailer, trailerErr := git.CommitTrailer(ctx, workspacePath, browserOSBranch, patchesRevTrailer); trailerErr == nil {
+			tipRev = trailer
+		}
+	}
+	rev := state.LastRefreshRev
+	if rev == "" {
+		rev = tipRev
+	}
+	switch {
+	case rev == "":
+		return "", tipRev, "unknown", 0
+	case state.LastRefreshRev != "" && tipRev != "" && state.LastRefreshRev != tipRev:
+		return rev, tipRev, "mismatch", 0
+	case rev == repoHead:
+		return rev, tipRev, "fresh", 0
+	default:
+		behind, err := git.RevListCount(ctx, repoRoot, rev, repoHead)
+		if err != nil || behind == 0 {
+			return rev, tipRev, "unknown", 0
+		}
+		return rev, tipRev, fmt.Sprintf("behind %d", behind), behind
+	}
 }
 
 func inferSyncState(status *WorkspaceStatus) string {
