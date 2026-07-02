@@ -23,6 +23,7 @@ import { loadClawConfig } from './config'
 import { applyClawConfig, env } from './env'
 import { bootstrapBrowserosBrowser } from './lib/browser-bootstrap'
 import { setBrowserSession } from './lib/browser-session'
+import { getClawServerDir } from './lib/browseros-dir'
 import { logger } from './lib/logger'
 import { migrateMcpUrls } from './lib/migrate-mcp-urls'
 import { setLocalServerUrl } from './local-server-url'
@@ -37,6 +38,7 @@ async function start(): Promise<void> {
     process.exit(1)
   }
   applyClawConfig(config.value)
+  logger.setLogFile(getClawServerDir())
 
   const httpServer = Bun.serve({
     hostname: '127.0.0.1',
