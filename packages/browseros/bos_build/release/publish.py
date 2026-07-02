@@ -3,10 +3,10 @@
 
 from typing import List, Optional, Tuple
 
-from ...core.context import Context
-from ...core.step import Step, ValidationError
-from ...lib.utils import log_info, log_error, log_success, log_warning
-from ..storage import BOTO3_AVAILABLE, get_r2_client
+from ..core.context import Context
+from ..core.step import Step, ValidationError
+from ..lib.utils import log_info, log_error, log_success, log_warning
+from ..lib.r2 import BOTO3_AVAILABLE, get_r2_client
 from .common import (
     PLATFORMS,
     PLATFORM_DISPLAY_NAMES,

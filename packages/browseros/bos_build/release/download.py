@@ -8,9 +8,9 @@ from typing import Optional
 
 import requests
 
-from ...core.context import Context
-from ...core.step import Step, ValidationError
-from ...lib.utils import log_info, log_error
+from ..core.context import Context
+from ..core.step import Step, ValidationError
+from ..lib.utils import log_info, log_error
 from .common import (
     PLATFORMS,
     PLATFORM_DISPLAY_NAMES,

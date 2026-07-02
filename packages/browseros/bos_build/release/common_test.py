@@ -3,7 +3,7 @@
 
 import unittest
 
-from ...core.products import get_product_descriptor
+from ..core.products import get_product_descriptor
 from .common import generate_appcast_item, get_download_path_mapping
 
 ARTIFACT = {

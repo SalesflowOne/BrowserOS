@@ -12,7 +12,7 @@ from ..lib.paths import get_package_root
 from ..core.runner import StepExecutionError, run as run_steps
 from ..lib.utils import log_info, log_error
 
-from ..steps.release import (
+from ..release import (
     AVAILABLE_MODULES,
     ListModule,
     AppcastModule,

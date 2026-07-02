@@ -5,8 +5,8 @@ import unittest
 from types import SimpleNamespace
 from typing import cast
 
-from ...core.context import Context
-from ...core.products import get_product_descriptor
+from ..core.context import Context
+from ..core.products import get_product_descriptor
 from .publish import _release_source_key
 
 

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """List module - Display release artifacts from R2"""
 
-from ...core.context import Context
-from ...core.step import Step, ValidationError
-from ...lib.utils import log_info
-from ..storage import BOTO3_AVAILABLE
+from ..core.context import Context
+from ..core.step import Step, ValidationError
+from ..lib.utils import log_info
+from ..lib.r2 import BOTO3_AVAILABLE
 from .common import (
     PLATFORMS,
     PLATFORM_DISPLAY_NAMES,

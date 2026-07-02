@@ -5,9 +5,9 @@ import subprocess
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from ...lib.env import EnvConfig
-from ...core.products import ProductDescriptor, default_product_descriptor
-from ..storage import get_release_json, get_r2_client, BOTO3_AVAILABLE
+from ..lib.env import EnvConfig
+from ..core.products import ProductDescriptor, default_product_descriptor
+from ..lib.r2 import get_release_json, get_r2_client, BOTO3_AVAILABLE
 
 PLATFORMS = ["macos", "win", "linux"]
 PLATFORM_DISPLAY_NAMES = {"macos": "macOS", "win": "Windows", "linux": "Linux"}

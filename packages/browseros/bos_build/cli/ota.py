@@ -13,8 +13,8 @@ from ..core.runner import StepExecutionError, run as run_steps
 from ..lib.sparkle import sparkle_sign_file
 from ..lib.utils import log_info, log_error, log_success
 
-from ..steps.ota import ServerOTAModule
-from ..steps.ota.common import (
+from ..release.ota import ServerOTAModule
+from ..release.ota.common import (
     get_appcast_path,
     SERVER_PLATFORMS,
 )

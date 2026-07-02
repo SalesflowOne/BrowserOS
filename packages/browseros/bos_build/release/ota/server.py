@@ -31,8 +31,8 @@ from .sign_binary import (
     sign_server_bundle_macos,
     sign_server_bundle_windows,
 )
-from ..storage import get_r2_client, upload_file_to_r2, download_file_from_r2
-from ..storage.download import extract_artifact_zip
+from ...lib.r2 import get_r2_client, upload_file_to_r2, download_file_from_r2
+from ...steps.storage.download import extract_artifact_zip
 
 # R2 key pattern for server artifact zips
 ARTIFACT_R2_KEY = "artifacts/server/latest/browseros-server-resources-{target}.zip"
