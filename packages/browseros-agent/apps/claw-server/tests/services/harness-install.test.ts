@@ -149,17 +149,21 @@ describe('harness install service', () => {
           (c.payload as { name?: string; serverName?: string }).name ??
           (c.payload as { serverName?: string }).serverName,
       }))
-      // Reconcile installs the new slug FIRST so the harness has a
-      // working entry continuously, then unlinks the old slug.
-      expect(order[0]).toEqual({ method: 'add', name: 'renamed-profile' })
-      expect(order[2]).toEqual({ method: 'link', name: 'renamed-profile' })
+      const addIdx = order.findIndex(
+        (o) => o.method === 'add' && o.name === 'renamed-profile',
+      )
+      const linkIdx = order.findIndex(
+        (o) => o.method === 'link' && o.name === 'renamed-profile',
+      )
       const unlinkIdx = order.findIndex(
         (o) => o.method === 'unlink' && o.name === 'original-name',
       )
       const removeIdx = order.findIndex(
         (o) => o.method === 'remove' && o.name === 'original-name',
       )
-      expect(unlinkIdx).toBeGreaterThan(1)
+      expect(addIdx).toBeGreaterThanOrEqual(0)
+      expect(linkIdx).toBeGreaterThan(addIdx)
+      expect(unlinkIdx).toBeGreaterThan(linkIdx)
       expect(removeIdx).toBeGreaterThan(unlinkIdx)
     })
   })
@@ -233,8 +237,9 @@ describe('harness install service', () => {
         env.proxyPort = previousProxyPort
       }
       expect(stub.calls.map((c) => c.method)).toEqual([
-        'add',
         'listLinks',
+        'listServers',
+        'add',
         'unlink',
         'link',
       ])
@@ -245,6 +250,86 @@ describe('harness install service', () => {
           command: 'npx',
           args: ['mcp-remote', `http://127.0.0.1:9512/mcp/${created.slug}`],
         },
+      })
+      const link = stub.calls.find((c) => c.method === 'link')
+      expect(link?.payload).toMatchObject({
+        configPath: '/tmp/stub-claude-desktop.json',
+      })
+    })
+  })
+
+  test('installForAgent restores the previous managed link when replacement link fails', async () => {
+    await withTempBrowserosDir(async () => {
+      const stub = createStubMcpManager()
+      const previousSpec = {
+        transport: 'stdio' as const,
+        command: 'npx',
+        args: ['mcp-remote', 'http://127.0.0.1:9200/mcp/existing'],
+      }
+      stub.listLinks = async () => {
+        stub.calls.push({
+          method: 'listLinks',
+          payload: { serverNames: ['existing'] },
+        })
+        return [
+          {
+            serverName: 'existing',
+            agent: 'claude-desktop',
+            configPath: '/tmp/stub-claude-desktop.json',
+          },
+        ]
+      }
+      stub.listServers = async () => {
+        stub.calls.push({ method: 'listServers', payload: {} })
+        return [
+          {
+            name: 'existing',
+            spec: previousSpec,
+            addedAt: '2026-07-02T00:00:00.000Z',
+            links: {},
+          },
+        ]
+      }
+      let linkAttempts = 0
+      stub.link = async (opts) => {
+        stub.calls.push({ method: 'link', payload: opts })
+        linkAttempts++
+        if (linkAttempts === 1) throw new Error('write denied')
+        return {
+          serverName: opts.serverName,
+          agent: opts.agent,
+          configPath: opts.configPath ?? `/tmp/stub-${opts.agent}.json`,
+          created: true,
+        }
+      }
+      setMcpManagerForTesting(stub)
+
+      const outcome = await installForAgent({
+        slug: 'existing',
+        mcpUrl: 'http://127.0.0.1:9512/mcp/existing',
+        harness: 'Claude Desktop',
+      })
+
+      expect(outcome.installed).toBe(false)
+      expect(outcome.message).toContain('write denied')
+      const addCalls = stub.calls.filter((c) => c.method === 'add')
+      expect(addCalls).toHaveLength(2)
+      expect(addCalls[0]?.payload).toMatchObject({
+        name: 'existing',
+        spec: {
+          args: ['mcp-remote', 'http://127.0.0.1:9512/mcp/existing'],
+        },
+      })
+      expect(addCalls[1]?.payload).toMatchObject({
+        name: 'existing',
+        spec: previousSpec,
+      })
+      const linkCalls = stub.calls.filter((c) => c.method === 'link')
+      expect(linkCalls).toHaveLength(2)
+      expect(linkCalls[1]?.payload).toMatchObject({
+        serverName: 'existing',
+        agent: 'claude-desktop',
+        configPath: '/tmp/stub-claude-desktop.json',
       })
     })
   })

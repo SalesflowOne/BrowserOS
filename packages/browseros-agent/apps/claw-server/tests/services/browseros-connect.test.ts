@@ -102,13 +102,87 @@ describe('connectBrowserosToHarness', () => {
     setMcpManagerForTesting(stub)
     await connectBrowserosToHarness('Claude Code')
     expect(stub.calls.map((call) => call.method)).toEqual([
-      'add',
       'listLinks',
+      'listServers',
+      'add',
       'unlink',
       'link',
     ])
     const link = stub.calls.find((c) => c.method === 'link')
     expect((link?.payload as { agent: string }).agent).toBe('claude-code')
+    expect(link?.payload).toMatchObject({
+      configPath: '/tmp/stub-claude-code.json',
+      allowOverwrite: true,
+    })
+  })
+
+  it('restores the previous BrowserClaw link when replacement link fails', async () => {
+    env.proxyPort = 9512
+    const stub = createStubMcpManager()
+    const previousSpec = {
+      transport: 'http' as const,
+      url: 'http://127.0.0.1:9200/mcp',
+    }
+    stub.listLinks = async () => {
+      stub.calls.push({
+        method: 'listLinks',
+        payload: { serverNames: ['BrowserClaw'] },
+      })
+      return [
+        {
+          serverName: 'BrowserClaw',
+          agent: 'claude-code',
+          configPath: '/tmp/stub-claude-code.json',
+        },
+      ]
+    }
+    stub.listServers = async () => {
+      stub.calls.push({ method: 'listServers', payload: {} })
+      return [
+        {
+          name: 'BrowserClaw',
+          spec: previousSpec,
+          addedAt: '2026-07-02T00:00:00.000Z',
+          links: {},
+        },
+      ]
+    }
+    let linkAttempts = 0
+    stub.link = async (opts) => {
+      stub.calls.push({ method: 'link', payload: opts })
+      linkAttempts++
+      if (linkAttempts === 1) throw new Error('write denied')
+      return {
+        serverName: opts.serverName,
+        agent: opts.agent,
+        configPath: opts.configPath ?? `/tmp/stub-${opts.agent}.json`,
+        created: true,
+      }
+    }
+    setMcpManagerForTesting(stub)
+
+    const result = await connectBrowserosToHarness('Claude Code')
+
+    expect(result.installed).toBe(false)
+    expect(result.message).toContain('write denied')
+    const addCalls = stub.calls.filter((c) => c.method === 'add')
+    expect(addCalls).toHaveLength(2)
+    expect(addCalls[0]?.payload).toMatchObject({
+      name: 'BrowserClaw',
+      spec: { url: 'http://127.0.0.1:9512/mcp' },
+    })
+    expect(addCalls[1]?.payload).toMatchObject({
+      name: 'BrowserClaw',
+      spec: previousSpec,
+    })
+    const linkCalls = stub.calls.filter((c) => c.method === 'link')
+    expect(linkCalls).toHaveLength(2)
+    expect(linkCalls[1]?.payload).toMatchObject({
+      serverName: 'BrowserClaw',
+      agent: 'claude-code',
+      configPath: '/tmp/stub-claude-code.json',
+      allowOverwrite: true,
+    })
   })
 
   it('short-circuits as a no-op for BrowserOS-internal harnesses (Hermes, OpenClaw)', async () => {

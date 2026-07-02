@@ -35,7 +35,7 @@ describe('ConnectorPreviewRail', () => {
     expect(html).not.toContain('Copy MCP URL')
   })
 
-  it('does not expose the server-created MCP URL before pref-aware resolution completes', () => {
+  it('uses the server-created MCP URL after creation succeeds', () => {
     const html = render({
       id: 'agent-1',
       name: 'Demo connector',
@@ -49,7 +49,7 @@ describe('ConnectorPreviewRail', () => {
       },
     })
 
-    expect(html).not.toContain('http://127.0.0.1:9512/mcp/demo-connector')
-    expect(html).not.toContain('Copy MCP URL')
+    expect(html).toContain('http://127.0.0.1:9512/mcp/demo-connector')
+    expect(html).toContain('Copy MCP URL')
   })
 })
