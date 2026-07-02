@@ -30,6 +30,7 @@ import { logger } from '../lib/logger'
 import { createOpenRouterCompatibleFetch } from '../lib/openrouter-fetch'
 import { ensureWorkspaceInstructionFile } from './acp-instructions/ensureInstructionFile'
 import { ACP_PROVIDER_TYPES, isAcpProvider } from './acp-providers'
+import { ensureWorkspaceSkills } from './acp-skills/ensureWorkspaceSkills'
 import type { BuildSystemPromptOptions } from './prompt'
 import type { ResolvedAgentConfig } from './types'
 
@@ -51,6 +52,17 @@ export function setEnsureWorkspaceInstructionFileForTesting(
   fn: EnsureWorkspaceInstructionFile | null,
 ): void {
   ensureWorkspaceInstructionFileForTesting = fn
+}
+
+export type EnsureWorkspaceSkills = typeof ensureWorkspaceSkills
+
+let ensureWorkspaceSkillsForTesting: EnsureWorkspaceSkills | null = null
+
+/** Overrides workspace skill materialisation in tests. */
+export function setEnsureWorkspaceSkillsForTesting(
+  fn: EnsureWorkspaceSkills | null,
+): void {
+  ensureWorkspaceSkillsForTesting = fn
 }
 
 /**
@@ -144,6 +156,31 @@ async function createAcpLanguageModel(
     ...('filename' in ensureResult ? { filename: ensureResult.filename } : {}),
     ...(ensureResult.action === 'failed'
       ? { error: ensureResult.error.message }
+      : {}),
+  })
+
+  // Install the built-in BrowserOS skill into the workspace's
+  // project-scoped agent skills dir so Codex / Claude Code auto-prefer
+  // the mcp__browseros.* tools on browser tasks without user coaching.
+  // Failure is logged, not thrown — a bad skill install still leaves
+  // AGENTS.md and the MCP wiring in place; the model just falls back
+  // to needing explicit "use browseros" nudges.
+  const ensureSkills = ensureWorkspaceSkillsForTesting ?? ensureWorkspaceSkills
+  const skillsResult = await ensureSkills({
+    workspacePath,
+    providerType: config.provider,
+    isNewConversation: config.isNewConversation ?? false,
+  })
+  logger.info('ACP workspace skills lifecycle', {
+    conversationId: config.conversationId,
+    providerType: config.provider,
+    workspacePath,
+    action: skillsResult.action,
+    ...('skillPath' in skillsResult
+      ? { skillPath: skillsResult.skillPath }
+      : {}),
+    ...(skillsResult.action === 'failed'
+      ? { error: skillsResult.error.message }
       : {}),
   })
 

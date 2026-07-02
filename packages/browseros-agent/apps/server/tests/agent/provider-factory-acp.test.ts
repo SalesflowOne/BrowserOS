@@ -38,10 +38,19 @@ const fakeProvider = {
 const mkdirCalls: Array<{ path: string; opts: { recursive?: boolean } }> = []
 let lastInstructionArgs: Record<string, unknown> | null = null
 
+const realFsPromises = await import('node:fs/promises')
 mock.module('node:fs/promises', () => ({
+  ...realFsPromises,
+  // Only intercept mkdir so the workspace-materialisation helper's
+  // side effect gets tracked without actually creating dirs on disk.
+  // Every other export (readFile, writeFile, symlink, …) needs to
+  // pass through so downstream modules — including
+  // agent-skills-manager and the browseros SKILL bundle source
+  // materialiser — can import from node:fs/promises as normal.
   mkdir: async (path: string, opts: { recursive?: boolean }) => {
     mkdirCalls.push({ path, opts })
   },
+  default: undefined,
 }))
 
 mock.module('../../src/lib/browseros-dir', () => ({
@@ -56,10 +65,15 @@ mock.module('../../src/lib/agents/acpx-provider/buildAcpxProvider', () => ({
 }))
 
 const mod = await import('../../src/agent/provider-factory')
-const { createLanguageModel, setEnsureWorkspaceInstructionFileForTesting } = mod
+const {
+  createLanguageModel,
+  setEnsureWorkspaceInstructionFileForTesting,
+  setEnsureWorkspaceSkillsForTesting,
+} = mod
 
 afterAll(() => {
   setEnsureWorkspaceInstructionFileForTesting(null)
+  setEnsureWorkspaceSkillsForTesting(null)
   mock.restore()
 })
 
@@ -71,6 +85,8 @@ function baseConfig(): Record<string, unknown> {
   }
 }
 
+let lastSkillsArgs: Record<string, unknown> | null = null
+
 beforeEach(() => {
   lastBuildArgs = null
   closeCalls = 0
@@ -81,9 +97,17 @@ beforeEach(() => {
   omitRuntimeSetMode = false
   mkdirCalls.length = 0
   lastInstructionArgs = null
+  lastSkillsArgs = null
   setEnsureWorkspaceInstructionFileForTesting(async (opts) => {
     lastInstructionArgs = opts as unknown as Record<string, unknown>
     return { action: 'skipped-not-new-conversation' }
+  })
+  setEnsureWorkspaceSkillsForTesting(async (opts) => {
+    lastSkillsArgs = opts as unknown as Record<string, unknown>
+    return {
+      action: 'installed',
+      skillPath: `${opts.workspacePath}/.codex/skills/browseros/SKILL.md`,
+    }
   })
 })
 
@@ -105,6 +129,18 @@ describe('createLanguageModel — ACP providers', () => {
   it('routes codex to buildAcpxProvider with agentId=codex', async () => {
     await createLanguageModel({ ...baseConfig(), provider: 'codex' } as never)
     expect(lastBuildArgs?.agentId).toBe('codex')
+  })
+
+  it('materialises the workspace SKILL bundle for ACP providers before spawning', async () => {
+    await createLanguageModel({ ...baseConfig(), provider: 'codex' } as never)
+    // The skills helper receives the same workspace path the adapter
+    // will be spawned in, plus the provider type and isNewConversation
+    // flag threaded from the request. Once this runs, Codex's CWD has
+    // .codex/skills/browseros/SKILL.md in it and auto-activates on
+    // browser-flavoured turns.
+    expect(lastSkillsArgs?.workspacePath).toBe(lastBuildArgs?.workspacePath)
+    expect(lastSkillsArgs?.providerType).toBe('codex')
+    expect(lastSkillsArgs).toHaveProperty('isNewConversation')
   })
 
   it('lets an explicit acpAgentId override the built-in default', async () => {

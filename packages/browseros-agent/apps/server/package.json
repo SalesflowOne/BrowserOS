@@ -83,6 +83,7 @@
     "acpx": "^0.10.0",
     "acpx-ai-provider": "^0.0.6",
     "agent-mcp-manager": "^0.0.3",
+    "agent-skills-manager": "^0.0.1",
     "ai": "^6.0.208",
     "commander": "^14.0.3",
     "core-js": "3.45.1",
