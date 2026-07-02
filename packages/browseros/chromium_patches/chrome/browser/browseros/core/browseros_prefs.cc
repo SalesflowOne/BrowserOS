@@ -1,6 +1,6 @@
 diff --git a/chrome/browser/browseros/core/browseros_prefs.cc b/chrome/browser/browseros/core/browseros_prefs.cc
 new file mode 100644
-index 0000000000000..c47c0fad94dda
+index 0000000000000..6bc685afcc530
 --- /dev/null
 +++ b/chrome/browser/browseros/core/browseros_prefs.cc
 @@ -0,0 +1,106 @@
@@ -20,20 +20,20 @@ index 0000000000000..c47c0fad94dda
 +namespace browseros {
 +
 +void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
-+  // Toolbar visibility prefs
-+  registry->RegisterBooleanPref(prefs::kShowLLMChat, true);
-+  registry->RegisterBooleanPref(prefs::kShowAssistant, true);
-+  registry->RegisterBooleanPref(prefs::kShowToolbarLabels, true);
++  const bool show_toolbar_controls_by_default = !IsBrowserClawProduct();
 +
-+  // Vertical tabs pref
++  registry->RegisterBooleanPref(prefs::kShowLLMChat,
++                                show_toolbar_controls_by_default);
++  registry->RegisterBooleanPref(prefs::kShowAssistant,
++                                show_toolbar_controls_by_default);
++  registry->RegisterBooleanPref(prefs::kShowToolbarLabels,
++                                show_toolbar_controls_by_default);
 +  registry->RegisterBooleanPref(prefs::kVerticalTabsEnabled, true);
 +
-+  // AI Provider prefs
 +  registry->RegisterStringPref(prefs::kProviders, "");
 +  registry->RegisterStringPref(prefs::kCustomProviders, "[]");
 +  registry->RegisterStringPref(prefs::kDefaultProviderId, "");
 +
-+  // NTP focus pref
 +  registry->RegisterBooleanPref(prefs::kNtpFocusContent, false);
 +  registry->RegisterBooleanPref(prefs::kOnboardingCompleted, false);
 +}
@@ -96,7 +96,7 @@ index 0000000000000..c47c0fad94dda
 +bool ShouldShowToolbarAction(actions::ActionId id, PrefService* pref_service) {
 +  const char* pref_key = GetVisibilityPrefForAction(id);
 +  if (!pref_key) {
-+    return true;  // No pref means always show
++    return true;
 +  }
 +  return pref_service->GetBoolean(pref_key);
 +}
