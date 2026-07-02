@@ -233,11 +233,27 @@ def required_env(step_names: List[str]) -> List[str]:
     return seen
 
 
-def load_profile(path: Path) -> Switches:
-    """Load a flat profile file into Switches.
+@dataclass(frozen=True)
+class Profile:
+    """Parsed profile file: saved switches, or an explicit modules pipeline."""
 
-    A profile is saved CLI switches, nothing else — no module lists,
-    no inheritance. Unknown keys are rejected so typos fail loudly.
+    switches: Switches
+    modules: Optional[Tuple[str, ...]] = None
+    build_type: Optional[str] = None
+
+
+# Planner-owned keys: meaningless once modules: enumerates the pipeline.
+_PLANNER_KEYS = ("preset", "clean", "provision", "download", "sign", "upload", "skip")
+
+
+def load_profile(path: Path) -> Profile:
+    """Load a profile file.
+
+    The default shape is saved CLI switches — no module lists, no
+    inheritance. `modules:` is the explicit enumerated-pipeline opt-in
+    ("you own this list now"): it replaces the planner, so every
+    planner-owned key is rejected beside it and only product/arch/
+    build_type remain. Unknown keys are rejected so typos fail loudly.
     """
     with open(path) as f:
         data = yaml.safe_load(f) or {}
@@ -245,7 +261,7 @@ def load_profile(path: Path) -> Switches:
     if not isinstance(data, dict):
         raise ValueError(f"Profile {path} must be a flat mapping")
 
-    known = {"preset", "product", "arch", "clean", "provision", "download", "sign", "upload"}
+    known = {"product", "arch", "modules", "build_type", *_PLANNER_KEYS}
     unknown = set(data) - known
     if unknown:
         raise ValueError(
@@ -253,25 +269,70 @@ def load_profile(path: Path) -> Switches:
             f"Valid: {', '.join(sorted(known))}"
         )
 
-    arch = data.get("arch")
-    architectures: Tuple[str, ...]
-    if arch is None:
-        architectures = ()
-    elif isinstance(arch, list):
-        architectures = tuple(arch)
-    else:
-        architectures = (arch,)
+    if "modules" in data:
+        return _load_modules_profile(path, data)
 
-    return Switches(
-        preset=data.get("preset", "release"),
-        product=data.get("product", "browseros"),
-        architectures=architectures,
-        clean=data.get("clean"),
-        provision=data.get("provision"),
-        download=data.get("download"),
-        sign=data.get("sign"),
-        upload=data.get("upload"),
+    if "build_type" in data:
+        raise ValueError(
+            f"Profile key 'build_type' in {path} requires 'modules:' — "
+            "the preset owns build type otherwise"
+        )
+
+    return Profile(
+        switches=Switches(
+            preset=data.get("preset", "release"),
+            product=data.get("product", "browseros"),
+            architectures=_as_tuple(data.get("arch")),
+            clean=data.get("clean"),
+            provision=data.get("provision"),
+            download=data.get("download"),
+            sign=data.get("sign"),
+            upload=data.get("upload"),
+            skip=_as_tuple(data.get("skip")),
+        )
     )
+
+
+def _load_modules_profile(path: Path, data: Dict[str, Any]) -> Profile:
+    banned = [k for k in _PLANNER_KEYS if k in data]
+    if banned:
+        raise ValueError(
+            f"Profile keys {', '.join(banned)} in {path} do not combine with "
+            "'modules:' — a modules profile owns its pipeline"
+        )
+
+    modules = data["modules"]
+    if not isinstance(modules, list) or not modules:
+        raise ValueError(f"Profile key 'modules' in {path} must be a non-empty list")
+
+    if isinstance(data.get("arch"), list):
+        raise ValueError(
+            f"Profile key 'arch' in {path} must be a single value with "
+            "'modules:' — modules profiles are single-arch"
+        )
+
+    build_type = data.get("build_type")
+    if build_type is not None and build_type not in ("debug", "release"):
+        raise ValueError(
+            f"Invalid build_type '{build_type}' in {path}. Valid: debug, release"
+        )
+
+    return Profile(
+        switches=Switches(
+            product=data.get("product", "browseros"),
+            architectures=_as_tuple(data.get("arch")),
+        ),
+        modules=tuple(modules),
+        build_type=build_type,
+    )
+
+
+def _as_tuple(value: Any) -> Tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, list):
+        return tuple(value)
+    return (value,)
 
 
 def preflight(step_names: List[str], platform: Optional[str] = None, ctx=None) -> None:

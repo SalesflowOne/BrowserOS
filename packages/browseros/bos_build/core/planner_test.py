@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 from bos_build.core.planner import (
+    Profile,
     Switches,
     load_profile,
     plan,
@@ -352,7 +353,7 @@ class RequiredEnvTest(unittest.TestCase):
 
 
 class ProfileTest(unittest.TestCase):
-    def _load(self, text: str) -> Switches:
+    def _load(self, text: str) -> Profile:
         with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
             f.write(text)
             path = Path(f.name)
@@ -360,20 +361,75 @@ class ProfileTest(unittest.TestCase):
         return load_profile(path)
 
     def test_nightly_ci_profile_maps_to_switches(self):
-        sw = self._load(
+        prof = self._load(
             "preset: release\nclean: false\nprovision: none\nsign: false\nupload: false\n"
         )
         self.assertEqual(
-            plan(sw, "arm64", "macos"), plan(CI, "arm64", "macos")
+            plan(prof.switches, "arm64", "macos"), plan(CI, "arm64", "macos")
         )
 
     def test_arch_list(self):
-        sw = self._load("preset: release\narch: [x64, arm64]\n")
-        self.assertEqual(sw.architectures, ("x64", "arm64"))
+        prof = self._load("preset: release\narch: [x64, arm64]\n")
+        self.assertEqual(prof.switches.architectures, ("x64", "arm64"))
 
     def test_unknown_key_rejected(self):
         with self.assertRaisesRegex(ValueError, "Unknown profile keys"):
-            self._load("preset: release\nmodules: [clean]\n")
+            self._load("preset: release\nbogus: 1\n")
+
+    def test_skip_key_parses_list_and_scalar(self):
+        prof = self._load("preset: release\nskip: [upload, series_patches]\n")
+        self.assertEqual(prof.switches.skip, ("upload", "series_patches"))
+        self.assertEqual(self._load("skip: upload\n").switches.skip, ("upload",))
+
+    def test_flat_profile_has_no_modules(self):
+        self.assertIsNone(self._load("preset: release\n").modules)
+
+    def test_modules_profile_parses(self):
+        prof = self._load(
+            "modules: [clean, compile]\n"
+            "product: browserclaw\n"
+            "arch: arm64\n"
+            "build_type: release\n"
+        )
+        self.assertEqual(prof.modules, ("clean", "compile"))
+        self.assertEqual(prof.build_type, "release")
+        self.assertEqual(prof.switches.product, "browserclaw")
+        self.assertEqual(prof.switches.architectures, ("arm64",))
+
+    def test_modules_profile_defaults(self):
+        prof = self._load("modules: [compile]\n")
+        self.assertEqual(prof.modules, ("compile",))
+        self.assertIsNone(prof.build_type)
+        self.assertEqual(prof.switches.architectures, ())
+
+    def test_modules_rejects_planner_keys(self):
+        for key, value in (
+            ("preset", "release"),
+            ("clean", "false"),
+            ("provision", "none"),
+            ("download", "false"),
+            ("sign", "false"),
+            ("upload", "false"),
+            ("skip", "[upload]"),
+        ):
+            with self.assertRaisesRegex(ValueError, "do not combine", msg=key):
+                self._load(f"modules: [compile]\n{key}: {value}\n")
+
+    def test_build_type_requires_modules(self):
+        with self.assertRaisesRegex(ValueError, "requires 'modules:'"):
+            self._load("preset: release\nbuild_type: release\n")
+
+    def test_invalid_build_type_rejected(self):
+        with self.assertRaisesRegex(ValueError, "build_type"):
+            self._load("modules: [compile]\nbuild_type: fast\n")
+
+    def test_empty_modules_rejected(self):
+        with self.assertRaisesRegex(ValueError, "non-empty"):
+            self._load("modules: []\n")
+
+    def test_modules_arch_list_rejected(self):
+        with self.assertRaisesRegex(ValueError, "single-arch"):
+            self._load("modules: [compile]\narch: [x64, arm64]\n")
 
 
 
@@ -454,10 +510,12 @@ class DownloadSwitchTest(unittest.TestCase):
         shipped = (
             Path(__file__).resolve().parents[1] / "profiles" / "nightly-ci.yaml"
         )
-        sw = load_profile(shipped)
+        prof = load_profile(shipped)
+        # Shipped profiles stay switch-based; modules: is a local-only opt-in.
+        self.assertIsNone(prof.modules)
         for platform, arch in (("macos", "arm64"), ("windows", "x64"), ("linux", "x64")):
             self.assertEqual(
-                plan(sw, arch, platform),
+                plan(prof.switches, arch, platform),
                 plan(CI, arch, platform),
                 f"profile drift on {platform}/{arch}",
             )

@@ -12,7 +12,7 @@ import typer
 from ..core.context import Context
 from ..core.paths import get_package_root
 from ..core.pipeline import validate_pipeline, show_available_modules
-from ..core.planner import Switches, load_profile, plan, preflight
+from ..core.planner import Profile, Switches, load_profile, plan, preflight
 from ..core.resolver import resolve_config, resolve_pipeline
 from ..core.notify import (
     notify_pipeline_end,
@@ -202,9 +202,6 @@ def main(
     root_dir = get_package_root()
 
     if has_preset:
-        if build_type is not None:
-            log_error("--build-type is owned by the preset (release/debug); drop it")
-            raise typer.Exit(1)
         runs = _resolve_preset_runs(
             preset=preset,
             profile=profile,
@@ -215,6 +212,7 @@ def main(
             download=download,
             sign=sign,
             upload=upload,
+            build_type=build_type,
             chromium_src=chromium_src,
         )
     else:
@@ -343,14 +341,39 @@ def _resolve_preset_runs(
     download: Optional[bool],
     sign: Optional[bool],
     upload: Optional[bool],
+    build_type: Optional[str],
     chromium_src: Optional[Path],
 ) -> List[Tuple[Context, List[str]]]:
     """Resolve preset/profile + CLI overrides into per-arch (ctx, steps) runs.
 
-    Precedence: CLI > profile > preset defaults.
+    Precedence: CLI > profile > preset defaults. A profile carrying
+    modules: routes to the DIRECT-mode machinery instead of the planner.
     """
     try:
-        switches = load_profile(_resolve_profile_path(profile)) if profile else Switches()
+        prof = (
+            load_profile(_resolve_profile_path(profile))
+            if profile
+            else Profile(Switches())
+        )
+        if prof.modules is not None:
+            return _resolve_modules_profile_runs(
+                prof,
+                preset=preset,
+                product=product,
+                arch=arch,
+                clean=clean,
+                provision=provision,
+                download=download,
+                sign=sign,
+                upload=upload,
+                build_type=build_type,
+                chromium_src=chromium_src,
+            )
+        if build_type is not None:
+            raise ValueError(
+                "--build-type is owned by the preset (release/debug); drop it"
+            )
+        switches = prof.switches
         overrides = {}
         if preset is not None:
             overrides["preset"] = preset
@@ -395,6 +418,54 @@ def _resolve_preset_runs(
     except ValueError as e:
         log_error(str(e))
         raise typer.Exit(1)
+
+
+def _resolve_modules_profile_runs(
+    prof: Profile,
+    *,
+    preset: Optional[str],
+    product: Optional[str],
+    arch: Optional[str],
+    clean: Optional[bool],
+    provision: Optional[str],
+    download: Optional[bool],
+    sign: Optional[bool],
+    upload: Optional[bool],
+    build_type: Optional[str],
+    chromium_src: Optional[Path],
+) -> List[Tuple[Context, List[str]]]:
+    """Run a modules: profile through the DIRECT-mode machinery.
+
+    The profile owns its pipeline, so planner flags are rejected; only
+    --product/--arch/--build-type override the file (CLI > profile).
+    """
+    rejected = {
+        "--preset": preset,
+        "--clean/--no-clean": clean,
+        "--provision": provision,
+        "--download/--no-download": download,
+        "--sign/--no-sign": sign,
+        "--upload/--no-upload": upload,
+    }
+    given = sorted(flag for flag, value in rejected.items() if value is not None)
+    if given:
+        raise ValueError(
+            f"{', '.join(given)}: planner flags do not combine with a modules "
+            "profile — it owns its pipeline; edit the modules list instead"
+        )
+
+    modules = list(prof.modules or ())
+    profile_arch = (
+        prof.switches.architectures[0] if prof.switches.architectures else None
+    )
+    cli_args = {
+        "chromium_src": chromium_src,
+        "arch": arch or profile_arch,
+        "build_type": build_type or prof.build_type,
+        "product": product or prof.switches.product,
+    }
+    arch_ctxs = resolve_config(cli_args)
+    return [(ctx, modules) for ctx in arch_ctxs]
 
 
 def _resolve_profile_path(profile: Path) -> Path:
