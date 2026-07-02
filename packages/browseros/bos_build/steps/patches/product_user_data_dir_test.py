@@ -44,29 +44,29 @@ class ProductUserDataDirPatchTest(unittest.TestCase):
     def test_linux_profile_roots_are_product_specific(self) -> None:
         linux_paths = _patch("chrome/common/chrome_paths_linux.cc")
 
-        self.assertIn(
-            "+#elif BUILDFLAG(BROWSEROS_PRODUCT_BROWSERCLAW)", linux_paths
-        )
-        self.assertIn(
-            '+  std::string data_dir_basename = "browser-claw";', linux_paths
-        )
-        self.assertIn(
-            '+  std::string data_dir_basename = "browser-os";', linux_paths
+        self.assertRegex(
+            linux_paths,
+            re.compile(
+                r"\+#elif BUILDFLAG\(BROWSEROS_PRODUCT_BROWSERCLAW\)\n"
+                r'\+  std::string data_dir_basename = "browser-claw";\n'
+                r" #else\n"
+                r'-  std::string data_dir_basename = "chromium";\n'
+                r'\+  std::string data_dir_basename = "browser-os";'
+            ),
         )
 
     def test_windows_profile_roots_are_product_specific(self) -> None:
         install_modes = _patch("chrome/install_static/chromium_install_modes.h")
 
-        self.assertIn(
-            "+#if BUILDFLAG(BROWSEROS_PRODUCT_BROWSERCLAW)", install_modes
-        )
-        self.assertIn(
-            '+inline constexpr wchar_t kProductPathName[] = L"BrowserClaw";',
+        self.assertRegex(
             install_modes,
-        )
-        self.assertIn(
-            '+inline constexpr wchar_t kProductPathName[] = L"BrowserOS";',
-            install_modes,
+            re.compile(
+                r"\+#if BUILDFLAG\(BROWSEROS_PRODUCT_BROWSERCLAW\)\n"
+                r'\+inline constexpr wchar_t kProductPathName\[\] = L"BrowserClaw";\n'
+                r"\+#else\n"
+                r'\+inline constexpr wchar_t kProductPathName\[\] = L"BrowserOS";\n'
+                r"\+#endif"
+            ),
         )
 
 
