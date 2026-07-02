@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test'
+import { clearBrowserOSPortHealthCache } from './browseros-ports'
 import { API_URL_STORAGE_KEY } from './client.helpers'
 import {
   buildCanonicalMcpCliCommand,
@@ -10,6 +11,7 @@ import {
 
 const originalWindow = globalThis.window
 const originalChrome = globalThis.chrome
+const originalFetch = globalThis.fetch
 
 function installWindow(search: string, storage = new Map<string, string>()) {
   Object.defineProperty(globalThis, 'window', {
@@ -50,7 +52,21 @@ function installBrowserOSPrefs(values: Record<string, unknown>) {
   })
 }
 
+function installHealthyFetch() {
+  Object.defineProperty(globalThis, 'fetch', {
+    configurable: true,
+    value: async (input: Parameters<typeof fetch>[0]) => {
+      const url = input instanceof Request ? input.url : String(input)
+      if (url.endsWith('/system/health')) {
+        return Response.json({ status: 'ok' })
+      }
+      return new Response('{}', { status: 200 })
+    },
+  })
+}
+
 afterEach(() => {
+  clearBrowserOSPortHealthCache()
   Object.defineProperty(globalThis, 'window', {
     configurable: true,
     value: originalWindow,
@@ -58,6 +74,10 @@ afterEach(() => {
   Object.defineProperty(globalThis, 'chrome', {
     configurable: true,
     value: originalChrome,
+  })
+  Object.defineProperty(globalThis, 'fetch', {
+    configurable: true,
+    value: originalFetch,
   })
 })
 
@@ -79,6 +99,7 @@ describe('buildMcpEndpointUrl', () => {
   it('uses the BrowserOS proxy port pref when available', async () => {
     installWindow('')
     installBrowserOSPrefs({ 'browseros.server.proxy_port': 9512 })
+    installHealthyFetch()
 
     await expect(resolveMcpEndpointUrl('demo')).resolves.toBe(
       'http://127.0.0.1:9512/mcp/demo',
@@ -100,6 +121,7 @@ describe('buildCanonicalMcpEndpointUrl', () => {
   it('uses the BrowserOS proxy port pref when available', async () => {
     installWindow('')
     installBrowserOSPrefs({ 'browseros.server.proxy_port': 9512 })
+    installHealthyFetch()
 
     await expect(resolveCanonicalMcpEndpointUrl()).resolves.toBe(
       'http://127.0.0.1:9512/mcp',

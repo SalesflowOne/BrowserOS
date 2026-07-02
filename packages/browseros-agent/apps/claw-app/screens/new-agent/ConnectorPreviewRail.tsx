@@ -43,8 +43,8 @@ export function ConnectorPreviewRail({
   const [copied, setCopied] = useState(false)
   const [resolvedMcpUrl, setResolvedMcpUrl] = useState<string | null>(null)
 
-  const slug = toSlug(values.name || values.harness)
-  const mcpUrl = createdAgent?.mcpUrl ?? resolvedMcpUrl
+  const slug = createdAgent?.slug ?? toSlug(values.name || values.harness)
+  const mcpUrl = resolvedMcpUrl
   const cliCommand = createdAgent?.cliCommand ?? buildCliCommand(slug)
   const logins = describeLogins(values.loginMode, values.selectedSites.length)
   const verdicts = countApprovalVerdicts(values.approvals)
@@ -72,10 +72,6 @@ export function ConnectorPreviewRail({
 
   useEffect(() => {
     setCopied(false)
-    if (createdAgent?.mcpUrl) {
-      setResolvedMcpUrl(null)
-      return
-    }
     let active = true
     setResolvedMcpUrl(null)
     resolveMcpUrl(slug).then((url) => {
@@ -84,7 +80,7 @@ export function ConnectorPreviewRail({
     return () => {
       active = false
     }
-  }, [createdAgent?.mcpUrl, slug])
+  }, [slug])
 
   const copyMcpUrl = async () => {
     if (mcpUrl === null) return
