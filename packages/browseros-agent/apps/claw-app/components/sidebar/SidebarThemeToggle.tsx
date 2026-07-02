@@ -13,7 +13,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import type { Theme } from '@/lib/theme/theme-storage'
+import { normalizeTheme, type Theme } from '@/lib/theme/theme-storage'
 import { cn } from '@/lib/utils'
 
 interface ThemeOption {
@@ -80,7 +80,7 @@ export function SidebarThemeToggle({
       >
         <DropdownMenuRadioGroup
           value={theme}
-          onValueChange={(value) => setTheme(value as Theme)}
+          onValueChange={(value) => setTheme(normalizeTheme(value))}
         >
           {themeOptions.map(({ value, label, icon: Icon }) => (
             <DropdownMenuRadioItem key={value} value={value}>
