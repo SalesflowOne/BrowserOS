@@ -27,7 +27,11 @@ type ApplyOptions struct {
 	// RestorePendingStash carries a rebase-mode sync's intent through a
 	// conflict pause: continue/skip restore the parked stash on completion.
 	RestorePendingStash bool
-	Progress            Progress
+	// AutoAnnotate creates feature commits once the apply completes without
+	// conflicts. Like RestorePendingStash, the intent survives a conflict
+	// pause so continue/skip finish with the same annotation.
+	AutoAnnotate bool
+	Progress     Progress
 }
 
 type ApplyResult struct {
@@ -42,6 +46,7 @@ type ApplyResult struct {
 	StashConflict      bool                `json:"stash_conflict,omitempty"`
 	StashConflictFiles []string            `json:"stash_conflict_files,omitempty"`
 	Conflicts          []resolve.Operation `json:"conflicts,omitempty"`
+	Annotate           *AnnotateResult     `json:"annotate,omitempty"`
 }
 
 func Apply(ctx context.Context, opts ApplyOptions) (*ApplyResult, error) {
@@ -63,28 +68,46 @@ func Apply(ctx context.Context, opts ApplyOptions) (*ApplyResult, error) {
 		Orphaned:   orphaned,
 	}
 	if len(ops) == 0 {
-		if err := markApplyComplete(opts.Workspace.Path, opts.Repo.BaseCommit, repoRev); err != nil {
-			return nil, err
-		}
-		if err := clearResolveState(opts.Workspace.Path); err != nil {
+		if err := finishApply(ctx, opts, repoRev, result); err != nil {
 			return nil, err
 		}
 		return result, nil
 	}
-	next, err := applyOperationRange(ctx, opts.Workspace, opts.Repo, ops, 0, nil, nil, opts.RestorePendingStash, result, opts.Progress)
+	next, err := applyOperationRange(ctx, opts.Workspace, opts.Repo, ops, 0, nil, nil, opts.RestorePendingStash, opts.AutoAnnotate, result, opts.Progress)
 	if err != nil {
 		return nil, err
 	}
 	if next < len(ops) {
 		return result, nil
 	}
-	if err := markApplyComplete(opts.Workspace.Path, opts.Repo.BaseCommit, repoRev); err != nil {
-		return nil, err
-	}
-	if err := clearResolveState(opts.Workspace.Path); err != nil {
+	if err := finishApply(ctx, opts, repoRev, result); err != nil {
 		return nil, err
 	}
 	return result, nil
+}
+
+// finishApply records completion state and, when requested, turns the applied
+// changes into feature commits in the same run.
+func finishApply(ctx context.Context, opts ApplyOptions, repoRev string, result *ApplyResult) error {
+	if err := markApplyComplete(opts.Workspace.Path, opts.Repo.BaseCommit, repoRev); err != nil {
+		return err
+	}
+	if err := clearResolveState(opts.Workspace.Path); err != nil {
+		return err
+	}
+	if !opts.AutoAnnotate {
+		return nil
+	}
+	annotateResult, err := Annotate(ctx, AnnotateOptions{
+		Workspace: opts.Workspace,
+		Repo:      opts.Repo,
+		Progress:  opts.Progress,
+	})
+	if err != nil {
+		return fmt.Errorf("patches applied, but annotate failed: %w", err)
+	}
+	result.Annotate = annotateResult
+	return nil
 }
 
 type ContinueOptions struct {
@@ -120,21 +143,13 @@ func Continue(ctx context.Context, opts ContinueOptions) (*ApplyResult, error) {
 		Conflicts:  nil,
 	}
 	reportProgress(opts.Progress, "Continuing patch resolution")
-	next, err := applyOperationRange(ctx, ws, repoInfo, state.Operations, state.Current+1, state.Resolved, state.Skipped, state.RestorePendingStash, result, opts.Progress)
+	next, err := applyOperationRange(ctx, ws, repoInfo, state.Operations, state.Current+1, state.Resolved, state.Skipped, state.RestorePendingStash, state.AutoAnnotate, result, opts.Progress)
 	if err != nil {
 		return nil, err
 	}
 	if next >= len(state.Operations) && len(result.Conflicts) == 0 {
-		if err := markApplyComplete(ws.Path, state.BaseCommit, state.RepoRev); err != nil {
+		if err := finishResolvedRun(ctx, ws, repoInfo, state, result, opts.Progress); err != nil {
 			return nil, err
-		}
-		if err := resolve.Delete(ws.Path); err != nil {
-			return nil, err
-		}
-		if state.RestorePendingStash {
-			if err := restorePendingStash(ctx, ws.Path, result, opts.Progress); err != nil {
-				return nil, err
-			}
 		}
 	}
 	return result, nil
@@ -169,24 +184,47 @@ func Skip(ctx context.Context, opts SkipOptions) (*ApplyResult, error) {
 		Applied:    append([]string{}, state.Resolved...),
 	}
 	reportProgress(opts.Progress, "Skipping current conflict")
-	next, err := applyOperationRange(ctx, ws, repoInfo, state.Operations, state.Current+1, state.Resolved, state.Skipped, state.RestorePendingStash, result, opts.Progress)
+	next, err := applyOperationRange(ctx, ws, repoInfo, state.Operations, state.Current+1, state.Resolved, state.Skipped, state.RestorePendingStash, state.AutoAnnotate, result, opts.Progress)
 	if err != nil {
 		return nil, err
 	}
 	if next >= len(state.Operations) && len(result.Conflicts) == 0 {
-		if err := markApplyComplete(ws.Path, state.BaseCommit, state.RepoRev); err != nil {
+		if err := finishResolvedRun(ctx, ws, repoInfo, state, result, opts.Progress); err != nil {
 			return nil, err
-		}
-		if err := resolve.Delete(ws.Path); err != nil {
-			return nil, err
-		}
-		if state.RestorePendingStash {
-			if err := restorePendingStash(ctx, ws.Path, result, opts.Progress); err != nil {
-				return nil, err
-			}
 		}
 	}
 	return result, nil
+}
+
+// finishResolvedRun closes out a conflict loop that reached the last
+// operation: record completion, drop the resolve state, then honor the
+// original run's intent (feature commits for an apply, stash restore for a
+// rebase-mode sync). Annotate runs before the stash restore so restored local
+// changes are never swept into feature commits.
+func finishResolvedRun(ctx context.Context, ws workspace.Entry, repoInfo *repo.Info, state *resolve.State, result *ApplyResult, progress Progress) error {
+	if err := markApplyComplete(ws.Path, state.BaseCommit, state.RepoRev); err != nil {
+		return err
+	}
+	if err := resolve.Delete(ws.Path); err != nil {
+		return err
+	}
+	if state.AutoAnnotate {
+		annotateResult, err := Annotate(ctx, AnnotateOptions{
+			Workspace: ws,
+			Repo:      repoInfo,
+			Progress:  progress,
+		})
+		if err != nil {
+			return fmt.Errorf("patches applied, but annotate failed: %w", err)
+		}
+		result.Annotate = annotateResult
+	}
+	if state.RestorePendingStash {
+		if err := restorePendingStash(ctx, ws.Path, result, progress); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // restorePendingStash pops a stash a conflicted sync left behind once the
@@ -323,6 +361,7 @@ func applyOperationRange(
 	resolved []string,
 	skipped []string,
 	restorePending bool,
+	autoAnnotate bool,
 	result *ApplyResult,
 	progress Progress,
 ) (int, error) {
@@ -359,6 +398,7 @@ func applyOperationRange(
 					Resolved:            append([]string{}, resolved...),
 					Skipped:             append([]string{}, skipped...),
 					RestorePendingStash: restorePending,
+					AutoAnnotate:        autoAnnotate,
 				}
 				if err := resolve.Save(ws.Path, state); err != nil {
 					return idx, err

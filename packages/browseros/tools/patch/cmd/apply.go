@@ -13,11 +13,13 @@ func init() {
 	var reset bool
 	var changed string
 	var rangeEnd string
+	var noAnnotate bool
 	command := &cobra.Command{
 		Use:         "apply [checkout] [-- files...]",
 		Annotations: map[string]string{"group": "Core:"},
-		Short:       "Apply repo patches to a checkout",
+		Short:       "Apply repo patches to a checkout and create feature commits",
 		Example: `  browseros-patch apply ch1
+  browseros-patch apply ch1 --no-annotate
   browseros-patch apply ch1 -- chrome/browser/browser.cc
   browseros-patch apply --src /path/to/chromium/src`,
 		Args: cobra.ArbitraryArgs,
@@ -41,7 +43,10 @@ func init() {
 				ChangedRef: changed,
 				RangeEnd:   rangeEnd,
 				Filters:    filters,
-				Progress:   commandProgress(cmd),
+				// A filtered apply is surgical; a full annotate would sweep
+				// changes outside the requested files into feature commits.
+				AutoAnnotate: !noAnnotate && len(filters) == 0,
+				Progress:     commandProgress(cmd),
 			})
 			if err != nil {
 				return err
@@ -58,6 +63,10 @@ func init() {
 					}
 					fmt.Println(ui.Hint(`Run "browseros-patch continue" after fixing the current conflict.`))
 				}
+				if result.Annotate != nil {
+					fmt.Println()
+					printAnnotateResult(ws, result.Annotate)
+				}
 			}); err != nil {
 				return err
 			}
@@ -68,5 +77,6 @@ func init() {
 	command.Flags().BoolVar(&reset, "reset", false, "Reset patched files to BASE_COMMIT before applying")
 	command.Flags().StringVar(&changed, "changed", "", "Apply only patches changed in the given repo commit")
 	command.Flags().StringVar(&rangeEnd, "range-end", "", "End revision when using --changed as a range start")
+	command.Flags().BoolVar(&noAnnotate, "no-annotate", false, "Skip feature-commit annotation after apply (also skipped when -- files filters are given)")
 	rootCmd.AddCommand(command)
 }

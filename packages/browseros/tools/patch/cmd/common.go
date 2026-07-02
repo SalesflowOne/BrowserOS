@@ -82,7 +82,11 @@ Capture flow (turn checkout changes into patches):
 3. browseros-patch publish -m "chore: sync patches"   # commit + push chromium_patches
 
 Feature commit flow (turn checkout changes into feature commits):
-1. browseros-patch annotate ch1            # commit changed files for all bos_build/features.yaml features
+1. browseros-patch apply ch1 annotates automatically after a conflict-free apply; pass --no-annotate to skip.
+   A filtered apply (-- files...) never auto-annotates. continue/skip finish the annotation a paused apply asked for.
+2. browseros-patch annotate ch1            # standalone: commit changed files for all bos_build/features.yaml features
+3. annotate refuses to run while a conflict resolution is pending; finish continue/skip/abort first.
+4. Changed files no feature claims are reported as "unclaimed" and left uncommitted; claim them in bos_build/features.yaml.
 
 Pool refresh flow (rebuild browseros branch before leasing a checkout):
 1. browseros-patch status ch1 --json       # check patches_freshness

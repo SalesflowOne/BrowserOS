@@ -69,6 +69,13 @@ func printAnnotateResult(ws workspace.Entry, result *engine.AnnotateResult) {
 			fmt.Printf("  %-24s %s\n", skipped.Name, skipped.Reason)
 		}
 	}
+	if len(result.Unclaimed) > 0 {
+		fmt.Println(ui.Warning("Unclaimed changes (no feature owns these; left uncommitted):"))
+		for _, rel := range result.Unclaimed {
+			fmt.Printf("  %s\n", rel)
+		}
+		fmt.Println(ui.Hint(`Claim them in bos_build/features.yaml, then re-run; "browseros-patch feature lint" checks coverage.`))
+	}
 	if result.CommitsCreated == 0 {
 		fmt.Println(ui.Hint("No commits created."))
 	}

@@ -8,6 +8,7 @@ import (
 	"github.com/browseros-ai/BrowserOS/packages/browseros/tools/patch/internal/git"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/tools/patch/internal/patch"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/tools/patch/internal/repo"
+	"github.com/browseros-ai/BrowserOS/packages/browseros/tools/patch/internal/resolve"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/tools/patch/internal/workspace"
 	"gopkg.in/yaml.v3"
 )
@@ -26,6 +27,9 @@ type AnnotateResult struct {
 	FeaturesSkipped int                        `json:"features_skipped"`
 	Committed       []AnnotateCommittedFeature `json:"committed"`
 	Skipped         []AnnotateSkippedFeature   `json:"skipped"`
+	// Unclaimed lists changed files no feature owns; they stay uncommitted
+	// so the checkout remains dirty until features.yaml claims them.
+	Unclaimed []string `json:"unclaimed,omitempty"`
 }
 
 type AnnotateCommittedFeature struct {
@@ -48,8 +52,19 @@ type annotateFileSet struct {
 }
 
 // Annotate creates Chromium checkout commits grouped by the repo feature registry.
+// It refuses to run mid-conflict-resolution: committing a half-applied tree
+// would bake reject files and partial patches into feature history.
 func Annotate(ctx context.Context, opts AnnotateOptions) (*AnnotateResult, error) {
+	if resolve.Exists(opts.Workspace.Path) {
+		return nil, fmt.Errorf(
+			"conflict resolution is in progress for %s; finish it with \"browseros-patch continue\", \"browseros-patch skip\", or \"browseros-patch abort\" before annotating",
+			opts.Workspace.Name)
+	}
 	features, featuresFile, err := LoadFeatures(opts.Repo)
+	if err != nil {
+		return nil, err
+	}
+	ignore, err := patch.LoadIgnoreSet(opts.Repo.Root, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +86,7 @@ func Annotate(ctx context.Context, opts AnnotateOptions) (*AnnotateResult, error
 			result.FeaturesSkipped++
 			continue
 		}
-		changes, err := annotateChanges(ctx, opts.Workspace.Path)
+		changes, err := annotateChanges(ctx, opts.Workspace.Path, ignore)
 		if err != nil {
 			return nil, err
 		}
@@ -106,7 +121,30 @@ func Annotate(ctx context.Context, opts AnnotateOptions) (*AnnotateResult, error
 		})
 		result.CommitsCreated++
 	}
+	unclaimed, err := unclaimedChanges(ctx, opts.Workspace.Path, ignore)
+	if err != nil {
+		return nil, err
+	}
+	result.Unclaimed = unclaimed
 	return result, nil
+}
+
+// unclaimedChanges lists what is still dirty after every feature committed its
+// files — changes no feature in the registry claims.
+func unclaimedChanges(ctx context.Context, workspacePath string, ignore *patch.IgnoreSet) ([]string, error) {
+	changes, err := annotateChanges(ctx, workspacePath, ignore)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	var paths []string
+	for _, change := range changes {
+		for _, rel := range changeReportPaths(change) {
+			appendUniquePath(&paths, seen, rel)
+		}
+	}
+	slices.Sort(paths)
+	return paths, nil
 }
 
 func mappingValue(node *yaml.Node, key string) *yaml.Node {
@@ -153,8 +191,22 @@ func stringSequence(node *yaml.Node, key string) []string {
 	return items
 }
 
-func annotateChanges(ctx context.Context, workspacePath string) ([]git.FileChange, error) {
-	return git.StatusPorcelain(ctx, workspacePath, nil)
+// annotateChanges returns working-tree changes eligible for feature commits.
+// Untracked junk (reject files, logs, .browseros-patchignore patterns) is
+// filtered like extract does; tracked modifications always pass through.
+func annotateChanges(ctx context.Context, workspacePath string, ignore *patch.IgnoreSet) ([]git.FileChange, error) {
+	changes, err := git.StatusPorcelain(ctx, workspacePath, nil)
+	if err != nil {
+		return nil, err
+	}
+	kept := changes[:0]
+	for _, change := range changes {
+		if change.Status == "??" && ignore.Match(change.Path) {
+			continue
+		}
+		kept = append(kept, change)
+	}
+	return kept, nil
 }
 
 func modifiedFeatureFiles(changes []git.FileChange, feature FeatureSpec) annotateFileSet {

@@ -33,6 +33,9 @@ type State struct {
 	// sync: when the conflict loop completes, the parked stash comes back.
 	// Stashes parked explicitly with --no-rebase stay parked.
 	RestorePendingStash bool `json:"restore_pending_stash,omitempty"`
+	// AutoAnnotate marks that the paused apply wants feature commits once the
+	// conflict loop completes, so continue/skip finish what apply started.
+	AutoAnnotate bool `json:"auto_annotate,omitempty"`
 }
 
 func Path(workspacePath string) string {
