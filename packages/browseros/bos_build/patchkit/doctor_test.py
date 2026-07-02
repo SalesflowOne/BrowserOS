@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from typing import Dict, List, Optional
 from unittest import mock
 
+from bos_build.lib.paths import get_package_root
 from bos_build.patchkit.doctor import (
     ApplyFailure,
     ApplyReport,
@@ -15,6 +16,7 @@ from bos_build.patchkit.doctor import (
     check_apply,
     check_repo,
     compute_claims,
+    diagnose_repo,
     patch_base_paths,
 )
 
@@ -394,6 +396,21 @@ class ComputeClaimsTest(unittest.TestCase):
         }
         self.assertEqual(
             compute_claims(features, bases), {"chrome/sub/a.cc": ["abc", "zed"]}
+        )
+
+
+class RepoTruthTest(unittest.TestCase):
+    def test_repo_features_consistent_with_patches(self):
+        # features.yaml must stay in sync with chromium_patches/ — extract
+        # flows update both, chromium bumps must clean both. Warnings are
+        # advisory and deliberately excluded.
+        errors = [
+            finding
+            for finding in diagnose_repo(get_package_root())
+            if finding.severity == "error"
+        ]
+        self.assertEqual(
+            errors, [], "\n" + "\n".join(finding.message for finding in errors)
         )
 
 
