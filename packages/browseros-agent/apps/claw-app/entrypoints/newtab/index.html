@@ -10,7 +10,9 @@
     <script type="module">
       import { getStoredTheme, resolveTheme } from '@/lib/theme/theme-storage'
 
-      document.documentElement.classList.add(resolveTheme(getStoredTheme()))
+      const resolved = resolveTheme(getStoredTheme())
+      document.documentElement.classList.remove('light', 'dark')
+      document.documentElement.classList.add(resolved)
     </script>
   </head>
   <body>

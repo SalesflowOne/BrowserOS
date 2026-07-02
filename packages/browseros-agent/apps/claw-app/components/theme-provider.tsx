@@ -35,7 +35,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
     const apply = () => {
       const resolved = resolveTheme(theme)
-      root.classList.remove(resolved === 'dark' ? 'light' : 'dark')
+      root.classList.remove('light', 'dark')
       root.classList.add(resolved)
     }
     apply()
