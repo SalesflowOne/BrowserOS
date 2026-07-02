@@ -1,0 +1,311 @@
+#!/usr/bin/env python3
+"""Rails-enforcing feed publisher — the only write path to live feed keys.
+
+Every PUT is preceded by: well-formed check, spec title/link match (the
+alpha→prod byte-copy killer), HEAD-200 on every referenced download, a
+downgrade guard against the live object, and a feeds-history backup.
+Dry-run is the default; callers must opt into writing with publish=True.
+"""
+
+import difflib
+import json
+import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Callable, Optional
+
+from ...lib.env import EnvConfig
+from ...lib.paths import get_package_root
+from ...lib.r2 import get_r2_client
+from ...lib.utils import log_error, log_info, log_success, log_warning
+from .render import (
+    extract_appcast_version,
+    extract_channel_metadata,
+    extract_enclosure_urls,
+    extract_manifest_versions,
+    parse_dotted_version,
+)
+from .spec import FeedSpec
+
+BACKUP_PREFIX = "feeds-history"
+_TIMESTAMP_FORMAT = "%Y%m%dT%H%M%SZ"
+
+
+def _default_http_head(url: str) -> int:
+    import requests
+
+    return requests.head(url, timeout=30, allow_redirects=True).status_code
+
+
+def _default_appcast_staging_dir() -> Path:
+    return get_package_root() / "bos_build" / "config" / "appcast"
+
+
+def _default_extensions_staging_dir() -> Path:
+    # <monorepo>/updates/extensions — the tracked home of the extension
+    # manifests (bundled_extensions_test reads it), mirroring api-worker.
+    return get_package_root().parent.parent / "updates" / "extensions"
+
+
+class FeedPublisher:
+    """Publishes FeedSpec content to R2 behind the safety rails."""
+
+    def __init__(
+        self,
+        env: Optional[EnvConfig] = None,
+        r2_client=None,
+        http_head: Optional[Callable[[str], int]] = None,
+        appcast_staging_dir: Optional[Path] = None,
+        extensions_staging_dir: Optional[Path] = None,
+        now: Optional[Callable[[], datetime]] = None,
+    ):
+        self.env = env or EnvConfig()
+        self._client = r2_client
+        self._http_head = http_head or _default_http_head
+        self._appcast_staging_dir = (
+            appcast_staging_dir or _default_appcast_staging_dir()
+        )
+        self._extensions_staging_dir = (
+            extensions_staging_dir or _default_extensions_staging_dir()
+        )
+        self._now = now or (lambda: datetime.now(timezone.utc))
+
+    @property
+    def client(self):
+        if self._client is None:
+            self._client = get_r2_client(self.env)
+            if self._client is None:
+                raise RuntimeError("Failed to create R2 client")
+        return self._client
+
+    def fetch_live(self, key: str) -> Optional[str]:
+        """Live object content from R2 (authoritative — CDN caches xml 60s)."""
+        try:
+            response = self.client.get_object(Bucket=self.env.r2_bucket, Key=key)
+            return response["Body"].read().decode("utf-8")
+        except self.client.exceptions.NoSuchKey:
+            return None
+
+    def staging_path(self, spec: FeedSpec) -> Path:
+        basename = spec.key.rsplit("/", 1)[-1]
+        if spec.kind == "extensions":
+            return self._extensions_staging_dir / basename
+        return self._appcast_staging_dir / basename
+
+    def publish(
+        self,
+        spec: FeedSpec,
+        content: str,
+        publish: bool = False,
+        allow_downgrade: bool = False,
+    ) -> bool:
+        """Run the rails for one feed; write only when publish=True."""
+        log_info(f"\n── {spec.key} " + "─" * max(0, 50 - len(spec.key)))
+
+        if not spec.publishable:
+            message = (
+                f"{spec.key} is not publishable yet: the chromium patch for "
+                f"product-aware sparkle_glue update URLs has not landed, so "
+                f"no shipped {spec.product} client polls this key."
+            )
+            if publish:
+                log_error(message)
+                return False
+            log_warning(f"DRY-RUN ONLY — {message}")
+
+        if not self._check_well_formed(spec, content):
+            return False
+        if not self._check_channel_metadata(spec, content):
+            return False
+        if not self._check_download_urls(spec, content):
+            return False
+
+        live = self.fetch_live(spec.key)
+        if live is not None and not self._check_version_guard(
+            spec, content, live, allow_downgrade
+        ):
+            return False
+
+        self._print_content_and_diff(spec, content, live)
+
+        if not publish:
+            log_info(f"DRY RUN — {spec.key} not written (pass --publish to write)")
+            return True
+
+        if live is not None and not self._backup_live(spec.key):
+            return False
+
+        content_type = (
+            "application/json" if spec.key.endswith(".json") else "application/xml"
+        )
+        self.client.put_object(
+            Bucket=self.env.r2_bucket,
+            Key=spec.key,
+            Body=content.encode("utf-8"),
+            ContentType=content_type,
+        )
+
+        staging = self.staging_path(spec)
+        staging.parent.mkdir(parents=True, exist_ok=True)
+        staging.write_text(content)
+
+        log_success(f"Published {spec.url} (staging: {staging})")
+        return True
+
+    def _check_well_formed(self, spec: FeedSpec, content: str) -> bool:
+        try:
+            if spec.key.endswith(".json"):
+                json.loads(content)
+            else:
+                ET.fromstring(content)
+        except (json.JSONDecodeError, ET.ParseError) as e:
+            log_error(f"{spec.key}: content is not well-formed: {e}")
+            return False
+        return True
+
+    def _check_channel_metadata(self, spec: FeedSpec, content: str) -> bool:
+        """Rendered/provided appcast must carry this spec's title and link.
+
+        This is the rail that makes the historical failure — an alpha file
+        byte-copied onto the prod key — impossible to publish.
+        """
+        if spec.kind not in ("browser", "server"):
+            return True
+
+        title, link = extract_channel_metadata(content)
+        if title != spec.title or link != spec.link:
+            log_error(
+                f"{spec.key}: channel metadata mismatch — got title={title!r} "
+                f"link={link!r}, spec requires title={spec.title!r} "
+                f"link={spec.link!r}. Refusing to publish."
+            )
+            return False
+        return True
+
+    def _check_download_urls(self, spec: FeedSpec, content: str) -> bool:
+        if spec.key.endswith(".json"):
+            # extensions.json only references our co-published manifest.
+            return True
+
+        for url in extract_enclosure_urls(content):
+            status = self._http_head(url)
+            if status != 200:
+                log_error(
+                    f"{spec.key}: download URL check failed "
+                    f"(HTTP {status}): {url}"
+                )
+                return False
+        return True
+
+    def _check_version_guard(
+        self, spec: FeedSpec, content: str, live: str, allow_downgrade: bool
+    ) -> bool:
+        if spec.key.endswith(".json"):
+            return True
+
+        if spec.kind in ("browser", "server"):
+            return self._guard_appcast_version(spec, content, live, allow_downgrade)
+        return self._guard_manifest_versions(spec, content, live, allow_downgrade)
+
+    def _guard_appcast_version(
+        self, spec: FeedSpec, content: str, live: str, allow_downgrade: bool
+    ) -> bool:
+        new_version = extract_appcast_version(content)
+        if new_version is None:
+            log_error(f"{spec.key}: new content carries no sparkle:version")
+            return False
+
+        live_version = extract_appcast_version(live)
+        if live_version is None:
+            log_warning(
+                f"{spec.key}: live feed has no parseable sparkle:version — "
+                "skipping downgrade guard"
+            )
+            return True
+
+        return self._refuse_downgrade(
+            spec, f"{spec.key}", new_version, live_version, allow_downgrade
+        )
+
+    def _guard_manifest_versions(
+        self, spec: FeedSpec, content: str, live: str, allow_downgrade: bool
+    ) -> bool:
+        live_versions = extract_manifest_versions(live)
+        if not live_versions:
+            log_warning(
+                f"{spec.key}: live manifest has no parseable versions — "
+                "skipping downgrade guard"
+            )
+            return True
+
+        for ext_id, new_version in extract_manifest_versions(content).items():
+            live_version = live_versions.get(ext_id)
+            if live_version is None:
+                continue
+            if not self._refuse_downgrade(
+                spec, ext_id, new_version, live_version, allow_downgrade
+            ):
+                return False
+        return True
+
+    def _refuse_downgrade(
+        self,
+        spec: FeedSpec,
+        subject: str,
+        new_version: str,
+        live_version: str,
+        allow_downgrade: bool,
+    ) -> bool:
+        if parse_dotted_version(new_version) >= parse_dotted_version(live_version):
+            return True
+        if allow_downgrade:
+            log_warning(
+                f"{spec.key}: downgrading {subject} {live_version} -> "
+                f"{new_version} (--allow-downgrade)"
+            )
+            return True
+        log_error(
+            f"{spec.key}: version downgrade refused for {subject}: live is "
+            f"{live_version}, new is {new_version}. Pass --allow-downgrade "
+            "to override."
+        )
+        return False
+
+    def _print_content_and_diff(
+        self, spec: FeedSpec, content: str, live: Optional[str]
+    ) -> None:
+        print(content, end="" if content.endswith("\n") else "\n")
+
+        if live is None:
+            log_info(f"{spec.key}: no live object (first publish, no backup needed)")
+            return
+
+        diff = list(
+            difflib.unified_diff(
+                live.splitlines(),
+                content.splitlines(),
+                fromfile=f"live/{spec.key}",
+                tofile=f"new/{spec.key}",
+                lineterm="",
+            )
+        )
+        if diff:
+            log_info(f"Diff vs live {spec.key}:")
+            print("\n".join(diff))
+        else:
+            log_info(f"{spec.key}: identical to live feed")
+
+    def _backup_live(self, key: str) -> bool:
+        timestamp = self._now().strftime(_TIMESTAMP_FORMAT)
+        backup_key = f"{BACKUP_PREFIX}/{key}.{timestamp}"
+        try:
+            self.client.copy_object(
+                Bucket=self.env.r2_bucket,
+                CopySource={"Bucket": self.env.r2_bucket, "Key": key},
+                Key=backup_key,
+            )
+        except Exception as e:
+            log_error(f"Backup failed for {key} ({e}) — refusing to overwrite")
+            return False
+        log_info(f"Backed up live {key} -> {backup_key}")
+        return True
