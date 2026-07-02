@@ -11,12 +11,15 @@ from bos_build.core.planner import (
     Switches,
     load_profile,
     plan,
+    plan_runs,
     required_env,
     slice_from,
+    slice_runs_from,
 )
 
 RELEASE = Switches(preset="release")
 CI = Switches(preset="release", clean=False, provision="none", sign=False, upload=False)
+UNIVERSAL = Switches(preset="release", architectures=("universal",))
 
 
 class ReleaseGoldenTest(unittest.TestCase):
@@ -91,27 +94,53 @@ class ReleaseGoldenTest(unittest.TestCase):
         self.assertFalse(any(s.startswith("sign") for s in steps))
 
     def test_macos_universal(self):
-        # release.browseros.macos.universal.yaml — universal_build replaces
-        # the tail and the resources copy is skipped
+        # release.browseros.macos.universal.yaml — three sequential runs on
+        # one prepped tree: prep exactly once (repeating clean/git_setup/
+        # patches would reset it), resources per arch, then the merge
         self.assertEqual(
-            plan(RELEASE, "universal", "macos"),
+            plan_runs(UNIVERSAL, "macos"),
             [
-                "clean",
-                "git_setup",
-                "sparkle_setup",
-                "download_resources",
-                "bundled_extensions",
-                "chromium_replace",
-                "string_replaces",
-                "series_patches",
-                "patches",
-                "universal_build",
+                (
+                    "arm64",
+                    [
+                        "clean",
+                        "git_setup",
+                        "sparkle_setup",
+                        "download_resources",
+                        "bundled_extensions",
+                        "chromium_replace",
+                        "string_replaces",
+                        "series_patches",
+                        "patches",
+                        "resources",
+                        "configure",
+                        "compile",
+                        "sign_macos",
+                        "package_macos",
+                        "upload",
+                    ],
+                ),
+                (
+                    "x64",
+                    [
+                        "resources",
+                        "configure",
+                        "compile",
+                        "sign_macos",
+                        "package_macos",
+                        "upload",
+                    ],
+                ),
+                (
+                    "universal",
+                    ["merge_universal", "sign_macos", "package_macos", "upload"],
+                ),
             ],
         )
 
     def test_universal_rejected_off_macos(self):
         with self.assertRaisesRegex(ValueError, "only supported on macos"):
-            plan(RELEASE, "universal", "linux")
+            plan_runs(UNIVERSAL, "linux")
 
     def test_noupload_variant(self):
         # release.macos.arm64.noupload.yaml == release minus upload
@@ -199,7 +228,11 @@ class DebugGoldenTest(unittest.TestCase):
 
     def test_debug_rejects_universal(self):
         with self.assertRaisesRegex(ValueError, "not supported for debug"):
-            plan(Switches(preset="debug"), "universal", "macos")
+            plan_runs(Switches(preset="debug", architectures=("universal",)), "macos")
+
+    def test_debug_rejection_wins_over_platform(self):
+        with self.assertRaisesRegex(ValueError, "not supported for debug"):
+            plan_runs(Switches(preset="debug", architectures=("universal",)), "linux")
 
 
 class SwitchesTest(unittest.TestCase):
@@ -253,14 +286,18 @@ class SkipTest(unittest.TestCase):
         self.assertIn("winsparkle_setup", steps)
         self.assertIn("sparkle_sign", steps)
 
-    def test_skip_applies_to_universal_plan(self):
-        steps = plan(
-            Switches(preset="release", skip=("series_patches",)),
-            "universal",
+    def test_skip_applies_to_universal_runs(self):
+        runs = plan_runs(
+            Switches(
+                preset="release",
+                architectures=("universal",),
+                skip=("series_patches",),
+            ),
             "macos",
         )
-        self.assertNotIn("series_patches", steps)
-        self.assertIn("universal_build", steps)
+        for arch, steps in runs:
+            self.assertNotIn("series_patches", steps, arch)
+        self.assertIn("merge_universal", runs[2][1])
 
     def test_skip_absent_step_is_noop(self):
         # mini_installer never appears in a signed windows plan; upload is
@@ -326,6 +363,56 @@ class SliceFromTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "not in the composed plan"):
             slice_from(steps, "sign_macos")
+
+
+class SliceRunsFromTest(unittest.TestCase):
+    def test_single_arch_run_sliced(self):
+        runs = plan_runs(
+            Switches(preset="release", architectures=("arm64",)), "macos"
+        )
+        self.assertEqual(
+            slice_runs_from(runs, "sign_macos"),
+            [("arm64", ["sign_macos", "package_macos", "upload"])],
+        )
+
+    def test_universal_merge_failure_resumes_without_recompiling(self):
+        runs = slice_runs_from(plan_runs(UNIVERSAL, "macos"), "merge_universal")
+        self.assertEqual(
+            runs,
+            [
+                (
+                    "universal",
+                    ["merge_universal", "sign_macos", "package_macos", "upload"],
+                )
+            ],
+        )
+
+    def test_first_run_containing_step_wins_later_runs_stay_whole(self):
+        full = plan_runs(UNIVERSAL, "macos")
+        runs = slice_runs_from(full, "resources")
+        self.assertEqual(runs[0][0], "arm64")
+        self.assertEqual(
+            runs[0][1],
+            ["resources", "configure", "compile", "sign_macos", "package_macos", "upload"],
+        )
+        self.assertEqual(runs[1:], full[1:])
+
+    def test_multi_arch_timeline(self):
+        runs = plan_runs(
+            Switches(preset="release", architectures=("x64", "arm64")), "linux"
+        )
+        sliced = slice_runs_from(runs, "compile")
+        self.assertEqual(sliced[0][0], "x64")
+        self.assertEqual(sliced[0][1][0], "compile")
+        self.assertEqual(sliced[1], runs[1])
+
+    def test_unknown_step_rejected_listing_valid(self):
+        with self.assertRaisesRegex(ValueError, "Unknown step"):
+            slice_runs_from(plan_runs(UNIVERSAL, "macos"), "sing_macos")
+
+    def test_step_absent_from_all_runs_rejected(self):
+        with self.assertRaisesRegex(ValueError, "not in the composed plan"):
+            slice_runs_from(plan_runs(UNIVERSAL, "macos"), "mini_installer")
 
 
 class RequiredEnvTest(unittest.TestCase):
@@ -536,19 +623,57 @@ class DownloadSwitchTest(unittest.TestCase):
 
 
 
-class UniversalEnvTest(unittest.TestCase):
-    def test_universal_release_requires_signing_env_upfront(self):
-        # parity with the deleted release.*.macos.universal.yaml required_envs
-        env = required_env(plan(RELEASE, "universal", "macos"))
-        self.assertEqual(
-            env,
-            [
-                "MACOS_CERTIFICATE_NAME",
-                "PROD_MACOS_NOTARIZATION_APPLE_ID",
-                "PROD_MACOS_NOTARIZATION_TEAM_ID",
-                "PROD_MACOS_NOTARIZATION_PWD",
-            ],
+class UniversalRunsTest(unittest.TestCase):
+    def test_flat_plan_rejects_universal(self):
+        with self.assertRaisesRegex(ValueError, "plan_runs"):
+            plan(RELEASE, "universal", "macos")
+
+    def test_universal_requires_sign(self):
+        with self.assertRaisesRegex(ValueError, "always signed"):
+            plan_runs(
+                Switches(preset="release", architectures=("universal",), sign=False),
+                "macos",
+            )
+
+    def test_universal_rejected_in_multi_arch_list(self):
+        with self.assertRaisesRegex(ValueError, "cannot be combined"):
+            plan_runs(
+                Switches(preset="release", architectures=("x64", "universal")),
+                "macos",
+            )
+
+    def test_noupload_drops_upload_from_every_run(self):
+        runs = plan_runs(
+            Switches(preset="release", architectures=("universal",), upload=False),
+            "macos",
         )
+        self.assertEqual([arch for arch, _ in runs], ["arm64", "x64", "universal"])
+        for arch, steps in runs:
+            self.assertNotIn("upload", steps, arch)
+            self.assertEqual(steps[-1], "package_macos", arch)
+
+    def test_non_universal_runs_match_flat_plan_per_arch(self):
+        sw = Switches(preset="release", architectures=("x64", "arm64"))
+        self.assertEqual(
+            plan_runs(sw, "linux"),
+            [(arch, plan(sw, arch, "linux")) for arch in ("x64", "arm64")],
+        )
+
+
+class UniversalEnvTest(unittest.TestCase):
+    def test_universal_runs_require_signing_env_upfront(self):
+        # parity with the deleted release.*.macos.universal.yaml required_envs
+        for arch, steps in plan_runs(UNIVERSAL, "macos"):
+            self.assertEqual(
+                required_env(steps),
+                [
+                    "MACOS_CERTIFICATE_NAME",
+                    "PROD_MACOS_NOTARIZATION_APPLE_ID",
+                    "PROD_MACOS_NOTARIZATION_TEAM_ID",
+                    "PROD_MACOS_NOTARIZATION_PWD",
+                ],
+                arch,
+            )
 
 if __name__ == "__main__":
     unittest.main()

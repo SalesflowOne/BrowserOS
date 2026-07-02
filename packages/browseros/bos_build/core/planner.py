@@ -92,39 +92,68 @@ def plan(switches: Switches, arch: str, platform: Optional[str] = None) -> List[
     sparkle_setup is a macOS build dependency even unsigned; WinSparkle
     setup and the post-package sparkle_sign only exist on signed Windows
     builds; unsigned Windows builds get mini_installer instead of
-    sign_windows; universal replaces everything after patches with
-    universal_build (which builds/signs/packages/uploads per arch
-    internally) and skips the resources copy.
+    sign_windows. Universal is not a flat pipeline — plan_runs() expands
+    it into three sequential runs.
     """
+    if arch == "universal":
+        raise ValueError("universal is planned as multiple runs; use plan_runs()")
     platform = platform or get_platform()
     switches = switches.resolved()
 
     if switches.preset == "debug":
-        steps = _plan_debug(switches, arch, platform)
+        steps = _plan_debug(switches, platform)
     else:
-        steps = _plan_release(switches, arch, platform)
-
-    # skip subtracts AFTER composition: removing a step never re-triggers
-    # composition rules (skipping sign_windows won't add mini_installer).
-    if switches.skip:
-        skipped = set(switches.skip)
-        steps = [s for s in steps if s not in skipped]
-    return steps
+        steps = _plan_release(switches, platform)
+    return _apply_skip(steps, switches.skip)
 
 
-def _plan_release(switches: Switches, arch: str, platform: str) -> List[str]:
-    steps: List[str] = []
-    steps.extend(_provision_steps(switches))
-    if platform == "macos":
-        steps.append("sparkle_setup")
-    if platform == "windows" and switches.sign:
-        steps.append("winsparkle_setup")
+def plan_runs(
+    switches: Switches, platform: Optional[str] = None
+) -> List[Tuple[str, List[str]]]:
+    """Per-run (arch, steps) plans — the shape cli/build.py executes.
 
+    Universal expands into three sequential runs on one prepped chromium
+    tree (arm64 build, x64 build, merge); every other architecture list
+    maps to one flat plan() per arch.
+    """
+    platform = platform or get_platform()
+    switches = switches.resolved()
+    if "universal" in switches.architectures:
+        if len(switches.architectures) > 1:
+            raise ValueError("universal cannot be combined with other architectures")
+        # plan() applies skip itself; the universal composer doesn't.
+        return [
+            (arch, _apply_skip(steps, switches.skip))
+            for arch, steps in _plan_universal_runs(switches, platform)
+        ]
+    return [(arch, plan(switches, arch, platform)) for arch in switches.architectures]
+
+
+def _plan_universal_runs(
+    switches: Switches, platform: str
+) -> List[Tuple[str, List[str]]]:
+    """Universal = three runs sharing one chromium tree.
+
+    Run 1 preps the tree once (repeating clean/git_setup/patches would
+    reset it) and builds arm64; run 2 rebuilds the per-arch tail for x64
+    (resources stages arch-specific binaries, so it repeats); run 3
+    merges the pair into ctx(universal)'s app path and processes it like
+    any other build. Error precedence preserved from the flat planner:
+    preset, then platform, then sign.
+    """
+    if switches.preset == "debug":
+        raise ValueError("universal architecture is not supported for debug builds")
+    if platform != "macos":
+        raise ValueError("universal architecture is only supported on macos")
+    if not switches.sign:
+        raise ValueError("universal builds are always signed; drop --no-sign")
+
+    prep: List[str] = []
+    prep.extend(_provision_steps(switches))
+    prep.append("sparkle_setup")
     if switches.download:
-        steps.append("download_resources")
-    if arch != "universal":
-        steps.append("resources")
-    steps.extend(
+        prep.append("download_resources")
+    prep.extend(
         [
             "bundled_extensions",
             "chromium_replace",
@@ -134,11 +163,39 @@ def _plan_release(switches: Switches, arch: str, platform: str) -> List[str]:
         ]
     )
 
-    if arch == "universal":
-        if platform != "macos":
-            raise ValueError("universal architecture is only supported on macos")
-        steps.append("universal_build")
-        return steps
+    arch_tail = ["resources", "configure", "compile", "sign_macos", "package_macos"]
+    merge_run = ["merge_universal", "sign_macos", "package_macos"]
+    if switches.upload:
+        arch_tail.append("upload")
+        merge_run.append("upload")
+
+    return [
+        ("arm64", prep + arch_tail),
+        ("x64", list(arch_tail)),
+        ("universal", merge_run),
+    ]
+
+
+def _plan_release(switches: Switches, platform: str) -> List[str]:
+    steps: List[str] = []
+    steps.extend(_provision_steps(switches))
+    if platform == "macos":
+        steps.append("sparkle_setup")
+    if platform == "windows" and switches.sign:
+        steps.append("winsparkle_setup")
+
+    if switches.download:
+        steps.append("download_resources")
+    steps.extend(
+        [
+            "resources",
+            "bundled_extensions",
+            "chromium_replace",
+            "string_replaces",
+            "series_patches",
+            "patches",
+        ]
+    )
 
     steps.extend(["configure", "compile"])
 
@@ -156,9 +213,7 @@ def _plan_release(switches: Switches, arch: str, platform: str) -> List[str]:
     return steps
 
 
-def _plan_debug(switches: Switches, arch: str, platform: str) -> List[str]:
-    if arch == "universal":
-        raise ValueError("universal architecture is not supported for debug builds")
+def _plan_debug(switches: Switches, platform: str) -> List[str]:
     steps: List[str] = []
     steps.extend(_provision_steps(switches))
     if switches.download:
@@ -202,8 +257,17 @@ def _provision_steps(switches: Switches) -> List[str]:
     return steps
 
 
+def _apply_skip(steps: List[str], skip: Tuple[str, ...]) -> List[str]:
+    """Subtract skip AFTER composition: removing a step never re-triggers
+    composition rules (skipping sign_windows won't add mini_installer)."""
+    if not skip:
+        return steps
+    skipped = set(skip)
+    return [s for s in steps if s not in skipped]
+
+
 def slice_from(steps: List[str], start: str) -> List[str]:
-    """Resume slice for --from: the composed plan from `start` onward.
+    """Resume slice for --from: one run's composed plan from `start` onward.
 
     Applied after skip subtraction, so resuming from a skipped step fails
     with the absent-step error.
@@ -219,6 +283,29 @@ def slice_from(steps: List[str], start: str) -> List[str]:
             f"({' → '.join(steps)}); nothing to resume from"
         )
     return steps[steps.index(start) :]
+
+
+def slice_runs_from(
+    runs: List[Tuple[str, List[str]]], start: str
+) -> List[Tuple[str, List[str]]]:
+    """Resume the run TIMELINE from `start`: runs execute sequentially, so
+    earlier runs are dropped, the first run containing the step is sliced,
+    and later runs stay whole (a universal merge failure resumes with just
+    merge_universal → sign → package, no recompiles).
+    """
+    registry = all_steps()
+    if start not in registry:
+        raise ValueError(
+            f"Unknown step '{start}'. Valid steps: {', '.join(sorted(registry))}"
+        )
+    for i, (arch, steps) in enumerate(runs):
+        if start in steps:
+            return [(arch, slice_from(steps, start))] + runs[i + 1 :]
+    composed = "; ".join(f"{arch}: {' → '.join(steps)}" for arch, steps in runs)
+    raise ValueError(
+        f"Step '{start}' is not in the composed plan "
+        f"({composed}); nothing to resume from"
+    )
 
 
 def required_env(step_names: List[str]) -> List[str]:

@@ -17,10 +17,10 @@ from ..core.planner import (
     Switches,
     VALID_ARCHITECTURES,
     load_profile,
-    plan,
+    plan_runs,
     preflight,
     required_env,
-    slice_from,
+    slice_runs_from,
 )
 from ..core.resolver import resolve_config, resolve_pipeline
 from ..core.notify import (
@@ -356,7 +356,14 @@ def main(
     log_info(f"📍 Semantic version: {summary_ctx.semantic_version}")
     log_info(f"📍 Chromium version: {summary_ctx.chromium_version}")
     log_info(f"📍 Build offset: {summary_ctx.browseros_build_offset}")
-    log_info(f"📍 Pipeline: {' → '.join(runs[0][1])}")
+    if len(runs) > 1:
+        # Runs may be heterogeneous (universal), so show each run's steps
+        for run_ctx, run_steps in runs:
+            log_info(
+                f"📍 Pipeline[{run_ctx.architecture}]: {' → '.join(run_steps)}"
+            )
+    else:
+        log_info(f"📍 Pipeline: {' → '.join(runs[0][1])}")
     log_info("=" * 70)
 
     os_name = "macOS" if IS_MACOS() else "Windows" if IS_WINDOWS() else "Linux"
@@ -497,12 +504,11 @@ def _resolve_preset(
             )
         switches = switches.resolved()
 
-        arch_plans: List[Tuple[str, List[str]]] = []
-        for run_arch in switches.architectures:
-            steps = plan(switches, run_arch)
-            if from_ is not None:
-                steps = slice_from(steps, from_)
-            arch_plans.append((run_arch, steps))
+        # Runs execute sequentially (universal is three runs on one tree),
+        # so --from resumes the run timeline, not each run.
+        arch_plans = plan_runs(switches)
+        if from_ is not None:
+            arch_plans = slice_runs_from(arch_plans, from_)
 
         header = [
             f"Preset plan: preset={switches.preset} product={switches.product} "

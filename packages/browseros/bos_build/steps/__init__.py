@@ -17,7 +17,7 @@ from .patches.series_patches import SeriesPatchesModule
 from .patches.patches import PatchesModule
 from .setup.configure import ConfigureModule
 from .compile.standard import CompileModule
-from .compile.universal import UniversalBuildModule
+from .compile.universal import MergeUniversalModule
 from .sign.macos import MacOSSignModule
 from .sign.windows import WindowsSignModule
 from .sign.linux import LinuxSignModule
@@ -43,7 +43,7 @@ __all__ = [
     "PatchesModule",
     "ConfigureModule",
     "CompileModule",
-    "UniversalBuildModule",
+    "MergeUniversalModule",
     "MacOSSignModule",
     "WindowsSignModule",
     "LinuxSignModule",

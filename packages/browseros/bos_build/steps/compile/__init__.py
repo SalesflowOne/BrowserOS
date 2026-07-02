@@ -4,14 +4,14 @@ Compilation modules for BrowserOS build system
 
 This package contains different build strategies:
 - standard: Single-architecture compilation
-- universal: Multi-architecture compilation (macOS universal binaries)
+- universal: Merge per-arch builds into a macOS universal app
 """
 
 from .standard import CompileModule, build_target
-from .universal import UniversalBuildModule
+from .universal import MergeUniversalModule
 
 __all__ = [
     'CompileModule',
-    'UniversalBuildModule',
+    'MergeUniversalModule',
     'build_target',
 ]

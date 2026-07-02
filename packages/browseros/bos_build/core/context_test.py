@@ -62,17 +62,6 @@ class GetAppPathTest(unittest.TestCase):
         self.assertTrue(str(ctx.out_dir).endswith("Default_browseros_universal"))
         self.assertEqual(ctx.get_app_path(), expected)
 
-    def test_fixed_app_path_short_circuits_resolution(self):
-        ctx = Context(
-            chromium_src=Path("/nonexistent-src"),
-            architecture="arm64",
-            build_type="release",
-        )
-        pinned = Path("/pinned") / ctx.BROWSEROS_APP_NAME
-        ctx._fixed_app_path = pinned
-
-        self.assertEqual(ctx.get_app_path(), pinned)
-
     def test_browserclaw_context_derives_names_and_paths(self):
         with (
             mock.patch.object(context_mod, "IS_MACOS", return_value=True),

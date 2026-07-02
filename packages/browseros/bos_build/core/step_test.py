@@ -34,7 +34,7 @@ class RegistryContentTest(unittest.TestCase):
                 "patches",
                 "configure",
                 "compile",
-                "universal_build",
+                "merge_universal",
                 "sign_macos",
                 "sign_windows",
                 "sign_linux",
@@ -83,7 +83,7 @@ class RegistryContentTest(unittest.TestCase):
         self.assertIn(
             "series_patches", phase_steps("prep", "macos", include_optional=True)
         )
-        self.assertNotIn("universal_build", phase_steps("build", "macos"))
+        self.assertNotIn("merge_universal", phase_steps("build", "macos"))
         self.assertNotIn("mini_installer", phase_steps("sign", "windows"))
 
     def test_notify_steps_match_legacy_notify_modules(self):

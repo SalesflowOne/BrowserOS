@@ -76,7 +76,10 @@ browseros build --preset release --from sign_macos
   step absent from this plan is a no-op, so a saved `skip:` keeps
   working as presets evolve — subtraction from the canonical plan,
   never a copy of it.
-- `--from` slices the composed (post-skip) plan starting at a step.
+- `--from` resumes the composed (post-skip) run timeline at a step:
+  earlier runs are dropped, the first run containing the step is
+  sliced, later runs stay whole. A failed universal merge resumes with
+  just `--arch universal --from merge_universal` — no recompiles.
   CLI-only: resume is a one-off, so there is no `from:` profile key.
 
 ### Modules profiles — "you own this list now"
