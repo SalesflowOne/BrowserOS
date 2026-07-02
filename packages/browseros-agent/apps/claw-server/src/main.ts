@@ -38,13 +38,16 @@ async function start(): Promise<void> {
     process.exit(1)
   }
   applyClawConfig(config.value)
-  logger.setLogFile(getClawServerDir())
 
   const httpServer = Bun.serve({
     hostname: '127.0.0.1',
     port: env.port,
     fetch: server.fetch,
   })
+  // File sink attaches only after the port bind succeeds: the bind is
+  // the de-facto singleton lock, so a second accidental launch dies on
+  // EADDRINUSE before it can rotate the live instance's log file.
+  logger.setLogFile(getClawServerDir())
   const url = `http://${httpServer.hostname}:${httpServer.port}`
   setLocalServerUrl(url)
   logger.info('claw-server listening', { url })
@@ -107,4 +110,9 @@ async function start(): Promise<void> {
     )
 }
 
-void start()
+start().catch((error: unknown) => {
+  logger.error('claw-server startup failed', {
+    error: error instanceof Error ? error.message : String(error),
+  })
+  process.exit(1)
+})

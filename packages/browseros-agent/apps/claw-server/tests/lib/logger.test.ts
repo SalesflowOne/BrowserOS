@@ -4,13 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, setSystemTime, test } from 'bun:test'
 import {
   existsSync,
   mkdtempSync,
   readFileSync,
   rmSync,
-  utimesSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -18,6 +17,7 @@ import { join } from 'node:path'
 import { logger } from '../../src/lib/logger'
 
 const LOG_NAME = 'claw-server.log'
+const STALE_JUMP_MS = 25 * 60 * 60 * 1000
 const tempDirs: string[] = []
 
 function makeTempDir(): string {
@@ -34,6 +34,7 @@ function readLines(logPath: string): Array<Record<string, unknown>> {
 }
 
 afterEach(() => {
+  setSystemTime()
   logger.closeLogFile()
   for (const dir of tempDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true })
@@ -86,8 +87,7 @@ describe('logger.setLogFile', () => {
     const dir = makeTempDir()
     const logPath = join(dir, LOG_NAME)
     writeFileSync(logPath, '{"level":30,"msg":"stale"}\n')
-    const staleSeconds = (Date.now() - 25 * 60 * 60 * 1000) / 1000
-    utimesSync(logPath, staleSeconds, staleSeconds)
+    setSystemTime(new Date(Date.now() + STALE_JUMP_MS))
 
     logger.setLogFile(dir)
     logger.info('fresh')
@@ -99,13 +99,30 @@ describe('logger.setLogFile', () => {
     expect(lines[0]).toMatchObject({ msg: 'fresh' })
   })
 
+  test('rotates on stale creation time even when recently written', () => {
+    const dir = makeTempDir()
+    const logPath = join(dir, LOG_NAME)
+    writeFileSync(logPath, '{"level":30,"msg":"stale"}\n')
+    setSystemTime(new Date(Date.now() + STALE_JUMP_MS))
+    // A write refreshes mtime but not creation time
+    logger.setLogFile(dir)
+    logger.info('recent write')
+    logger.closeLogFile()
+    setSystemTime(new Date(Date.now() + STALE_JUMP_MS))
+
+    logger.setLogFile(dir)
+
+    const backup = readLines(`${logPath}.old`)
+    expect(backup.at(-1)).toMatchObject({ msg: 'recent write' })
+    expect(readLines(logPath)).toHaveLength(0)
+  })
+
   test('replaces an existing .old backup on rotation', () => {
     const dir = makeTempDir()
     const logPath = join(dir, LOG_NAME)
     writeFileSync(`${logPath}.old`, '{"level":30,"msg":"ancient"}\n')
     writeFileSync(logPath, '{"level":30,"msg":"stale"}\n')
-    const staleSeconds = (Date.now() - 25 * 60 * 60 * 1000) / 1000
-    utimesSync(logPath, staleSeconds, staleSeconds)
+    setSystemTime(new Date(Date.now() + STALE_JUMP_MS))
 
     logger.setLogFile(dir)
 
@@ -123,6 +140,21 @@ describe('logger.setLogFile', () => {
     expect(() => logger.info('stderr only')).not.toThrow()
   })
 
+  test('a failed re-point keeps the previous sink', () => {
+    const dir = makeTempDir()
+    logger.setLogFile(dir)
+    logger.info('before')
+
+    const blocked = join(makeTempDir(), 'blocked')
+    writeFileSync(blocked, 'not a directory')
+    logger.setLogFile(blocked)
+    logger.info('after')
+
+    const msgs = readLines(join(dir, LOG_NAME)).map((line) => line.msg)
+    expect(msgs).toContain('before')
+    expect(msgs).toContain('after')
+  })
+
   test('re-pointing the sink switches files', () => {
     const first = makeTempDir()
     const second = makeTempDir()
@@ -136,5 +168,38 @@ describe('logger.setLogFile', () => {
     const lines = readLines(join(second, LOG_NAME))
     expect(lines).toHaveLength(1)
     expect(lines[0]).toMatchObject({ msg: 'two' })
+  })
+})
+
+describe('logger event shape', () => {
+  test('envelope keys win over caller-supplied fields', () => {
+    const dir = makeTempDir()
+    logger.setLogFile(dir)
+
+    logger.info('real message', {
+      msg: 'clobber',
+      level: 'high',
+      time: 'noon',
+      extra: 1,
+    })
+
+    const lines = readLines(join(dir, LOG_NAME))
+    expect(lines[0]).toMatchObject({ level: 30, msg: 'real message', extra: 1 })
+    expect(typeof lines[0]?.time).toBe('number')
+  })
+
+  test('unserializable fields do not throw and keep the message', () => {
+    const dir = makeTempDir()
+    logger.setLogFile(dir)
+
+    const circular: Record<string, unknown> = {}
+    circular.self = circular
+    expect(() => logger.info('circular', circular)).not.toThrow()
+
+    const lines = readLines(join(dir, LOG_NAME))
+    expect(lines[0]).toMatchObject({
+      msg: 'circular',
+      logSerializationFailed: true,
+    })
   })
 })
