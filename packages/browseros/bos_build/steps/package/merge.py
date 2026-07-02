@@ -82,4 +82,3 @@ def merge_architectures(
     except Exception as e:
         log_error(f"Failed to create universal binary: {e}")
         return False
-

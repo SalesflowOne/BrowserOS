@@ -17,6 +17,8 @@ class LinuxSignModule(Step):
 
     def execute(self, ctx: Context) -> None:
         log_info("Code signing is not required for Linux packages")
+
+
 def check_signing_environment() -> bool:
     """Linux doesn't require signing environment"""
     return True

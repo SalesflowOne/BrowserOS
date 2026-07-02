@@ -282,7 +282,14 @@ def main(
     log_info(f"📍 Semantic version: {summary_ctx.semantic_version}")
     log_info(f"📍 Chromium version: {summary_ctx.chromium_version}")
     log_info(f"📍 Build offset: {summary_ctx.browseros_build_offset}")
-    log_info(f"📍 Pipeline: {' → '.join(runs[0][1])}")
+    if len(runs) > 1:
+        # Runs may be heterogeneous (universal), so show each run's steps
+        for run_ctx, run_steps in runs:
+            log_info(
+                f"📍 Pipeline[{run_ctx.architecture}]: {' → '.join(run_steps)}"
+            )
+    else:
+        log_info(f"📍 Pipeline: {' → '.join(runs[0][1])}")
     log_info("=" * 70)
 
     os_name = "macOS" if IS_MACOS() else "Windows" if IS_WINDOWS() else "Linux"

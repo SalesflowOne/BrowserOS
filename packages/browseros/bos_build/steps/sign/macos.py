@@ -1125,4 +1125,3 @@ def sign_app(ctx: Context, create_dmg: bool = True) -> bool:
         log_info("The application is properly signed, notarized, and packaged.")
         log_info("=" * 70)
     return error_count == 0
-
