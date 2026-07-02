@@ -1,19 +1,41 @@
 #!/usr/bin/env python3
-"""Appcast module - Generate Sparkle appcast XML snippets"""
+"""Appcast module - Generate complete browser appcast feed files.
+
+Replaces the old snippet printer: every browser feed key from the FeedSpec
+table is rendered as a full single-item document and pushed through the
+rails publisher (dry-run by default; --publish writes to R2 with backup).
+"""
 
 from ..core.context import Context
 from ..core.step import Step, ValidationError
-from ..lib.utils import log_info, log_warning
+from ..lib.utils import log_error, log_info
 from ..lib.r2 import BOTO3_AVAILABLE
-from .common import fetch_all_release_metadata, generate_appcast_item
+from .common import fetch_all_release_metadata
+from .feeds.publisher import FeedPublisher
+from .feeds.render import render_browser_appcast
+from .feeds.spec import browser_feeds_for_product
 
 
 class AppcastModule(Step):
-    """Generate appcast XML snippets for macOS auto-update"""
+    """Generate full Sparkle/WinSparkle appcast files for a product"""
 
     produces = []
     requires = []
-    description = "Generate Sparkle appcast XML snippets"
+    description = "Generate full browser appcast feed files"
+
+    def __init__(
+        self,
+        product_id: str = "browseros",
+        publish: bool = False,
+        allow_downgrade: bool = False,
+        publisher=None,
+        fetch_metadata=None,
+    ):
+        self.product_id = product_id
+        self.publish = publish
+        self.allow_downgrade = allow_downgrade
+        self._publisher = publisher
+        self._fetch_metadata = fetch_metadata or fetch_all_release_metadata
 
     def validate(self, ctx: Context) -> None:
         if not BOTO3_AVAILABLE:
@@ -27,73 +49,75 @@ class AppcastModule(Step):
         if not ctx.release_version:
             raise ValidationError("--version is required")
 
+        feeds = browser_feeds_for_product(self.product_id)
+        if not feeds:
+            raise ValidationError(
+                f"No browser feeds defined for product '{self.product_id}'"
+            )
+
+        if self.publish and not all(feed.publishable for feed in feeds):
+            raise ValidationError(
+                f"{self.product_id} browser feeds are not publishable yet: "
+                "the chromium patch for product-aware sparkle_glue update "
+                "URLs has not landed. Drop --publish to preview the XML."
+            )
+
     def execute(self, ctx: Context) -> None:
         version = ctx.release_version
-        metadata = fetch_all_release_metadata(version, ctx.env)
-
-        if "macos" not in metadata and "win" not in metadata:
-            log_info(
-                f"No macOS or Windows release metadata found for version {version}"
+        metadata = self._fetch_metadata(version, ctx.env, self.product_id)
+        if not metadata:
+            raise RuntimeError(
+                f"No release metadata found for version {version} "
+                f"(product {self.product_id})"
             )
-            return
 
-        log_info(f"\n{'='*60}")
-        log_info(f"APPCAST SNIPPETS FOR v{version}")
-        log_info(f"{'='*60}")
+        publisher = self._publisher or FeedPublisher(env=ctx.env)
+        rendered = 0
+        failures = []
 
-        if "macos" in metadata:
-            self._print_macos_items(metadata["macos"], version)
-
-        if "win" in metadata:
-            self._print_windows_items(metadata["win"], version)
-
-        log_info(f"\n{'='*60}")
-
-    def _print_macos_items(self, release: dict, version: str) -> None:
-        sparkle_version = release.get("sparkle_version", "")
-        build_date = release.get("build_date", "")
-        artifacts = release.get("artifacts", {})
-
-        arch_to_file = {
-            "arm64": "appcast.xml",
-            "x64": "appcast-x86_64.xml",
-            "universal": "appcast.xml",
-        }
-
-        for arch in ["arm64", "x64", "universal"]:
-            if arch not in artifacts:
+        for spec in browser_feeds_for_product(self.product_id):
+            release = metadata.get(spec.platform)
+            if release is None:
+                log_info(f"{spec.key}: no {spec.platform} release metadata — skipped")
                 continue
 
-            artifact = artifacts[arch]
-            if "sparkle_signature" not in artifact:
-                log_warning(f"{arch} artifact missing sparkle_signature")
-
-            log_info(f"\n{arch_to_file[arch]} ({arch}):")
-            print(generate_appcast_item(artifact, version, sparkle_version, build_date))
-
-    def _print_windows_items(self, release: dict, version: str) -> None:
-        sparkle_version = release.get("sparkle_version", "")
-        build_date = release.get("build_date", "")
-        artifacts = release.get("artifacts", {})
-
-        # WinSparkle feeds, one per arch (chrome/browser/win/winsparkle_glue.cc
-        # picks the matching URL at compile time).
-        key_to_file = {
-            "x64_installer": "appcast-win.xml",
-            "arm64_installer": "appcast-win-arm64.xml",
-        }
-
-        for key, appcast_file in key_to_file.items():
-            if key not in artifacts:
-                continue
-
-            artifact = artifacts[key]
-            if "sparkle_signature" not in artifact:
-                log_warning(f"{key} artifact missing sparkle_signature")
-
-            log_info(f"\n{appcast_file} ({key}):")
-            print(
-                generate_appcast_item(
-                    artifact, version, sparkle_version, build_date, platform="win"
+            artifacts = release.get("artifacts", {})
+            artifact_key = next(
+                (key for key in spec.artifact_keys if key in artifacts), None
+            )
+            if artifact_key is None:
+                log_info(
+                    f"{spec.key}: none of {'/'.join(spec.artifact_keys)} in "
+                    f"{spec.platform} artifacts — skipped"
                 )
+                continue
+
+            try:
+                content = render_browser_appcast(
+                    spec,
+                    artifacts[artifact_key],
+                    version,
+                    release.get("sparkle_version", ""),
+                    release.get("build_date", ""),
+                )
+            except ValueError as e:
+                log_error(str(e))
+                failures.append(spec.key)
+                continue
+
+            if publisher.publish(
+                spec,
+                content,
+                publish=self.publish,
+                allow_downgrade=self.allow_downgrade,
+            ):
+                rendered += 1
+            else:
+                failures.append(spec.key)
+
+        if failures:
+            raise RuntimeError(f"Feed(s) failed: {', '.join(failures)}")
+        if rendered == 0:
+            raise RuntimeError(
+                "No feeds rendered — release metadata has no matching artifacts"
             )

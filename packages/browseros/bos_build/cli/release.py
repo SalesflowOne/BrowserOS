@@ -20,6 +20,7 @@ from ..release import (
     PublishModule,
     DownloadModule,
 )
+from . import release_feeds
 
 app = typer.Typer(
     help="Release automation commands",
@@ -34,6 +35,8 @@ github_app = typer.Typer(
     pretty_exceptions_show_locals=False,
 )
 app.add_typer(github_app, name="github")
+
+release_feeds.register(app)
 
 
 def create_release_context(
@@ -78,7 +81,10 @@ def main(
         False, "--list", "-l", help="List artifacts for version from R2"
     ),
     appcast: bool = typer.Option(
-        False, "--appcast", "-a", help="Generate appcast XML snippets"
+        False,
+        "--appcast",
+        "-a",
+        help="Generate full appcast feeds (dry-run; see 'release appcast')",
     ),
     publish: bool = typer.Option(
         False, "--publish", "-p", help="Publish to download/ paths (make live)"
