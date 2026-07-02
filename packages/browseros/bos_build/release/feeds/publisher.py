@@ -10,9 +10,10 @@ Dry-run is the default; callers must opt into writing with publish=True.
 import difflib
 import json
 import xml.etree.ElementTree as ET
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, List, Optional
 
 from ...lib.env import EnvConfig
 from ...lib.paths import get_package_root
@@ -25,7 +26,7 @@ from .render import (
     extract_manifest_versions,
     parse_dotted_version,
 )
-from .spec import FeedSpec
+from .spec import EXTENSIONS, FeedSpec, all_feeds
 
 BACKUP_PREFIX = "feeds-history"
 _TIMESTAMP_FORMAT = "%Y%m%dT%H%M%SZ"
@@ -45,6 +46,13 @@ def _default_extensions_staging_dir() -> Path:
     # <monorepo>/updates/extensions — the tracked home of the extension
     # manifests (bundled_extensions_test reads it), mirroring api-worker.
     return get_package_root().parent.parent / "updates" / "extensions"
+
+
+@dataclass
+class FeedStatus:
+    spec: FeedSpec
+    live_version: Optional[str]  # None = no live object; "-" = versionless kind
+    last_published: Optional[str]  # newest feeds-history backup timestamp
 
 
 class FeedPublisher:
@@ -294,6 +302,58 @@ class FeedPublisher:
             print("\n".join(diff))
         else:
             log_info(f"{spec.key}: identical to live feed")
+
+    def collect_status(self) -> List[FeedStatus]:
+        """Live version + last feeds-history backup for every FeedSpec key."""
+        return [
+            FeedStatus(
+                spec=spec,
+                live_version=self._live_version_display(
+                    spec, self.fetch_live(spec.key)
+                ),
+                last_published=self._last_backup_timestamp(spec.key),
+            )
+            for spec in all_feeds()
+        ]
+
+    def _live_version_display(
+        self, spec: FeedSpec, live: Optional[str]
+    ) -> Optional[str]:
+        if live is None:
+            return None
+        if spec.key.endswith(".json"):
+            return "-"
+        if spec.kind in ("browser", "server"):
+            return extract_appcast_version(live) or "?"
+
+        versions = extract_manifest_versions(live)
+        if not versions:
+            return "?"
+        id_to_name = {ext.extension_id: ext.name for ext in EXTENSIONS}
+        named = sorted(
+            (id_to_name.get(ext_id, ext_id[:8]), version)
+            for ext_id, version in versions.items()
+        )
+        return ", ".join(f"{name}={version}" for name, version in named)
+
+    def _last_backup_timestamp(self, key: str) -> Optional[str]:
+        prefix = f"{BACKUP_PREFIX}/{key}."
+        keys: List[str] = []
+        token = None
+        while True:
+            kwargs = {"Bucket": self.env.r2_bucket, "Prefix": prefix}
+            if token:
+                kwargs["ContinuationToken"] = token
+            response = self.client.list_objects_v2(**kwargs)
+            keys.extend(obj["Key"] for obj in response.get("Contents", []))
+            if not response.get("IsTruncated"):
+                break
+            token = response.get("NextContinuationToken")
+
+        if not keys:
+            return None
+        # Timestamps are fixed-width UTC, so lexical max is newest.
+        return max(keys)[len(prefix):]
 
     def _backup_live(self, key: str) -> bool:
         timestamp = self._now().strftime(_TIMESTAMP_FORMAT)

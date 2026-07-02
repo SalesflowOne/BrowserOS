@@ -16,7 +16,7 @@ from .render import (
     render_server_appcast,
     render_update_manifest,
 )
-from .spec import feed_by_key, server_feed, update_manifest_feed
+from .spec import all_feeds, feed_by_key, server_feed, update_manifest_feed
 
 FIXED_NOW = datetime(2026, 7, 1, 12, 0, 0, tzinfo=timezone.utc)
 
@@ -45,6 +45,13 @@ class FakeR2Client:
     def put_object(self, Bucket, Key, Body, ContentType):
         self.calls.append(("put", Key, ContentType))
         self.objects[Key] = Body if isinstance(Body, bytes) else Body.encode()
+
+    def list_objects_v2(self, Bucket, Prefix, **kwargs):
+        keys = sorted(key for key in self.objects if key.startswith(Prefix))
+        return {
+            "Contents": [{"Key": key} for key in keys],
+            "IsTruncated": False,
+        }
 
 
 def _artifact(url="https://cdn.browseros.com/releases/browseros/0.47.0.2/macos/BrowserOS_v0.47.0.2_arm64.dmg"):
@@ -267,6 +274,42 @@ class PublisherTestCase(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual(self.client.calls[0][0], "copy")
         self.assertEqual(self.client.calls[1][0], "put")
+
+    def test_collect_status_covers_every_feed(self):
+        publisher = self._publisher(
+            {
+                "appcast.xml": _mac_appcast().encode(),
+                "feeds-history/appcast.xml.20260630T000000Z": b"old",
+                "feeds-history/appcast.xml.20260701T120000Z": b"older backup",
+                "extensions/update-manifest.alpha.xml": render_update_manifest(
+                    {"agent": "0.0.118.0", "bugreporter": "54.0.0.0"}
+                ).encode(),
+                "extensions/extensions.alpha.json": render_extensions_json(
+                    "alpha"
+                ).encode(),
+            }
+        )
+
+        statuses = {s.spec.key: s for s in publisher.collect_status()}
+
+        self.assertEqual(set(statuses), {feed.key for feed in all_feeds()})
+
+        appcast = statuses["appcast.xml"]
+        self.assertEqual(appcast.live_version, "10000.0.47.0.2")
+        self.assertEqual(appcast.last_published, "20260701T120000Z")
+
+        manifest = statuses["extensions/update-manifest.alpha.xml"]
+        self.assertIn("agent=0.0.118.0", manifest.live_version)
+        self.assertIn("bugreporter=54.0.0.0", manifest.live_version)
+        self.assertIsNone(manifest.last_published)
+
+        self.assertEqual(
+            statuses["extensions/extensions.alpha.json"].live_version, "-"
+        )
+
+        absent = statuses["appcast-win-arm64.xml"]
+        self.assertIsNone(absent.live_version)
+        self.assertIsNone(absent.last_published)
 
     def test_unpublishable_spec_refuses_publish_allows_dry_run(self):
         spec = feed_by_key("appcast-claw.xml")

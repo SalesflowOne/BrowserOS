@@ -12,12 +12,14 @@ from typing import List
 import typer
 
 from ..core.context import Context
+from ..lib.env import EnvConfig
 from ..lib.notify import slack_subscriber
 from ..lib.paths import get_package_root
 from ..core.runner import StepExecutionError, run as run_steps
 from ..lib.utils import log_error
 from ..release.appcast import AppcastModule
 from ..release.extensions import ExtensionsFeedModule, parse_set_options
+from ..release.feeds.publisher import FeedPublisher
 
 feeds_app = typer.Typer(
     help="Update-feed inspection",
@@ -136,7 +138,40 @@ def extensions_command(
     )
 
 
+@feeds_app.command("status")
+def feeds_status():
+    """Show every feed key with its live version and last-published backup.
+
+    \b
+      browseros release feeds status
+    """
+    env = EnvConfig()
+    if not env.has_r2_config():
+        log_error(
+            "R2 configuration not set. Required env vars: R2_ACCOUNT_ID, "
+            "R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY"
+        )
+        raise typer.Exit(1)
+
+    statuses = FeedPublisher(env=env).collect_status()
+
+    header = (
+        f"{'KEY':<42} {'KIND':<10} {'CHANNEL':<7} "
+        f"{'LIVE VERSION':<58} LAST PUBLISHED"
+    )
+    print(header)
+    print("-" * len(header))
+    for status in statuses:
+        spec = status.spec
+        key = spec.key + ("" if spec.publishable else " (unpublishable)")
+        channel = spec.channel or "-"
+        live = status.live_version if status.live_version is not None else "absent"
+        published = status.last_published or "-"
+        print(f"{key:<42} {spec.kind:<10} {channel:<7} {live:<58} {published}")
+
+
 def register(app: typer.Typer) -> None:
     """Attach the feed-publisher commands to the release CLI."""
     app.command("appcast")(appcast_command)
     app.command("extensions")(extensions_command)
+    app.add_typer(feeds_app, name="feeds")
