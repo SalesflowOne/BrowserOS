@@ -296,6 +296,27 @@ class PublisherTestCase(unittest.TestCase):
         self.assertFalse(ok)
         self.assertEqual(self.client.calls, [])
 
+    def test_versionless_appcast_refused_even_on_first_publish(self):
+        content = _mac_appcast().replace(
+            "<sparkle:version>10000.0.47.0.2</sparkle:version>", ""
+        )
+        publisher = self._publisher()
+
+        ok = publisher.publish(feed_by_key("appcast.xml"), content, publish=True)
+
+        self.assertFalse(ok)
+        self.assertEqual(self.client.calls, [])
+
+    def test_json_array_document_refused_cleanly(self):
+        publisher = self._publisher()
+
+        ok = publisher.publish(
+            feed_by_key("extensions/extensions.json"), "[1, 2]", publish=True
+        )
+
+        self.assertFalse(ok)
+        self.assertEqual(self.client.calls, [])
+
     def test_unparseable_live_fails_closed_without_flag(self):
         publisher = self._publisher({"appcast.xml": b"garbage <not xml"})
 

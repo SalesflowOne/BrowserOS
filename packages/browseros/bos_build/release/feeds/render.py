@@ -281,6 +281,13 @@ def _parse_appcast_root(root: ET.Element) -> Optional[ExistingAppcast]:
         if not all([url, os_type, arch, signature]):
             continue
 
+        # Hand-edited live feeds are hostile input: a garbage length must
+        # drop the enclosure, not crash the parse.
+        try:
+            length = int(length_str)
+        except ValueError:
+            continue
+
         filename = url.split("/")[-1]
         # e.g. browseros_server_0.0.37_darwin_arm64.zip -> darwin_arm64
         platform_match = _PLATFORM_RE.search(filename)
@@ -292,7 +299,7 @@ def _parse_appcast_root(root: ET.Element) -> Optional[ExistingAppcast]:
             platform=platform,
             zip_path=Path(filename),
             signature=signature,
-            length=int(length_str),
+            length=length,
             os=os_type,
             arch=arch,
         )
@@ -329,13 +336,19 @@ def render_extensions_json(channel: str) -> str:
 
 
 def parse_dotted_version(version: str) -> Tuple[int, ...]:
-    """Dotted version → int tuple; non-numeric parts count as 0."""
+    """Dotted version → int tuple; non-numeric parts count as 0.
+
+    Trailing zeros are stripped so "0.0.118" == "0.0.118.0" — otherwise the
+    downgrade guard would flag the short spelling of an equal version.
+    """
     parts = []
     for part in version.strip().split("."):
         try:
             parts.append(int(part))
         except ValueError:
             parts.append(0)
+    while parts and parts[-1] == 0:
+        parts.pop()
     return tuple(parts)
 
 

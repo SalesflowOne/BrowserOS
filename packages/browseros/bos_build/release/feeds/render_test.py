@@ -264,6 +264,15 @@ class ServerAppcastRenderTest(unittest.TestCase):
     def test_parse_server_appcast_content_malformed_returns_none(self):
         self.assertIsNone(parse_server_appcast_content("<rss><channel>"))
 
+    def test_hand_edited_garbage_length_drops_enclosure_not_crash(self):
+        content = GOLDEN_CLAW_SERVER_APPCAST.replace('length="123"', 'length=""')
+
+        parsed = parse_server_appcast_content(content)
+
+        self.assertIsNotNone(parsed)
+        self.assertEqual(parsed.version, "0.0.5")
+        self.assertEqual(parsed.artifacts, {})
+
 
 class ExtensionsRenderTest(unittest.TestCase):
     def test_golden_update_manifest(self):
@@ -295,6 +304,11 @@ class VersionHelpersTest(unittest.TestCase):
 
     def test_non_numeric_parts_parse_as_zero(self):
         self.assertEqual(parse_dotted_version("1.x.2"), (1, 0, 2))
+
+    def test_trailing_zeros_do_not_matter(self):
+        self.assertEqual(
+            parse_dotted_version("0.0.118"), parse_dotted_version("0.0.118.0")
+        )
 
     def test_extract_appcast_version(self):
         self.assertEqual(

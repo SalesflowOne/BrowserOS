@@ -139,6 +139,16 @@ class FeedPublisher:
             return False
         if not self._check_channel_metadata(spec, content):
             return False
+
+        # A single-item appcast must carry its version even on a first
+        # publish to an absent key — the guard below only runs against live.
+        if (
+            spec.kind in ("browser", "server")
+            and extract_appcast_version(content) is None
+        ):
+            log_error(f"{spec.key}: new content carries no sparkle:version")
+            return False
+
         if not self._check_download_urls(spec, content):
             return False
 
@@ -209,7 +219,10 @@ class FeedPublisher:
 
         if spec.kind == "extensions" and spec.key.endswith(".json"):
             expected = update_manifest_feed(spec.channel).url
-            extensions = json.loads(content).get("extensions")
+            document = json.loads(content)
+            extensions = (
+                document.get("extensions") if isinstance(document, dict) else None
+            )
             if not isinstance(extensions, dict):
                 log_error(f"{spec.key}: 'extensions' is not an object")
                 return False
