@@ -177,6 +177,19 @@ class BrowserAppcastRenderTest(unittest.TestCase):
                 "2026-06-19T06:41:33Z",
             )
 
+    def test_missing_length_raises(self):
+        artifact = {
+            k: v for k, v in MAC_ARTIFACT.items() if k != "sparkle_length"
+        }
+        with self.assertRaisesRegex(ValueError, "sparkle_length"):
+            render_browser_appcast(
+                feed_by_key("appcast.xml"),
+                artifact,
+                "0.47.0.2",
+                "10000.0.47.0.2",
+                "2026-06-19T06:41:33Z",
+            )
+
     def test_missing_sparkle_version_raises(self):
         with self.assertRaisesRegex(ValueError, "sparkle_version"):
             render_browser_appcast(

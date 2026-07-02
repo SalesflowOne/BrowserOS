@@ -39,13 +39,15 @@ class FakePublisher:
             return self.head_status.get(url, 200)
         return self.head_status
 
-    def publish(self, spec, content, publish=False, allow_downgrade=False):
+    def publish(self, spec, content, publish=False, allow_downgrade=False,
+                verbose=True):
         self.calls.append(
             SimpleNamespace(
                 key=spec.key,
                 content=content,
                 publish=publish,
                 allow_downgrade=allow_downgrade,
+                verbose=verbose,
             )
         )
         return spec.key not in self.refuse
@@ -149,15 +151,38 @@ class ExtensionsFeedModuleTest(unittest.TestCase):
         }
         self.assertEqual(set(self.publisher.head_calls), expected)
 
-    def test_dry_run_is_default_and_flags_thread_through(self):
+    def test_dry_run_is_default_and_runs_single_pass(self):
         self._run(set_versions={"agent": "0.0.118.0"})
-        self.assertTrue(all(not c.publish for c in self.publisher.calls))
 
+        self.assertEqual(len(self.publisher.calls), 3)
+        self.assertTrue(all(not c.publish for c in self.publisher.calls))
+        self.assertTrue(all(c.verbose for c in self.publisher.calls))
+
+    def test_publish_preflights_all_three_before_writing(self):
         self._run(
             set_versions={"agent": "0.0.118.0"}, publish=True, allow_downgrade=True
         )
-        self.assertTrue(all(c.publish for c in self.publisher.calls))
+
+        # Quiet preflight over the trio, then the writing pass.
+        self.assertEqual(
+            [(c.publish, c.verbose) for c in self.publisher.calls],
+            [(False, False)] * 3 + [(True, True)] * 3,
+        )
         self.assertTrue(all(c.allow_downgrade for c in self.publisher.calls))
+
+    def test_refused_preflight_blocks_every_write(self):
+        # The bundled manifest can hold a newer version from an earlier alpha
+        # run; its guard refusal must abort BEFORE any file is written.
+        publisher = FakePublisher(
+            live=_live_feeds(), refuse={"extensions/bundled-manifest.xml"}
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError, "extensions/bundled-manifest.xml"
+        ):
+            self._run(publisher=publisher, publish=True)
+
+        self.assertTrue(all(not c.publish for c in publisher.calls))
 
     def test_refused_publish_aborts_remaining_files(self):
         publisher = FakePublisher(

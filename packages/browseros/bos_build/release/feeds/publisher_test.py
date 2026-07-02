@@ -264,16 +264,52 @@ class PublisherTestCase(unittest.TestCase):
         self.assertFalse(ok)
         self.assertEqual(self.client.calls, [])
 
-    def test_malformed_live_still_backed_up_and_replaced(self):
+    def test_unparseable_live_fails_closed_without_flag(self):
         publisher = self._publisher({"appcast.xml": b"garbage <not xml"})
 
         ok = publisher.publish(
             feed_by_key("appcast.xml"), _mac_appcast(), publish=True
         )
 
+        self.assertFalse(ok)
+        self.assertEqual(self.client.calls, [])
+
+    def test_unparseable_live_replaced_with_flag_after_backup(self):
+        publisher = self._publisher({"appcast.xml": b"garbage <not xml"})
+
+        ok = publisher.publish(
+            feed_by_key("appcast.xml"),
+            _mac_appcast(),
+            publish=True,
+            allow_downgrade=True,
+        )
+
         self.assertTrue(ok)
         self.assertEqual(self.client.calls[0][0], "copy")
         self.assertEqual(self.client.calls[1][0], "put")
+
+    def test_extensions_json_for_wrong_channel_refused(self):
+        publisher = self._publisher()
+
+        ok = publisher.publish(
+            feed_by_key("extensions/extensions.json"),
+            render_extensions_json("alpha"),
+            publish=True,
+        )
+
+        self.assertFalse(ok)
+        self.assertEqual(self.client.calls, [])
+
+    def test_quiet_preflight_skips_output_but_keeps_rails(self):
+        publisher = self._publisher(
+            {"appcast.xml": _mac_appcast("10000.0.48.0.0").encode()}
+        )
+
+        ok = publisher.publish(
+            feed_by_key("appcast.xml"), _mac_appcast(), verbose=False
+        )
+
+        self.assertFalse(ok)
 
     def test_collect_status_covers_every_feed(self):
         publisher = self._publisher(

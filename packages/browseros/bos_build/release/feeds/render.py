@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Feed renderers: complete single-item update feeds from explicit inputs.
 
-Pure functions — rendering must be reproducible for golden tests and
-dry-run diffs, so no I/O here. The server appcast types moved in from
+No filesystem or network I/O — rendering is deterministic given its inputs
+(the server appcast stamps UTC now only when no same-version existing item
+pins the pubDate). The server appcast types moved in from
 release/ota/common.py; the dependency direction is strictly ota → feeds.
 """
 
@@ -126,8 +127,14 @@ def render_browser_appcast(
             "sparkle_signature — re-sign and re-upload before publishing"
         )
 
-    product = get_product_descriptor(spec.product)
     length = artifact.get("sparkle_length", artifact.get("size", 0))
+    if not length:
+        raise ValueError(
+            f"{spec.key}: artifact {artifact.get('filename', '?')} has no "
+            "sparkle_length/size — refusing to ship length=\"0\" to clients"
+        )
+
+    product = get_product_descriptor(spec.product)
     os_attr = '\n    sparkle:os="windows"' if spec.platform == "win" else ""
     footer = (
         ""

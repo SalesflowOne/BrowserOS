@@ -101,9 +101,6 @@ class ExtensionsFeedModule(Step):
             if ext.in_update_feed
         }
 
-        # Manifest first, then the config pointing at it, then the
-        # build-time bundled manifest — abort on the first refused write so
-        # a guard failure can't leave the trio half-updated.
         outputs = (
             (update_manifest_feed(self.channel),
              render_update_manifest(update_feed_versions)),
@@ -111,14 +108,37 @@ class ExtensionsFeedModule(Step):
              render_extensions_json(self.channel)),
             (bundled_manifest_feed(), render_update_manifest(versions)),
         )
+
+        # Preflight all three through the rails before the first write so a
+        # guard refusal (e.g. the bundled manifest holding a newer version
+        # from an earlier alpha run) cannot leave the trio half-updated.
+        # In dry-run mode this preflight IS the run.
         for spec, content in outputs:
             if not publisher.publish(
                 spec,
                 content,
-                publish=self.publish,
+                publish=False,
+                allow_downgrade=self.allow_downgrade,
+                verbose=not self.publish,
+            ):
+                raise RuntimeError(
+                    f"Feed refused in preflight: {spec.key} — nothing written"
+                )
+
+        if not self.publish:
+            return
+
+        for spec, content in outputs:
+            if not publisher.publish(
+                spec,
+                content,
+                publish=True,
                 allow_downgrade=self.allow_downgrade,
             ):
-                raise RuntimeError(f"Feed refused: {spec.key} — nothing further written")
+                raise RuntimeError(
+                    f"Feed refused: {spec.key} — earlier files in this run "
+                    "were already written"
+                )
 
     def _resolve_versions(self, publisher: FeedPublisher) -> Dict[str, str]:
         """Final name→version map: live bundled < live channel manifest < --set.

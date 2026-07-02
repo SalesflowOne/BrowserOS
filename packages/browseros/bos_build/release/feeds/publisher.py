@@ -26,7 +26,7 @@ from .render import (
     extract_manifest_versions,
     parse_dotted_version,
 )
-from .spec import EXTENSIONS, FeedSpec, all_feeds
+from .spec import EXTENSIONS, FeedSpec, all_feeds, update_manifest_feed
 
 BACKUP_PREFIX = "feeds-history"
 _TIMESTAMP_FORMAT = "%Y%m%dT%H%M%SZ"
@@ -35,7 +35,11 @@ _TIMESTAMP_FORMAT = "%Y%m%dT%H%M%SZ"
 def _default_http_head(url: str) -> int:
     import requests
 
-    return requests.head(url, timeout=30, allow_redirects=True).status_code
+    try:
+        return requests.head(url, timeout=30, allow_redirects=True).status_code
+    except requests.RequestException as e:
+        log_error(f"HEAD {url} failed: {e}")
+        return 0
 
 
 def _default_appcast_staging_dir() -> Path:
@@ -106,8 +110,13 @@ class FeedPublisher:
         content: str,
         publish: bool = False,
         allow_downgrade: bool = False,
+        verbose: bool = True,
     ) -> bool:
-        """Run the rails for one feed; write only when publish=True."""
+        """Run the rails for one feed; write only when publish=True.
+
+        verbose=False keeps the rails (and their errors) but skips the
+        content/diff dump — for preflight passes that precede a real write.
+        """
         log_info(f"\n── {spec.key} " + "─" * max(0, 50 - len(spec.key)))
 
         if not spec.publishable:
@@ -134,10 +143,14 @@ class FeedPublisher:
         ):
             return False
 
-        self._print_content_and_diff(spec, content, live)
+        if verbose:
+            self._print_content_and_diff(spec, content, live)
 
         if not publish:
-            log_info(f"DRY RUN — {spec.key} not written (pass --publish to write)")
+            if verbose:
+                log_info(
+                    f"DRY RUN — {spec.key} not written (pass --publish to write)"
+                )
             return True
 
         if live is not None and not self._backup_live(spec.key):
@@ -172,22 +185,35 @@ class FeedPublisher:
         return True
 
     def _check_channel_metadata(self, spec: FeedSpec, content: str) -> bool:
-        """Rendered/provided appcast must carry this spec's title and link.
+        """Rendered/provided content must carry this spec's channel identity.
 
         This is the rail that makes the historical failure — an alpha file
         byte-copied onto the prod key — impossible to publish.
         """
-        if spec.kind not in ("browser", "server"):
+        if spec.kind in ("browser", "server"):
+            title, link = extract_channel_metadata(content)
+            if title != spec.title or link != spec.link:
+                log_error(
+                    f"{spec.key}: channel metadata mismatch — got "
+                    f"title={title!r} link={link!r}, spec requires "
+                    f"title={spec.title!r} link={spec.link!r}. "
+                    "Refusing to publish."
+                )
+                return False
             return True
 
-        title, link = extract_channel_metadata(content)
-        if title != spec.title or link != spec.link:
-            log_error(
-                f"{spec.key}: channel metadata mismatch — got title={title!r} "
-                f"link={link!r}, spec requires title={spec.title!r} "
-                f"link={spec.link!r}. Refusing to publish."
-            )
-            return False
+        if spec.kind == "extensions" and spec.key.endswith(".json"):
+            expected = update_manifest_feed(spec.channel).url
+            configs = json.loads(content).get("extensions", {}).values()
+            urls = {config.get("external_update_url") for config in configs}
+            if urls - {expected}:
+                log_error(
+                    f"{spec.key}: external_update_url mismatch — got "
+                    f"{sorted(urls - {expected})}, this channel requires "
+                    f"{expected}. Refusing to publish."
+                )
+                return False
+
         return True
 
     def _check_download_urls(self, spec: FeedSpec, content: str) -> bool:
@@ -225,11 +251,7 @@ class FeedPublisher:
 
         live_version = extract_appcast_version(live)
         if live_version is None:
-            log_warning(
-                f"{spec.key}: live feed has no parseable sparkle:version — "
-                "skipping downgrade guard"
-            )
-            return True
+            return self._refuse_unguardable_live(spec, allow_downgrade)
 
         return self._refuse_downgrade(
             spec, f"{spec.key}", new_version, live_version, allow_downgrade
@@ -240,11 +262,7 @@ class FeedPublisher:
     ) -> bool:
         live_versions = extract_manifest_versions(live)
         if not live_versions:
-            log_warning(
-                f"{spec.key}: live manifest has no parseable versions — "
-                "skipping downgrade guard"
-            )
-            return True
+            return self._refuse_unguardable_live(spec, allow_downgrade)
 
         for ext_id, new_version in extract_manifest_versions(content).items():
             live_version = live_versions.get(ext_id)
@@ -255,6 +273,23 @@ class FeedPublisher:
             ):
                 return False
         return True
+
+    def _refuse_unguardable_live(
+        self, spec: FeedSpec, allow_downgrade: bool
+    ) -> bool:
+        """A live object we cannot version-compare fails closed, not open."""
+        if allow_downgrade:
+            log_warning(
+                f"{spec.key}: live feed has no parseable version(s) — "
+                "replacing it (--allow-downgrade)"
+            )
+            return True
+        log_error(
+            f"{spec.key}: live feed exists but carries no parseable "
+            "version(s), so the downgrade guard cannot run. Inspect it and "
+            "pass --allow-downgrade to replace it."
+        )
+        return False
 
     def _refuse_downgrade(
         self,
