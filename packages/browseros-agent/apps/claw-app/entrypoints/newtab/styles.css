@@ -14,64 +14,66 @@
  * accent-ink, status colors, etc.) live alongside as additional utility
  * classes.
  *
- * The palette is the design prototype's tokens translated from raw hex to
- * HSL (which tailwind 4 + shadcn expect) so it composes with the rest of
- * the utility set.
+ * Every color maps through a var() so the `.dark` block below can flip
+ * the whole palette by re-declaring the plain variables; the concrete
+ * light values live in :root. The palette is the design prototype's
+ * tokens translated from raw hex to HSL (which tailwind 4 + shadcn
+ * expect) so it composes with the rest of the utility set.
  */
 @theme inline {
   /* shadcn primitives: re-pointed to BrowserOS surfaces */
-  --color-background: hsl(40 25% 97%);
-  --color-foreground: hsl(40 8% 10%);
-  --color-card: hsl(0 0% 100%);
-  --color-card-foreground: hsl(40 8% 10%);
-  --color-popover: hsl(0 0% 100%);
-  --color-popover-foreground: hsl(40 8% 10%);
-  --color-primary: hsl(19 89% 56%);
-  --color-primary-foreground: hsl(0 0% 100%);
-  --color-secondary: hsl(40 22% 95%);
-  --color-secondary-foreground: hsl(40 8% 10%);
-  --color-muted: hsl(40 18% 94%);
-  --color-muted-foreground: hsl(35 5% 51%);
-  --color-accent: hsl(19 89% 56%);
-  --color-accent-foreground: hsl(0 0% 100%);
-  --color-destructive: hsl(4 56% 50%);
-  --color-destructive-foreground: hsl(0 0% 100%);
-  --color-border: hsl(40 22% 91%);
-  --color-input: hsl(40 22% 91%);
-  --color-ring: hsl(19 89% 56%);
-  --color-sidebar: hsl(40 22% 95%);
-  --color-sidebar-foreground: hsl(40 8% 10%);
-  --color-sidebar-accent: hsl(25 88% 94%);
-  --color-sidebar-accent-foreground: hsl(22 86% 38%);
-  --color-sidebar-border: hsl(40 22% 91%);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
 
   /* BrowserOS bespoke surfaces */
-  --color-bg-canvas: hsl(40 30% 98%);
-  --color-bg-sunken: hsl(40 18% 94%);
-  --color-card-tint: hsl(40 35% 98.5%);
-  --color-border-2: hsl(40 18% 88%);
-  --color-border-strong: hsl(40 14% 83%);
+  --color-bg-canvas: var(--bg-canvas);
+  --color-bg-sunken: var(--bg-sunken);
+  --color-card-tint: var(--card-tint);
+  --color-border-2: var(--border-2);
+  --color-border-strong: var(--border-strong);
 
   /* Ink scale (typography hierarchy) */
-  --color-ink: hsl(40 8% 10%);
-  --color-ink-2: hsl(35 6% 32%);
-  --color-ink-3: hsl(35 5% 51%);
-  --color-ink-4: hsl(35 5% 66%);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-ink-4: var(--ink-4);
 
   /* Accent ink (high-contrast orange text on tinted backgrounds) */
-  --color-accent-2: hsl(20 79% 49%);
-  --color-accent-ink: hsl(22 86% 38%);
-  --color-accent-tint: hsl(25 88% 94%);
-  --color-accent-tint-2: hsl(25 87% 90%);
+  --color-accent-2: var(--accent-2);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-tint: var(--accent-tint);
+  --color-accent-tint-2: var(--accent-tint-2);
 
   /* Status palette */
-  --color-green: hsl(140 65% 33%);
-  --color-green-tint: hsl(140 35% 92%);
-  --color-amber: hsl(35 80% 40%);
-  --color-amber-tint: hsl(40 75% 92%);
-  --color-red: hsl(4 56% 50%);
-  --color-red-tint: hsl(4 65% 95%);
-  --color-blue: hsl(217 75% 53%);
+  --color-green: var(--green);
+  --color-green-tint: var(--green-tint);
+  --color-amber: var(--amber);
+  --color-amber-tint: var(--amber-tint);
+  --color-red: var(--red);
+  --color-red-tint: var(--red-tint);
+  --color-blue: var(--blue);
 
   /* Type families. Variable fonts get the "Variable" suffix; Newsreader is
      not currently variable so it ships as a plain family. */
@@ -177,6 +179,23 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* Same three layers, flipped to deep warm charcoal for dark mode. */
+.dark body {
+  background:
+    radial-gradient(
+      1200px 700px at 18% -8%,
+      hsl(160 8% 13%) 0%,
+      hsl(160 8% 13% / 0) 60%
+    ),
+    radial-gradient(
+      1000px 800px at 100% 110%,
+      hsl(35 12% 12%) 0%,
+      hsl(35 12% 12% / 0) 55%
+    ),
+    linear-gradient(155deg, hsl(170 6% 9%) 0%, hsl(35 8% 10%) 100%);
+  background-attachment: fixed;
+}
+
 /* Selection: tint with the accent so it reads as BrowserOS, not chrome blue.
    Foreground is pinned to ink so light-on-dark surfaces (the MCP URL block,
    for example) stay readable when selected. */
@@ -207,72 +226,121 @@ body {
  ---break---
  */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.141 0.005 285.823);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.141 0.005 285.823);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.141 0.005 285.823);
-  --primary: oklch(0.553 0.195 38.402);
-  --primary-foreground: oklch(0.98 0.016 73.684);
-  --secondary: oklch(0.967 0.001 286.375);
-  --secondary-foreground: oklch(0.21 0.006 285.885);
-  --muted: oklch(0.967 0.001 286.375);
-  --muted-foreground: oklch(0.552 0.016 285.938);
-  --accent: oklch(0.967 0.001 286.375);
-  --accent-foreground: oklch(0.21 0.006 285.885);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.92 0.004 286.32);
-  --input: oklch(0.92 0.004 286.32);
-  --ring: oklch(0.705 0.015 286.067);
+  --background: hsl(40 25% 97%);
+  --foreground: hsl(40 8% 10%);
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(40 8% 10%);
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(40 8% 10%);
+  --primary: hsl(19 89% 56%);
+  --primary-foreground: hsl(0 0% 100%);
+  --secondary: hsl(40 22% 95%);
+  --secondary-foreground: hsl(40 8% 10%);
+  --muted: hsl(40 18% 94%);
+  --muted-foreground: hsl(35 5% 51%);
+  --accent: hsl(19 89% 56%);
+  --accent-foreground: hsl(0 0% 100%);
+  --destructive: hsl(4 56% 50%);
+  --destructive-foreground: hsl(0 0% 100%);
+  --border: hsl(40 22% 91%);
+  --input: hsl(40 22% 91%);
+  --ring: hsl(19 89% 56%);
   --chart-1: oklch(0.837 0.128 66.29);
   --chart-2: oklch(0.705 0.213 47.604);
   --chart-3: oklch(0.646 0.222 41.116);
   --chart-4: oklch(0.553 0.195 38.402);
   --chart-5: oklch(0.47 0.157 37.304);
   --radius: 0.45rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.141 0.005 285.823);
+  --sidebar: hsl(40 22% 95%);
+  --sidebar-foreground: hsl(40 8% 10%);
   --sidebar-primary: oklch(0.646 0.222 41.116);
   --sidebar-primary-foreground: oklch(0.98 0.016 73.684);
-  --sidebar-accent: oklch(0.967 0.001 286.375);
-  --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
-  --sidebar-border: oklch(0.92 0.004 286.32);
-  --sidebar-ring: oklch(0.705 0.015 286.067);
+  --sidebar-accent: hsl(25 88% 94%);
+  --sidebar-accent-foreground: hsl(22 86% 38%);
+  --sidebar-border: hsl(40 22% 91%);
+  --sidebar-ring: hsl(19 89% 56%);
+
+  --bg-canvas: hsl(40 30% 98%);
+  --bg-sunken: hsl(40 18% 94%);
+  --card-tint: hsl(40 35% 98.5%);
+  --border-2: hsl(40 18% 88%);
+  --border-strong: hsl(40 14% 83%);
+  --ink: hsl(40 8% 10%);
+  --ink-2: hsl(35 6% 32%);
+  --ink-3: hsl(35 5% 51%);
+  --ink-4: hsl(35 5% 66%);
+  --accent-2: hsl(20 79% 49%);
+  --accent-ink: hsl(22 86% 38%);
+  --accent-tint: hsl(25 88% 94%);
+  --accent-tint-2: hsl(25 87% 90%);
+  --green: hsl(140 65% 33%);
+  --green-tint: hsl(140 35% 92%);
+  --amber: hsl(35 80% 40%);
+  --amber-tint: hsl(40 75% 92%);
+  --red: hsl(4 56% 50%);
+  --red-tint: hsl(4 65% 95%);
+  --blue: hsl(217 75% 53%);
 }
 /*
  ---break---
  */
+
+/* Dark counterpart on the same warm hue axes (35-40 neutrals, 19-26
+   orange) so the cockpit keeps its warm identity instead of going
+   generic zinc. Tints flip from "pastel wash on cream" to "deep wash
+   on charcoal"; the ink scale inverts. */
 .dark {
-  --background: oklch(0.141 0.005 285.823);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.21 0.006 285.885);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.21 0.006 285.885);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.47 0.157 37.304);
-  --primary-foreground: oklch(0.98 0.016 73.684);
-  --secondary: oklch(0.274 0.006 286.033);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.274 0.006 286.033);
-  --muted-foreground: oklch(0.705 0.015 286.067);
-  --accent: oklch(0.274 0.006 286.033);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.552 0.016 285.938);
+  --background: hsl(35 8% 9%);
+  --foreground: hsl(40 18% 94%);
+  --card: hsl(35 8% 12%);
+  --card-foreground: hsl(40 18% 94%);
+  --popover: hsl(35 8% 12%);
+  --popover-foreground: hsl(40 18% 94%);
+  --primary: hsl(19 89% 56%);
+  --primary-foreground: hsl(0 0% 100%);
+  --secondary: hsl(35 6% 15%);
+  --secondary-foreground: hsl(40 18% 94%);
+  --muted: hsl(35 6% 16%);
+  --muted-foreground: hsl(36 6% 60%);
+  --accent: hsl(19 89% 56%);
+  --accent-foreground: hsl(0 0% 100%);
+  --destructive: hsl(4 70% 58%);
+  --destructive-foreground: hsl(0 0% 100%);
+  --border: hsl(35 6% 20%);
+  --input: hsl(35 6% 20%);
+  --ring: hsl(19 89% 56%);
   --chart-1: oklch(0.837 0.128 66.29);
   --chart-2: oklch(0.705 0.213 47.604);
   --chart-3: oklch(0.646 0.222 41.116);
   --chart-4: oklch(0.553 0.195 38.402);
   --chart-5: oklch(0.47 0.157 37.304);
-  --sidebar: oklch(0.21 0.006 285.885);
-  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar: hsl(35 7% 11%);
+  --sidebar-foreground: hsl(40 18% 94%);
   --sidebar-primary: oklch(0.705 0.213 47.604);
   --sidebar-primary-foreground: oklch(0.98 0.016 73.684);
-  --sidebar-accent: oklch(0.274 0.006 286.033);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.552 0.016 285.938);
+  --sidebar-accent: hsl(22 45% 18%);
+  --sidebar-accent-foreground: hsl(26 90% 70%);
+  --sidebar-border: hsl(35 6% 18%);
+  --sidebar-ring: hsl(19 89% 56%);
+
+  --bg-canvas: hsl(35 8% 8%);
+  --bg-sunken: hsl(35 6% 13%);
+  --card-tint: hsl(35 8% 13%);
+  --border-2: hsl(35 6% 22%);
+  --border-strong: hsl(35 6% 28%);
+  --ink: hsl(40 18% 94%);
+  --ink-2: hsl(38 10% 74%);
+  --ink-3: hsl(36 6% 58%);
+  --ink-4: hsl(35 5% 44%);
+  --accent-2: hsl(22 90% 62%);
+  --accent-ink: hsl(26 90% 68%);
+  --accent-tint: hsl(22 45% 16%);
+  --accent-tint-2: hsl(22 50% 22%);
+  --green: hsl(140 45% 55%);
+  --green-tint: hsl(140 30% 14%);
+  --amber: hsl(38 80% 58%);
+  --amber-tint: hsl(40 40% 14%);
+  --red: hsl(4 70% 62%);
+  --red-tint: hsl(4 40% 15%);
+  --blue: hsl(217 85% 66%);
 }
