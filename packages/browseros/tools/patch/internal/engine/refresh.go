@@ -167,7 +167,7 @@ func Refresh(ctx context.Context, opts RefreshOptions) (*RefreshResult, error) {
 		if !dirty {
 			continue
 		}
-		commit, err := git.CommitPathsWithBodyEnv(ctx, opts.Workspace.Path, feature.Description, patchesRevTrailer+": "+repoRev, commitEnv, stagePaths)
+		commit, err := git.CommitIndexWithBodyEnv(ctx, opts.Workspace.Path, feature.Description, patchesRevTrailer+": "+repoRev, commitEnv)
 		if err != nil {
 			return nil, err
 		}
@@ -176,6 +176,18 @@ func Refresh(ctx context.Context, opts RefreshOptions) (*RefreshResult, error) {
 			Description: feature.Description,
 			Commit:      commit,
 			Files:       paths,
+		})
+	}
+	if len(result.Commits) == 0 {
+		commit, err := git.CommitIndexWithBodyEnv(ctx, opts.Workspace.Path, "chore: materialize browseros patches", patchesRevTrailer+": "+repoRev, commitEnv)
+		if err != nil {
+			return nil, err
+		}
+		result.Commits = append(result.Commits, RefreshCommit{
+			Feature:     "materialization",
+			Description: "chore: materialize browseros patches",
+			Commit:      commit,
+			Files:       []string{},
 		})
 	}
 	reportProgress(opts.Progress, "Moving browseros branch")

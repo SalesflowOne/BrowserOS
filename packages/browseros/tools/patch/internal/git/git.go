@@ -216,6 +216,44 @@ func CommitUnixTime(ctx context.Context, dir string, ref string) (string, error)
 	return strings.TrimSpace(result.Stdout), nil
 }
 
+func CommitIndexWithBodyEnv(ctx context.Context, dir string, subject string, body string, env []string) (string, error) {
+	tree, err := writeTree(ctx, dir)
+	if err != nil {
+		return "", err
+	}
+	parent, err := HeadRev(ctx, dir)
+	if err != nil {
+		return "", err
+	}
+	message := subject + "\n"
+	if body != "" {
+		message += "\n" + body + "\n"
+	}
+	result, err := RunEnv(ctx, dir, []byte(message), env, "-c", "commit.gpgsign=false", "commit-tree", tree, "-p", parent)
+	if err != nil {
+		return "", err
+	}
+	if result.Code != 0 {
+		return "", errors.New(strings.TrimSpace(result.Stderr))
+	}
+	commit := strings.TrimSpace(result.Stdout)
+	if err := ResetSoft(ctx, dir, commit); err != nil {
+		return "", err
+	}
+	return commit, nil
+}
+
+func writeTree(ctx context.Context, dir string) (string, error) {
+	result, err := Run(ctx, dir, nil, "write-tree")
+	if err != nil {
+		return "", err
+	}
+	if result.Code != 0 {
+		return "", errors.New(strings.TrimSpace(result.Stderr))
+	}
+	return strings.TrimSpace(result.Stdout), nil
+}
+
 func CommitTrailer(ctx context.Context, dir string, ref string, key string) (string, error) {
 	result, err := Run(ctx, dir, nil, "log", "-1", "--format=%B", ref)
 	if err != nil {
@@ -798,6 +836,17 @@ func PullRebase(ctx context.Context, dir string, remote string, branch string) e
 
 func ResetHard(ctx context.Context, dir string) error {
 	result, err := Run(ctx, dir, nil, "reset", "--hard")
+	if err != nil {
+		return err
+	}
+	if result.Code != 0 {
+		return errors.New(strings.TrimSpace(result.Stderr))
+	}
+	return nil
+}
+
+func ResetSoft(ctx context.Context, dir string, ref string) error {
+	result, err := Run(ctx, dir, nil, "reset", "--soft", ref)
 	if err != nil {
 		return err
 	}

@@ -159,10 +159,15 @@ func AddFeatureFromRange(ctx context.Context, opts FeatureAddOptions) (*FeatureA
 	if err != nil {
 		return nil, err
 	}
+	repoSet, err := patch.LoadRepoPatchSet(opts.Repo.PatchesDir, nil)
+	if err != nil {
+		return nil, err
+	}
 	candidates := changedScope(changes)
 	seen := map[string]bool{}
 	var added []string
 	var excluded []FeatureAddExcluded
+	var missing []string
 	for _, rel := range candidates {
 		if seen[rel] {
 			continue
@@ -173,12 +178,20 @@ func AddFeatureFromRange(ctx context.Context, opts FeatureAddOptions) (*FeatureA
 			excluded = append(excluded, FeatureAddExcluded{Path: rel, Features: owners})
 			continue
 		}
+		if _, ok := repoSet[rel]; !ok {
+			missing = append(missing, rel)
+			continue
+		}
 		added = append(added, rel)
 	}
 	slices.Sort(added)
+	slices.Sort(missing)
 	slices.SortFunc(excluded, func(a, b FeatureAddExcluded) int {
 		return strings.Compare(a.Path, b.Path)
 	})
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("range %s..%s has files not extracted to chromium_patches: %s", opts.RangeStart, opts.RangeEnd, strings.Join(missing, ", "))
+	}
 	if len(added) == 0 {
 		return nil, fmt.Errorf("range %s..%s has no unclaimed files to add", opts.RangeStart, opts.RangeEnd)
 	}
