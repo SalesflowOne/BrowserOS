@@ -2,6 +2,7 @@
 """CLI surface tests for the dev subcommands."""
 
 import json
+import tempfile
 import unittest
 from unittest import mock
 
@@ -9,6 +10,7 @@ import yaml
 from typer.testing import CliRunner
 
 from bos_build.browseros import app
+from bos_build.patchkit.doctor import ApplyFailure, ApplyReport, Finding
 
 runner = CliRunner()
 
@@ -75,6 +77,54 @@ class DoctorCliTest(unittest.TestCase):
 
         self.assertEqual(result.exit_code, 2, combined(result))
         self.assertIn("features.yaml is broken", combined(result))
+
+    def test_findings_render_and_exit_1(self):
+        finding = Finding(
+            "missing-patch",
+            "error",
+            "one: no patch on disk for entry 'chrome/gone.cc'",
+            feature="one",
+            path="chrome/gone.cc",
+        )
+        with mock.patch(
+            "bos_build.patchkit.doctor.check_repo", return_value=[finding]
+        ):
+            result = invoke("doctor")
+
+        self.assertEqual(result.exit_code, 1, combined(result))
+        self.assertIn("chrome/gone.cc", combined(result))
+        self.assertIn("unhealthy", combined(result))
+
+    def test_against_non_git_dir_is_a_usage_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = invoke("doctor", "--against", tmp)
+
+        self.assertEqual(result.exit_code, 2, combined(result))
+        self.assertIn("not a git repository", combined(result))
+
+    def test_against_failures_grouped_and_exit_1(self):
+        report = ApplyReport(
+            against="/fake/src",
+            total=2,
+            clean=1,
+            failures=[ApplyFailure("chrome/a.cc", "one", "boom")],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            with (
+                mock.patch(
+                    "bos_build.patchkit.extract.utils.validate_git_repository",
+                    return_value=True,
+                ),
+                mock.patch(
+                    "bos_build.patchkit.doctor.check_apply", return_value=report
+                ),
+                mock.patch("bos_build.patchkit.doctor.check_repo", return_value=[]),
+            ):
+                result = invoke("doctor", "--against", tmp)
+
+        self.assertEqual(result.exit_code, 1, combined(result))
+        self.assertIn("1/2 patches fail", combined(result))
+        self.assertIn("chrome/a.cc", combined(result))
 
 
 if __name__ == "__main__":

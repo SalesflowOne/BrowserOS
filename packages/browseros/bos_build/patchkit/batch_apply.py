@@ -34,6 +34,11 @@ def reset_file_to_commit(file_path: str, commit: str, chromium_src: Path) -> boo
     return result.returncode == 0
 
 
+# Marker files annotate a patch path (deleted/binary/renamed upstream) and
+# are never applied; the doctor maps them back onto their base path.
+MARKER_SUFFIXES = (".deleted", ".binary", ".rename")
+
+
 def find_patch_files(patches_dir: Path) -> List[Path]:
     """Find all valid patch files in a directory.
 
@@ -51,9 +56,7 @@ def find_patch_files(patches_dir: Path) -> List[Path]:
             p
             for p in patches_dir.rglob("*")
             if p.is_file()
-            and not p.name.endswith(".deleted")
-            and not p.name.endswith(".binary")
-            and not p.name.endswith(".rename")
+            and not p.name.endswith(MARKER_SUFFIXES)
             and not p.name.startswith(".")
         ]
     )

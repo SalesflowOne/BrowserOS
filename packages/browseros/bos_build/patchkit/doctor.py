@@ -12,9 +12,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
+from .batch_apply import MARKER_SUFFIXES
 from .validation import validate_description, validate_feature_name
-
-MARKER_SUFFIXES = (".deleted", ".binary", ".rename")
 
 # Features whose description carries this prefix list files touched by
 # series_patches/ quilt patches, not chromium_patches/ paths — they are
@@ -205,6 +204,11 @@ def load_features(root_dir: Path) -> Dict:
     if not isinstance(features, dict):
         raise ValueError(f"{features_file}: 'features' must be a mapping")
     for name, spec in features.items():
+        if not isinstance(name, str):
+            # yaml parses bare on/yes/true/1 keys as non-strings
+            raise ValueError(
+                f"{features_file}: feature name must be a string (got {name!r})"
+            )
         if not isinstance(spec, dict):
             raise ValueError(
                 f"{features_file}: feature '{name}' must be a mapping "

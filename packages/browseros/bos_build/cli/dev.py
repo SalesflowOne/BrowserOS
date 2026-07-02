@@ -185,7 +185,14 @@ def doctor(
         check_repo,
         load_features,
     )
-    from ..patchkit.extract.utils import GitError
+    from ..patchkit.extract.utils import GitError, validate_git_repository
+
+    if against and not validate_git_repository(against):
+        log_error(
+            f"--against {against} is not a git repository "
+            "(expected a chromium src checkout)"
+        )
+        raise typer.Exit(2)
 
     root = get_package_root()
     patches_dir = root / "chromium_patches"

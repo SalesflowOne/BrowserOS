@@ -460,6 +460,12 @@ class LoadFeaturesTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "list of paths"):
             load_features(root)
 
+    def test_non_string_feature_key_is_a_value_error(self):
+        # yaml parses a bare `on:` key as a boolean
+        root = self._root('features:\n  on:\n    description: "feat: x"\n')
+        with self.assertRaisesRegex(ValueError, "must be a string"):
+            load_features(root)
+
 
 class RepoTruthTest(unittest.TestCase):
     def test_repo_features_consistent_with_patches(self):
