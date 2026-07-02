@@ -39,7 +39,7 @@ class ListModule(Step):
 
     def _list_all_versions(self, ctx: Context) -> None:
         """List all available versions"""
-        versions = list_all_versions(ctx.env)
+        versions = list_all_versions(ctx.product.release_prefix, ctx.env)
 
         if not versions:
             log_info("No releases found in R2")
