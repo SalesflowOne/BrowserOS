@@ -90,12 +90,14 @@ def resolve_config(cli_args: Dict[str, Any]) -> List[Context]:
 def resolve_pipeline(
     cli_args: Dict[str, Any],
     execution_order: Optional[List[Tuple[str, List[str]]]] = None,
+    quiet: bool = False,
 ) -> List[str]:
     """Resolve DIRECT-mode pipeline from --modules or phase flags.
 
     Args:
         cli_args: CLI arguments dictionary
         execution_order: Phase execution order (required for flag mode)
+        quiet: Suppress resolution logging (--show-plan projections)
 
     Returns:
         List of module names in execution order
@@ -123,7 +125,8 @@ def resolve_pipeline(
     if has_modules:
         modules_str = cli_args["modules"]
         pipeline = [m.strip() for m in modules_str.split(",")]
-        log_info(f"✓ DIRECT MODE: pipeline={pipeline} (--modules)")
+        if not quiet:
+            log_info(f"✓ DIRECT MODE: pipeline={pipeline} (--modules)")
         return pipeline
 
     if execution_order is None:
@@ -131,7 +134,8 @@ def resolve_pipeline(
             "DIRECT MODE: execution_order required for phase flag resolution"
         )
     pipeline = _build_pipeline_from_flags(cli_args, execution_order)
-    log_info(f"✓ DIRECT MODE: pipeline={pipeline} (phase flags)")
+    if not quiet:
+        log_info(f"✓ DIRECT MODE: pipeline={pipeline} (phase flags)")
     return pipeline
 
 

@@ -65,7 +65,9 @@ class Switches:
             )
         registry = all_steps()
         for name in resolved.skip:
-            if name not in registry:
+            # isinstance guards yaml surprises like `skip: [upload: true]`
+            # (a dict entry), which would TypeError on the dict lookup.
+            if not isinstance(name, str) or name not in registry:
                 raise ValueError(
                     f"Unknown step '{name}' in skip. "
                     f"Valid steps: {', '.join(sorted(registry))}"
@@ -302,8 +304,14 @@ def _load_modules_profile(path: Path, data: Dict[str, Any]) -> Profile:
         )
 
     modules = data["modules"]
-    if not isinstance(modules, list) or not modules:
-        raise ValueError(f"Profile key 'modules' in {path} must be a non-empty list")
+    if (
+        not isinstance(modules, list)
+        or not modules
+        or not all(isinstance(m, str) for m in modules)
+    ):
+        raise ValueError(
+            f"Profile key 'modules' in {path} must be a non-empty list of step names"
+        )
 
     if isinstance(data.get("arch"), list):
         raise ValueError(

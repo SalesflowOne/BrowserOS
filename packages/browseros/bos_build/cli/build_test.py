@@ -185,11 +185,18 @@ class ModeGuardTest(unittest.TestCase):
             result = invoke("--modules", "clean,compile", "--show-plan")
         self.assertEqual(result.exit_code, 0, combined(result))
         self.assertEqual(plan_lines(result.output), ["clean", "compile"])
+        self.assertNotIn("DIRECT MODE", result.output)
 
     def test_direct_unknown_module_fails_show_plan(self):
         with scrubbed_env():
             result = invoke("--modules", "clean,nonsense", "--show-plan")
         self.assertNotEqual(result.exit_code, 0)
+
+    def test_direct_invalid_arch_fails_show_plan(self):
+        with scrubbed_env():
+            result = invoke("--modules", "clean", "--arch", "bogus", "--show-plan")
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("Invalid architecture", combined(result))
 
 
 class ModulesProfileCliTest(_ProfileMixin):
@@ -223,6 +230,31 @@ class ModulesProfileCliTest(_ProfileMixin):
             )
         self.assertEqual(result.exit_code, 0, combined(result))
         self.assertIn("build_type=debug", result.output)
+
+    def test_invalid_build_type_override_rejected(self):
+        path = self._profile("modules: [clean]\n")
+        with scrubbed_env():
+            result = invoke(
+                "--profile", str(path), "--build-type", "fast", "--show-plan"
+            )
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("Invalid build type", combined(result))
+
+    def test_arch_label_honors_env_like_the_run_will(self):
+        path = self._profile("modules: [clean]\n")
+        with scrubbed_env():
+            os.environ["ARCH"] = "x64"
+            result = invoke("--profile", str(path), "--show-plan")
+        self.assertEqual(result.exit_code, 0, combined(result))
+        self.assertIn("arch=x64", result.output)
+        self.assertIn("x64 (", result.output)
+
+    def test_invalid_profile_arch_fails_show_plan(self):
+        path = self._profile("modules: [clean]\narch: bogus\n")
+        with scrubbed_env():
+            result = invoke("--profile", str(path), "--show-plan")
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("Invalid architecture", combined(result))
 
     def test_unknown_module_in_profile_fails(self):
         path = self._profile("modules: [clean, nonsense]\n")

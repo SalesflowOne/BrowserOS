@@ -285,6 +285,15 @@ class SkipTest(unittest.TestCase):
         self.assertIn("uplod", message)
         self.assertIn("compile", message)
 
+    def test_skip_non_string_entry_rejected_not_typeerror(self):
+        # yaml `skip: [upload: true]` parses to a dict entry
+        with self.assertRaisesRegex(ValueError, "Unknown step"):
+            plan(
+                Switches(preset="release", skip=({"upload": True},)),
+                "arm64",
+                "macos",
+            )
+
 
 class SliceFromTest(unittest.TestCase):
     def test_slices_composed_plan_from_step(self):
@@ -426,6 +435,11 @@ class ProfileTest(unittest.TestCase):
     def test_empty_modules_rejected(self):
         with self.assertRaisesRegex(ValueError, "non-empty"):
             self._load("modules: []\n")
+
+    def test_non_string_modules_entry_rejected(self):
+        # yaml `modules: [clean: true]` parses to a dict entry
+        with self.assertRaisesRegex(ValueError, "list of step names"):
+            self._load("modules: [{clean: true}]\n")
 
     def test_modules_arch_list_rejected(self):
         with self.assertRaisesRegex(ValueError, "single-arch"):

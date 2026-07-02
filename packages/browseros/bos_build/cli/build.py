@@ -15,6 +15,7 @@ from ..core.pipeline import validate_pipeline, show_available_modules
 from ..core.planner import (
     Profile,
     Switches,
+    VALID_ARCHITECTURES,
     load_profile,
     plan,
     preflight,
@@ -272,7 +273,9 @@ def main(
             "upload": phase_upload,
         }
         try:
-            pipeline = resolve_pipeline(cli_args, execution_order=EXECUTION_ORDER)
+            pipeline = resolve_pipeline(
+                cli_args, execution_order=EXECUTION_ORDER, quiet=show_plan
+            )
         except ValueError as e:
             log_error(str(e))
             raise typer.Exit(1)
@@ -281,6 +284,12 @@ def main(
             from ..core.env import EnvConfig
 
             label_arch = arch or EnvConfig().arch or get_platform_arch()
+            if label_arch not in VALID_ARCHITECTURES:
+                log_error(
+                    f"Invalid architecture '{label_arch}'. "
+                    f"Valid: {', '.join(VALID_ARCHITECTURES)}"
+                )
+                raise typer.Exit(1)
             _print_plan(
                 _PlanProjection(
                     header=["Direct pipeline (--modules/phase flags)"],
@@ -397,6 +406,10 @@ def main(
                 )
 
 
+def _display_only_runs() -> List[Tuple[Context, List[str]]]:
+    raise RuntimeError("plan projection is display-only; no run builder attached")
+
+
 @dataclass(frozen=True)
 class _PlanProjection:
     """Composed plan, printable without a chromium checkout.
@@ -407,7 +420,7 @@ class _PlanProjection:
 
     header: List[str]
     arch_plans: List[Tuple[str, List[str]]]
-    build_runs: Callable[[], List[Tuple[Context, List[str]]]] = lambda: []
+    build_runs: Callable[[], List[Tuple[Context, List[str]]]] = _display_only_runs
 
 
 def _resolve_preset(
@@ -590,18 +603,31 @@ def _resolve_modules_profile(
             "profile — it owns its pipeline; edit the modules list instead"
         )
 
+    from ..core.env import EnvConfig
+
     steps = list(prof.modules or ())
     validate_pipeline(steps, AVAILABLE_MODULES)
     eff_product = product or prof.switches.product
-    eff_arch = arch or (
+    profile_arch = (
         prof.switches.architectures[0] if prof.switches.architectures else None
     )
+    # Fully resolve arch at projection time (CLI > profile > env >
+    # platform) so the printed label can never disagree with the run.
+    eff_arch = arch or profile_arch or EnvConfig().arch or get_platform_arch()
+    if eff_arch not in VALID_ARCHITECTURES:
+        raise ValueError(
+            f"Invalid architecture '{eff_arch}'. "
+            f"Valid: {', '.join(VALID_ARCHITECTURES)}"
+        )
     eff_build_type = build_type or prof.build_type or "debug"
+    if eff_build_type not in ("debug", "release"):
+        raise ValueError(
+            f"Invalid build type '{eff_build_type}'. Valid: debug, release"
+        )
 
     header = [
         "Modules profile (enumerated pipeline — you own this list)",
-        f"product={eff_product} arch={eff_arch or get_platform_arch()} "
-        f"build_type={eff_build_type}",
+        f"product={eff_product} arch={eff_arch} build_type={eff_build_type}",
     ]
 
     def build_runs() -> List[Tuple[Context, List[str]]]:
@@ -619,9 +645,7 @@ def _resolve_modules_profile(
             raise typer.Exit(1)
         return [(ctx, steps) for ctx in arch_ctxs]
 
-    return _PlanProjection(
-        header, [(eff_arch or get_platform_arch(), steps)], build_runs
-    )
+    return _PlanProjection(header, [(eff_arch, steps)], build_runs)
 
 
 def _parse_steps_csv(value: Optional[str]) -> Tuple[str, ...]:
