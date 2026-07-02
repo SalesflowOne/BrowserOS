@@ -17,7 +17,8 @@ bos_build/
               batch-apply, features.yaml IO (interactive apply/sync
               lives in the Go tool: tools/patch, `bpatch`)
   products/   one package per product: define() call + server bundles
-  profiles/   saved switch sets for CI (flat yaml, no module lists)
+  profiles/   saved switch sets (flat yaml; a local profile may opt into
+              an explicit modules: list — shipped profiles never do)
   config/     data: gn flags, resource yamls, appcast templates, offset
 ```
 
@@ -51,6 +52,50 @@ browseros build --profile nightly-ci --arch x64
 # Power users: explicit steps
 browseros build --modules clean,compile,sign_macos --product browseros
 ```
+
+### Seeing and tweaking a plan
+
+The composed plan is always a projection of `plan()` — generated, never
+hand-copied, so it can't drift:
+
+```bash
+# Print the composed steps + required env vars and exit
+# (works without a chromium checkout)
+browseros build --preset release --show-plan
+
+# Comment out steps, as an operation: subtract from the composed plan
+browseros build --preset release --skip upload,series_patches
+
+# Resume the tail after a failure without recompiling
+browseros build --preset release --from sign_macos
+```
+
+- `--skip` (and a `skip:` list in profiles) subtracts **after**
+  composition — it never re-triggers composition rules. CLI `--skip`
+  and profile `skip:` union. Unknown step names fail loudly; a valid
+  step absent from this plan is a no-op, so a saved `skip:` keeps
+  working as presets evolve — subtraction from the canonical plan,
+  never a copy of it.
+- `--from` slices the composed (post-skip) plan starting at a step.
+  CLI-only: resume is a one-off, so there is no `from:` profile key.
+
+### Modules profiles — "you own this list now"
+
+For the rare run that genuinely wants an arbitrary sequence, a profile
+may carry `modules:` as an explicit opt-in — a local, commentable file
+that bypasses the planner entirely:
+
+```yaml
+# my-tail.yaml (local only — never shipped)
+modules: [compile, sign_macos, package_macos]
+build_type: release   # only valid with modules:; defaults to debug
+arch: arm64           # single arch only
+```
+
+Planner-owned keys (`preset`, `clean`, `provision`, `download`, `sign`,
+`upload`, `skip`) and the `--skip`/`--from` flags are rejected alongside
+`modules:` — you own the list, edit it directly. Shipped profiles stay
+switch-based (drift-tested).
 
 ## Remote / ephemeral runners
 
