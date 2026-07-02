@@ -5,21 +5,31 @@ product, platform, arch, host type — is data, not a copied config file.
 
 ## Layout
 
+Three toolsets — BUILD (`steps/` on the `core/` engine), RELEASE
+(`release/`), DEV (`patchkit/`) — over shared plumbing (`lib/`) and
+product data (`products/`):
+
 ```
 bos_build/
-  cli/        thin Typer wrappers (build, source, product, dev, release, ota)
-  core/       engine: context, step registry, planner, runner, events,
-              notify, versions, env — zero domain knowledge
-  steps/      pipeline steps, registered via @step with metadata
-              (source, setup, resources, patches, extensions, compile,
-              sign, package, storage, release, ota)
-  patchkit/   the Python patch surface: dev extract, non-interactive
-              batch-apply, features.yaml IO (interactive apply/sync
-              lives in the Go tool: tools/patch, `bpatch`)
-  products/   one package per product: define() call + server bundles
-  profiles/   saved switch sets (flat yaml; a local profile may opt into
-              an explicit modules: list — shipped profiles never do)
-  config/     data: gn flags, resource yamls, appcast templates, offset
+  browseros.py  entry — the `browseros` Typer app (also `python -m bos_build`)
+  cli/          thin Typer wrappers (build, source, product, dev, release, ota)
+  core/         engine: context, step registry, planner, runner, pipeline,
+                resolver, events, product descriptor model — zero domain
+                knowledge
+  lib/          cross-cutting plumbing: env, utils, logger, paths, notify,
+                sparkle, versions, r2 client, test fixtures
+  products/     one package per product: define() call + server bundles
+  steps/        BUILD toolset — pipeline steps registered via @step
+                (source, setup, resources, patches, extensions, compile,
+                sign, package, storage)
+  release/      RELEASE toolset — list, publish, download, github, appcast;
+                release/ota/ ships server OTA updates
+  patchkit/     DEV toolset — the Python patch surface: dev extract,
+                non-interactive batch-apply, features.yaml IO (interactive
+                apply/sync lives in the Go tool: tools/patch, `bpatch`)
+  profiles/     saved switch sets (flat yaml; a local profile may opt into
+                an explicit modules: list — shipped profiles never do)
+  config/       data: gn flags, resource yamls, appcast templates, offset
 ```
 
 ## How a build is composed
