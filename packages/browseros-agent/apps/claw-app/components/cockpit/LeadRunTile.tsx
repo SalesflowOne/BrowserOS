@@ -48,7 +48,7 @@ export function LeadRunTile({ task, now, className }: LeadRunTileProps) {
       )}
     >
       <div className="relative flex-1 overflow-hidden">
-        {screenshotId !== null ? (
+        {screenshotId !== null && screenshotBaseUrl !== null ? (
           <img
             src={taskScreenshotUrl(screenshotId, screenshotBaseUrl)}
             alt={`Session hero from ${task.agentLabel}`}
@@ -56,6 +56,8 @@ export function LeadRunTile({ task, now, className }: LeadRunTileProps) {
             decoding="async"
             className="absolute inset-0 h-full w-full object-cover object-top"
           />
+        ) : screenshotId !== null ? (
+          <div className="absolute inset-0 animate-pulse bg-card-tint" />
         ) : (
           <LeadNoShotComposition task={task} />
         )}

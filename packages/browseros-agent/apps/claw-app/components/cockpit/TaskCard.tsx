@@ -54,16 +54,20 @@ export function TaskCard({ task, now }: TaskCardProps) {
         {task.lastScreenshotDispatchId !== null ? (
           <div className="w-32 shrink-0 transform-gpu overflow-hidden rounded-md border border-border-2 bg-bg-sunken">
             <AspectRatio ratio={16 / 10}>
-              <img
-                src={taskScreenshotUrl(
-                  task.lastScreenshotDispatchId,
-                  screenshotBaseUrl,
-                )}
-                alt={`Hero from ${task.agentLabel}`}
-                className="h-full w-full object-cover"
-                loading="lazy"
-                decoding="async"
-              />
+              {screenshotBaseUrl !== null ? (
+                <img
+                  src={taskScreenshotUrl(
+                    task.lastScreenshotDispatchId,
+                    screenshotBaseUrl,
+                  )}
+                  alt={`Hero from ${task.agentLabel}`}
+                  className="h-full w-full object-cover"
+                  loading="lazy"
+                  decoding="async"
+                />
+              ) : (
+                <div className="h-full w-full animate-pulse bg-card-tint" />
+              )}
             </AspectRatio>
           </div>
         ) : (

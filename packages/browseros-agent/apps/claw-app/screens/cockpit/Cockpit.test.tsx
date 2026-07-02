@@ -28,7 +28,7 @@ mock.module('@/modules/api/audit.hooks', () => ({
     isPending: false,
   }),
   taskScreenshotUrl: (id: number) => `/audit/screenshot/${id}`,
-  useTaskScreenshotBaseUrl: () => '',
+  useTaskScreenshotBaseUrl: () => null,
 }))
 
 const { Cockpit } = await import('./Cockpit')

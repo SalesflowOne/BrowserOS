@@ -40,7 +40,7 @@ export function SupportingTile({ task, now, className }: SupportingTileProps) {
       )}
     >
       <div className="relative flex-1 overflow-hidden">
-        {screenshotId !== null ? (
+        {screenshotId !== null && screenshotBaseUrl !== null ? (
           <img
             src={taskScreenshotUrl(screenshotId, screenshotBaseUrl)}
             alt={`Session preview from ${task.agentLabel}`}
@@ -48,6 +48,8 @@ export function SupportingTile({ task, now, className }: SupportingTileProps) {
             decoding="async"
             className="absolute inset-0 h-full w-full object-cover object-top"
           />
+        ) : screenshotId !== null ? (
+          <div className="absolute inset-0 animate-pulse bg-card-tint" />
         ) : (
           <NoShotComposition task={task} />
         )}

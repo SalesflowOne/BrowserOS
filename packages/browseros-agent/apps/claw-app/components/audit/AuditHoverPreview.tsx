@@ -33,12 +33,14 @@ export function AuditHoverPreview({ task }: AuditHoverPreviewProps) {
       )}
     >
       <div className="relative aspect-[16/10] w-full overflow-hidden">
-        {task && screenshotId !== null ? (
+        {task && screenshotId !== null && screenshotBaseUrl !== null ? (
           <img
             src={taskScreenshotUrl(screenshotId, screenshotBaseUrl)}
             alt=""
             className="absolute inset-0 h-full w-full object-cover object-top"
           />
+        ) : task && screenshotId !== null ? (
+          <div className="absolute inset-0 animate-pulse bg-card-tint" />
         ) : task ? (
           <NoShotComposition task={task} />
         ) : null}

@@ -14,7 +14,7 @@ let queryOverride: MockQueryShape = { isPending: true }
 mock.module('@/modules/api/audit.hooks', () => ({
   useTasks: () => queryOverride,
   taskScreenshotUrl: (id: number) => `/audit/screenshot/${id}`,
-  useTaskScreenshotBaseUrl: () => '',
+  useTaskScreenshotBaseUrl: () => null,
 }))
 
 const { RecentActivity } = await import('./RecentActivity')

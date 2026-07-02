@@ -5,6 +5,7 @@ import {
   buildCanonicalMcpEndpointUrl,
   buildMcpEndpointUrl,
   resolveCanonicalMcpEndpointUrl,
+  resolveMcpEndpointUrl,
 } from './mcp-endpoint'
 
 const originalWindow = globalThis.window
@@ -73,6 +74,15 @@ describe('buildMcpEndpointUrl', () => {
     installWindow('', storage)
 
     expect(buildMcpEndpointUrl('demo')).toBe('http://127.0.0.1:9345/mcp/demo')
+  })
+
+  it('uses the BrowserOS proxy port pref when available', async () => {
+    installWindow('')
+    installBrowserOSPrefs({ 'browseros.server.proxy_port': 9512 })
+
+    await expect(resolveMcpEndpointUrl('demo')).resolves.toBe(
+      'http://127.0.0.1:9512/mcp/demo',
+    )
   })
 })
 

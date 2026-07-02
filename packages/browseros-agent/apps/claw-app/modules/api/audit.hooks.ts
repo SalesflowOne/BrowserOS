@@ -171,8 +171,8 @@ export function taskScreenshotUrl(
 }
 
 /** Provides a screenshot URL base that follows BrowserOS server-port prefs. */
-export function useTaskScreenshotBaseUrl(): string {
-  const [baseUrl, setBaseUrl] = useState(apiBaseUrl())
+export function useTaskScreenshotBaseUrl(): string | null {
+  const [baseUrl, setBaseUrl] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true

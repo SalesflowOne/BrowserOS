@@ -154,7 +154,7 @@ interface TimelineRowProps {
    * the screencast fallback + first-capture policy now capture.
    */
   hasScreenshot: boolean
-  screenshotBaseUrl: string
+  screenshotBaseUrl: string | null
   onToggle: () => void
   onScreenshotClick: (dispatchId: number) => void
 }
@@ -232,7 +232,7 @@ function TimelineRow({
               </pre>
             </Block>
           )}
-          {isScreenshot && (
+          {isScreenshot && screenshotBaseUrl !== null && (
             <Block label="screenshot">
               <button
                 type="button"
@@ -248,6 +248,15 @@ function TimelineRow({
                   />
                 </AspectRatio>
               </button>
+            </Block>
+          )}
+          {isScreenshot && screenshotBaseUrl === null && (
+            <Block label="screenshot">
+              <div className="w-64 overflow-hidden rounded-md border border-border-2">
+                <AspectRatio ratio={16 / 10}>
+                  <div className="h-full w-full animate-pulse bg-card-tint" />
+                </AspectRatio>
+              </div>
             </Block>
           )}
           {dispatch.url && (

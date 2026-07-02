@@ -43,6 +43,11 @@ export function buildMcpEndpointUrl(slug: string): string {
   return `${mcpBaseUrlFallback()}/mcp/${slug}`
 }
 
+/** Builds a per-agent MCP endpoint after BrowserOS proxy-port resolution. */
+export async function resolveMcpEndpointUrl(slug: string): Promise<string> {
+  return `${await resolveMcpBaseUrl()}/mcp/${slug}`
+}
+
 /**
  * Pulls the slug segment out of an MCP URL. Tolerates both the
  * removed prefixed shape and the current direct shape. Returns an
