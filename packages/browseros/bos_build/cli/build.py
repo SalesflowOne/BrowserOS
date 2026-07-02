@@ -2,6 +2,7 @@
 """Build CLI - Modular build system for BrowserOS"""
 
 import os
+import re
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -168,6 +169,15 @@ def main(
         "-S",
         help="Path to Chromium source directory",
     ),
+    gn_arg: Optional[List[str]] = typer.Option(
+        None,
+        "--gn-arg",
+        help="Append a GN arg to args.gn after all flags (key=value, repeatable). "
+        "Written last, so it wins. GN syntax applies: bools/ints are bare, "
+        "strings need embedded quotes (--gn-arg 'target_cpu=\"arm64\"'). "
+        "Per-invocation only — never persisted; use a flags file for durable "
+        "changes.",
+    ),
 ):
     """BrowserOS Build System - Modular pipeline executor
 
@@ -204,6 +214,12 @@ def main(
     if list_modules:
         show_available_modules(AVAILABLE_MODULES)
         return
+
+    try:
+        extra_gn_args = _parse_gn_args(gn_arg)
+    except ValueError as e:
+        log_error(str(e))
+        raise typer.Exit(1)
 
     has_preset = preset is not None or profile is not None
     has_modules = modules is not None
@@ -254,6 +270,7 @@ def main(
             skip=skip,
             from_=from_,
             chromium_src=chromium_src,
+            extra_gn_args=extra_gn_args,
         )
         if show_plan:
             _print_plan(projection)
@@ -271,6 +288,7 @@ def main(
             "sign": phase_sign,
             "package": package,
             "upload": phase_upload,
+            "extra_gn_args": extra_gn_args,
         }
         try:
             pipeline = resolve_pipeline(
@@ -290,9 +308,12 @@ def main(
                     f"Valid: {', '.join(VALID_ARCHITECTURES)}"
                 )
                 raise typer.Exit(1)
+            header = ["Direct pipeline (--modules/phase flags)"]
+            if extra_gn_args:
+                header.append(f"GN arg overrides: {', '.join(extra_gn_args)}")
             _print_plan(
                 _PlanProjection(
-                    header=["Direct pipeline (--modules/phase flags)"],
+                    header=header,
                     arch_plans=[(label_arch, pipeline)],
                 )
             )
@@ -353,6 +374,13 @@ def main(
         log_info(f"📍 Architecture: {summary_ctx.architecture}")
     log_info(f"📍 Product: {summary_ctx.product.id}")
     log_info(f"📍 Build type: {summary_ctx.build_type}")
+    if summary_ctx.extra_gn_args:
+        log_info(f"📍 GN arg overrides: {', '.join(summary_ctx.extra_gn_args)}")
+        if not any("configure" in run_steps for _, run_steps in runs):
+            log_warning(
+                "⚠️  --gn-arg has no effect: no run in this plan includes the "
+                "configure step, so args.gn is reused as-is"
+            )
     log_info(f"📍 Semantic version: {summary_ctx.semantic_version}")
     log_info(f"📍 Chromium version: {summary_ctx.chromium_version}")
     log_info(f"📍 Build offset: {summary_ctx.browseros_build_offset}")
@@ -445,6 +473,7 @@ def _resolve_preset(
     skip: Optional[str],
     from_: Optional[str],
     chromium_src: Optional[Path],
+    extra_gn_args: Tuple[str, ...] = (),
 ) -> _PlanProjection:
     """Resolve preset/profile + CLI overrides into a plan projection.
 
@@ -473,6 +502,7 @@ def _resolve_preset(
                 skip=skip,
                 from_=from_,
                 chromium_src=chromium_src,
+                extra_gn_args=extra_gn_args,
             )
         if build_type is not None:
             raise ValueError(
@@ -521,6 +551,8 @@ def _resolve_preset(
             header.append(f"Skip: {', '.join(switches.skip)}")
         if from_ is not None:
             header.append(f"From: {from_}")
+        if extra_gn_args:
+            header.append(f"GN arg overrides: {', '.join(extra_gn_args)}")
 
         def build_runs() -> List[Tuple[Context, List[str]]]:
             try:
@@ -548,6 +580,10 @@ def _resolve_preset(
                     log_info(f"✓ PRESET MODE: skip={','.join(switches.skip)}")
                 if from_ is not None:
                     log_info(f"✓ PRESET MODE: from={from_}")
+                if extra_gn_args:
+                    log_info(
+                        f"✓ PRESET MODE: gn-arg overrides={','.join(extra_gn_args)}"
+                    )
                 return [
                     (
                         Context(
@@ -555,6 +591,7 @@ def _resolve_preset(
                             architecture=run_arch,
                             build_type=switches.build_type,
                             product=switches.product,
+                            extra_gn_args=extra_gn_args,
                         ),
                         steps,
                     )
@@ -585,6 +622,7 @@ def _resolve_modules_profile(
     skip: Optional[str],
     from_: Optional[str],
     chromium_src: Optional[Path],
+    extra_gn_args: Tuple[str, ...] = (),
 ) -> _PlanProjection:
     """Project a modules: profile through the DIRECT-mode machinery.
 
@@ -635,6 +673,8 @@ def _resolve_modules_profile(
         "Modules profile (enumerated pipeline — you own this list)",
         f"product={eff_product} arch={eff_arch} build_type={eff_build_type}",
     ]
+    if extra_gn_args:
+        header.append(f"GN arg overrides: {', '.join(extra_gn_args)}")
 
     def build_runs() -> List[Tuple[Context, List[str]]]:
         try:
@@ -644,6 +684,7 @@ def _resolve_modules_profile(
                     "arch": eff_arch,
                     "build_type": eff_build_type,
                     "product": eff_product,
+                    "extra_gn_args": extra_gn_args,
                 }
             )
         except ValueError as e:
@@ -658,6 +699,21 @@ def _parse_steps_csv(value: Optional[str]) -> Tuple[str, ...]:
     if not value:
         return ()
     return tuple(s.strip() for s in value.split(",") if s.strip())
+
+
+_GN_ARG_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*=.+\Z")
+
+
+def _parse_gn_args(values: Optional[List[str]]) -> Tuple[str, ...]:
+    """Validate --gn-arg values as GN key=value; values stay verbatim."""
+    args = tuple(values or ())
+    for value in args:
+        if not _GN_ARG_RE.match(value):
+            raise ValueError(
+                f"Invalid --gn-arg '{value}': expected key=value, e.g. "
+                'symbol_level=2 or target_cpu="arm64"'
+            )
+    return args
 
 
 def _print_plan(projection: _PlanProjection) -> None:

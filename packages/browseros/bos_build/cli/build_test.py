@@ -14,7 +14,9 @@ from unittest import mock
 from typer.testing import CliRunner
 
 from bos_build.browseros import app
+from bos_build.cli.build import _resolve_preset
 from bos_build.core.planner import Switches, plan
+from bos_build.lib.testing import MockChromium
 from bos_build.lib.utils import get_platform, get_platform_arch
 
 runner = CliRunner()
@@ -270,6 +272,111 @@ class ModulesProfileCliTest(_ProfileMixin):
             )
         self.assertNotEqual(result.exit_code, 0)
         self.assertIn("owned by the preset", combined(result))
+
+
+class GnArgOptionTest(_ProfileMixin):
+    def test_malformed_gn_arg_rejected(self):
+        with scrubbed_env():
+            result = invoke("--preset", "debug", "--gn-arg", "bogus", "--show-plan")
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("bogus", combined(result))
+        self.assertIn("key=value", combined(result))
+
+    def test_empty_gn_arg_value_rejected(self):
+        with scrubbed_env():
+            result = invoke(
+                "--preset", "debug", "--gn-arg", "symbol_level=", "--show-plan"
+            )
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("symbol_level=", combined(result))
+
+    def test_help_documents_repeatable(self):
+        result = invoke("--help")
+        self.assertEqual(result.exit_code, 0, combined(result))
+        self.assertIn("--gn-arg", result.output)
+        self.assertIn("repeatable", result.output)
+
+    def test_preset_show_plan_lists_overrides(self):
+        with scrubbed_env():
+            result = invoke(
+                "--preset",
+                "release",
+                "--gn-arg",
+                "symbol_level=2",
+                "--gn-arg",
+                "dcheck_always_on=true",
+                "--show-plan",
+            )
+        self.assertEqual(result.exit_code, 0, combined(result))
+        self.assertIn(
+            "GN arg overrides: symbol_level=2, dcheck_always_on=true", result.output
+        )
+
+    def test_direct_show_plan_lists_overrides(self):
+        with scrubbed_env():
+            result = invoke(
+                "--modules", "clean,compile", "--gn-arg", "symbol_level=2", "--show-plan"
+            )
+        self.assertEqual(result.exit_code, 0, combined(result))
+        self.assertIn("GN arg overrides: symbol_level=2", result.output)
+
+    def test_modules_profile_show_plan_lists_overrides(self):
+        path = self._profile("modules: [clean]\n")
+        with scrubbed_env():
+            result = invoke(
+                "--profile", str(path), "--gn-arg", "symbol_level=2", "--show-plan"
+            )
+        self.assertEqual(result.exit_code, 0, combined(result))
+        self.assertIn("GN arg overrides: symbol_level=2", result.output)
+
+
+class GnArgPlumbingTest(_ProfileMixin):
+    """--gn-arg must reach every Context the projections construct."""
+
+    def _preset_kwargs(self, **overrides):
+        kwargs = dict(
+            preset=None,
+            profile=None,
+            product=None,
+            arch=None,
+            clean=None,
+            provision=None,
+            download=None,
+            sign=None,
+            upload=None,
+            build_type=None,
+            skip=None,
+            from_=None,
+            chromium_src=None,
+            extra_gn_args=("symbol_level=2",),
+        )
+        kwargs.update(overrides)
+        return kwargs
+
+    def test_preset_build_runs_carry_extra_gn_args(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            m = MockChromium(Path(tmp))
+            with scrubbed_env():
+                projection = _resolve_preset(
+                    **self._preset_kwargs(preset="debug", chromium_src=m.src)
+                )
+                runs = projection.build_runs()
+        self.assertTrue(runs)
+        for ctx, _steps in runs:
+            self.assertEqual(ctx.extra_gn_args, ("symbol_level=2",))
+
+    def test_modules_profile_build_runs_carry_extra_gn_args(self):
+        profile_path = self._profile("modules: [clean]\n")
+        with tempfile.TemporaryDirectory() as tmp:
+            m = MockChromium(Path(tmp))
+            with scrubbed_env():
+                projection = _resolve_preset(
+                    **self._preset_kwargs(profile=profile_path, chromium_src=m.src)
+                )
+                runs = projection.build_runs()
+        self.assertTrue(runs)
+        for ctx, _steps in runs:
+            self.assertEqual(ctx.extra_gn_args, ("symbol_level=2",))
 
 
 if __name__ == "__main__":

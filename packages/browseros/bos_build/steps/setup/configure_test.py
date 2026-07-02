@@ -53,7 +53,13 @@ class ConfigureValidateTest(unittest.TestCase):
 
 
 class ConfigureExecuteTest(unittest.TestCase):
-    def _execute(self, build_type: str, architecture: str = "x64"):
+    def _execute(
+        self,
+        build_type: str,
+        architecture: str = "x64",
+        flags: str = "is_official_build = true\n",
+        extra_gn_args: tuple = (),
+    ):
         chromium_tmp = tempfile.TemporaryDirectory()
         root_tmp = tempfile.TemporaryDirectory()
         self.addCleanup(chromium_tmp.cleanup)
@@ -61,10 +67,11 @@ class ConfigureExecuteTest(unittest.TestCase):
 
         chromium = MockChromium(Path(chromium_tmp.name))
         root = MockBrowserOSRoot(Path(root_tmp.name))
-        root.write_gn_flags(get_platform(), build_type, "is_official_build = true\n")
+        root.write_gn_flags(get_platform(), build_type, flags)
         ctx = make_context(
             chromium, root, architecture=architecture, build_type=build_type
         )
+        ctx.extra_gn_args = extra_gn_args
 
         with (
             mock.patch.object(configure, "run_command") as run_cmd,
@@ -102,6 +109,47 @@ class ConfigureExecuteTest(unittest.TestCase):
         ctx, _, run_cmd = self._execute("debug")
 
         self.assertEqual(run_cmd.call_args.args[0], ["gn", "gen", ctx.out_dir])
+
+    def test_extra_gn_args_appended_last(self):
+        ctx, chromium, _ = self._execute(
+            "release",
+            architecture="arm64",
+            extra_gn_args=("symbol_level=2", "dcheck_always_on=true"),
+        )
+
+        args_gn = (chromium.src / ctx.out_dir / "args.gn").read_text()
+        self.assertEqual(
+            args_gn,
+            'is_official_build = true\n\ntarget_cpu = "arm64"\n'
+            'browseros_product = "browseros"\n'
+            "browseros_allow_runtime_product_override = false\n"
+            "browseros_package_all_server_resources = false\n"
+            "\n# --gn-arg overrides\n"
+            "symbol_level=2\n"
+            "dcheck_always_on=true\n",
+        )
+
+    def test_extra_gn_arg_overriding_flags_key_lands_after_it(self):
+        ctx, chromium, _ = self._execute(
+            "release",
+            flags="is_official_build = true\nsymbol_level = 1\n",
+            extra_gn_args=("symbol_level=2",),
+        )
+
+        args_gn = (chromium.src / ctx.out_dir / "args.gn").read_text()
+        self.assertLess(
+            args_gn.index("symbol_level = 1"), args_gn.index("symbol_level=2")
+        )
+
+    def test_extra_gn_args_logged(self):
+        with mock.patch.object(configure, "log_info") as log_info:
+            self._execute("debug", extra_gn_args=("symbol_level=2",))
+
+        messages = [call.args[0] for call in log_info.call_args_list]
+        self.assertTrue(
+            any("Applying 1 gn-arg override(s): symbol_level=2" in m for m in messages),
+            messages,
+        )
 
 
 if __name__ == "__main__":

@@ -78,6 +78,9 @@ browseros build --preset release --skip upload,series_patches
 
 # Resume the tail after a failure without recompiling
 browseros build --preset release --from sign_macos
+
+# One-off GN overrides while iterating (appended last, so they win)
+browseros build --preset debug --gn-arg symbol_level=2 --gn-arg dcheck_always_on=true
 ```
 
 - `--skip` (and a `skip:` list in profiles) subtracts **after**
@@ -91,6 +94,15 @@ browseros build --preset release --from sign_macos
   sliced, later runs stay whole. A failed universal merge resumes with
   just `--arch universal --from merge_universal` — no recompiles.
   CLI-only: resume is a one-off, so there is no `from:` profile key.
+- `--gn-arg key=value` (repeatable, any mode) appends GN overrides
+  **after** the flags file and product args — last write wins, so
+  `configure` honors them without edits to committed `config/gn/*.gn`
+  files. Values are verbatim GN: bools/ints bare, strings with embedded
+  quotes (`--gn-arg 'target_cpu="arm64"'`). CLI-only by design — a
+  profile wanting different flags should use a different flags file.
+  Only `configure` writes args.gn: a plan that skips it (e.g.
+  `--from compile`) reuses the existing file untouched, including any
+  overrides a previous invocation wrote there.
 
 ### Modules profiles — "you own this list now"
 
