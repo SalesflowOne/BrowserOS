@@ -1,8 +1,15 @@
-import { ChevronLeft, Copy, ExternalLink, Settings2 } from 'lucide-react'
+import {
+  ChevronLeft,
+  Copy,
+  ExternalLink,
+  PlayCircle,
+  Settings2,
+} from 'lucide-react'
 import { useState } from 'react'
-import { NavLink } from 'react-router'
+import { useLocation, useNavigate } from 'react-router'
 import { Button } from '@/components/ui/button'
 import type { TaskDetail } from '@/modules/api/audit.hooks'
+import { useReplayMetadata } from '@/modules/api/replay.hooks'
 import { formatDuration } from '@/screens/audit/audit.helpers'
 import { AgentDot } from './AgentDot'
 import { StatusBadge } from './StatusBadge'
@@ -14,16 +21,37 @@ interface TaskHeaderProps {
 export function TaskHeader({ task }: TaskHeaderProps) {
   const [copied, setCopied] = useState(false)
   const finalUrl = lastUrl(task) ?? task.dispatches[0]?.url ?? null
+  const navigate = useNavigate()
+  const location = useLocation()
+  // Semantic back: prefer the referring path passed via router state
+  // (see cockpit tiles + audit list). Falls back to /audit for direct
+  // URL loads. Never uses navigate(-1) because history-based back is
+  // unreliable once the user has forward/back navigation in history.
+  const backTo =
+    typeof location.state === 'object' &&
+    location.state !== null &&
+    'from' in location.state &&
+    typeof location.state.from === 'string'
+      ? location.state.from
+      : '/audit'
+  // Poll the metadata endpoint so the View Replay button unlocks
+  // within seconds once the first rrweb batch lands. The
+  // useReplayMetadata hook handles its own staleTime + interval.
+  const replayMeta = useReplayMetadata({
+    variables: { sessionId: task.sessionId },
+  })
+  const replayReady = replayMeta.data?.hasData === true
 
   return (
     <section className="space-y-4">
-      <NavLink
-        to="/audit"
+      <button
+        type="button"
+        onClick={() => navigate(backTo)}
         className="inline-flex items-center gap-1 text-[12.5px] text-ink-3 hover:text-ink-1"
       >
         <ChevronLeft className="size-3.5" />
-        Back to Audit
-      </NavLink>
+        Back
+      </button>
 
       <header className="rounded-2xl border border-border-2 bg-card p-5">
         <div className="flex items-start justify-between gap-4">
@@ -104,6 +132,24 @@ export function TaskHeader({ task }: TaskHeaderProps) {
         </dl>
 
         <div className="mt-5 flex flex-wrap gap-2">
+          <Button
+            variant="default"
+            size="sm"
+            disabled={!replayReady}
+            onClick={() =>
+              navigate(`/audit/${task.sessionId}/replay`, {
+                state: { from: location.pathname },
+              })
+            }
+            title={
+              replayReady
+                ? 'Watch the rrweb session replay'
+                : 'No replay recorded for this session yet'
+            }
+          >
+            <PlayCircle className="mr-1.5 size-3.5" />
+            View Session Replay
+          </Button>
           {finalUrl && (
             <Button
               variant="secondary"

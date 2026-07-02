@@ -6,8 +6,8 @@ on:
       - "agent-extension/v*"
   workflow_dispatch:
     inputs:
-      tag:
-        description: Existing release tag to publish, e.g. agent-extension/v0.0.100
+      version:
+        description: "Release version, e.g. 0.0.119"
         required: true
         type: string
 
@@ -16,19 +16,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  authorize_manual_dispatch:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    environment: release-core
-    steps:
-      - run: echo "Manual dispatch approved through release-core."
-
   release:
-    needs: authorize_manual_dispatch
-    if: |
-      always() &&
-      (github.event_name != 'workflow_dispatch' || needs.authorize_manual_dispatch.result == 'success')
+    if: github.event_name != 'push' || github.event.deleted != true
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: write
       pull-requests: write
@@ -42,26 +33,21 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event.repository.default_branch || 'main' }}
 
-      - name: Resolve release metadata
+      - name: Resolve release
         id: release
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
-          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          REQUESTED_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          ./scripts/release/resolve-component-release.sh \
-            --component agent-extension \
-            --tag "$RELEASE_TAG" \
-            --default-branch "$DEFAULT_BRANCH"
-
-          VERSION="${RELEASE_TAG#agent-extension/v}"
-          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
-          Maintainer release flow:
-          1. Bump packages/browseros-agent/apps/app/package.json in a PR and merge it.
-          2. git tag -a agent-extension/v${VERSION} -m "agent-extension v${VERSION}"
-          3. git push origin agent-extension/v${VERSION}
-          EOF
-        working-directory: packages/browseros-agent
+          packages/browseros-agent/scripts/release/prepare-extension-release.sh \
+            --event-name "$EVENT_NAME" \
+            --default-branch "$DEFAULT_BRANCH" \
+            --ref-name "$REF_NAME" \
+            --requested-version "$REQUESTED_VERSION"
+        working-directory: ${{ github.workspace }}
 
       - name: Checkout release commit
         run: git checkout --detach "${{ steps.release.outputs.release_sha }}"

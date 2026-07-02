@@ -19,24 +19,13 @@ dependencies = [
 ]
 
 [project.scripts]
-browseros = "build.browseros:app"
+browseros = "bos_build.browseros:app"
 
-[tool.setuptools]
-packages = [
-  "build",
-  "build.cli",
-  "build.common",
-  "build.modules",
-  "build.modules.resources",
-  "build.modules.patches",
-  "build.modules.setup",
-  "build.modules.package",
-  "build.modules.sign",
-  "build.modules.extract",
-  "build.modules.apply",
-  "build.modules.feature",
-  "build.modules.ota",
-]
+[tool.setuptools.packages.find]
+include = ["bos_build*"]
+
+[tool.setuptools.package-data]
+bos_build = ["**/*.yaml", "**/*.yml", "**/*.gn", "**/*.xml", "config/BROWSEROS_BUILD_OFFSET"]
 
 [tool.black]
 line-length = 88

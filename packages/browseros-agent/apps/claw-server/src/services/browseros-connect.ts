@@ -15,7 +15,7 @@
  * That path writes one entry per cockpit agent profile, keyed by the
  * profile's slug, with a slug-shaped URL. v2 has no per-agent
  * profile, so this layer writes one entry keyed by the constant
- * `BROWSEROS_MCP_SERVER_NAME` ("browseros") with the slugless URL.
+ * `BROWSEROS_MCP_SERVER_NAME` ("BrowserClaw") with the slugless URL.
  * Both layers share `specFor` for transport selection (HTTP vs the
  * stdio `npx mcp-remote` fallback for stdio-only agents).
  */
@@ -78,6 +78,15 @@ export async function connectBrowserosToHarness(
     const link = await mgr.link({
       serverName: BROWSEROS_MCP_SERVER_NAME,
       agent: agentId,
+      // Take ownership of any prior on-disk BrowserClaw entry that
+      // the manifest does not know about. Without this, agent-mcp-
+      // manager throws ForeignEntryError to protect the user from
+      // clobbering a foreign entry; that safety net is unnecessary
+      // for our case because BrowserClaw is the app's own name and
+      // any prior entry under it was almost certainly written by
+      // an earlier BrowserClaw install (relocated workspace, dev
+      // rebuild, or a prior version of the manifest).
+      allowOverwrite: true,
     })
     logger.info('connected browseros to harness', {
       harness,
@@ -114,14 +123,23 @@ export async function disconnectBrowserosFromHarness(
       serverName: BROWSEROS_MCP_SERVER_NAME,
       agent: agentId,
     })
-    // Best-effort: drop the manifest entry so a subsequent list does
-    // not show a phantom entry with zero links. Failure here does not
-    // change the install state from the user's point of view.
+    // Only drop the shared manifest entry when NO other agents are
+    // still linked to it. The BrowserClaw server is a single manifest
+    // record that agent-mcp-manager fans out across every agent's
+    // config file; unconditionally calling remove() here would wipe
+    // the shared entry and orphan every other agent's on-disk link.
+    // listLinks after unlink is safe: the library queues writes, so
+    // this read sees the post-unlink state.
     try {
-      await mgr.remove({
-        serverName: BROWSEROS_MCP_SERVER_NAME,
-        unlinkFirst: false,
+      const remainingLinks = await mgr.listLinks({
+        serverNames: [BROWSEROS_MCP_SERVER_NAME],
       })
+      if (remainingLinks.length === 0) {
+        await mgr.remove({
+          serverName: BROWSEROS_MCP_SERVER_NAME,
+          unlinkFirst: false,
+        })
+      }
     } catch {
       // ServerNotFoundError, etc. Safe to ignore: the link is gone,
       // which is the user-visible state we care about.

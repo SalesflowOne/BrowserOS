@@ -1,9 +1,9 @@
 diff --git a/chrome/browser/browseros/server/browseros_server_prefs.h b/chrome/browser/browseros/server/browseros_server_prefs.h
 new file mode 100644
-index 0000000000000..69bd172f9ce25
+index 0000000000000..0418034e7d0d6
 --- /dev/null
 +++ b/chrome/browser/browseros/server/browseros_server_prefs.h
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,34 @@
 +// Copyright 2024 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -19,13 +19,11 @@ index 0000000000000..69bd172f9ce25
 +inline constexpr int kDefaultCDPPort = 9100;
 +inline constexpr int kDefaultProxyPort = 9000;
 +inline constexpr int kDefaultServerPort = 9200;
-+inline constexpr int kDefaultExtensionPort = 9300;
 +
 +// Preference keys for BrowserOS server configuration
 +extern const char kCDPServerPort[];
 +extern const char kProxyPort[];
 +extern const char kServerPort[];
-+extern const char kExtensionServerPort[];
 +extern const char kAllowRemoteInMCP[];
 +extern const char kRestartServerRequested[];
 +extern const char kServerVersion[];

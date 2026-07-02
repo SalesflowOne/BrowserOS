@@ -148,11 +148,7 @@ func runWatch(cmd *cobra.Command, args []string) error {
 	proc.LogMsg(proc.TagInfo, proc.DimColor.Sprint("Press Ctrl+C to stop, double Ctrl+C to force kill"))
 	fmt.Println()
 
-	env := proc.BuildEnv(p, "development")
-	env = append(env, fmt.Sprintf("BROWSEROS_USER_DATA_DIR=%s", userDataDir))
-	if watchClaw {
-		env = buildClawWatchEnv(env, p)
-	}
+	env := buildWatchEnv(p, userDataDir, watchClaw)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -164,7 +160,7 @@ func runWatch(cmd *cobra.Command, args []string) error {
 	var procs []*proc.ManagedProc
 
 	if watchClaw {
-		procs = startClawWatch(ctx, &wg, root, env, p, reservations)
+		procs = startClawWatch(ctx, &wg, root, env, p, reservations, userDataDir)
 	} else {
 		procs, err = startBrowserOSWatch(ctx, &wg, root, env, p, reservations, userDataDir, watchManual)
 		if err != nil {
@@ -221,11 +217,30 @@ func resolveWatchDefaultPorts(root string, claw bool) (proc.Ports, error) {
 	return ports, nil
 }
 
+// buildWatchEnv forwards the selected product into WXT's Chromium launcher config.
+func buildWatchEnv(p proc.Ports, userDataDir string, claw bool) []string {
+	env := proc.BuildEnv(p, "development")
+	env = append(env,
+		fmt.Sprintf("BROWSEROS_USER_DATA_DIR=%s", userDataDir),
+		fmt.Sprintf("BROWSEROS_PRODUCT=%s", watchProduct(claw)),
+	)
+	if claw {
+		env = buildClawWatchEnv(env, p)
+	}
+	return env
+}
+
+func watchProduct(claw bool) string {
+	if claw {
+		return browser.ProductBrowserClaw
+	}
+	return browser.ProductBrowserOS
+}
+
 // buildClawWatchEnv bridges shared dev ports into the standalone BrowserClaw apps.
 func buildClawWatchEnv(env []string, p proc.Ports) []string {
 	apiURL := fmt.Sprintf("http://127.0.0.1:%d", p.Server)
 	return append(env,
-		fmt.Sprintf("CLAW_SERVER_PORT=%d", p.Server),
 		fmt.Sprintf("BROWSEROS_CLAW_CDP_PORT=%d", p.CDP),
 		fmt.Sprintf("VITE_BROWSEROS_CLAW_API_URL=%s", apiURL),
 	)
@@ -254,6 +269,7 @@ func startBrowserOSWatch(ctx context.Context, wg *sync.WaitGroup, root string, e
 				Ports:             p,
 				UserDataDir:       userDataDir,
 				LoadDevExtensions: true,
+				Product:           browser.ProductBrowserOS,
 			}),
 		}))
 	} else {
@@ -269,6 +285,7 @@ func startBrowserOSWatch(ctx context.Context, wg *sync.WaitGroup, root string, e
 
 	waitForCDP(ctx, p.CDP)
 
+	sidecarPath := watchSidecarConfigPath(userDataDir, "browseros-server")
 	reservations.ReleaseServer()
 	reservations.ReleaseExtension()
 	procs = append(procs, proc.StartManaged(ctx, wg, proc.ProcConfig{
@@ -276,8 +293,11 @@ func startBrowserOSWatch(ctx context.Context, wg *sync.WaitGroup, root string, e
 		Dir:     filepath.Join(root, "apps/server"),
 		Env:     env,
 		Restart: true,
-		Cmd:     []string{"bun", "--watch", "--env-file=.env.development", "src/index.ts"},
+		Cmd:     []string{"bun", "--watch", "--env-file=.env.development", "src/index.ts", "--config", sidecarPath},
 		BeforeStart: func() error {
+			if err := writeServerSidecarConfig(sidecarPath, root, userDataDir, p); err != nil {
+				return err
+			}
 			return proc.KillPortAndWait(p.Server, 3*time.Second)
 		},
 	}))
@@ -285,7 +305,7 @@ func startBrowserOSWatch(ctx context.Context, wg *sync.WaitGroup, root string, e
 }
 
 // startClawWatch supervises the BrowserClaw UI plus standalone server.
-func startClawWatch(ctx context.Context, wg *sync.WaitGroup, root string, env []string, p proc.Ports, reservations *proc.PortReservations) []*proc.ManagedProc {
+func startClawWatch(ctx context.Context, wg *sync.WaitGroup, root string, env []string, p proc.Ports, reservations *proc.PortReservations, userDataDir string) []*proc.ManagedProc {
 	var procs []*proc.ManagedProc
 
 	reservations.ReleaseCDP()
@@ -297,8 +317,24 @@ func startClawWatch(ctx context.Context, wg *sync.WaitGroup, root string, env []
 		Cmd:     []string{"bun", "--env-file=.env.development", "wxt"},
 	}))
 
+	// Plain-URL preview of the newtab UI. Static-serves the same
+	// `dist/chrome-mv3-dev` directory that `wxt` writes to, so
+	// agent-browser (or any regular browser) can drive the audit
+	// pages via http://127.0.0.1:5174/newtab without needing the
+	// extension installed. The served HTML references wxt's Vite
+	// dev server for its module + HMR client URLs, so live-reload
+	// still works on this URL.
+	procs = append(procs, proc.StartManaged(ctx, wg, proc.ProcConfig{
+		Tag:     proc.TagWeb,
+		Dir:     filepath.Join(root, "apps/claw-app"),
+		Env:     env,
+		Restart: true,
+		Cmd:     []string{"bun", "run", "dev:web"},
+	}))
+
 	waitForCDP(ctx, p.CDP)
 
+	sidecarPath := watchSidecarConfigPath(userDataDir, "claw-server")
 	reservations.ReleaseServer()
 	reservations.ReleaseExtension()
 	procs = append(procs, proc.StartManaged(ctx, wg, proc.ProcConfig{
@@ -306,8 +342,11 @@ func startClawWatch(ctx context.Context, wg *sync.WaitGroup, root string, env []
 		Dir:     filepath.Join(root, "apps/claw-server"),
 		Env:     env,
 		Restart: true,
-		Cmd:     []string{"bun", "--watch", "--env-file=.env.development", "src/main.ts"},
+		Cmd:     []string{"bun", "--watch", "--env-file=.env.development", "src/main.ts", "--config", sidecarPath},
 		BeforeStart: func() error {
+			if err := writeServerSidecarConfig(sidecarPath, root, userDataDir, p); err != nil {
+				return err
+			}
 			return proc.KillPortAndWait(p.Server, 3*time.Second)
 		},
 	}))

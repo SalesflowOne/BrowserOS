@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -24,8 +25,15 @@ type FileChange struct {
 }
 
 func Run(ctx context.Context, dir string, stdin []byte, args ...string) (Result, error) {
+	return RunEnv(ctx, dir, stdin, nil, args...)
+}
+
+func RunEnv(ctx context.Context, dir string, stdin []byte, env []string, args ...string) (Result, error) {
 	command := exec.CommandContext(ctx, "git", args...)
 	command.Dir = dir
+	if len(env) > 0 {
+		command.Env = append(os.Environ(), env...)
+	}
 	if stdin != nil {
 		command.Stdin = bytes.NewReader(stdin)
 	}
@@ -69,6 +77,17 @@ func HeadRev(ctx context.Context, dir string) (string, error) {
 	return strings.TrimSpace(result.Stdout), nil
 }
 
+func RevParse(ctx context.Context, dir string, ref string) (string, error) {
+	result, err := Run(ctx, dir, nil, "rev-parse", ref)
+	if err != nil {
+		return "", err
+	}
+	if result.Code != 0 {
+		return "", errors.New(strings.TrimSpace(result.Stderr))
+	}
+	return strings.TrimSpace(result.Stdout), nil
+}
+
 func CurrentBranch(ctx context.Context, dir string) (string, error) {
 	result, err := Run(ctx, dir, nil, "branch", "--show-current")
 	if err != nil {
@@ -82,6 +101,17 @@ func CurrentBranch(ctx context.Context, dir string) (string, error) {
 
 func IsDirty(ctx context.Context, dir string) (bool, error) {
 	return IsDirtyPaths(ctx, dir, nil)
+}
+
+func IsTrackedDirty(ctx context.Context, dir string) (bool, error) {
+	result, err := Run(ctx, dir, nil, "status", "--porcelain", "--untracked-files=no")
+	if err != nil {
+		return false, err
+	}
+	if result.Code != 0 {
+		return false, errors.New(strings.TrimSpace(result.Stderr))
+	}
+	return strings.TrimSpace(result.Stdout) != "", nil
 }
 
 func IsDirtyPaths(ctx context.Context, dir string, pathspecs []string) (bool, error) {
@@ -98,6 +128,148 @@ func IsDirtyPaths(ctx context.Context, dir string, pathspecs []string) (bool, er
 		return false, errors.New(strings.TrimSpace(result.Stderr))
 	}
 	return strings.TrimSpace(result.Stdout) != "", nil
+}
+
+// StatusPorcelain returns tracked and untracked working-tree changes.
+func StatusPorcelain(ctx context.Context, dir string, pathspecs []string) ([]FileChange, error) {
+	args := []string{"-c", "core.quotepath=false", "status", "--porcelain", "--untracked-files=all"}
+	if len(pathspecs) > 0 {
+		args = append(args, "--")
+		args = append(args, pathspecs...)
+	}
+	result, err := Run(ctx, dir, nil, args...)
+	if err != nil {
+		return nil, err
+	}
+	if result.Code != 0 {
+		return nil, errors.New(strings.TrimSpace(result.Stderr))
+	}
+	var changes []FileChange
+	for _, line := range strings.Split(strings.TrimRight(result.Stdout, "\n"), "\n") {
+		if line == "" {
+			continue
+		}
+		if len(line) < 4 {
+			continue
+		}
+		status := line[:2]
+		rel := line[3:]
+		change := FileChange{Status: status, Path: rel}
+		if strings.Contains(rel, " -> ") {
+			parts := strings.SplitN(rel, " -> ", 2)
+			change.OldPath = parts[0]
+			change.Path = parts[1]
+		}
+		changes = append(changes, change)
+	}
+	return changes, nil
+}
+
+// CommitPaths creates a commit scoped to paths and returns the new HEAD.
+func CommitPaths(ctx context.Context, dir string, message string, paths []string) (string, error) {
+	args := []string{"commit", "-m", message}
+	if len(paths) > 0 {
+		args = append(args, "--")
+		args = append(args, paths...)
+	}
+	result, err := Run(ctx, dir, nil, args...)
+	if err != nil {
+		return "", err
+	}
+	if result.Code != 0 {
+		return "", errors.New(strings.TrimSpace(result.Stderr))
+	}
+	return HeadRev(ctx, dir)
+}
+
+func CommitPathsWithBody(ctx context.Context, dir string, subject string, body string, paths []string) (string, error) {
+	return CommitPathsWithBodyEnv(ctx, dir, subject, body, nil, paths)
+}
+
+func CommitPathsWithBodyEnv(ctx context.Context, dir string, subject string, body string, env []string, paths []string) (string, error) {
+	args := []string{"commit", "-m", subject}
+	if body != "" {
+		args = append(args, "-m", body)
+	}
+	if len(paths) > 0 {
+		args = append(args, "--")
+		args = append(args, paths...)
+	}
+	result, err := RunEnv(ctx, dir, nil, env, args...)
+	if err != nil {
+		return "", err
+	}
+	if result.Code != 0 {
+		return "", errors.New(strings.TrimSpace(result.Stderr))
+	}
+	return HeadRev(ctx, dir)
+}
+
+func CommitUnixTime(ctx context.Context, dir string, ref string) (string, error) {
+	result, err := Run(ctx, dir, nil, "show", "-s", "--format=%ct", ref)
+	if err != nil {
+		return "", err
+	}
+	if result.Code != 0 {
+		return "", errors.New(strings.TrimSpace(result.Stderr))
+	}
+	return strings.TrimSpace(result.Stdout), nil
+}
+
+func CommitIndexWithBodyEnv(ctx context.Context, dir string, subject string, body string, env []string) (string, error) {
+	tree, err := writeTree(ctx, dir)
+	if err != nil {
+		return "", err
+	}
+	parent, err := HeadRev(ctx, dir)
+	if err != nil {
+		return "", err
+	}
+	message := subject + "\n"
+	if body != "" {
+		message += "\n" + body + "\n"
+	}
+	// Bypass hooks and signing so refresh materialization hashes match across checkouts.
+	result, err := RunEnv(ctx, dir, []byte(message), env, "-c", "commit.gpgsign=false", "commit-tree", tree, "-p", parent)
+	if err != nil {
+		return "", err
+	}
+	if result.Code != 0 {
+		return "", errors.New(strings.TrimSpace(result.Stderr))
+	}
+	commit := strings.TrimSpace(result.Stdout)
+	if err := ResetSoft(ctx, dir, commit); err != nil {
+		return "", err
+	}
+	return commit, nil
+}
+
+func writeTree(ctx context.Context, dir string) (string, error) {
+	result, err := Run(ctx, dir, nil, "write-tree")
+	if err != nil {
+		return "", err
+	}
+	if result.Code != 0 {
+		return "", errors.New(strings.TrimSpace(result.Stderr))
+	}
+	return strings.TrimSpace(result.Stdout), nil
+}
+
+func CommitTrailer(ctx context.Context, dir string, ref string, key string) (string, error) {
+	result, err := Run(ctx, dir, nil, "log", "-1", "--format=%B", ref)
+	if err != nil {
+		return "", err
+	}
+	if result.Code != 0 {
+		return "", errors.New(strings.TrimSpace(result.Stderr))
+	}
+	prefix := key + ":"
+	for _, line := range strings.Split(result.Stdout, "\n") {
+		if strings.HasPrefix(line, prefix) {
+			return strings.TrimSpace(strings.TrimPrefix(line, prefix)), nil
+		}
+	}
+	return "", nil
 }
 
 func CommitExists(ctx context.Context, dir string, ref string) (bool, error) {
@@ -257,6 +429,36 @@ func RevListRange(ctx context.Context, dir string, start string, end string) ([]
 		return nil, errors.New(strings.TrimSpace(result.Stderr))
 	}
 	return splitLines(result.Stdout), nil
+}
+
+func RevListCount(ctx context.Context, dir string, start string, end string) (int, error) {
+	result, err := Run(ctx, dir, nil, "rev-list", "--count", fmt.Sprintf("%s..%s", start, end))
+	if err != nil {
+		return 0, err
+	}
+	if result.Code != 0 {
+		return 0, errors.New(strings.TrimSpace(result.Stderr))
+	}
+	count, err := strconv.Atoi(strings.TrimSpace(result.Stdout))
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func IsAncestor(ctx context.Context, dir string, ancestor string, descendant string) (bool, error) {
+	result, err := Run(ctx, dir, nil, "merge-base", "--is-ancestor", ancestor, descendant)
+	if err != nil {
+		return false, err
+	}
+	switch result.Code {
+	case 0:
+		return true, nil
+	case 1:
+		return false, nil
+	default:
+		return false, errors.New(strings.TrimSpace(result.Stderr))
+	}
 }
 
 func ApplyPatch(ctx context.Context, dir string, patch []byte) (string, error) {
@@ -633,11 +835,83 @@ func PullRebase(ctx context.Context, dir string, remote string, branch string) e
 	return nil
 }
 
+func ResetHard(ctx context.Context, dir string) error {
+	result, err := Run(ctx, dir, nil, "reset", "--hard")
+	if err != nil {
+		return err
+	}
+	if result.Code != 0 {
+		return errors.New(strings.TrimSpace(result.Stderr))
+	}
+	return nil
+}
+
+func ResetSoft(ctx context.Context, dir string, ref string) error {
+	result, err := Run(ctx, dir, nil, "reset", "--soft", ref)
+	if err != nil {
+		return err
+	}
+	if result.Code != 0 {
+		return errors.New(strings.TrimSpace(result.Stderr))
+	}
+	return nil
+}
+
+func CheckoutDetached(ctx context.Context, dir string, ref string) error {
+	result, err := Run(ctx, dir, nil, "checkout", "--detach", ref)
+	if err != nil {
+		return err
+	}
+	if result.Code != 0 {
+		return errors.New(strings.TrimSpace(result.Stderr))
+	}
+	return nil
+}
+
+func CheckoutBranch(ctx context.Context, dir string, branch string) error {
+	result, err := Run(ctx, dir, nil, "checkout", branch)
+	if err != nil {
+		return err
+	}
+	if result.Code != 0 {
+		return errors.New(strings.TrimSpace(result.Stderr))
+	}
+	return nil
+}
+
+func ForceBranch(ctx context.Context, dir string, branch string, ref string) error {
+	result, err := Run(ctx, dir, nil, "branch", "-f", branch, ref)
+	if err != nil {
+		return err
+	}
+	if result.Code != 0 {
+		return errors.New(strings.TrimSpace(result.Stderr))
+	}
+	return nil
+}
+
+// AddPaths stages existing paths with git add.
 func AddPaths(ctx context.Context, dir string, paths []string) error {
 	if len(paths) == 0 {
 		return nil
 	}
 	args := append([]string{"add", "--"}, paths...)
+	result, err := Run(ctx, dir, nil, args...)
+	if err != nil {
+		return err
+	}
+	if result.Code != 0 {
+		return errors.New(strings.TrimSpace(result.Stderr))
+	}
+	return nil
+}
+
+// AddAllPaths stages additions, modifications, and deletions under paths.
+func AddAllPaths(ctx context.Context, dir string, paths []string) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	args := append([]string{"add", "-A", "--"}, paths...)
 	result, err := Run(ctx, dir, nil, args...)
 	if err != nil {
 		return err

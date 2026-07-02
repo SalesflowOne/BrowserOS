@@ -55,7 +55,7 @@ export class Application {
     await this.initCoreServices()
 
     if (!this.config.cdpPort) {
-      logger.error('CDP port is required (--cdp-port)')
+      logger.error('CDP port is required in the sidecar config')
       process.exit(EXIT_CODES.GENERAL_ERROR)
     }
 
@@ -82,8 +82,6 @@ export class Application {
         executionDir: this.config.executionDir,
         resourcesDir: this.config.resourcesDir,
         aiSdkDevtoolsEnabled: this.config.aiSdkDevtoolsEnabled,
-
-        onShutdown: () => this.stop('shutdown-endpoint'),
       })
     } catch (error) {
       this.handleStartupError('HTTP server', this.config.serverPort, error)
@@ -147,10 +145,7 @@ export class Application {
     logger.info('Shutting down server...', { reason })
     removeServerConfigSync()
 
-    // Immediate exit without graceful shutdown. Chromium may kill us on update/restart,
-    // and we need to free the port instantly so the HTTP port doesn't keep switching.
-    // Exit 0 only for managed shutdowns (POST /shutdown from Chromium).
-    // Signal kills exit non-zero so Chromium's OnProcessExited restarts us.
+    // Immediate exit keeps the port free; signal exits stay non-zero so Chromium restarts us.
     const code =
       reason === 'SIGTERM' || reason === 'SIGINT'
         ? EXIT_CODES.SIGNAL_KILL
@@ -203,8 +198,7 @@ export class Application {
       // produce zero analytics.
       logger.warn(
         'Metrics will skip events: no instance identity. ' +
-          'Set BROWSEROS_CLIENT_ID or BROWSEROS_INSTALL_ID (env) or ' +
-          'instance.client_id / instance.install_id (config) to opt in.',
+          'Set instance.client_id or instance.install_id in the sidecar config to opt in.',
       )
     }
 

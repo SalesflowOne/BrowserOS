@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 
 const repoRoot = resolve(import.meta.dir, '../..')
-const resolver = join(repoRoot, 'scripts/release/resolve-component-release.sh')
+const resolver = join(repoRoot, '../../scripts/ci/resolve-component-release.sh')
 
 type Component = 'agent-extension' | 'agent-server'
 
@@ -86,6 +86,31 @@ function writePackage(
   )
 }
 
+function writeNestedPackage(
+  dir: string,
+  component: Component,
+  version: string,
+): string {
+  const packageDir = join(dir, 'packages/browseros-agent')
+  const path = join(packageDir, packagePath(component))
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(
+    path,
+    JSON.stringify(
+      {
+        name:
+          component === 'agent-extension'
+            ? '@browseros/app'
+            : '@browseros/server',
+        version,
+      },
+      null,
+      2,
+    ),
+  )
+  return packageDir
+}
+
 async function commitVersion(
   dir: string,
   component: Component,
@@ -104,7 +129,12 @@ async function lightweightTag(dir: string, name: string): Promise<void> {
   await mustRun(dir, ['git', 'tag', name])
 }
 
-async function resolveRelease(dir: string, component: Component, name: string) {
+async function resolveRelease(
+  dir: string,
+  component: Component,
+  name: string,
+  extraArgs: string[] = [],
+) {
   return run(dir, [
     resolver,
     '--component',
@@ -113,6 +143,7 @@ async function resolveRelease(dir: string, component: Component, name: string) {
     name,
     '--default-branch',
     'main',
+    ...extraArgs,
   ])
 }
 
@@ -193,6 +224,38 @@ describe('resolve-component-release', () => {
     }
   })
 
+  it('resolves a server slash tag from a nested browseros-agent checkout', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'component-release-nested-'))
+    try {
+      await mustRun(dir, ['git', 'init', '--initial-branch=main'])
+      await mustRun(dir, ['git', 'config', 'user.name', 'BrowserOS Test'])
+      await mustRun(dir, ['git', 'config', 'user.email', 'test@browseros.com'])
+      const packageDir = writeNestedPackage(dir, 'agent-server', '0.0.122')
+      await mustRun(dir, ['git', 'add', '.'])
+      await mustRun(dir, ['git', 'commit', '-m', 'version 0.0.122'])
+      const currentTag = scopedTag('agent-server', '0.0.122')
+      await tag(dir, currentTag)
+      const releaseSha = (
+        await mustRun(dir, ['git', 'rev-parse', 'HEAD'])
+      ).trim()
+
+      const result = await resolveRelease(
+        packageDir,
+        'agent-server',
+        currentTag,
+      )
+
+      expect(result.code, result.stderr).toBe(0)
+      expect(parseOutput(result.stdout)).toMatchObject({
+        package_version: '0.0.122',
+        tag: currentTag,
+        release_sha: releaseSha,
+      })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('rejects lightweight component release tags', async () => {
     const dir = await initFixture('agent-server', '0.0.122')
     try {
@@ -222,6 +285,28 @@ describe('resolve-component-release', () => {
       expect(result.stderr).toContain(
         'Tag version 0.0.100 does not match apps/app/package.json version 0.0.99',
       )
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('can preflight a package version mismatch for repair', async () => {
+    const dir = await initFixture('agent-extension', '0.0.99')
+    try {
+      const currentTag = scopedTag('agent-extension', '0.0.100')
+      await tag(dir, currentTag)
+
+      const result = await resolveRelease(dir, 'agent-extension', currentTag, [
+        '--allow-package-version-mismatch',
+      ])
+
+      expect(result.code, result.stderr).toBe(0)
+      expect(parseOutput(result.stdout)).toMatchObject({
+        version: '0.0.100',
+        package_version: '0.0.99',
+        package_version_matches: 'false',
+        tag: currentTag,
+      })
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

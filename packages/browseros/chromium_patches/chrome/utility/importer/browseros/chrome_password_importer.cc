@@ -1,9 +1,9 @@
 diff --git a/chrome/utility/importer/browseros/chrome_password_importer.cc b/chrome/utility/importer/browseros/chrome_password_importer.cc
 new file mode 100644
-index 0000000000000..1a01e3951aa3f
+index 0000000000000..896f66db32980
 --- /dev/null
 +++ b/chrome/utility/importer/browseros/chrome_password_importer.cc
-@@ -0,0 +1,150 @@
+@@ -0,0 +1,147 @@
 +// Copyright 2024 AKW Technology Inc
 +// Chrome password importer implementation
 +
@@ -13,6 +13,7 @@ index 0000000000000..1a01e3951aa3f
 +#include "base/logging.h"
 +#include "base/strings/utf_string_conversions.h"
 +#include "chrome/utility/importer/browseros/chrome_decryptor.h"
++#include "chrome/utility/importer/browseros/chrome_importer_utils.h"
 +#include "sql/database.h"
 +#include "sql/statement.h"
 +#include "url/gurl.h"
@@ -25,23 +26,6 @@ index 0000000000000..1a01e3951aa3f
 +inline constexpr sql::Database::Tag kDatabaseTag{"ChromeImporter"};
 +
 +constexpr char kLoginDataFilename[] = "Login Data";
-+
-+// Copy database to temp location to avoid locking issues with Chrome
-+base::FilePath CopyDatabaseToTemp(const base::FilePath& db_path) {
-+  base::FilePath temp_path;
-+  if (!base::CreateTemporaryFile(&temp_path)) {
-+    LOG(WARNING) << "browseros: Failed to create temp file";
-+    return base::FilePath();
-+  }
-+
-+  if (!base::CopyFile(db_path, temp_path)) {
-+    LOG(WARNING) << "browseros: Failed to copy database to temp";
-+    base::DeleteFile(temp_path);
-+    return base::FilePath();
-+  }
-+
-+  return temp_path;
-+}
 +
 +}  // namespace
 +
@@ -77,9 +61,12 @@ index 0000000000000..1a01e3951aa3f
 +  sql::Database db(kDatabaseTag);
 +  if (!db.Open(temp_db_path)) {
 +    LOG(WARNING) << "browseros: Failed to open Login Data database";
-+    base::DeleteFile(temp_db_path);
++    DeleteDatabaseTemp(temp_db_path);
 +    return passwords;
 +  }
++
++  // Count of passwords skipped because they use App-Bound Encryption.
++  int skipped_app_bound = 0;
 +
 +  // Query logins table - use scope block to ensure statement is destroyed before
 +  // db.Close() to avoid DCHECK failure
@@ -92,7 +79,7 @@ index 0000000000000..1a01e3951aa3f
 +    sql::Statement statement(db.GetUniqueStatement(kQuery));
 +    if (!statement.is_valid()) {
 +      LOG(WARNING) << "browseros: Failed to prepare query";
-+      base::DeleteFile(temp_db_path);
++      DeleteDatabaseTemp(temp_db_path);
 +      return passwords;
 +    }
 +
@@ -113,8 +100,14 @@ index 0000000000000..1a01e3951aa3f
 +      // Decrypt password
 +      std::string decrypted_password;
 +      if (!encrypted_password.empty()) {
-+        if (!DecryptChromeValue(encrypted_password, encryption_key,
-+                                &decrypted_password)) {
++        DecryptResult decrypt_result = DecryptChromeValue(
++            encrypted_password, encryption_key, &decrypted_password);
++        if (decrypt_result == DecryptResult::kAppBoundUnsupported) {
++          // App-Bound (v20) password; not decryptable outside Chrome. Skip.
++          ++skipped_app_bound;
++          continue;
++        }
++        if (decrypt_result != DecryptResult::kSuccess) {
 +          LOG(WARNING) << "browseros: Failed to decrypt password for: "
 +                       << origin_url;
 +          continue;
@@ -145,10 +138,14 @@ index 0000000000000..1a01e3951aa3f
 +  }  // statement destroyed here
 +
 +  db.Close();
-+  base::DeleteFile(temp_db_path);
++  DeleteDatabaseTemp(temp_db_path);
 +
-+  LOG(INFO) << "browseros: Imported " << passwords.size()
-+            << " passwords";
++  LOG(INFO) << "browseros: Imported " << passwords.size() << " passwords";
++  if (skipped_app_bound > 0) {
++    LOG(WARNING) << "browseros: Skipped " << skipped_app_bound
++                 << " App-Bound (v20) passwords that require Chrome's SYSTEM "
++                    "elevation service and cannot be imported.";
++  }
 +
 +  return passwords;
 +}

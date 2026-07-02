@@ -33,13 +33,22 @@ describe('connectBrowserosToHarness', () => {
       name: string
       spec: { transport: string; url?: string }
     }
-    expect(addPayload.name).toBe('browseros')
+    expect(addPayload.name).toBe('BrowserClaw')
     expect(addPayload.spec.transport).toBe('http')
-    expect(addPayload.spec.url).toContain('/mcp')
+    expect(addPayload.spec.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/)
     expect(addPayload.spec.url).not.toContain('/cockpit')
     const link = stub.calls.find((c) => c.method === 'link')
     expect(link).toBeDefined()
     expect((link?.payload as { agent: string }).agent).toBe('claude-code')
+    // The link call passes allowOverwrite: true so agent-mcp-manager
+    // takes ownership of any prior on-disk BrowserClaw entry instead
+    // of throwing ForeignEntryError. This is deliberate: BrowserClaw
+    // is the app's own name and any prior entry under it belongs to
+    // us in practice (relocated workspace, dev rebuild, prior manifest
+    // version).
+    expect((link?.payload as { allowOverwrite?: boolean }).allowOverwrite).toBe(
+      true,
+    )
   })
 
   it('writes a direct HTTP spec for Codex (http-capable since agent-mcp-manager 0.0.3)', async () => {
@@ -51,7 +60,7 @@ describe('connectBrowserosToHarness', () => {
       spec: { transport: string; url?: string }
     }
     expect(payload.spec.transport).toBe('http')
-    expect(payload.spec.url).toContain('/mcp')
+    expect(payload.spec.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/)
     expect(payload.spec.url).not.toContain('/cockpit')
   })
 
@@ -73,7 +82,7 @@ describe('disconnectBrowserosFromHarness', () => {
   beforeEach(() => resetMcpManagerForTesting())
   afterEach(() => resetMcpManagerForTesting())
 
-  it('unlinks the browseros entry from the right agent and drops it from the manifest', async () => {
+  it('unlinks the browseros entry from the right agent', async () => {
     const stub = createStubMcpManager()
     setMcpManagerForTesting(stub)
     const result = await disconnectBrowserosFromHarness('Cursor')
@@ -85,9 +94,8 @@ describe('disconnectBrowserosFromHarness', () => {
       serverName: string
       agent: string
     }
-    expect(unlinkPayload.serverName).toBe('browseros')
+    expect(unlinkPayload.serverName).toBe('BrowserClaw')
     expect(unlinkPayload.agent).toBe('cursor')
-    expect(stub.calls.find((c) => c.method === 'remove')).toBeDefined()
   })
 
   it('is a no-op for Hermes / OpenClaw', async () => {
@@ -97,6 +105,40 @@ describe('disconnectBrowserosFromHarness', () => {
     expect(hermes.installed).toBe(false)
     expect(hermes.agentId).toBeNull()
     expect(stub.calls.find((c) => c.method === 'unlink')).toBeUndefined()
+  })
+
+  it('does NOT drop the shared BrowserClaw manifest entry when other agents remain linked', async () => {
+    // Regression guard: previous version unconditionally called
+    // mgr.remove() after unlink, which deleted the shared server
+    // manifest entry and orphaned every other agent's on-disk link.
+    // With the fix, remove is only called when listLinks reports
+    // zero remaining links for BrowserClaw.
+    const stub = createStubMcpManager()
+    stub.listLinks = async () => [
+      {
+        serverName: 'BrowserClaw',
+        agent: 'claude-code',
+        configPath: '/tmp/stub-claude-code.json',
+      },
+    ]
+    setMcpManagerForTesting(stub)
+    const result = await disconnectBrowserosFromHarness('Cursor')
+    expect(result.installed).toBe(false)
+    expect(stub.calls.find((c) => c.method === 'unlink')).toBeDefined()
+    expect(stub.calls.find((c) => c.method === 'remove')).toBeUndefined()
+  })
+
+  it('drops the shared BrowserClaw manifest entry when the last agent is disconnected', async () => {
+    // Complement of the previous test: when listLinks returns
+    // empty after the unlink, remove is called so the manifest
+    // does not carry a stale zero-link entry.
+    const stub = createStubMcpManager()
+    // Default listLinks returns []; keeping default.
+    setMcpManagerForTesting(stub)
+    const result = await disconnectBrowserosFromHarness('Cursor')
+    expect(result.installed).toBe(false)
+    expect(stub.calls.find((c) => c.method === 'unlink')).toBeDefined()
+    expect(stub.calls.find((c) => c.method === 'remove')).toBeDefined()
   })
 })
 
@@ -125,7 +167,7 @@ describe('listBrowserosConnections', () => {
     setMcpManagerForTesting(
       stubWithLinks([
         {
-          serverName: 'browseros',
+          serverName: 'BrowserClaw',
           agent: 'claude-code',
           configPath: '/tmp/stub-claude-code.json',
         },
@@ -143,7 +185,7 @@ describe('listBrowserosConnections', () => {
     setMcpManagerForTesting(
       stubWithLinks([
         {
-          serverName: 'browseros',
+          serverName: 'BrowserClaw',
           agent: 'claude-code',
           configPath: '/tmp/stub-claude-code.json',
           broken: true,

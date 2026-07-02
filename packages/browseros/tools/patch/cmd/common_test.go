@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/browseros-ai/BrowserOS/packages/browseros/tools/patch/internal/app"
+	"github.com/browseros-ai/BrowserOS/packages/browseros/tools/patch/internal/engine"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/tools/patch/internal/workspace"
 	"github.com/spf13/cobra"
 )
@@ -92,6 +93,136 @@ func TestConflictPauseErrorClassification(t *testing.T) {
 	}
 	if exitErr.code != 2 {
 		t.Fatalf("conflict pause exit code = %d, want 2", exitErr.code)
+	}
+}
+
+func TestResolveAnnotateTargetUsesSrcPath(t *testing.T) {
+	oldAppState := appState
+	t.Cleanup(func() {
+		appState = oldAppState
+	})
+
+	checkout := filepath.Join(t.TempDir(), "chromium")
+	if err := os.MkdirAll(filepath.Join(checkout, ".git"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	appState = &app.App{
+		CWD:      t.TempDir(),
+		Registry: &workspace.Registry{Version: 1},
+	}
+
+	ws, err := resolveAnnotateTarget(&cobra.Command{Use: "annotate"}, nil, checkout)
+	if err != nil {
+		t.Fatalf("resolveAnnotateTarget: %v", err)
+	}
+	realCheckout, err := filepath.EvalSymlinks(checkout)
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+	if ws.Path != realCheckout {
+		t.Fatalf("got workspace=%+v, want src path", ws)
+	}
+}
+
+func TestResolveAnnotateTargetRejectsSrcWithPositional(t *testing.T) {
+	oldAppState := appState
+	t.Cleanup(func() {
+		appState = oldAppState
+	})
+
+	checkout := filepath.Join(t.TempDir(), "chromium")
+	if err := os.MkdirAll(filepath.Join(checkout, ".git"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	appState = &app.App{
+		CWD:      t.TempDir(),
+		Registry: &workspace.Registry{Version: 1},
+	}
+
+	_, err := resolveAnnotateTarget(&cobra.Command{Use: "annotate"}, []string{"api"}, checkout)
+	if err == nil || !strings.Contains(err.Error(), "with --src, do not pass a checkout") {
+		t.Fatalf("expected --src positional error, got %v", err)
+	}
+}
+
+func TestResolveAnnotateTargetTreatsSingleArgAsCheckoutName(t *testing.T) {
+	oldAppState := appState
+	t.Cleanup(func() {
+		appState = oldAppState
+	})
+
+	checkout := filepath.Join(t.TempDir(), "chromium")
+	cwd := filepath.Join(checkout, "chrome")
+	if err := os.MkdirAll(cwd, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	appState = &app.App{
+		CWD: cwd,
+		Registry: &workspace.Registry{Version: 1, Workspaces: []workspace.Entry{
+			{Name: "ch1", Path: checkout},
+		}},
+	}
+
+	_, err := resolveAnnotateTarget(&cobra.Command{Use: "annotate"}, []string{"api"}, "")
+	if err == nil || !strings.Contains(err.Error(), `checkout "api" not found`) {
+		t.Fatalf("expected unknown checkout error, got %v", err)
+	}
+}
+
+func TestResolveAnnotateTargetTreatsRegisteredSingleArgAsCheckout(t *testing.T) {
+	oldAppState := appState
+	t.Cleanup(func() {
+		appState = oldAppState
+	})
+
+	checkout := filepath.Join(t.TempDir(), "chromium")
+	appState = &app.App{
+		CWD: t.TempDir(),
+		Registry: &workspace.Registry{Version: 1, Workspaces: []workspace.Entry{
+			{Name: "api", Path: checkout},
+		}},
+	}
+
+	ws, err := resolveAnnotateTarget(&cobra.Command{Use: "annotate"}, []string{"api"}, "")
+	if err != nil {
+		t.Fatalf("resolveAnnotateTarget: %v", err)
+	}
+	if ws.Name != "api" {
+		t.Fatalf("got workspace=%+v, want api checkout", ws)
+	}
+}
+
+func TestPrintAnnotateResultSummarizesHumanOutput(t *testing.T) {
+	output := captureStdout(t, func() {
+		printAnnotateResult(workspace.Entry{Name: "ch1"}, &engine.AnnotateResult{
+			FeaturesFile:    "/repo/build/features.yaml",
+			Processed:       2,
+			CommitsCreated:  1,
+			FeaturesSkipped: 1,
+			Committed: []engine.AnnotateCommittedFeature{{
+				Name:   "api",
+				Commit: "1234567890abcdef",
+				Files:  []string{"chrome/a.cc"},
+			}},
+			Skipped: []engine.AnnotateSkippedFeature{{
+				Name:   "clean",
+				Reason: "no changes",
+			}},
+		})
+	})
+
+	for _, want := range []string{
+		"Annotated ch1",
+		"processed:",
+		"commits:",
+		"api",
+		"1234567890ab",
+		"clean",
+		"no changes",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected output to contain %q, got:\n%s", want, output)
+		}
 	}
 }
 
@@ -219,7 +350,9 @@ func TestCheckoutCommandUsageTerminology(t *testing.T) {
 		{name: "status", use: "status [checkout]"},
 		{name: "apply", use: "apply [checkout] [-- files...]"},
 		{name: "sync", use: "sync [checkout]"},
-		{name: "extract", use: "extract [checkout] [--range <start> <end>] [-- files...]"},
+		{name: "extract", use: "extract [checkout] [--range <start>..<end>|<start> <end>] [-- files...]"},
+		{name: "annotate", use: "annotate [checkout]"},
+		{name: "refresh", use: "refresh [checkout]"},
 	} {
 		cmd, _, err := rootCmd.Find([]string{tc.name})
 		if err != nil {
@@ -252,10 +385,34 @@ func TestRootHelpExplainsPatchRepoAndCheckoutModel(t *testing.T) {
 		"browseros-patch diff ch1",
 		"browseros-patch sync ch1",
 		"browseros-patch extract ch1",
+		"browseros-patch refresh ch1",
+		"browseros-patch feature lint",
 	} {
 		if !strings.Contains(rootCmd.Example, want) {
 			t.Fatalf("expected root examples to contain %q, got:\n%s", want, rootCmd.Example)
 		}
+	}
+}
+
+func TestRootExamplesDoNotRenderSourceTabs(t *testing.T) {
+	if strings.Contains(rootCmd.Example, "\n\t") {
+		t.Fatalf("root examples should render with spaces, got:\n%s", rootCmd.Example)
+	}
+}
+
+func TestParseRevRange(t *testing.T) {
+	start, end, err := parseRevRange("browseros..task/demo")
+	if err != nil {
+		t.Fatalf("parseRevRange: %v", err)
+	}
+	if start != "browseros" || end != "task/demo" {
+		t.Fatalf("range = %s..%s, want browseros..task/demo", start, end)
+	}
+	if _, _, err := parseRevRange("browseros"); err == nil {
+		t.Fatalf("expected invalid range error")
+	}
+	if _, _, err := parseRevRange("browseros...task/demo"); err == nil {
+		t.Fatalf("expected three-dot range error")
 	}
 }
 
@@ -269,6 +426,8 @@ func TestCheckoutCommandExamplesUseNamedCheckout(t *testing.T) {
 		{name: "apply", example: "browseros-patch apply ch1"},
 		{name: "sync", example: "browseros-patch sync ch1"},
 		{name: "extract", example: "browseros-patch extract ch1"},
+		{name: "annotate", example: "browseros-patch annotate ch1"},
+		{name: "refresh", example: "browseros-patch refresh ch1"},
 	} {
 		cmd, _, err := rootCmd.Find([]string{tc.name})
 		if err != nil {
@@ -277,11 +436,14 @@ func TestCheckoutCommandExamplesUseNamedCheckout(t *testing.T) {
 		if !strings.Contains(cmd.Example, tc.example) {
 			t.Fatalf("expected %s examples to contain %q, got:\n%s", tc.name, tc.example, cmd.Example)
 		}
+		if tc.name == "annotate" && strings.Contains(cmd.Example, "browseros-patch annotate ch1 api") {
+			t.Fatalf("annotate examples should not document single-feature annotate, got:\n%s", cmd.Example)
+		}
 	}
 }
 
 func TestSrcFlagExplainsDirectCheckoutPath(t *testing.T) {
-	for _, name := range []string{"diff", "status", "apply", "sync", "extract"} {
+	for _, name := range []string{"diff", "status", "apply", "sync", "extract", "annotate", "refresh"} {
 		cmd, _, err := rootCmd.Find([]string{name})
 		if err != nil {
 			t.Fatalf("find %s: %v", name, err)
@@ -310,6 +472,7 @@ func TestLLMTxtGuideContent(t *testing.T) {
 		"browseros-patch sync ch1",
 		"browseros-patch apply ch1",
 		"browseros-patch extract ch1",
+		"browseros-patch annotate ch1",
 		"list reads only registered Chromium checkouts",
 		"does not inspect sync state",
 		// agent playbook
@@ -334,6 +497,9 @@ func TestLLMTxtGuideContent(t *testing.T) {
 	}
 	if strings.Contains(text, "\x1b[") {
 		t.Fatalf("llm txt should be uncolored, got:\n%s", text)
+	}
+	if strings.Contains(text, "browseros-patch annotate ch1 api") {
+		t.Fatalf("llm txt should not document single-feature annotate, got:\n%s", text)
 	}
 }
 

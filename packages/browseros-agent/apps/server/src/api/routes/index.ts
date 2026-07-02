@@ -28,7 +28,6 @@ import { createProviderRoutes } from './provider'
 import { createRefinePromptRoutes } from './refine-prompt'
 import { createRemoteHermesRoutes } from './remote-hermes'
 import { createScreencastRoute } from './screencast'
-import { createShutdownRoute } from './shutdown'
 import { createStatusRoute } from './status'
 
 interface CreateApiRoutesDeps {
@@ -36,7 +35,6 @@ interface CreateApiRoutesDeps {
   config: HttpServerConfig
   gatewayBaseUrl?: string
   klavis: KlavisService
-  onShutdown: () => void
   remoteHermes: RemoteHermesService | null
   tokenManager: OAuthTokenManager | null
   turnRegistry: TurnRegistry
@@ -68,7 +66,6 @@ export function createApiRoutes(deps: CreateApiRoutesDeps) {
       .use('/*', cors(defaultCorsConfig))
       .use('/*', requireTrustedOrigin())
       .route('/health', createHealthRoute({ browser }))
-      .route('/shutdown', createShutdownRoute({ onShutdown: deps.onShutdown }))
       .route('/status', createStatusRoute({ browser }))
       .route(
         '/test-provider',
