@@ -5,23 +5,25 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * BrowserOS Agents cockpit palette.
+ * BrowserClaw cockpit palette — ease-health.
  *
  * The shadcn base-vega primitives we installed all read --color-background,
  * --color-foreground, --color-primary etc. We re-point those at the
- * design's warm-cream + orange palette so shadcn Cards, Badges and Buttons
- * sit cleanly inside the cockpit. The bespoke BrowserOS tokens (bg-canvas,
- * accent-ink, status colors, etc.) live alongside as additional utility
- * classes.
+ * ease-health palette (cream #fffefc surfaces, deep-green #0f3e17 primary,
+ * sage/mint tints) so shadcn Cards, Badges and Buttons sit cleanly inside
+ * the cockpit. The bespoke BrowserOS tokens (bg-canvas, accent-ink, status
+ * colors, etc.) live alongside as additional utility classes.
  *
- * Every color maps through a var() so the `.dark` block below can flip
- * the whole palette by re-declaring the plain variables; the concrete
- * light values live in :root. The palette is the design prototype's
- * tokens translated from raw hex to HSL (which tailwind 4 + shadcn
- * expect) so it composes with the rest of the utility set.
+ * `accent` deliberately equals `primary`: the app uses accent as the vivid
+ * brand color (pulse dots, emphasis text, gradients), not as shadcn's pale
+ * hover tint.
+ *
+ * Every color maps through a var() so the `.dark` block can flip the whole
+ * palette by re-declaring the plain variables; the concrete light values
+ * live in :root and the dark values in .dark.
  */
 @theme inline {
-  /* shadcn primitives: re-pointed to BrowserOS surfaces */
+  /* shadcn primitives: re-pointed to ease-health surfaces */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -47,17 +49,18 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
 
-  /* BrowserOS bespoke surfaces */
+  /* BrowserOS bespoke surfaces. ink-deep is the shared dark-chrome
+     surface (terminal blocks, caption strips, viewport pills) so all
+     dark strips read as one ease-health green-black, not mixed blacks.
+     Unlike --ink (which flips to light for text), it stays a dark chip
+     in both themes — elevated in dark so it reads as raised, not lost
+     against the dark page. Carries hardcoded white text. */
   --color-bg-canvas: var(--bg-canvas);
   --color-bg-sunken: var(--bg-sunken);
   --color-card-tint: var(--card-tint);
+  --color-ink-deep: var(--ink-deep);
   --color-border-2: var(--border-2);
   --color-border-strong: var(--border-strong);
-  /* Inverted metadata band. Stays a dark chip in both themes (elevated
-     in dark so it reads as raised, not lost against the dark page) —
-     unlike --ink, which flips to light for text. Carries hardcoded
-     white text. */
-  --color-surface-inverse: var(--surface-inverse);
 
   /* Ink scale (typography hierarchy) */
   --color-ink: var(--ink);
@@ -65,7 +68,7 @@
   --color-ink-3: var(--ink-3);
   --color-ink-4: var(--ink-4);
 
-  /* Accent ink (high-contrast orange text on tinted backgrounds) */
+  /* Accent ink (high-contrast green text on tinted backgrounds) */
   --color-accent-2: var(--accent-2);
   --color-accent-ink: var(--accent-ink);
   --color-accent-tint: var(--accent-tint);
@@ -88,9 +91,9 @@
 
   /* Shadows from the design's --shadow-* tokens */
   --shadow-card:
-    0 1px 2px hsl(35 35% 12% / 0.04), 0 1px 3px hsl(35 35% 12% / 0.03);
+    0 1px 2px hsl(150 25% 10% / 0.04), 0 1px 3px hsl(150 25% 10% / 0.03);
   --shadow-pop:
-    0 8px 30px hsl(35 35% 12% / 0.14), 0 2px 8px hsl(35 35% 12% / 0.08);
+    0 8px 30px hsl(150 25% 10% / 0.14), 0 2px 8px hsl(150 25% 10% / 0.08);
 
   /* Animations referenced by JSX utilities (animate-pulse-dot, etc.) */
   --animate-pulse-dot: pulse-dot 1.4s ease-in-out infinite;
@@ -157,9 +160,9 @@ body,
 body {
   color: var(--color-foreground);
   font-family: var(--font-sans);
-  /* The design's body has a layered gradient on warm cream. We replicate
-     the same three layers so the cockpit chrome reads as the design,
-     not a flat white page.
+  /* The design's body has a layered gradient on cream. We replicate
+     the same three layers (sage, blue-gray mist, sage-to-moss wash) so
+     the cockpit chrome reads as the design, not a flat white page.
 
      background-attachment: fixed anchors the gradient to the viewport
      instead of the body box. Without it, the gradient is sized to body
@@ -170,34 +173,34 @@ body {
   background:
     radial-gradient(
       1200px 700px at 18% -8%,
-      hsl(160 12% 91%) 0%,
-      hsl(160 12% 91% / 0) 60%
+      hsl(140 30% 91%) 0%,
+      hsl(140 30% 91% / 0) 60%
     ),
     radial-gradient(
       1000px 800px at 100% 110%,
-      hsl(35 25% 90%) 0%,
-      hsl(35 25% 90% / 0) 55%
+      hsl(196 30% 92%) 0%,
+      hsl(196 30% 92% / 0) 55%
     ),
-    linear-gradient(155deg, hsl(170 10% 88%) 0%, hsl(35 18% 89%) 100%);
+    linear-gradient(155deg, hsl(150 20% 88%) 0%, hsl(90 20% 91%) 100%);
   background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
-/* Same three layers, flipped to deep warm charcoal for dark mode. */
+/* Same three layers, flipped to deep green-black for dark mode. */
 .dark body {
   background:
     radial-gradient(
       1200px 700px at 18% -8%,
-      hsl(160 8% 13%) 0%,
-      hsl(160 8% 13% / 0) 60%
+      hsl(140 20% 11%) 0%,
+      hsl(140 20% 11% / 0) 60%
     ),
     radial-gradient(
       1000px 800px at 100% 110%,
-      hsl(35 12% 12%) 0%,
-      hsl(35 12% 12% / 0) 55%
+      hsl(196 22% 12%) 0%,
+      hsl(196 22% 12% / 0) 55%
     ),
-    linear-gradient(155deg, hsl(170 6% 9%) 0%, hsl(35 8% 10%) 100%);
+    linear-gradient(155deg, hsl(150 22% 8%) 0%, hsl(140 18% 9%) 100%);
   background-attachment: fixed;
 }
 
@@ -231,123 +234,123 @@ body {
  ---break---
  */
 :root {
-  --background: hsl(40 25% 97%);
-  --foreground: hsl(40 8% 10%);
-  --card: hsl(0 0% 100%);
-  --card-foreground: hsl(40 8% 10%);
-  --popover: hsl(0 0% 100%);
-  --popover-foreground: hsl(40 8% 10%);
-  --primary: hsl(19 89% 56%);
-  --primary-foreground: hsl(0 0% 100%);
-  --secondary: hsl(40 22% 95%);
-  --secondary-foreground: hsl(40 8% 10%);
-  --muted: hsl(40 18% 94%);
-  --muted-foreground: hsl(35 5% 51%);
-  --accent: hsl(19 89% 56%);
-  --accent-foreground: hsl(0 0% 100%);
-  --destructive: hsl(4 56% 50%);
-  --destructive-foreground: hsl(0 0% 100%);
-  --border: hsl(40 22% 91%);
-  --input: hsl(40 22% 91%);
-  --ring: hsl(19 89% 56%);
-  --chart-1: oklch(0.837 0.128 66.29);
-  --chart-2: oklch(0.705 0.213 47.604);
-  --chart-3: oklch(0.646 0.222 41.116);
-  --chart-4: oklch(0.553 0.195 38.402);
-  --chart-5: oklch(0.47 0.157 37.304);
+  --background: #fffefc;
+  --foreground: #000000;
+  --card: #fffefc;
+  --card-foreground: #000000;
+  --popover: #fffefc;
+  --popover-foreground: #000000;
+  --primary: #0f3e17;
+  --primary-foreground: #fffefc;
+  --secondary: #cfe7d3;
+  --secondary-foreground: #0f3e17;
+  --muted: #e1f4df;
+  --muted-foreground: #333333;
+  --accent: #0f3e17;
+  --accent-foreground: #fffefc;
+  --destructive: #b7301b;
+  --destructive-foreground: #fffefc;
+  --border: #e5e7eb;
+  --input: #e5e7eb;
+  --ring: #0f3e17;
+  --chart-1: #0f3e17;
+  --chart-2: #2d7a3a;
+  --chart-3: #6ea8b8;
+  --chart-4: #b1dbb8;
+  --chart-5: #333333;
   --radius: 0.45rem;
-  --sidebar: hsl(40 22% 95%);
-  --sidebar-foreground: hsl(40 8% 10%);
-  --sidebar-primary: oklch(0.646 0.222 41.116);
-  --sidebar-primary-foreground: oklch(0.98 0.016 73.684);
-  --sidebar-accent: hsl(25 88% 94%);
-  --sidebar-accent-foreground: hsl(22 86% 38%);
-  --sidebar-border: hsl(40 22% 91%);
-  --sidebar-ring: hsl(19 89% 56%);
+  --sidebar: #f2f8f0;
+  --sidebar-foreground: #000000;
+  --sidebar-primary: #0f3e17;
+  --sidebar-primary-foreground: #fffefc;
+  --sidebar-accent: #cfe7d3;
+  --sidebar-accent-foreground: #0f3e17;
+  --sidebar-border: #e5e7eb;
+  --sidebar-ring: #0f3e17;
 
-  --bg-canvas: hsl(40 30% 98%);
-  --bg-sunken: hsl(40 18% 94%);
-  --card-tint: hsl(40 35% 98.5%);
-  --border-2: hsl(40 18% 88%);
-  --border-strong: hsl(40 14% 83%);
-  --surface-inverse: hsl(40 8% 10%);
-  --ink: hsl(40 8% 10%);
-  --ink-2: hsl(35 6% 32%);
-  --ink-3: hsl(35 5% 51%);
-  --ink-4: hsl(35 5% 66%);
-  --accent-2: hsl(20 79% 49%);
-  --accent-ink: hsl(22 86% 38%);
-  --accent-tint: hsl(25 88% 94%);
-  --accent-tint-2: hsl(25 87% 90%);
-  --green: hsl(140 65% 33%);
-  --green-tint: hsl(140 35% 92%);
+  --bg-canvas: #fbfdf8;
+  --bg-sunken: #ebf3ea;
+  --card-tint: #fcfefb;
+  --ink-deep: #0a1810;
+  --border-2: #dbe3dc;
+  --border-strong: #c6d1c8;
+  --ink: #000000;
+  --ink-2: #333333;
+  --ink-3: #68706a;
+  --ink-4: #99a29b;
+  --accent-2: #2d7a3a;
+  --accent-ink: #0f3e17;
+  --accent-tint: #e1f4df;
+  --accent-tint-2: #cfe7d3;
+  --green: #2d7a3a;
+  --green-tint: #d9edda;
   --amber: hsl(35 80% 40%);
   --amber-tint: hsl(40 75% 92%);
-  --red: hsl(4 56% 50%);
+  --red: #b7301b;
   --red-tint: hsl(4 65% 95%);
-  --blue: hsl(217 75% 53%);
+  --blue: #3e7285;
 }
 /*
  ---break---
  */
 
-/* Dark counterpart on the same warm hue axes (35-40 neutrals, 19-26
-   orange) so the cockpit keeps its warm identity instead of going
-   generic zinc. Tints flip from "pastel wash on cream" to "deep wash
-   on charcoal"; the ink scale inverts. */
+/* Dark counterpart on the ease-health green axes: deep green-black
+   surfaces, the brand green kept vivid so `text-accent`, pulse dots and
+   dropdown highlights stay legible on dark. Tints flip from "mint wash
+   on cream" to "deep green on green-black"; the ink scale inverts. */
 .dark {
-  --background: hsl(35 8% 9%);
-  --foreground: hsl(40 18% 94%);
-  --card: hsl(35 8% 12%);
-  --card-foreground: hsl(40 18% 94%);
-  --popover: hsl(35 8% 12%);
-  --popover-foreground: hsl(40 18% 94%);
-  --primary: hsl(19 89% 56%);
-  --primary-foreground: hsl(0 0% 100%);
-  --secondary: hsl(35 6% 15%);
-  --secondary-foreground: hsl(40 18% 94%);
-  --muted: hsl(35 6% 16%);
-  --muted-foreground: hsl(36 6% 60%);
-  --accent: hsl(19 89% 56%);
-  --accent-foreground: hsl(0 0% 100%);
-  --destructive: hsl(4 70% 58%);
-  --destructive-foreground: hsl(0 0% 100%);
-  --border: hsl(35 6% 20%);
-  --input: hsl(35 6% 20%);
-  --ring: hsl(19 89% 56%);
-  --chart-1: oklch(0.837 0.128 66.29);
-  --chart-2: oklch(0.705 0.213 47.604);
-  --chart-3: oklch(0.646 0.222 41.116);
-  --chart-4: oklch(0.553 0.195 38.402);
-  --chart-5: oklch(0.47 0.157 37.304);
-  --sidebar: hsl(35 7% 11%);
-  --sidebar-foreground: hsl(40 18% 94%);
-  --sidebar-primary: oklch(0.705 0.213 47.604);
-  --sidebar-primary-foreground: oklch(0.98 0.016 73.684);
-  --sidebar-accent: hsl(22 45% 18%);
-  --sidebar-accent-foreground: hsl(26 90% 70%);
-  --sidebar-border: hsl(35 6% 18%);
-  --sidebar-ring: hsl(19 89% 56%);
+  --background: #0a1810;
+  --foreground: #fffefc;
+  --card: #142919;
+  --card-foreground: #fffefc;
+  --popover: #142919;
+  --popover-foreground: #fffefc;
+  --primary: #2d7a3a;
+  --primary-foreground: #fffefc;
+  --secondary: #1f3a26;
+  --secondary-foreground: #fffefc;
+  --muted: #1f3a26;
+  --muted-foreground: #a8c4ab;
+  --accent: #4a9c56;
+  --accent-foreground: #0a1810;
+  --destructive: #e34432;
+  --destructive-foreground: #fffefc;
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.12);
+  --ring: #2d7a3a;
+  --chart-1: #4a9c56;
+  --chart-2: #b1dbb8;
+  --chart-3: #b6ced5;
+  --chart-4: #cfe7d3;
+  --chart-5: #d4d4d4;
+  --sidebar: #142919;
+  --sidebar-foreground: #fffefc;
+  --sidebar-primary: #2d7a3a;
+  --sidebar-primary-foreground: #fffefc;
+  --sidebar-accent: rgba(255, 255, 255, 0.06);
+  --sidebar-accent-foreground: #fffefc;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-ring: #2d7a3a;
 
-  --bg-canvas: hsl(35 8% 8%);
-  --bg-sunken: hsl(35 6% 13%);
-  --card-tint: hsl(35 8% 13%);
-  --border-2: hsl(35 6% 22%);
-  --border-strong: hsl(35 6% 28%);
-  --surface-inverse: hsl(35 7% 18%);
-  --ink: hsl(40 18% 94%);
-  --ink-2: hsl(38 10% 74%);
-  --ink-3: hsl(36 6% 58%);
-  --ink-4: hsl(35 5% 44%);
-  --accent-2: hsl(22 90% 62%);
-  --accent-ink: hsl(26 90% 68%);
-  --accent-tint: hsl(22 45% 16%);
-  --accent-tint-2: hsl(22 50% 22%);
-  --green: hsl(140 45% 55%);
-  --green-tint: hsl(140 30% 14%);
+  --bg-canvas: #07120c;
+  --bg-sunken: #0f2015;
+  --card-tint: #17301e;
+  --ink-deep: #1a3020;
+  --border-2: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --ink: #fffefc;
+  --ink-2: #cdddce;
+  --ink-3: #9fb5a3;
+  --ink-4: #748a78;
+  --accent-2: #5fb06c;
+  --accent-ink: #8fce9b;
+  --accent-tint: #1f3a26;
+  --accent-tint-2: #24462e;
+  --green: #4a9c56;
+  --green-tint: #16281b;
   --amber: hsl(38 80% 58%);
   --amber-tint: hsl(40 40% 14%);
-  --red: hsl(4 70% 62%);
-  --red-tint: hsl(4 40% 15%);
-  --blue: hsl(217 85% 66%);
+  --red: #e34432;
+  --red-tint: #2c1512;
+  --blue: #6ea8b8;
 }

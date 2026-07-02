@@ -2,7 +2,11 @@ import { ArrowUpRight } from 'lucide-react'
 import { NavLink, useLocation } from 'react-router'
 import { AgentDot } from '@/components/audit/AgentDot'
 import { cn } from '@/lib/utils'
-import { type TaskSummary, taskScreenshotUrl } from '@/modules/api/audit.hooks'
+import {
+  type TaskSummary,
+  taskScreenshotUrl,
+  useTaskScreenshotBaseUrl,
+} from '@/modules/api/audit.hooks'
 import { formatDuration, formatRelative } from '@/screens/audit/audit.helpers'
 
 interface SupportingTileProps {
@@ -23,6 +27,7 @@ interface SupportingTileProps {
 export function SupportingTile({ task, now, className }: SupportingTileProps) {
   const isLive = task.status === 'live'
   const screenshotId = task.lastScreenshotDispatchId
+  const screenshotBaseUrl = useTaskScreenshotBaseUrl()
   const location = useLocation()
   return (
     <NavLink
@@ -35,14 +40,16 @@ export function SupportingTile({ task, now, className }: SupportingTileProps) {
       )}
     >
       <div className="relative flex-1 overflow-hidden">
-        {screenshotId !== null ? (
+        {screenshotId !== null && screenshotBaseUrl !== null ? (
           <img
-            src={taskScreenshotUrl(screenshotId)}
+            src={taskScreenshotUrl(screenshotId, screenshotBaseUrl)}
             alt={`Session preview from ${task.agentLabel}`}
             loading="lazy"
             decoding="async"
             className="absolute inset-0 h-full w-full object-cover object-top"
           />
+        ) : screenshotId !== null ? (
+          <div className="absolute inset-0 animate-pulse bg-card-tint" />
         ) : (
           <NoShotComposition task={task} />
         )}
@@ -65,15 +72,15 @@ function Caption({
   isLive: boolean
 }) {
   return (
-    <div className="flex flex-col gap-0.5 bg-surface-inverse px-3.5 py-2 text-white">
+    <div className="flex flex-col gap-0.5 bg-ink-deep px-3.5 py-2 text-white">
       <div className="flex items-center gap-2 font-mono text-[9.5px] text-white/75 uppercase tracking-[0.08em]">
         <AgentDot slug={task.slug} />
         <span className="truncate text-white/95">{task.agentLabel}</span>
         {isLive && (
-          <span className="inline-flex items-center gap-1 text-accent">
+          <span className="inline-flex items-center gap-1 text-[#b1dbb8]">
             <span
               aria-hidden
-              className="inline-block size-1.5 animate-[pulse-dot_1.4s_ease-in-out_infinite] rounded-full bg-accent"
+              className="inline-block size-1.5 animate-[pulse-dot_1.4s_ease-in-out_infinite] rounded-full bg-[#b1dbb8]"
             />
             LIVE
           </span>
