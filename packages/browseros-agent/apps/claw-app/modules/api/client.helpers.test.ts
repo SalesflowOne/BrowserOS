@@ -1,7 +1,40 @@
-import { describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it } from 'bun:test'
+import {
+  resolveBrowserOSMcpBaseUrl,
+  resolveBrowserOSServerBaseUrl,
+} from './browseros-ports'
 import { resolveApiBaseUrlFromSources } from './client.helpers'
 
 const fallback = 'http://127.0.0.1:9200'
+const originalChrome = globalThis.chrome
+
+function installBrowserOSPrefs(values: Record<string, unknown>) {
+  Object.defineProperty(globalThis, 'chrome', {
+    configurable: true,
+    value: {
+      runtime: {},
+      browserOS: {
+        getPref(
+          name: string,
+          callback: (pref: chrome.browserOS.PrefObject) => void,
+        ) {
+          callback({
+            key: name,
+            type: typeof values[name],
+            value: values[name],
+          })
+        },
+      },
+    },
+  })
+}
+
+afterEach(() => {
+  Object.defineProperty(globalThis, 'chrome', {
+    configurable: true,
+    value: originalChrome,
+  })
+})
 
 describe('resolveApiBaseUrlFromSources', () => {
   it('prefers the query override', () => {
@@ -68,5 +101,46 @@ describe('resolveApiBaseUrlFromSources', () => {
         fallback,
       }),
     ).toBe(fallback)
+  })
+})
+
+describe('BrowserOS managed port resolution', () => {
+  it('prefers the BrowserOS server port pref for API traffic', async () => {
+    installBrowserOSPrefs({ 'browseros.server.server_port': 9511 })
+
+    await expect(
+      resolveBrowserOSServerBaseUrl({
+        query: 'http://127.0.0.1:9201',
+        stored: 'http://127.0.0.1:9202',
+        launcher: 'http://127.0.0.1:9203',
+        fallback,
+      }),
+    ).resolves.toBe('http://127.0.0.1:9511')
+  })
+
+  it('prefers the BrowserOS proxy port pref for MCP traffic', async () => {
+    installBrowserOSPrefs({ 'browseros.server.proxy_port': 9512 })
+
+    await expect(
+      resolveBrowserOSMcpBaseUrl({
+        query: 'http://127.0.0.1:9201',
+        stored: 'http://127.0.0.1:9202',
+        launcher: 'http://127.0.0.1:9203',
+        fallback,
+      }),
+    ).resolves.toBe('http://127.0.0.1:9512')
+  })
+
+  it('falls back to trusted sources when the pref is invalid', async () => {
+    installBrowserOSPrefs({ 'browseros.server.server_port': '9511' })
+
+    await expect(
+      resolveBrowserOSServerBaseUrl({
+        query: null,
+        stored: 'http://127.0.0.1:9202',
+        launcher: 'http://127.0.0.1:9203',
+        fallback,
+      }),
+    ).resolves.toBe('http://127.0.0.1:9202')
   })
 })
