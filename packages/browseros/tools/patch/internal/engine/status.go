@@ -140,23 +140,21 @@ func materializedFreshness(ctx context.Context, repoRoot string, workspacePath s
 			tipRev = trailer
 		}
 	}
-	rev := state.LastRefreshRev
-	if rev == "" {
-		rev = tipRev
-	}
 	switch {
-	case rev == "":
+	case tipRev == "":
 		return "", tipRev, "unknown", 0
-	case state.LastRefreshRev != "" && tipRev != "" && state.LastRefreshRev != tipRev:
-		return rev, tipRev, "mismatch", 0
-	case rev == repoHead:
-		return rev, tipRev, "fresh", 0
+	case state.LastRefreshRev == "":
+		return tipRev, tipRev, "unknown", 0
+	case state.LastRefreshRev != tipRev:
+		return tipRev, tipRev, "mismatch", 0
+	case tipRev == repoHead:
+		return tipRev, tipRev, "fresh", 0
 	default:
-		behind, err := git.RevListCount(ctx, repoRoot, rev, repoHead)
+		behind, err := git.RevListCount(ctx, repoRoot, tipRev, repoHead)
 		if err != nil || behind == 0 {
-			return rev, tipRev, "unknown", 0
+			return tipRev, tipRev, "unknown", 0
 		}
-		return rev, tipRev, fmt.Sprintf("behind %d", behind), behind
+		return tipRev, tipRev, fmt.Sprintf("behind %d", behind), behind
 	}
 }
 

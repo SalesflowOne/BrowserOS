@@ -1249,6 +1249,39 @@ func TestInspectWorkspaceReportsPendingStash(t *testing.T) {
 	}
 }
 
+func TestInspectWorkspaceDoesNotReportFreshFromStateAlone(t *testing.T) {
+	ctx := context.Background()
+	workspacePath := initGitRepo(t)
+	writeFile(t, filepath.Join(workspacePath, "chrome", "browser.cc"), "base\n")
+	runGit(t, workspacePath, "add", "chrome/browser.cc")
+	runGit(t, workspacePath, "commit", "-m", "workspace base")
+	baseCommit := gitOutput(t, workspacePath, "rev-parse", "HEAD")
+	repoInfo := newPatchRepo(t, baseCommit)
+	repoHead := gitOutput(t, repoInfo.Root, "rev-parse", "HEAD")
+	if err := workspace.SaveState(workspacePath, &workspace.State{
+		Version:        1,
+		Workspace:      workspacePath,
+		BaseCommit:     baseCommit,
+		LastRefreshRev: repoHead,
+	}); err != nil {
+		t.Fatalf("SaveState: %v", err)
+	}
+
+	status, err := InspectWorkspace(ctx, InspectWorkspaceOptions{
+		Workspace: workspace.Entry{Name: "ws", Path: workspacePath},
+		Repo:      repoInfo,
+	})
+	if err != nil {
+		t.Fatalf("InspectWorkspace: %v", err)
+	}
+	if status.PatchesFreshness == "fresh" {
+		t.Fatalf("state alone must not report fresh: %+v", status)
+	}
+	if status.PatchesRev != "" {
+		t.Fatalf("patches_rev should be empty without browseros trailer, got %q", status.PatchesRev)
+	}
+}
+
 func TestRefreshRebuildsIdenticalBrowserOSBranchesAndFastNoops(t *testing.T) {
 	ctx := context.Background()
 	checkout1 := initGitRepo(t)
@@ -1312,6 +1345,11 @@ features:
 	log2 := gitOutput(t, checkout2, "log", "--format=%s%n%B", "browseros", "--not", baseCommit)
 	if log1 != log2 {
 		t.Fatalf("materialized logs differ\n--- checkout1 ---\n%s\n--- checkout2 ---\n%s", log1, log2)
+	}
+	tip1 := gitOutput(t, checkout1, "rev-parse", "browseros")
+	tip2 := gitOutput(t, checkout2, "rev-parse", "browseros")
+	if tip1 != tip2 {
+		t.Fatalf("browseros tips differ: %s != %s", tip1, tip2)
 	}
 	trailer := gitOutput(t, checkout1, "log", "-1", "--format=%B", "browseros")
 	if !strings.Contains(trailer, "Patches-Rev: "+repoHead) {

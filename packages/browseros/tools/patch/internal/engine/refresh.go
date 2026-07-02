@@ -60,6 +60,11 @@ func Refresh(ctx context.Context, opts RefreshOptions) (*RefreshResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	repoCommitTime, err := git.CommitUnixTime(ctx, repoInfo.Root, repoRev)
+	if err != nil {
+		return nil, err
+	}
+	commitEnv := refreshCommitEnv(repoCommitTime)
 	features, _, err := LoadFeatures(repoInfo)
 	if err != nil {
 		return nil, err
@@ -154,7 +159,7 @@ func Refresh(ctx context.Context, opts RefreshOptions) (*RefreshResult, error) {
 		if !dirty {
 			continue
 		}
-		commit, err := git.CommitPathsWithBody(ctx, opts.Workspace.Path, feature.Description, patchesRevTrailer+": "+repoRev, stagePaths)
+		commit, err := git.CommitPathsWithBodyEnv(ctx, opts.Workspace.Path, feature.Description, patchesRevTrailer+": "+repoRev, commitEnv, stagePaths)
 		if err != nil {
 			return nil, err
 		}
@@ -271,4 +276,16 @@ func shortRev(rev string) string {
 		return rev
 	}
 	return rev[:12]
+}
+
+func refreshCommitEnv(unixTime string) []string {
+	date := "@" + unixTime + " +0000"
+	return []string{
+		"GIT_AUTHOR_NAME=BrowserOS Patch Tool",
+		"GIT_AUTHOR_EMAIL=patches@browseros.local",
+		"GIT_AUTHOR_DATE=" + date,
+		"GIT_COMMITTER_NAME=BrowserOS Patch Tool",
+		"GIT_COMMITTER_EMAIL=patches@browseros.local",
+		"GIT_COMMITTER_DATE=" + date,
+	}
 }

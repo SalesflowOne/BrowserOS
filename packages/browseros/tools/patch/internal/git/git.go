@@ -25,8 +25,15 @@ type FileChange struct {
 }
 
 func Run(ctx context.Context, dir string, stdin []byte, args ...string) (Result, error) {
+	return RunEnv(ctx, dir, stdin, nil, args...)
+}
+
+func RunEnv(ctx context.Context, dir string, stdin []byte, env []string, args ...string) (Result, error) {
 	command := exec.CommandContext(ctx, "git", args...)
 	command.Dir = dir
+	if len(env) > 0 {
+		command.Env = append(os.Environ(), env...)
+	}
 	if stdin != nil {
 		command.Stdin = bytes.NewReader(stdin)
 	}
@@ -176,6 +183,10 @@ func CommitPaths(ctx context.Context, dir string, message string, paths []string
 }
 
 func CommitPathsWithBody(ctx context.Context, dir string, subject string, body string, paths []string) (string, error) {
+	return CommitPathsWithBodyEnv(ctx, dir, subject, body, nil, paths)
+}
+
+func CommitPathsWithBodyEnv(ctx context.Context, dir string, subject string, body string, env []string, paths []string) (string, error) {
 	args := []string{"commit", "-m", subject}
 	if body != "" {
 		args = append(args, "-m", body)
@@ -184,7 +195,7 @@ func CommitPathsWithBody(ctx context.Context, dir string, subject string, body s
 		args = append(args, "--")
 		args = append(args, paths...)
 	}
-	result, err := Run(ctx, dir, nil, args...)
+	result, err := RunEnv(ctx, dir, nil, env, args...)
 	if err != nil {
 		return "", err
 	}
@@ -192,6 +203,17 @@ func CommitPathsWithBody(ctx context.Context, dir string, subject string, body s
 		return "", errors.New(strings.TrimSpace(result.Stderr))
 	}
 	return HeadRev(ctx, dir)
+}
+
+func CommitUnixTime(ctx context.Context, dir string, ref string) (string, error) {
+	result, err := Run(ctx, dir, nil, "show", "-s", "--format=%ct", ref)
+	if err != nil {
+		return "", err
+	}
+	if result.Code != 0 {
+		return "", errors.New(strings.TrimSpace(result.Stderr))
+	}
+	return strings.TrimSpace(result.Stdout), nil
 }
 
 func CommitTrailer(ctx context.Context, dir string, ref string, key string) (string, error) {
