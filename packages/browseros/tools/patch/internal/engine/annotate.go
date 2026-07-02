@@ -8,7 +8,6 @@ import (
 	"github.com/browseros-ai/BrowserOS/packages/browseros/tools/patch/internal/git"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/tools/patch/internal/patch"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/tools/patch/internal/repo"
-	"github.com/browseros-ai/BrowserOS/packages/browseros/tools/patch/internal/resolve"
 	"github.com/browseros-ai/BrowserOS/packages/browseros/tools/patch/internal/workspace"
 	"gopkg.in/yaml.v3"
 )
@@ -58,10 +57,8 @@ type annotateFileSet struct {
 // It refuses to run mid-conflict-resolution: committing a half-applied tree
 // would bake reject files and partial patches into feature history.
 func Annotate(ctx context.Context, opts AnnotateOptions) (*AnnotateResult, error) {
-	if resolve.Exists(opts.Workspace.Path) {
-		return nil, fmt.Errorf(
-			"conflict resolution is in progress for %s; finish it with \"browseros-patch continue\", \"browseros-patch skip\", or \"browseros-patch abort\" before annotating",
-			opts.Workspace.Name)
+	if err := requireNoPendingResolution(ctx, opts.Workspace); err != nil {
+		return nil, err
 	}
 	features, featuresFile, err := LoadFeatures(opts.Repo)
 	if err != nil {
@@ -77,15 +74,14 @@ func Annotate(ctx context.Context, opts AnnotateOptions) (*AnnotateResult, error
 		Committed:    []AnnotateCommittedFeature{},
 		Skipped:      []AnnotateSkippedFeature{},
 	}
-	// One status snapshot serves consecutive features; a full scan is seconds
-	// on a Chromium checkout. Rescan only after a commit changes what is
-	// dirty, and once more before the unclaimed report if staging may have
-	// normalized entries without committing.
+	// One status snapshot serves the whole run; a full scan is seconds on a
+	// Chromium checkout. Each feature consumes the entries it matched —
+	// commitFeatureFiles settles them (committed, or staged clean) — so what
+	// remains at the end is exactly the unclaimed leftovers.
 	changes, err := annotateChanges(ctx, opts.Workspace.Path, ignore, opts.Exclude)
 	if err != nil {
 		return nil, err
 	}
-	staged := false
 	for _, feature := range features {
 		result.Processed++
 		reportProgress(opts.Progress, "Annotating feature %s", feature.Name)
@@ -98,7 +94,8 @@ func Annotate(ctx context.Context, opts AnnotateOptions) (*AnnotateResult, error
 			result.FeaturesSkipped++
 			continue
 		}
-		files := modifiedFeatureFiles(changes, feature)
+		matched, rest := partitionFeatureChanges(changes, feature)
+		files := annotateFileSetFrom(matched)
 		if len(files.report) == 0 {
 			result.Skipped = append(result.Skipped, AnnotateSkippedFeature{
 				Name:        feature.Name,
@@ -112,7 +109,7 @@ func Annotate(ctx context.Context, opts AnnotateOptions) (*AnnotateResult, error
 		if err != nil {
 			return nil, fmt.Errorf("commit feature %s: %w", feature.Name, err)
 		}
-		staged = true
+		changes = rest
 		if !committed {
 			result.Skipped = append(result.Skipped, AnnotateSkippedFeature{
 				Name:        feature.Name,
@@ -129,15 +126,6 @@ func Annotate(ctx context.Context, opts AnnotateOptions) (*AnnotateResult, error
 			Files:       committedFiles,
 		})
 		result.CommitsCreated++
-		if changes, err = annotateChanges(ctx, opts.Workspace.Path, ignore, opts.Exclude); err != nil {
-			return nil, err
-		}
-		staged = false
-	}
-	if staged {
-		if changes, err = annotateChanges(ctx, opts.Workspace.Path, ignore, opts.Exclude); err != nil {
-			return nil, err
-		}
 	}
 	result.Unclaimed = uniqueReportPaths(changes)
 	return result, nil
@@ -222,15 +210,27 @@ func uniqueReportPaths(changes []git.FileChange) []string {
 	return paths
 }
 
-func modifiedFeatureFiles(changes []git.FileChange, feature FeatureSpec) annotateFileSet {
+// partitionFeatureChanges splits the snapshot into the entries a feature
+// claims and the rest, so the caller can settle the claimed ones and carry
+// the remainder to the next feature without re-scanning git status.
+func partitionFeatureChanges(changes []git.FileChange, feature FeatureSpec) ([]git.FileChange, []git.FileChange) {
+	var matched, rest []git.FileChange
+	for _, change := range changes {
+		if featureMatchesChange(feature, change) {
+			matched = append(matched, change)
+			continue
+		}
+		rest = append(rest, change)
+	}
+	return matched, rest
+}
+
+func annotateFileSetFrom(changes []git.FileChange) annotateFileSet {
 	set := annotateFileSet{}
 	reportSeen := map[string]bool{}
 	stageSeen := map[string]bool{}
 	commitSeen := map[string]bool{}
 	for _, change := range changes {
-		if !featureMatchesChange(feature, change) {
-			continue
-		}
 		for _, rel := range changeReportPaths(change) {
 			appendUniquePath(&set.report, reportSeen, rel)
 		}

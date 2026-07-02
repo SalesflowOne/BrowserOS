@@ -142,6 +142,9 @@ func printAnnotateOutcome(ws workspace.Entry, result *engine.ApplyResult) {
 		fmt.Println()
 		printAnnotateResult(ws, result.Annotate)
 	}
+	if result.AnnotateSkipped != "" {
+		fmt.Println(ui.Hint(fmt.Sprintf("Annotation skipped: %s.", result.AnnotateSkipped)))
+	}
 	if result.AnnotateError != "" {
 		fmt.Println(ui.Warning("Patches applied, but annotate failed"))
 		fmt.Printf("  %s\n", result.AnnotateError)

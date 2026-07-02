@@ -51,10 +51,13 @@ type ApplyResult struct {
 	// apply outcome: the patches landed and the resolve state is already
 	// settled, so the recovery is a standalone annotate, not a retry.
 	AnnotateError string `json:"annotate_error,omitempty"`
+	// AnnotateSkipped names why auto-annotate did not run (no features
+	// registry, pending stash) so a missing annotate section is explained.
+	AnnotateSkipped string `json:"annotate_skipped,omitempty"`
 }
 
 func Apply(ctx context.Context, opts ApplyOptions) (*ApplyResult, error) {
-	if err := requireNoPendingResolution(opts.Workspace); err != nil {
+	if err := requireNoPendingResolution(ctx, opts.Workspace); err != nil {
 		return nil, err
 	}
 	repoRev, err := git.HeadRev(ctx, opts.Repo.Root)
@@ -93,16 +96,27 @@ func Apply(ctx context.Context, opts ApplyOptions) (*ApplyResult, error) {
 	return result, nil
 }
 
-// requireNoPendingResolution stops a new run from clobbering a paused
-// conflict resolution: the old resolve state would be silently overwritten or
-// deleted, stranding continue/skip and losing the run's persisted intent.
-func requireNoPendingResolution(ws workspace.Entry) error {
-	if !resolve.Exists(ws.Path) {
-		return nil
+// requireNoPendingResolution stops a new run from operating on a paused or
+// conflicted checkout: a pending resolve state would be silently clobbered
+// (stranding continue/skip and losing the run's persisted intent), and
+// unmerged index entries mean a stash pop is waiting on the user — committing
+// or re-applying over either bakes conflict debris into the tree.
+func requireNoPendingResolution(ctx context.Context, ws workspace.Entry) error {
+	if resolve.Exists(ws.Path) {
+		return fmt.Errorf(
+			"conflict resolution is in progress for %s; finish it with \"browseros-patch continue\", \"browseros-patch skip\", or \"browseros-patch abort\" first",
+			ws.Name)
 	}
-	return fmt.Errorf(
-		"conflict resolution is in progress for %s; finish it with \"browseros-patch continue\", \"browseros-patch skip\", or \"browseros-patch abort\" first",
-		ws.Name)
+	unmerged, err := git.UnmergedFiles(ctx, ws.Path)
+	if err != nil {
+		return err
+	}
+	if len(unmerged) > 0 {
+		return fmt.Errorf(
+			"%s has unresolved merge conflicts (%s); resolve them before running this command",
+			ws.Name, strings.Join(unmerged, ", "))
+	}
+	return nil
 }
 
 // finishApply records completion state and, when requested, turns the applied
@@ -122,13 +136,34 @@ func finishApply(ctx context.Context, opts ApplyOptions, repoRev string, result 
 }
 
 // annotateApplied runs the auto-annotate step of a completed apply. A repo
-// without a features registry skips quietly, and a failure is recorded on the
-// result instead of returned: the apply itself succeeded and its state is
-// already settled, so the caller must still see what was applied.
+// without a features registry or a checkout with a live pending stash skips
+// with a recorded reason, and a failure is recorded on the result instead of
+// returned: the apply itself succeeded and its state is already settled, so
+// the caller must still see what was applied.
 func annotateApplied(ctx context.Context, ws workspace.Entry, repoInfo *repo.Info, exclude []string, result *ApplyResult, progress Progress) {
 	if _, err := FeatureFilePath(repoInfo.Root); err != nil {
-		reportProgress(progress, "No features registry; skipping annotation")
+		result.AnnotateSkipped = "no features registry"
 		return
+	}
+	// A recorded stash that still exists means local changes are parked or a
+	// stash rebase conflicted; either way the tree is not purely patches, so
+	// auto-committing feature history could sweep user work or conflict
+	// markers. A standalone annotate stays available once the stash settles.
+	state, err := workspace.LoadState(ws.Path)
+	if err != nil {
+		result.AnnotateError = err.Error()
+		return
+	}
+	if state.PendingStash != "" {
+		live, err := git.StashEntryExists(ctx, ws.Path, state.PendingStash)
+		if err != nil {
+			result.AnnotateError = err.Error()
+			return
+		}
+		if live {
+			result.AnnotateSkipped = "pending stash holds local changes"
+			return
+		}
 	}
 	annotateResult, err := Annotate(ctx, AnnotateOptions{
 		Workspace: ws,
@@ -138,6 +173,13 @@ func annotateApplied(ctx context.Context, ws workspace.Entry, repoInfo *repo.Inf
 	})
 	if err != nil {
 		result.AnnotateError = err.Error()
+		if len(exclude) > 0 {
+			// A standalone annotate would not know about these: warn before
+			// the user follows the recovery hint and sweeps them in.
+			result.AnnotateError += fmt.Sprintf(
+				"; skipped conflicts remain uncommitted (%s) — resolve or reset them before annotating",
+				strings.Join(exclude, ", "))
+		}
 		return
 	}
 	result.Annotate = annotateResult
@@ -244,7 +286,7 @@ func finishResolvedRun(ctx context.Context, ws workspace.Entry, repoInfo *repo.I
 		return err
 	}
 	if state.AutoAnnotate {
-		annotateApplied(ctx, ws, repoInfo, state.Skipped, result, progress)
+		annotateApplied(ctx, ws, repoInfo, skippedExcludePaths(state), result, progress)
 	}
 	if state.RestorePendingStash {
 		if err := restorePendingStash(ctx, ws.Path, result, progress); err != nil {
@@ -252,6 +294,37 @@ func finishResolvedRun(ctx context.Context, ws workspace.Entry, repoInfo *repo.I
 		}
 	}
 	return nil
+}
+
+// skippedExcludePaths returns every checkout path a skipped conflict may have
+// touched. A skipped rename leaves the old path deleted and the new path
+// half-written, so both must be excluded from auto-annotate — otherwise the
+// old-path deletion gets committed into a feature as a broken half-rename.
+func skippedExcludePaths(state *resolve.State) []string {
+	if len(state.Skipped) == 0 {
+		return nil
+	}
+	skipped := make(map[string]bool, len(state.Skipped))
+	for _, rel := range state.Skipped {
+		skipped[rel] = true
+	}
+	seen := map[string]bool{}
+	var paths []string
+	add := func(rel string) {
+		if rel == "" || seen[rel] {
+			return
+		}
+		seen[rel] = true
+		paths = append(paths, rel)
+	}
+	for _, op := range state.Operations {
+		if !skipped[op.ChromiumPath] {
+			continue
+		}
+		add(op.ChromiumPath)
+		add(op.OldPath)
+	}
+	return paths
 }
 
 // restorePendingStash pops a stash a conflicted sync left behind once the

@@ -846,6 +846,23 @@ features:
 	}
 }
 
+func TestSkippedExcludePathsCoversRenameOldPath(t *testing.T) {
+	state := &resolve.State{
+		Skipped: []string{"chrome/new.cc", "content/plain.cc"},
+		Operations: []resolve.Operation{
+			{ChromiumPath: "chrome/new.cc", OldPath: "chrome/old.cc", Op: patch.OpRename},
+			{ChromiumPath: "content/plain.cc", Op: patch.OpModify},
+			{ChromiumPath: "chrome/applied.cc", Op: patch.OpModify},
+		},
+	}
+	got := skippedExcludePaths(state)
+	slices.Sort(got)
+	want := []string{"chrome/new.cc", "chrome/old.cc", "content/plain.cc"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("skippedExcludePaths = %v, want %v (rename old path and skipped paths, not applied ops)", got, want)
+	}
+}
+
 func TestApplyRefusesDuringConflictResolution(t *testing.T) {
 	ctx := context.Background()
 	workspacePath := initGitRepo(t)
@@ -873,6 +890,37 @@ func TestApplyRefusesDuringConflictResolution(t *testing.T) {
 	}
 	if !resolve.Exists(workspacePath) {
 		t.Fatalf("pending resolve state must survive the refused runs")
+	}
+}
+
+func TestApplyRefusesWithUnmergedFiles(t *testing.T) {
+	ctx := context.Background()
+	workspacePath := initGitRepo(t)
+	rel := "chrome/core.cc"
+	writeFile(t, filepath.Join(workspacePath, rel), "base\n")
+	runGit(t, workspacePath, "add", rel)
+	runGit(t, workspacePath, "commit", "-m", "workspace base")
+	baseCommit := gitOutput(t, workspacePath, "rev-parse", "HEAD")
+
+	// Two branches touching the same line, merged to force an unmerged (UU)
+	// entry — the state a conflicted stash pop leaves, with no resolve.json.
+	runGit(t, workspacePath, "checkout", "-b", "other")
+	writeFile(t, filepath.Join(workspacePath, rel), "other\n")
+	runGit(t, workspacePath, "commit", "-am", "other change")
+	runGit(t, workspacePath, "checkout", "-")
+	writeFile(t, filepath.Join(workspacePath, rel), "mine\n")
+	runGit(t, workspacePath, "commit", "-am", "my change")
+	if err := exec.Command("git", "-C", workspacePath, "merge", "other").Run(); err == nil {
+		t.Fatalf("expected merge to conflict")
+	}
+	if status := gitOutput(t, workspacePath, "status", "--porcelain", "--", rel); !strings.HasPrefix(status, "UU") {
+		t.Fatalf("test setup expected unmerged status, got %q", status)
+	}
+
+	repoInfo := newPatchRepo(t, baseCommit)
+	ws := workspace.Entry{Name: "ws", Path: workspacePath}
+	if _, err := Apply(ctx, ApplyOptions{Workspace: ws, Repo: repoInfo}); err == nil || !strings.Contains(err.Error(), "unresolved merge conflicts") {
+		t.Fatalf("expected apply to refuse on unmerged files, got %v", err)
 	}
 }
 

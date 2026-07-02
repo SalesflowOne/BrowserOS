@@ -34,7 +34,7 @@ type SyncResult struct {
 }
 
 func Sync(ctx context.Context, opts SyncOptions) (*SyncResult, error) {
-	if err := requireNoPendingResolution(opts.Workspace); err != nil {
+	if err := requireNoPendingResolution(ctx, opts.Workspace); err != nil {
 		return nil, err
 	}
 	if opts.Remote == "" {

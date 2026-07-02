@@ -60,14 +60,36 @@ func Load(workspacePath string) (*State, error) {
 }
 
 func Save(workspacePath string, state *State) error {
-	if err := os.MkdirAll(workspace.StateDir(workspacePath), 0o755); err != nil {
+	dir := workspace.StateDir(workspacePath)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 	body, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(Path(workspacePath), append(body, '\n'), 0o644)
+	// Write atomically: a crash mid-write would otherwise leave a truncated
+	// resolve.json that every recovery command (continue/skip/abort) fails to
+	// parse, wedging the checkout.
+	tmp, err := os.CreateTemp(dir, "resolve-*.json.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(append(body, '\n')); err != nil {
+		tmp.Close()
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := os.Rename(tmpName, Path(workspacePath)); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	return nil
 }
 
 func Delete(workspacePath string) error {
