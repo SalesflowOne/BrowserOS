@@ -52,6 +52,15 @@ features:
       - components/vector_icons/BUILD.gn
       - components/vector_icons/chat_orange.icon
 
+  browserclaw-product-dir:
+    description: "feat: per-product user-data dir via browseros_product buildflag"
+    files:
+      # Buildflag deps for the per-product profile roots; the identity
+      # values themselves live in files claimed by browseros-core,
+      # branding, and mac-sparkle-updater
+      - chrome/common/BUILD.gn
+      - chrome/install_static/BUILD.gn
+
   # ── LAYER 2: PLATFORM PATCHES ─────────────────────────────
 
   windows-patches:

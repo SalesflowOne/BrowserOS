@@ -1,9 +1,9 @@
 diff --git a/chrome/browser/browseros/buildflags.gni b/chrome/browser/browseros/buildflags.gni
 new file mode 100644
-index 0000000000000..0a4b34ea72336
+index 0000000000000..e9c2702ebc12a
 --- /dev/null
 +++ b/chrome/browser/browseros/buildflags.gni
-@@ -0,0 +1,25 @@
+@@ -0,0 +1,35 @@
 +# Copyright 2024 The Chromium Authors
 +# Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
@@ -15,13 +15,13 @@ index 0000000000000..0a4b34ea72336
 +  browseros_product = "browseros"
 +
 +  # Dev/test only. Official builds should leave this false.
-+  browseros_allow_runtime_product_override = false
++  # // TODO: nikhil - before prod claw release, set this to false
++  browseros_allow_runtime_product_override = true
 +}
 +
 +declare_args() {
 +  # Usually follows runtime override, but can be forced on for packaging tests.
-+  browseros_package_all_server_resources =
-+      browseros_allow_runtime_product_override
++  browseros_package_all_server_resources = true
 +}
 +
 +assert(browseros_product == "browseros" || browseros_product == "browserclaw",
@@ -29,3 +29,13 @@ index 0000000000000..0a4b34ea72336
 +
 +browseros_product_browseros = browseros_product == "browseros"
 +browseros_product_browserclaw = browseros_product == "browserclaw"
++
++# macOS profile root: substituted into app-Info.plist's CrProductDirName by
++# //chrome:chrome_app. Linux/Windows read the buildflags directly in
++# chrome_paths_linux.cc / chromium_install_modes.h. Changing a value orphans
++# every existing install's profile.
++if (browseros_product_browserclaw) {
++  browseros_product_dir_name = "BrowserClaw"
++} else {
++  browseros_product_dir_name = "BrowserOS"
++}
