@@ -2,7 +2,11 @@ import { ArrowUpRight } from 'lucide-react'
 import { NavLink, useLocation } from 'react-router'
 import { AgentDot } from '@/components/audit/AgentDot'
 import { cn } from '@/lib/utils'
-import { type TaskSummary, taskScreenshotUrl } from '@/modules/api/audit.hooks'
+import {
+  type TaskSummary,
+  taskScreenshotUrl,
+  useTaskScreenshotBaseUrl,
+} from '@/modules/api/audit.hooks'
 import {
   abbreviateSequence,
   formatDuration,
@@ -31,6 +35,7 @@ export function LeadRunTile({ task, now, className }: LeadRunTileProps) {
   const isLive = task.status === 'live'
   const isFailed = task.status === 'failed'
   const screenshotId = task.lastScreenshotDispatchId
+  const screenshotBaseUrl = useTaskScreenshotBaseUrl()
   const location = useLocation()
   return (
     <NavLink
@@ -43,14 +48,16 @@ export function LeadRunTile({ task, now, className }: LeadRunTileProps) {
       )}
     >
       <div className="relative flex-1 overflow-hidden">
-        {screenshotId !== null ? (
+        {screenshotId !== null && screenshotBaseUrl !== null ? (
           <img
-            src={taskScreenshotUrl(screenshotId)}
+            src={taskScreenshotUrl(screenshotId, screenshotBaseUrl)}
             alt={`Session hero from ${task.agentLabel}`}
             loading="lazy"
             decoding="async"
             className="absolute inset-0 h-full w-full object-cover object-top"
           />
+        ) : screenshotId !== null ? (
+          <div className="absolute inset-0 animate-pulse bg-card-tint" />
         ) : (
           <LeadNoShotComposition task={task} />
         )}
@@ -75,17 +82,17 @@ function Caption({
   isFailed: boolean
 }) {
   return (
-    <div className="flex flex-col gap-1 bg-ink px-5 py-3 text-white">
+    <div className="flex flex-col gap-1 bg-ink-deep px-5 py-3 text-white">
       <div className="flex items-center gap-3 font-mono text-[10.5px] text-white/80 uppercase tracking-[0.08em]">
         <span className="inline-flex items-center gap-1.5">
           <AgentDot slug={task.slug} />
           <span className="text-white">{task.agentLabel}</span>
         </span>
         {isLive && (
-          <span className="inline-flex items-center gap-1.5 text-accent">
+          <span className="inline-flex items-center gap-1.5 text-[#b1dbb8]">
             <span
               aria-hidden
-              className="inline-block size-1.5 animate-[pulse-dot_1.4s_ease-in-out_infinite] rounded-full bg-accent shadow-[0_0_8px_hsl(19_89%_56%/0.7)]"
+              className="inline-block size-1.5 animate-[pulse-dot_1.4s_ease-in-out_infinite] rounded-full bg-[#b1dbb8] shadow-[0_0_8px_hsl(130_37%_78%/0.7)]"
             />
             LIVE
           </span>
