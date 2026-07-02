@@ -71,10 +71,13 @@ function rotateLogIfNeeded(logPath: string): void {
     fs.renameSync(logPath, backupPath)
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code
-    // Only a dest-exists failure (Windows semantics) justifies
-    // deleting the backup; unlinking on other errors would destroy
-    // it without enabling the rename.
-    if (code !== 'EEXIST' && code !== 'EPERM') {
+    // The unlink fallback is only for dest-exists failures (Windows
+    // semantics), which require an existing backup; unlinking on any
+    // other error would destroy the backup without enabling the
+    // rename, and the original error is the one worth reporting.
+    const destExists =
+      (code === 'EEXIST' || code === 'EPERM') && fs.existsSync(backupPath)
+    if (!destExists) {
       warnRotationFailed(logPath, error)
       return
     }

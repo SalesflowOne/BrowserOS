@@ -10,6 +10,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs'
@@ -107,9 +108,12 @@ describe('logger.setLogFile', () => {
     setSystemTime(new Date(Date.now() + STALE_JUMP_MS))
     // Refresh mtime to the mocked "now" so this only passes when
     // rotation keys on creation time — an mtime key would see a
-    // fresh file and skip.
-    const mockedNowSec = Date.now() / 1000
-    utimesSync(logPath, mockedNowSec, mockedNowSec)
+    // fresh file and skip. Filesystems without birthtime fall back
+    // to mtime, so only differentiate where creation time is real.
+    if (statSync(logPath).birthtimeMs > 0) {
+      const mockedNowSec = Date.now() / 1000
+      utimesSync(logPath, mockedNowSec, mockedNowSec)
+    }
 
     logger.setLogFile(dir)
 
