@@ -8,7 +8,7 @@ apply report against a chromium checkout. Pure functions returning
 findings — callers render and decide exit codes.
 """
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
@@ -248,3 +248,39 @@ def diagnose_apply(
     return check_apply(
         load_features(root_dir), root_dir / "chromium_patches", chromium_src, feature
     )
+
+
+def build_report(
+    root_dir: Path,
+    features: Dict,
+    findings: List[Finding],
+    apply_report: Optional[ApplyReport] = None,
+) -> Dict:
+    """Assemble the stable machine-readable report consumed by --json and renderers."""
+    from .batch_apply import find_patch_files
+
+    errors = sum(1 for f in findings if f.severity == "error")
+    warnings = sum(1 for f in findings if f.severity == "warning")
+    report: Dict = {
+        "root": str(root_dir),
+        "repo": {
+            "patches": len(find_patch_files(root_dir / "chromium_patches")),
+            "features": len(features),
+            "errors": errors,
+            "warnings": warnings,
+            "findings": [asdict(f) for f in findings],
+        },
+        "apply": None,
+        "healthy": errors == 0,
+    }
+    if apply_report is not None:
+        report["apply"] = {
+            "against": apply_report.against,
+            "total": apply_report.total,
+            "clean": apply_report.clean,
+            "failed": len(apply_report.failures),
+            "features_affected": apply_report.features_affected,
+            "failures": [asdict(f) for f in apply_report.failures],
+        }
+        report["healthy"] = report["healthy"] and not apply_report.failures
+    return report

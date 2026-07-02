@@ -9,6 +9,9 @@ from typing import Dict, List, Optional
 from unittest import mock
 
 from bos_build.patchkit.doctor import (
+    ApplyFailure,
+    ApplyReport,
+    build_report,
     check_apply,
     check_repo,
     compute_claims,
@@ -301,6 +304,84 @@ class CheckApplyTest(unittest.TestCase):
         patches = _patches_dir(["chrome/a.cc"])
         with self.assertRaises(ValueError):
             check_apply({}, patches, Path("/fake/src"), feature="nope")
+
+
+class BuildReportTest(unittest.TestCase):
+    def test_repo_only_report_shape_and_health(self):
+        patches = _patches_dir(["chrome/a.cc"])
+        features = {"one": _feature(["chrome/a.cc"])}
+        findings = check_repo(features, patches)
+
+        report = build_report(patches.parent, features, findings)
+
+        self.assertEqual(set(report), {"root", "repo", "apply", "healthy"})
+        self.assertIsNone(report["apply"])
+        self.assertTrue(report["healthy"])
+        self.assertEqual(report["repo"]["patches"], 1)
+        self.assertEqual(report["repo"]["features"], 1)
+        self.assertEqual((report["repo"]["errors"], report["repo"]["warnings"]), (0, 0))
+        self.assertEqual(report["repo"]["findings"], [])
+
+    def test_errors_flip_health_and_serialize_findings(self):
+        patches = _patches_dir(["chrome/a.cc"])
+        features = {"one": _feature(["chrome/a.cc", "chrome/gone.cc"])}
+        findings = check_repo(features, patches)
+
+        report = build_report(patches.parent, features, findings)
+
+        self.assertFalse(report["healthy"])
+        self.assertEqual(report["repo"]["errors"], 1)
+        finding = report["repo"]["findings"][0]
+        self.assertEqual(
+            set(finding), {"check", "severity", "message", "feature", "path"}
+        )
+        self.assertEqual(finding["check"], "missing-patch")
+
+    def test_warnings_alone_stay_healthy(self):
+        patches = _patches_dir(["chrome/a.cc"])
+        features = {
+            "one": _feature(["chrome/a.cc"]),
+            "two": _feature(["chrome/a.cc"]),
+        }
+        findings = check_repo(features, patches)
+
+        report = build_report(patches.parent, features, findings)
+
+        self.assertEqual(report["repo"]["warnings"], 1)
+        self.assertTrue(report["healthy"])
+
+    def test_apply_failures_flip_health_with_stable_keys(self):
+        patches = _patches_dir(["chrome/a.cc"])
+        features = {"one": _feature(["chrome/a.cc"])}
+        apply_report = ApplyReport(
+            against="/src",
+            total=3,
+            clean=2,
+            failures=[ApplyFailure("chrome/a.cc", "one", "boom")],
+        )
+
+        report = build_report(patches.parent, features, [], apply_report)
+
+        self.assertFalse(report["healthy"])
+        self.assertEqual(
+            set(report["apply"]),
+            {"against", "total", "clean", "failed", "features_affected", "failures"},
+        )
+        self.assertEqual(report["apply"]["failed"], 1)
+        self.assertEqual(report["apply"]["features_affected"], 1)
+        self.assertEqual(
+            set(report["apply"]["failures"][0]), {"patch", "feature", "error"}
+        )
+
+    def test_clean_apply_report_stays_healthy(self):
+        patches = _patches_dir(["chrome/a.cc"])
+        features = {"one": _feature(["chrome/a.cc"])}
+        apply_report = ApplyReport(against="/src", total=1, clean=1, failures=[])
+
+        report = build_report(patches.parent, features, [], apply_report)
+
+        self.assertTrue(report["healthy"])
+        self.assertEqual(report["apply"]["failed"], 0)
 
 
 class ComputeClaimsTest(unittest.TestCase):
