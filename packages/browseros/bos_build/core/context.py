@@ -83,10 +83,6 @@ class Context:
     SPARKLE_VERSION: str = "2.7.0"
     WINSPARKLE_VERSION: str = "0.9.3"
 
-    # When set, get_app_path() returns this directly — UniversalBuildModule
-    # pins per-arch and universal app paths through it.
-    _fixed_app_path: Optional[Path] = None
-
     artifact_registry: ArtifactRegistry = field(init=False)
     env: EnvConfig = field(init=False)
 
@@ -209,15 +205,12 @@ class Context:
     def get_app_path(self) -> Path:
         """Get built app path
 
-        Resolves strictly from this context's own out_dir (or _fixed_app_path
-        when set, as UniversalBuildModule does). Never probes other out dirs:
-        a stale product universal app must not hijack arch-specific
-        builds' sign/package stages. Universal flows resolve here too, since
-        architecture="universal" derives the product-specific universal out_dir.
+        Resolves strictly from this context's own out_dir. Never probes
+        other out dirs: a stale product universal app must not hijack
+        arch-specific builds' sign/package stages. Universal flows resolve
+        here too, since architecture="universal" derives the
+        product-specific universal out_dir.
         """
-        if self._fixed_app_path:
-            return self._fixed_app_path
-
         # Debug builds may carry the dev-branded app name
         if self.build_type == "debug" and IS_MACOS():
             debug_app_name = f"{self.product.app_base_name} Dev.app"

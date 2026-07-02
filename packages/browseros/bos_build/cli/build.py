@@ -12,7 +12,7 @@ import typer
 from ..core.context import Context
 from ..core.paths import get_package_root
 from ..core.pipeline import validate_pipeline, show_available_modules
-from ..core.planner import Switches, load_profile, plan, preflight
+from ..core.planner import Switches, load_profile, plan_runs, preflight
 from ..core.resolver import resolve_config, resolve_pipeline
 from ..core.notify import (
     notify_pipeline_end,
@@ -282,7 +282,14 @@ def main(
     log_info(f"📍 Semantic version: {summary_ctx.semantic_version}")
     log_info(f"📍 Chromium version: {summary_ctx.chromium_version}")
     log_info(f"📍 Build offset: {summary_ctx.browseros_build_offset}")
-    log_info(f"📍 Pipeline: {' → '.join(runs[0][1])}")
+    if len(runs) > 1:
+        # Runs may be heterogeneous (universal), so show each run's steps
+        for run_ctx, run_steps in runs:
+            log_info(
+                f"📍 Pipeline[{run_ctx.architecture}]: {' → '.join(run_steps)}"
+            )
+    else:
+        log_info(f"📍 Pipeline: {' → '.join(runs[0][1])}")
     log_info("=" * 70)
 
     os_name = "macOS" if IS_MACOS() else "Windows" if IS_WINDOWS() else "Linux"
@@ -345,9 +352,10 @@ def _resolve_preset_runs(
     upload: Optional[bool],
     chromium_src: Optional[Path],
 ) -> List[Tuple[Context, List[str]]]:
-    """Resolve preset/profile + CLI overrides into per-arch (ctx, steps) runs.
+    """Resolve preset/profile + CLI overrides into per-run (ctx, steps) pairs.
 
-    Precedence: CLI > profile > preset defaults.
+    Precedence: CLI > profile > preset defaults. Universal yields three
+    runs (see core/planner.plan_runs); everything else one run per arch.
     """
     try:
         switches = load_profile(_resolve_profile_path(profile)) if profile else Switches()
@@ -370,6 +378,11 @@ def _resolve_preset_runs(
             overrides["upload"] = upload
         switches = replace(switches, **overrides).resolved()
 
+        # Plan before resolving chromium_src so an invalid invocation
+        # (e.g. universal --no-sign) fails on the planning error, not on
+        # missing environment.
+        planned = plan_runs(switches)
+
         # Shallow provisioning creates the checkout itself, so the src
         # dir may not exist yet on a fresh runner.
         src = _resolve_chromium_src(
@@ -383,14 +396,14 @@ def _resolve_preset_runs(
         )
 
         runs: List[Tuple[Context, List[str]]] = []
-        for run_arch in switches.architectures:
+        for run_arch, run_steps in planned:
             ctx = Context(
                 chromium_src=src,
                 architecture=run_arch,
                 build_type=switches.build_type,
                 product=switches.product,
             )
-            runs.append((ctx, plan(switches, run_arch)))
+            runs.append((ctx, run_steps))
         return runs
     except ValueError as e:
         log_error(str(e))

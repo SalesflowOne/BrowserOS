@@ -53,7 +53,7 @@ class Step:
         notify: Whether lifecycle notifications fire for this step
         env: Environment variable names the step needs (preflighted)
         optional: Excluded from phase-flag/preset expansion unless
-            explicitly requested (e.g. series_patches, universal_build)
+            explicitly requested (e.g. series_patches, merge_universal)
 
     Contract attributes (plain class attributes):
         produces: Artifact names this step creates (e.g. ["signed_app"])

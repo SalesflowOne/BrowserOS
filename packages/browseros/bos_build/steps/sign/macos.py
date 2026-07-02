@@ -2,7 +2,6 @@
 """Application signing and notarization module for BrowserOS (macOS)"""
 
 import os
-import sys
 import subprocess
 import shutil
 import tempfile
@@ -1126,75 +1125,3 @@ def sign_app(ctx: Context, create_dmg: bool = True) -> bool:
         log_info("The application is properly signed, notarized, and packaged.")
         log_info("=" * 70)
     return error_count == 0
-
-
-def sign_universal(contexts: List[Context]) -> bool:
-    """Create universal binary and sign it"""
-    log_info("=" * 70)
-    log_info("🔄 Creating and signing universal binary...")
-    log_info("=" * 70)
-
-    if len(contexts) < 2:
-        log_error("Universal build requires at least 2 architectures")
-        return False
-
-    # Verify all app builds exist
-    app_paths = []
-    for ctx in contexts:
-        app_path = ctx.get_app_path()
-        if not app_path.exists():
-            log_error(f"App not found for {ctx.architecture}: {app_path}")
-            return False
-        app_paths.append(app_path)
-        log_info(f"✓ Found {ctx.architecture} build: {app_path}")
-
-    universal_ctx = Context(
-        root_dir=contexts[0].root_dir,
-        chromium_src=contexts[0].chromium_src,
-        architecture="universal",
-        build_type=contexts[0].build_type,
-        product=contexts[0].product,
-    )
-    universal_dir = contexts[0].chromium_src / universal_ctx.out_dir
-    universal_app_path = universal_ctx.get_app_path()
-
-    if universal_dir.exists():
-        log_info("Removing existing universal directory...")
-        shutil.rmtree(universal_dir)
-
-    universal_dir.mkdir(parents=True, exist_ok=True)
-
-    # Use universalizer script to merge architectures
-    universalizer_script = join_paths(
-        contexts[0].root_dir, "bos_build", "steps", "package", "universalizer_patched.py"
-    )
-
-    if not universalizer_script.exists():
-        log_error(f"Universalizer script not found: {universalizer_script}")
-        return False
-
-    try:
-        cmd = [
-            sys.executable,
-            str(universalizer_script),
-            *[str(app_path) for app_path in app_paths],
-            str(universal_app_path),
-        ]
-
-        log_info("Running universalizer...")
-        log_info(f"Command: {' '.join(cmd)}")
-        run_command(cmd)
-
-        log_success(f"Universal binary created: {universal_app_path}")
-
-        # Sign the universal binary
-        if not sign_app(universal_ctx, create_dmg=False):
-            log_error("Failed to sign universal binary")
-            return False
-
-        log_success("Universal binary signed successfully!")
-        return True
-
-    except Exception as e:
-        log_error(f"Failed to create universal binary: {e}")
-        return False
