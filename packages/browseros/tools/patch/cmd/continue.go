@@ -35,12 +35,12 @@ func init() {
 						fmt.Printf("  %s\n", conflict.ChromiumPath)
 					}
 				}
-				if result.Annotate != nil {
-					fmt.Println()
-					printAnnotateResult(ws, result.Annotate)
-				}
+				printAnnotateOutcome(ws, result)
 				printStashOutcome(result)
 			}); err != nil {
+				return err
+			}
+			if err := annotateFailureExit(result); err != nil {
 				return err
 			}
 			return conflictPauseError(len(result.Conflicts) > 0 || result.StashConflict)

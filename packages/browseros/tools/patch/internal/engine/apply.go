@@ -47,9 +47,16 @@ type ApplyResult struct {
 	StashConflictFiles []string            `json:"stash_conflict_files,omitempty"`
 	Conflicts          []resolve.Operation `json:"conflicts,omitempty"`
 	Annotate           *AnnotateResult     `json:"annotate,omitempty"`
+	// AnnotateError reports an auto-annotate failure without discarding the
+	// apply outcome: the patches landed and the resolve state is already
+	// settled, so the recovery is a standalone annotate, not a retry.
+	AnnotateError string `json:"annotate_error,omitempty"`
 }
 
 func Apply(ctx context.Context, opts ApplyOptions) (*ApplyResult, error) {
+	if err := requireNoPendingResolution(opts.Workspace); err != nil {
+		return nil, err
+	}
 	repoRev, err := git.HeadRev(ctx, opts.Repo.Root)
 	if err != nil {
 		return nil, err
@@ -86,6 +93,18 @@ func Apply(ctx context.Context, opts ApplyOptions) (*ApplyResult, error) {
 	return result, nil
 }
 
+// requireNoPendingResolution stops a new run from clobbering a paused
+// conflict resolution: the old resolve state would be silently overwritten or
+// deleted, stranding continue/skip and losing the run's persisted intent.
+func requireNoPendingResolution(ws workspace.Entry) error {
+	if !resolve.Exists(ws.Path) {
+		return nil
+	}
+	return fmt.Errorf(
+		"conflict resolution is in progress for %s; finish it with \"browseros-patch continue\", \"browseros-patch skip\", or \"browseros-patch abort\" first",
+		ws.Name)
+}
+
 // finishApply records completion state and, when requested, turns the applied
 // changes into feature commits in the same run.
 func finishApply(ctx context.Context, opts ApplyOptions, repoRev string, result *ApplyResult) error {
@@ -98,16 +117,30 @@ func finishApply(ctx context.Context, opts ApplyOptions, repoRev string, result 
 	if !opts.AutoAnnotate {
 		return nil
 	}
+	annotateApplied(ctx, opts.Workspace, opts.Repo, nil, result, opts.Progress)
+	return nil
+}
+
+// annotateApplied runs the auto-annotate step of a completed apply. A repo
+// without a features registry skips quietly, and a failure is recorded on the
+// result instead of returned: the apply itself succeeded and its state is
+// already settled, so the caller must still see what was applied.
+func annotateApplied(ctx context.Context, ws workspace.Entry, repoInfo *repo.Info, exclude []string, result *ApplyResult, progress Progress) {
+	if _, err := FeatureFilePath(repoInfo.Root); err != nil {
+		reportProgress(progress, "No features registry; skipping annotation")
+		return
+	}
 	annotateResult, err := Annotate(ctx, AnnotateOptions{
-		Workspace: opts.Workspace,
-		Repo:      opts.Repo,
-		Progress:  opts.Progress,
+		Workspace: ws,
+		Repo:      repoInfo,
+		Exclude:   exclude,
+		Progress:  progress,
 	})
 	if err != nil {
-		return fmt.Errorf("patches applied, but annotate failed: %w", err)
+		result.AnnotateError = err.Error()
+		return
 	}
 	result.Annotate = annotateResult
-	return nil
 }
 
 type ContinueOptions struct {
@@ -200,7 +233,9 @@ func Skip(ctx context.Context, opts SkipOptions) (*ApplyResult, error) {
 // operation: record completion, drop the resolve state, then honor the
 // original run's intent (feature commits for an apply, stash restore for a
 // rebase-mode sync). Annotate runs before the stash restore so restored local
-// changes are never swept into feature commits.
+// changes are never swept into feature commits, and skipped conflicts are
+// excluded — their files may hold partially applied hunks the user still has
+// to reconcile.
 func finishResolvedRun(ctx context.Context, ws workspace.Entry, repoInfo *repo.Info, state *resolve.State, result *ApplyResult, progress Progress) error {
 	if err := markApplyComplete(ws.Path, state.BaseCommit, state.RepoRev); err != nil {
 		return err
@@ -209,15 +244,7 @@ func finishResolvedRun(ctx context.Context, ws workspace.Entry, repoInfo *repo.I
 		return err
 	}
 	if state.AutoAnnotate {
-		annotateResult, err := Annotate(ctx, AnnotateOptions{
-			Workspace: ws,
-			Repo:      repoInfo,
-			Progress:  progress,
-		})
-		if err != nil {
-			return fmt.Errorf("patches applied, but annotate failed: %w", err)
-		}
-		result.Annotate = annotateResult
+		annotateApplied(ctx, ws, repoInfo, state.Skipped, result, progress)
 	}
 	if state.RestorePendingStash {
 		if err := restorePendingStash(ctx, ws.Path, result, progress); err != nil {

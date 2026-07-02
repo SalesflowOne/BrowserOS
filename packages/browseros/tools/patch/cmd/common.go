@@ -82,11 +82,12 @@ Capture flow (turn checkout changes into patches):
 3. browseros-patch publish -m "chore: sync patches"   # commit + push chromium_patches
 
 Feature commit flow (turn checkout changes into feature commits):
-1. browseros-patch apply ch1 annotates automatically after a conflict-free apply; pass --no-annotate to skip.
-   A filtered apply (-- files...) never auto-annotates. continue/skip finish the annotation a paused apply asked for.
+1. browseros-patch apply ch1               # auto-annotates after a conflict-free apply (--no-annotate to skip)
 2. browseros-patch annotate ch1            # standalone: commit changed files for all bos_build/features.yaml features
-3. annotate refuses to run while a conflict resolution is pending; finish continue/skip/abort first.
-4. Changed files no feature claims are reported as "unclaimed" and left uncommitted; claim them in bos_build/features.yaml.
+Annotation rules:
+- Filtered (-- files...) and --changed applies never auto-annotate; continue/skip finish a paused apply's annotation, excluding skipped conflicts.
+- apply, sync, and annotate refuse to start while a conflict resolution is pending; finish continue/skip/abort first.
+- Changes no feature claims are reported as "unclaimed" and left uncommitted; claim them in bos_build/features.yaml.
 
 Pool refresh flow (rebuild browseros branch before leasing a checkout):
 1. browseros-patch status ch1 --json       # check patches_freshness
@@ -131,6 +132,30 @@ func ensureRepoConfigured(override string) error {
 		return err
 	}
 	appState.Config.PatchesRepo = info.Root
+	return nil
+}
+
+// printAnnotateOutcome renders the auto-annotate section of an apply-family
+// result: the feature-commit summary on success, a recovery hint on failure.
+func printAnnotateOutcome(ws workspace.Entry, result *engine.ApplyResult) {
+	if result.Annotate != nil {
+		fmt.Println()
+		printAnnotateResult(ws, result.Annotate)
+	}
+	if result.AnnotateError != "" {
+		fmt.Println(ui.Warning("Patches applied, but annotate failed"))
+		fmt.Printf("  %s\n", result.AnnotateError)
+		fmt.Println(ui.Hint(fmt.Sprintf(`Fix the cause, then run "browseros-patch annotate %s".`, ws.Name)))
+	}
+}
+
+// annotateFailureExit maps an auto-annotate failure to exit 1 after rendering,
+// so scripts notice the missing feature commits while the apply outcome stays
+// visible in the output.
+func annotateFailureExit(result *engine.ApplyResult) error {
+	if result.AnnotateError != "" {
+		return &exitCodeError{code: 1}
+	}
 	return nil
 }
 

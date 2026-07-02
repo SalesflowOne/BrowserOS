@@ -43,9 +43,10 @@ func init() {
 				ChangedRef: changed,
 				RangeEnd:   rangeEnd,
 				Filters:    filters,
-				// A filtered apply is surgical; a full annotate would sweep
-				// changes outside the requested files into feature commits.
-				AutoAnnotate: !noAnnotate && len(filters) == 0,
+				// Filtered and --changed applies are surgical; a full
+				// annotate would sweep changes outside the requested scope
+				// into feature commits.
+				AutoAnnotate: !noAnnotate && len(filters) == 0 && changed == "",
 				Progress:     commandProgress(cmd),
 			})
 			if err != nil {
@@ -63,11 +64,11 @@ func init() {
 					}
 					fmt.Println(ui.Hint(`Run "browseros-patch continue" after fixing the current conflict.`))
 				}
-				if result.Annotate != nil {
-					fmt.Println()
-					printAnnotateResult(ws, result.Annotate)
-				}
+				printAnnotateOutcome(ws, result)
 			}); err != nil {
+				return err
+			}
+			if err := annotateFailureExit(result); err != nil {
 				return err
 			}
 			return conflictPauseError(len(result.Conflicts) > 0)

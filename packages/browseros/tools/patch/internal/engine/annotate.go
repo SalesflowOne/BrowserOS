@@ -16,7 +16,10 @@ import (
 type AnnotateOptions struct {
 	Workspace workspace.Entry
 	Repo      *repo.Info
-	Progress  Progress
+	// Exclude lists checkout paths deliberately left uncommitted — skipped
+	// conflicts whose files may hold partially applied hunks.
+	Exclude  []string
+	Progress Progress
 }
 
 type AnnotateResult struct {
@@ -74,6 +77,15 @@ func Annotate(ctx context.Context, opts AnnotateOptions) (*AnnotateResult, error
 		Committed:    []AnnotateCommittedFeature{},
 		Skipped:      []AnnotateSkippedFeature{},
 	}
+	// One status snapshot serves consecutive features; a full scan is seconds
+	// on a Chromium checkout. Rescan only after a commit changes what is
+	// dirty, and once more before the unclaimed report if staging may have
+	// normalized entries without committing.
+	changes, err := annotateChanges(ctx, opts.Workspace.Path, ignore, opts.Exclude)
+	if err != nil {
+		return nil, err
+	}
+	staged := false
 	for _, feature := range features {
 		result.Processed++
 		reportProgress(opts.Progress, "Annotating feature %s", feature.Name)
@@ -85,10 +97,6 @@ func Annotate(ctx context.Context, opts AnnotateOptions) (*AnnotateResult, error
 			})
 			result.FeaturesSkipped++
 			continue
-		}
-		changes, err := annotateChanges(ctx, opts.Workspace.Path, ignore)
-		if err != nil {
-			return nil, err
 		}
 		files := modifiedFeatureFiles(changes, feature)
 		if len(files.report) == 0 {
@@ -104,6 +112,7 @@ func Annotate(ctx context.Context, opts AnnotateOptions) (*AnnotateResult, error
 		if err != nil {
 			return nil, fmt.Errorf("commit feature %s: %w", feature.Name, err)
 		}
+		staged = true
 		if !committed {
 			result.Skipped = append(result.Skipped, AnnotateSkippedFeature{
 				Name:        feature.Name,
@@ -120,31 +129,18 @@ func Annotate(ctx context.Context, opts AnnotateOptions) (*AnnotateResult, error
 			Files:       committedFiles,
 		})
 		result.CommitsCreated++
+		if changes, err = annotateChanges(ctx, opts.Workspace.Path, ignore, opts.Exclude); err != nil {
+			return nil, err
+		}
+		staged = false
 	}
-	unclaimed, err := unclaimedChanges(ctx, opts.Workspace.Path, ignore)
-	if err != nil {
-		return nil, err
-	}
-	result.Unclaimed = unclaimed
-	return result, nil
-}
-
-// unclaimedChanges lists what is still dirty after every feature committed its
-// files — changes no feature in the registry claims.
-func unclaimedChanges(ctx context.Context, workspacePath string, ignore *patch.IgnoreSet) ([]string, error) {
-	changes, err := annotateChanges(ctx, workspacePath, ignore)
-	if err != nil {
-		return nil, err
-	}
-	seen := map[string]bool{}
-	var paths []string
-	for _, change := range changes {
-		for _, rel := range changeReportPaths(change) {
-			appendUniquePath(&paths, seen, rel)
+	if staged {
+		if changes, err = annotateChanges(ctx, opts.Workspace.Path, ignore, opts.Exclude); err != nil {
+			return nil, err
 		}
 	}
-	slices.Sort(paths)
-	return paths, nil
+	result.Unclaimed = uniqueReportPaths(changes)
+	return result, nil
 }
 
 func mappingValue(node *yaml.Node, key string) *yaml.Node {
@@ -193,8 +189,9 @@ func stringSequence(node *yaml.Node, key string) []string {
 
 // annotateChanges returns working-tree changes eligible for feature commits.
 // Untracked junk (reject files, logs, .browseros-patchignore patterns) is
-// filtered like extract does; tracked modifications always pass through.
-func annotateChanges(ctx context.Context, workspacePath string, ignore *patch.IgnoreSet) ([]git.FileChange, error) {
+// filtered like extract does; tracked modifications always pass through
+// unless explicitly excluded.
+func annotateChanges(ctx context.Context, workspacePath string, ignore *patch.IgnoreSet, exclude []string) ([]git.FileChange, error) {
 	changes, err := git.StatusPorcelain(ctx, workspacePath, nil)
 	if err != nil {
 		return nil, err
@@ -204,9 +201,25 @@ func annotateChanges(ctx context.Context, workspacePath string, ignore *patch.Ig
 		if change.Status == "??" && ignore.Match(change.Path) {
 			continue
 		}
+		if len(exclude) > 0 && patch.PathMatches(patch.NormalizeChromiumPath(change.Path), exclude) {
+			continue
+		}
 		kept = append(kept, change)
 	}
 	return kept, nil
+}
+
+// uniqueReportPaths flattens changes into sorted, deduplicated checkout paths.
+func uniqueReportPaths(changes []git.FileChange) []string {
+	seen := map[string]bool{}
+	var paths []string
+	for _, change := range changes {
+		for _, rel := range changeReportPaths(change) {
+			appendUniquePath(&paths, seen, rel)
+		}
+	}
+	slices.Sort(paths)
+	return paths
 }
 
 func modifiedFeatureFiles(changes []git.FileChange, feature FeatureSpec) annotateFileSet {
@@ -318,13 +331,5 @@ func committedFeatureFiles(ctx context.Context, workspacePath string, commit str
 	if err != nil {
 		return nil, err
 	}
-	seen := map[string]bool{}
-	var paths []string
-	for _, change := range changes {
-		for _, rel := range changeReportPaths(change) {
-			appendUniquePath(&paths, seen, rel)
-		}
-	}
-	slices.Sort(paths)
-	return paths, nil
+	return uniqueReportPaths(changes), nil
 }
