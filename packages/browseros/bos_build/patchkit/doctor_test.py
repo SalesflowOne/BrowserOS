@@ -4,9 +4,12 @@
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Dict, List
+from types import SimpleNamespace
+from typing import Dict, List, Optional
+from unittest import mock
 
 from bos_build.patchkit.doctor import (
+    check_apply,
     check_repo,
     compute_claims,
     patch_base_paths,
@@ -232,6 +235,72 @@ class FeatureFilterTest(unittest.TestCase):
                 ("zed", "chrome/z.cc"),
             ],
         )
+
+
+def _fake_git(failing_fragments: set, calls: Optional[List] = None):
+    """run_git_command stand-in failing patches whose path contains a fragment."""
+
+    def fake(cmd, cwd, **kwargs):
+        if calls is not None:
+            calls.append((cmd, cwd))
+        failed = any(fragment in cmd[-1] for fragment in failing_fragments)
+        return SimpleNamespace(
+            returncode=1 if failed else 0,
+            stderr="error: patch failed\n" if failed else "",
+        )
+
+    return fake
+
+
+class CheckApplyTest(unittest.TestCase):
+    def test_failures_grouped_by_owning_feature(self):
+        patches = _patches_dir(["chrome/a.cc", "chrome/b.cc", "chrome/orphan.cc"])
+        features = {"one": _feature(["chrome/a.cc", "chrome/b.cc"])}
+        with mock.patch(
+            "bos_build.patchkit.batch_apply.run_git_command",
+            _fake_git({"b.cc", "orphan.cc"}),
+        ):
+            report = check_apply(features, patches, Path("/fake/src"))
+        self.assertEqual((report.total, report.clean), (3, 1))
+        self.assertEqual(
+            {(f.patch, f.feature) for f in report.failures},
+            {("chrome/b.cc", "one"), ("chrome/orphan.cc", "(unclassified)")},
+        )
+        self.assertEqual(report.features_affected, 2)
+        self.assertEqual(report.against, "/fake/src")
+        self.assertIn("patch failed", report.failures[0].error)
+
+    def test_markers_excluded_from_apply_set(self):
+        patches = _patches_dir(["chrome/a.cc", "chrome/gone.cc.deleted"])
+        features = {"one": _feature(["chrome/a.cc", "chrome/gone.cc"])}
+        calls = []
+        with mock.patch(
+            "bos_build.patchkit.batch_apply.run_git_command", _fake_git(set(), calls)
+        ):
+            report = check_apply(features, patches, Path("/fake/src"))
+        self.assertEqual((report.total, report.clean, report.failures), (1, 1, []))
+        self.assertEqual(len(calls), 1)
+        self.assertIn("chrome/a.cc", calls[0][0][-1])
+
+    def test_feature_filter_limits_apply_set_to_claimed_patches(self):
+        patches = _patches_dir(["chrome/a.cc", "sub/dir/b.cc", "chrome/orphan.cc"])
+        features = {
+            "one": _feature(["chrome/a.cc", "sub/dir/"]),
+            "two": _feature(["chrome/orphan.cc"]),
+        }
+        calls = []
+        with mock.patch(
+            "bos_build.patchkit.batch_apply.run_git_command", _fake_git(set(), calls)
+        ):
+            report = check_apply(features, patches, Path("/fake/src"), feature="one")
+        self.assertEqual(report.total, 2)
+        ran = {call[0][-1] for call in calls}
+        self.assertTrue(all("orphan" not in path for path in ran))
+
+    def test_unknown_feature_raises(self):
+        patches = _patches_dir(["chrome/a.cc"])
+        with self.assertRaises(ValueError):
+            check_apply({}, patches, Path("/fake/src"), feature="nope")
 
 
 class ComputeClaimsTest(unittest.TestCase):

@@ -59,6 +59,18 @@ def find_patch_files(patches_dir: Path) -> List[Path]:
     )
 
 
+def check_patch_applies(
+    patch_path: Path, chromium_src: Path
+) -> Tuple[bool, Optional[str]]:
+    """Quiet dry-run of one patch (git apply --check); never modifies the tree."""
+    result = run_git_command(
+        ["git", "apply", "--check", "-p1", str(patch_path)], cwd=chromium_src
+    )
+    if result.returncode == 0:
+        return True, None
+    return False, result.stderr
+
+
 def apply_single_patch(
     patch_path: Path,
     chromium_src: Path,
@@ -94,16 +106,13 @@ def apply_single_patch(
                 target_file.unlink()
 
     if dry_run:
-        # Just check if patch would apply
-        result = run_git_command(
-            ["git", "apply", "--check", "-p1", str(patch_path)], cwd=chromium_src
-        )
-        if result.returncode == 0:
+        success, error = check_patch_applies(patch_path, chromium_src)
+        if success:
             log_success(f"  ✓ Would apply: {display_path}")
             return True, None
         else:
             log_error(f"  ✗ Would fail: {display_path}")
-            return False, result.stderr
+            return False, error
     else:
         # Try standard apply first
         result = run_git_command(

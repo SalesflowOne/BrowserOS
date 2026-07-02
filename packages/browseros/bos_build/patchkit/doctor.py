@@ -33,6 +33,25 @@ class Finding:
     path: Optional[str] = None
 
 
+@dataclass(frozen=True)
+class ApplyFailure:
+    patch: str
+    feature: str  # first claimant, or "(unclassified)"
+    error: str
+
+
+@dataclass(frozen=True)
+class ApplyReport:
+    against: str
+    total: int
+    clean: int
+    failures: List[ApplyFailure]
+
+    @property
+    def features_affected(self) -> int:
+        return len({failure.feature for failure in self.failures})
+
+
 def is_series_feature(spec: Dict) -> bool:
     return str(spec.get("description") or "").startswith(SERIES_PREFIX)
 
@@ -152,14 +171,18 @@ def check_classification(
     return findings
 
 
-def check_repo(
-    features: Dict, patches_dir: Path, feature: Optional[str] = None
-) -> List[Finding]:
-    """All repo-local checks; raises ValueError for an unknown feature filter."""
+def _require_known_feature(features: Dict, feature: Optional[str]) -> None:
     if feature is not None and feature not in features:
         raise ValueError(
             f"unknown feature '{feature}'. Valid: {', '.join(sorted(features))}"
         )
+
+
+def check_repo(
+    features: Dict, patches_dir: Path, feature: Optional[str] = None
+) -> List[Finding]:
+    """All repo-local checks; raises ValueError for an unknown feature filter."""
+    _require_known_feature(features, feature)
     bases = patch_base_paths(patches_dir)
     claims = compute_claims(features, bases)
     findings = [
@@ -180,3 +203,48 @@ def load_features(root_dir: Path) -> Dict:
 def diagnose_repo(root_dir: Path, feature: Optional[str] = None) -> List[Finding]:
     """Repo-local checks against a browseros package root."""
     return check_repo(load_features(root_dir), root_dir / "chromium_patches", feature)
+
+
+def check_apply(
+    features: Dict,
+    patches_dir: Path,
+    chromium_src: Path,
+    feature: Optional[str] = None,
+) -> ApplyReport:
+    """Dry-run every patch against a chromium tree, grouping failures by feature."""
+    from .batch_apply import check_patch_applies, find_patch_files
+
+    _require_known_feature(features, feature)
+    claims = compute_claims(features, patch_base_paths(patches_dir))
+    total = 0
+    failures = []
+    for patch_path in find_patch_files(patches_dir):
+        rel = patch_path.relative_to(patches_dir).as_posix()
+        owners = claims.get(rel, [])
+        if feature is not None and feature not in owners:
+            continue
+        total += 1
+        ok, error = check_patch_applies(patch_path, chromium_src)
+        if not ok:
+            failures.append(
+                ApplyFailure(
+                    patch=rel,
+                    feature=owners[0] if owners else UNCLASSIFIED,
+                    error=(error or "").strip(),
+                )
+            )
+    return ApplyReport(
+        against=str(chromium_src),
+        total=total,
+        clean=total - len(failures),
+        failures=failures,
+    )
+
+
+def diagnose_apply(
+    root_dir: Path, chromium_src: Path, feature: Optional[str] = None
+) -> ApplyReport:
+    """Apply-check against a browseros package root's patch stack."""
+    return check_apply(
+        load_features(root_dir), root_dir / "chromium_patches", chromium_src, feature
+    )
