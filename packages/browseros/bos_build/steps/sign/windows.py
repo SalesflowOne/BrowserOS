@@ -305,12 +305,6 @@ def sign_with_codesigntool(
     return all_success
 
 
-def sign_universal(contexts: List[Context]) -> bool:
-    """Windows doesn't support universal binaries"""
-    log_warning("Universal signing is not supported on Windows")
-    return True
-
-
 def check_signing_environment(env: Optional[EnvConfig] = None) -> bool:
     """Check if Windows signing environment is properly configured
 
