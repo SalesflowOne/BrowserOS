@@ -60,6 +60,16 @@ class ConfigureModule(Step):
         args_content += f'\ntarget_cpu = "{ctx.architecture}"\n'
         args_content += "\n".join(ctx.get_product_gn_args()) + "\n"
 
+        # Appended last so GN's last-write-wins makes them authoritative
+        # over the flags file and product args.
+        if ctx.extra_gn_args:
+            log_info(
+                f"🔧 Applying {len(ctx.extra_gn_args)} gn-arg override(s): "
+                f"{', '.join(ctx.extra_gn_args)}"
+            )
+            args_content += "\n# --gn-arg overrides\n"
+            args_content += "\n".join(ctx.extra_gn_args) + "\n"
+
         args_file.write_text(args_content)
 
         gn_cmd = "gn.bat" if IS_WINDOWS() else "gn"

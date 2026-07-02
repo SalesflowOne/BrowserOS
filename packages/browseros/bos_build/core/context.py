@@ -78,6 +78,9 @@ class Context:
     start_time: float = 0.0
     product: ProductDescriptor = field(default_factory=default_product_descriptor)
     gn_flags_file: Optional[Path] = None
+    # Per-invocation --gn-arg overrides; configure appends them last in
+    # args.gn (GN last-write-wins). Never persisted to profiles.
+    extra_gn_args: tuple[str, ...] = ()
 
     # Third party pins
     SPARKLE_VERSION: str = "2.7.0"

@@ -69,6 +69,24 @@ class ResolveConfigDirectModeTest(unittest.TestCase):
                 resolve_config(cli_args=cli_args)
             self.assertIn("Unknown build.product", str(err.exception))
 
+    def test_extra_gn_args_threaded_to_context(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            m = MockChromium(Path(tmp))
+            cli_args = {
+                "chromium_src": str(m.src),
+                "extra_gn_args": ("symbol_level=2", "dcheck_always_on=true"),
+            }
+            contexts = resolve_config(cli_args=cli_args)
+            self.assertEqual(
+                contexts[0].extra_gn_args, ("symbol_level=2", "dcheck_always_on=true")
+            )
+
+    def test_extra_gn_args_default_empty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            m = MockChromium(Path(tmp))
+            contexts = resolve_config(cli_args={"chromium_src": str(m.src)})
+            self.assertEqual(contexts[0].extra_gn_args, ())
+
 
 class ResolvePipelineTest(unittest.TestCase):
     def test_direct_mode_requires_modules_or_flags(self):
