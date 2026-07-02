@@ -4,7 +4,7 @@
 import sys
 import shutil
 from pathlib import Path
-from ...core.utils import run_command, log_info, log_error, log_success
+from ...lib.utils import run_command, log_info, log_error, log_success
 
 
 def merge_architectures(

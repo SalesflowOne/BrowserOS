@@ -18,7 +18,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from ...core.utils import log_info
+from ...lib.utils import log_info
 
 OBJECT_PREFIX = "ci-cache/chromium/"
 

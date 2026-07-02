@@ -3,7 +3,7 @@
 
 from ...core.context import Context
 from ...core.step import Step, ValidationError
-from ...core.utils import log_info, log_warning
+from ...lib.utils import log_info, log_warning
 from ..storage import BOTO3_AVAILABLE
 from .common import fetch_all_release_metadata, generate_appcast_item
 

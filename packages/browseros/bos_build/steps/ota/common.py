@@ -9,11 +9,11 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 
-from ...core.utils import log_error, log_info, log_success
+from ...lib.utils import log_error, log_info, log_success
 
 # Re-exported so callers (and ota/__init__.py) can get sparkle_sign_file
 # from ota.common alongside the other OTA helpers.
-from ...core.sparkle import sparkle_sign_file as sparkle_sign_file
+from ...lib.sparkle import sparkle_sign_file as sparkle_sign_file
 
 # Sparkle XML namespace
 SPARKLE_NS = "http://www.andymatuschak.org/xml-namespaces/sparkle"

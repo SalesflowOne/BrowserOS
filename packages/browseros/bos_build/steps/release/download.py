@@ -10,7 +10,7 @@ import requests
 
 from ...core.context import Context
 from ...core.step import Step, ValidationError
-from ...core.utils import log_info, log_error
+from ...lib.utils import log_info, log_error
 from .common import (
     PLATFORMS,
     PLATFORM_DISPLAY_NAMES,

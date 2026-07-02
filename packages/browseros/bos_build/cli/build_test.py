@@ -15,7 +15,7 @@ from typer.testing import CliRunner
 
 from bos_build.browseros import app
 from bos_build.core.planner import Switches, plan
-from bos_build.core.utils import get_platform, get_platform_arch
+from bos_build.lib.utils import get_platform, get_platform_arch
 
 runner = CliRunner()
 

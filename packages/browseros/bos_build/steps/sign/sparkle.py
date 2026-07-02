@@ -6,8 +6,8 @@ from typing import Dict, List, Tuple
 
 from ...core.step import Step, ValidationError, step
 from ...core.context import Context
-from ...core.sparkle import sparkle_sign_file
-from ...core.utils import (
+from ...lib.sparkle import sparkle_sign_file
+from ...lib.utils import (
     log_info,
     log_success,
     log_warning,

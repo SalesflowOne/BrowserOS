@@ -5,7 +5,7 @@ import subprocess
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from ...core.env import EnvConfig
+from ...lib.env import EnvConfig
 from ...core.products import ProductDescriptor, default_product_descriptor
 from ..storage import get_release_json, get_r2_client, BOTO3_AVAILABLE
 

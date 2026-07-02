@@ -12,7 +12,7 @@ from typing import List
 
 from ...core.step import Step, ValidationError, step
 from ...core.context import Context
-from ...core.utils import (
+from ...lib.utils import (
     run_command,
     log_info,
     log_warning,
@@ -150,7 +150,7 @@ class SparkleSetupModule(Step):
     description = "Download and setup Sparkle framework (macOS only)"
 
     def validate(self, ctx: Context) -> None:
-        from ...core.utils import IS_MACOS
+        from ...lib.utils import IS_MACOS
 
         if not IS_MACOS():
             raise ValidationError("Sparkle setup requires macOS")

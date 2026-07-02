@@ -13,9 +13,9 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 
 from .context import Context
-from .env import EnvConfig
+from ..lib.env import EnvConfig
 from .products import get_product_descriptor
-from .utils import get_platform_arch, log_info
+from ..lib.utils import get_platform_arch, log_info
 
 VALID_ARCHITECTURES = {"x64", "arm64", "universal"}
 

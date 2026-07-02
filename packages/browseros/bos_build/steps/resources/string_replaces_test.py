@@ -10,7 +10,7 @@ from typing import cast
 from .string_replaces import StringReplacesModule, apply_string_replacements_impl
 from ...core.context import Context
 from ...core.step import ValidationError
-from ...core.testing import MockBrowserOSRoot, MockChromium, make_context
+from ...lib.testing import MockBrowserOSRoot, MockChromium, make_context
 
 
 class ApplyStringReplacementsTest(unittest.TestCase):

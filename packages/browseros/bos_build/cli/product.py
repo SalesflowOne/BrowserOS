@@ -5,8 +5,8 @@ from typing import Optional
 
 import typer
 
-from ..core.paths import get_package_root
-from ..core.utils import log_error, log_info, log_success
+from ..lib.paths import get_package_root
+from ..lib.utils import log_error, log_info, log_success
 from ..products import PRODUCTS
 from ..products.doctor import diagnose
 

@@ -16,8 +16,8 @@ from typing import Optional
 
 import typer
 
-from ..core.paths import get_package_root
-from ..core.utils import log_error, log_info
+from ..lib.paths import get_package_root
+from ..lib.utils import log_error, log_info
 from ..steps.source import cache as source_cache
 from ..steps.source.provision import STRATEGIES, ensure, read_pinned_version
 

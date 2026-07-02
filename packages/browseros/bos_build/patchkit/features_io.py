@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import List, Optional, Dict, Tuple
 
 from ..core.context import Context
-from ..core.utils import log_info, log_success, log_warning
+from ..lib.utils import log_info, log_success, log_warning
 from .validation import validate_feature_name, validate_description, VALID_PREFIXES
 
 

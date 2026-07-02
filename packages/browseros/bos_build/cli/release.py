@@ -7,10 +7,10 @@ from typing import Optional
 import typer
 
 from ..core.context import Context
-from ..core.notify import slack_subscriber
-from ..core.paths import get_package_root
+from ..lib.notify import slack_subscriber
+from ..lib.paths import get_package_root
 from ..core.runner import StepExecutionError, run as run_steps
-from ..core.utils import log_info, log_error
+from ..lib.utils import log_info, log_error
 
 from ..steps.release import (
     AVAILABLE_MODULES,

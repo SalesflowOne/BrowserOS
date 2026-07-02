@@ -6,7 +6,7 @@ import zipfile
 from pathlib import Path
 from ...core.step import Step, ValidationError, step
 from ...core.context import Context
-from ...core.utils import (
+from ...lib.utils import (
     run_command,
     log_info,
     log_error,
@@ -15,7 +15,7 @@ from ...core.utils import (
     join_paths,
     IS_WINDOWS,
 )
-from ...core.notify import get_notifier, COLOR_GREEN
+from ...lib.notify import get_notifier, COLOR_GREEN
 from ..compile.standard import autoninja_command
 
 

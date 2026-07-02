@@ -10,7 +10,7 @@ from typing import cast
 from .chromium_replace import ChromiumReplaceModule, replace_chromium_files_impl
 from ...core.context import Context
 from ...core.step import ValidationError
-from ...core.testing import MockBrowserOSRoot, MockChromium, make_context
+from ...lib.testing import MockBrowserOSRoot, MockChromium, make_context
 
 
 class ReplaceChromiumFilesTest(unittest.TestCase):

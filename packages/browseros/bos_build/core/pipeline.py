@@ -3,7 +3,7 @@
 
 from typing import Dict, List, Type
 from .step import PHASES, Step
-from .utils import log_error, log_info
+from ..lib.utils import log_error, log_info
 
 
 def validate_pipeline(pipeline: List[str], available_modules: Dict[str, Type[Step]]) -> None:

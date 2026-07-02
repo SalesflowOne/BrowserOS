@@ -8,7 +8,7 @@ from typing import Iterator
 
 from ...core.step import Step, ValidationError, step
 from ...core.context import Context
-from ...core.utils import log_info, log_success, log_error, get_platform
+from ...lib.utils import log_info, log_success, log_error, get_platform
 
 
 ENCODING = "UTF-8"

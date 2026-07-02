@@ -9,7 +9,7 @@ from unittest import mock
 
 from . import git
 from ...core.step import ValidationError
-from ...core.testing import MockBrowserOSRoot, MockChromium, make_context
+from ...lib.testing import MockBrowserOSRoot, MockChromium, make_context
 
 
 def _make_release_zip(path: Path, version: str = "0.9.3") -> None:

@@ -189,7 +189,7 @@ def slack_subscriber(event) -> None:
     each step's notify flag; run start/end always fire. Import is local
     to avoid a notify → events cycle at module import time.
     """
-    from .events import RunFinished, RunStarted, StepFinished, StepStarted
+    from ..core.events import RunFinished, RunStarted, StepFinished, StepStarted
 
     if isinstance(event, RunStarted):
         notify_pipeline_start(event.run, list(event.steps))

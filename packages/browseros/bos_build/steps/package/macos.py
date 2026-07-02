@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Optional, List
 from ...core.step import Step, ValidationError, step
 from ...core.context import Context
-from ...core.utils import run_command, log_info, log_error, log_success, IS_MACOS
-from ...core.notify import get_notifier, COLOR_GREEN
+from ...lib.utils import run_command, log_info, log_error, log_success, IS_MACOS
+from ...lib.notify import get_notifier, COLOR_GREEN
 
 
 @step("package_macos", phase="package", platforms=("macos",), notify=True)

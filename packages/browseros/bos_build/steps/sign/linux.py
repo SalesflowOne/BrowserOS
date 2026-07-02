@@ -3,7 +3,7 @@
 
 from ...core.step import Step, step
 from ...core.context import Context
-from ...core.utils import log_info
+from ...lib.utils import log_info
 
 
 @step("sign_linux", phase="sign", platforms=("linux",), notify=True)

@@ -5,7 +5,7 @@ Extract Patch - Extract patch for a single chromium file.
 from typing import Optional, Tuple
 
 from ...core.context import Context
-from ...core.utils import log_info
+from ...lib.utils import log_info
 from .utils import (
     run_git_command,
     parse_diff_output,

@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Tuple
 
 from ...core.context import Context
 from ...core.step import Step, ValidationError
-from ...core.utils import log_info, log_error, log_success, log_warning
+from ...lib.utils import log_info, log_error, log_success, log_warning
 from ..storage import BOTO3_AVAILABLE
 from .common import (
     PLATFORMS,

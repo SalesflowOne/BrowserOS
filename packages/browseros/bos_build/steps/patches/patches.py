@@ -4,7 +4,7 @@
 import shutil
 from ...core.step import Step, ValidationError, step
 from ...core.context import Context
-from ...core.utils import log_info, log_error
+from ...lib.utils import log_info, log_error
 
 
 @step("patches", phase="prep")

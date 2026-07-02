@@ -14,7 +14,7 @@ import typer
 from typer import Typer, Option, Argument
 
 from ..core.context import Context
-from ..core.utils import log_info, log_error, log_success, log_warning
+from ..lib.utils import log_info, log_error, log_success, log_warning
 
 
 def create_build_context(chromium_src: Optional[Path] = None) -> Optional[Context]:

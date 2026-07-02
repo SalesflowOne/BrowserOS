@@ -8,12 +8,12 @@ import tempfile
 from pathlib import Path
 from typing import List, Optional
 
-from ...core.env import EnvConfig
+from ...lib.env import EnvConfig
 from ...core.server_binaries import (
     expected_windows_binary_paths,
     macos_sign_spec_for,
 )
-from ...core.utils import (
+from ...lib.utils import (
     log_info,
     log_error,
     log_success,

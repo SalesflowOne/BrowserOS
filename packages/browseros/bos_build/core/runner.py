@@ -27,7 +27,7 @@ from .events import (
     Subscriber,
 )
 from .step import Step, ValidationError, all_steps
-from .utils import log_error, log_info, log_success, log_warning
+from ..lib.utils import log_error, log_info, log_success, log_warning
 
 
 class StepExecutionError(Exception):

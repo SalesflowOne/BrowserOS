@@ -15,8 +15,8 @@ from typing import Dict, Optional
 
 import yaml
 
-from .context import Context
-from .products import get_product_descriptor
+from ..core.context import Context
+from ..core.products import get_product_descriptor
 
 DEFAULT_CHROMIUM_VERSION = "137.0.7151.69"
 DEFAULT_BUILD_OFFSET = "80"

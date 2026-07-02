@@ -12,7 +12,7 @@ lives.
 
 from typing import Dict, List, Optional, Tuple, Type
 
-from .utils import get_platform
+from ..lib.utils import get_platform
 
 # Canonical phase order. "source" is reserved for chromium provisioning.
 PHASES: Tuple[str, ...] = (

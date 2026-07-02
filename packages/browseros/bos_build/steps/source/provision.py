@@ -24,7 +24,7 @@ from typing import Optional
 
 from ...core.context import Context
 from ...core.step import Step, ValidationError, step
-from ...core.utils import log_info, log_success
+from ...lib.utils import log_info, log_success
 
 CHROMIUM_SRC_URL = "https://chromium.googlesource.com/chromium/src.git"
 DEPOT_TOOLS_URL = "https://chromium.googlesource.com/chromium/tools/depot_tools.git"

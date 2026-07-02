@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from bos_build.core import versions
+from bos_build.lib import versions
 
 
 class VersionsTest(unittest.TestCase):

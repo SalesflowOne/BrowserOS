@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import yaml
 
 from .step import all_steps
-from .utils import get_platform, get_platform_arch
+from ..lib.utils import get_platform, get_platform_arch
 
 PRESETS = ("release", "debug")
 PROVISION_MODES = ("none", "full", "shallow")

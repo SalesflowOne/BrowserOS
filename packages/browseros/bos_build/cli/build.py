@@ -10,7 +10,7 @@ from typing import Callable, List, Optional, Tuple
 import typer
 
 from ..core.context import Context
-from ..core.paths import get_package_root
+from ..lib.paths import get_package_root
 from ..core.pipeline import validate_pipeline, show_available_modules
 from ..core.planner import (
     Profile,
@@ -23,7 +23,7 @@ from ..core.planner import (
     slice_runs_from,
 )
 from ..core.resolver import resolve_config, resolve_pipeline
-from ..core.notify import (
+from ..lib.notify import (
     notify_pipeline_end,
     notify_pipeline_error,
     set_build_context,
@@ -34,7 +34,7 @@ from ..core.step import (
     all_steps,
     phase_steps,
 )
-from ..core.utils import (
+from ..lib.utils import (
     get_platform,
     get_platform_arch,
     log_error,
@@ -281,7 +281,7 @@ def main(
             raise typer.Exit(1)
         if show_plan:
             validate_pipeline(pipeline, AVAILABLE_MODULES)
-            from ..core.env import EnvConfig
+            from ..lib.env import EnvConfig
 
             label_arch = arch or EnvConfig().arch or get_platform_arch()
             if label_arch not in VALID_ARCHITECTURES:
@@ -609,7 +609,7 @@ def _resolve_modules_profile(
             "profile — it owns its pipeline; edit the modules list instead"
         )
 
-    from ..core.env import EnvConfig
+    from ..lib.env import EnvConfig
 
     steps = list(prof.modules or ())
     validate_pipeline(steps, AVAILABLE_MODULES)
@@ -696,7 +696,7 @@ def _resolve_chromium_src(
     chromium_src: Optional[Path], allow_missing: bool = False
 ) -> Path:
     """chromium_src: CLI > CHROMIUM_SRC env > error (same as direct mode)."""
-    from ..core.env import EnvConfig
+    from ..lib.env import EnvConfig
 
     src = chromium_src or EnvConfig().chromium_src
     if not src:

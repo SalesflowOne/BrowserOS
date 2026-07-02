@@ -4,7 +4,7 @@
 import re
 from ...core.step import Step, ValidationError, step
 from ...core.context import Context
-from ...core.utils import log_info, log_success, log_error, log_warning
+from ...lib.utils import log_info, log_success, log_error, log_warning
 
 
 @step("string_replaces", phase="prep")

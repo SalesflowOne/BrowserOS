@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from bos_build.core.paths import get_package_root
+from bos_build.lib.paths import get_package_root
 from bos_build.core.products import ProductDescriptor
 from bos_build.products import PRODUCTS
 from bos_build.products.doctor import (

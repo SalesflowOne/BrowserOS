@@ -10,7 +10,7 @@ from typing import List, Optional
 from ...core.server_binaries import all_server_bundles, server_bundles_for_product
 from ...core.step import Step, ValidationError, step
 from ...core.context import Context
-from ...core.utils import (
+from ...lib.utils import (
     log_info,
     log_error,
     log_warning,
@@ -21,7 +21,7 @@ from ...core.utils import (
     get_platform_arch,
     IS_LINUX,
 )
-from ...core.notify import get_notifier, COLOR_GREEN
+from ...lib.notify import get_notifier, COLOR_GREEN
 
 # Target-arch packaging metadata. These describe the artifact we're
 # producing, not the build machine. `appimage_arch` is passed to

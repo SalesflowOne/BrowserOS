@@ -6,13 +6,13 @@ from pathlib import Path
 from typing import List, Optional
 from ...core.step import Step, ValidationError, step
 from ...core.context import Context
-from ...core.env import EnvConfig
+from ...lib.env import EnvConfig
 from ...core.server_binaries import (
     all_server_bundles,
     expected_windows_bundle_binary_paths,
     server_bundles_for_product,
 )
-from ...core.utils import (
+from ...lib.utils import (
     log_info,
     log_error,
     log_success,

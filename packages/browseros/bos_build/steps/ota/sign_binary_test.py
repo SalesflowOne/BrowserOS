@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from ...core.env import EnvConfig
+from ...lib.env import EnvConfig
 from . import sign_binary
 
 

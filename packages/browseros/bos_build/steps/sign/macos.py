@@ -9,14 +9,14 @@ from pathlib import Path
 from typing import Optional, List, Dict, Tuple
 from ...core.step import Step, ValidationError, step
 from ...core.context import Context
-from ...core.env import EnvConfig
+from ...lib.env import EnvConfig
 from ...core.server_binaries import (
     all_server_bundles,
     ServerBundle,
     macos_sign_spec_for,
     server_bundles_for_product,
 )
-from ...core.utils import (
+from ...lib.utils import (
     run_command as utils_run_command,
     log_info,
     log_error,

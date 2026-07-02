@@ -9,7 +9,7 @@ need it, so this stays in Python.
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
-from ..core.utils import log_info, log_error, log_success, log_warning
+from ..lib.utils import log_info, log_error, log_success, log_warning
 from .extract.utils import run_git_command
 
 if TYPE_CHECKING:

@@ -12,8 +12,8 @@ import yaml
 from .resources import ResourcesModule, copy_resources_impl
 from ...core.context import Context
 from ...core.step import ValidationError
-from ...core.testing import MockBrowserOSRoot, MockChromium, make_context
-from ...core.utils import get_platform
+from ...lib.testing import MockBrowserOSRoot, MockChromium, make_context
+from ...lib.utils import get_platform
 
 
 class CopyResourcesTest(unittest.TestCase):

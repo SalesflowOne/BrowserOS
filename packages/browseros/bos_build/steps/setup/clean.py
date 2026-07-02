@@ -3,7 +3,7 @@
 
 from ...core.step import Step, ValidationError, step
 from ...core.context import Context
-from ...core.utils import run_command, log_info, log_success, safe_rmtree
+from ...lib.utils import run_command, log_info, log_success, safe_rmtree
 
 
 @step("clean", phase="setup")

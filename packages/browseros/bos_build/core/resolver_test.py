@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 from bos_build.core.resolver import resolve_config, resolve_pipeline
-from bos_build.core.testing import MockChromium
+from bos_build.lib.testing import MockChromium
 
 
 class ResolveConfigDirectModeTest(unittest.TestCase):
