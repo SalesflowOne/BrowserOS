@@ -1282,6 +1282,49 @@ func TestInspectWorkspaceDoesNotReportFreshFromStateAlone(t *testing.T) {
 	}
 }
 
+func TestInspectWorkspaceReportsMismatchForDivergentMaterializedRev(t *testing.T) {
+	ctx := context.Background()
+	workspacePath := initGitRepo(t)
+	writeFile(t, filepath.Join(workspacePath, "chrome", "browser.cc"), "base\n")
+	runGit(t, workspacePath, "add", "chrome/browser.cc")
+	runGit(t, workspacePath, "commit", "-m", "workspace base")
+	baseCommit := gitOutput(t, workspacePath, "rev-parse", "HEAD")
+	repoInfo := newPatchRepo(t, baseCommit)
+	mainBranch := gitOutput(t, repoInfo.Root, "branch", "--show-current")
+
+	runGit(t, repoInfo.Root, "checkout", "-b", "side")
+	writeFile(t, filepath.Join(repoInfo.Root, "side.txt"), "side\n")
+	runGit(t, repoInfo.Root, "add", "side.txt")
+	runGit(t, repoInfo.Root, "commit", "-m", "side")
+	sideRev := gitOutput(t, repoInfo.Root, "rev-parse", "HEAD")
+	runGit(t, repoInfo.Root, "checkout", mainBranch)
+	writeFile(t, filepath.Join(repoInfo.Root, "main.txt"), "main\n")
+	runGit(t, repoInfo.Root, "add", "main.txt")
+	runGit(t, repoInfo.Root, "commit", "-m", "main")
+
+	runGit(t, workspacePath, "checkout", "-b", "browseros")
+	runGit(t, workspacePath, "commit", "--allow-empty", "-m", "materialized", "-m", "Patches-Rev: "+sideRev)
+	if err := workspace.SaveState(workspacePath, &workspace.State{
+		Version:        1,
+		Workspace:      workspacePath,
+		BaseCommit:     baseCommit,
+		LastRefreshRev: sideRev,
+	}); err != nil {
+		t.Fatalf("SaveState: %v", err)
+	}
+
+	status, err := InspectWorkspace(ctx, InspectWorkspaceOptions{
+		Workspace: workspace.Entry{Name: "ws", Path: workspacePath},
+		Repo:      repoInfo,
+	})
+	if err != nil {
+		t.Fatalf("InspectWorkspace: %v", err)
+	}
+	if status.PatchesFreshness != "mismatch" {
+		t.Fatalf("expected mismatch for divergent materialized rev, got %+v", status)
+	}
+}
+
 func TestRefreshRebuildsIdenticalBrowserOSBranchesAndFastNoops(t *testing.T) {
 	ctx := context.Background()
 	checkout1 := initGitRepo(t)
@@ -1457,6 +1500,43 @@ features:
 	if got := gitOutput(t, workspacePath, "branch", "--show-current"); got != "browseros" {
 		t.Fatalf("branch = %q, want browseros", got)
 	}
+}
+
+func TestRefreshRefusesUntrackedPatchTargetCollision(t *testing.T) {
+	ctx := context.Background()
+	workspacePath := initGitRepo(t)
+	writeFile(t, filepath.Join(workspacePath, "chrome", "base.cc"), "base\n")
+	runGit(t, workspacePath, "add", "chrome/base.cc")
+	runGit(t, workspacePath, "commit", "-m", "workspace base")
+	baseCommit := gitOutput(t, workspacePath, "rev-parse", "HEAD")
+
+	repoInfo := newPatchRepo(t, baseCommit)
+	writeFile(t, filepath.Join(workspacePath, "chrome", "new.cc"), "untracked local\n")
+	diff, err := git.DiffNoIndex(ctx, workspacePath, "chrome/new.cc")
+	if err != nil {
+		t.Fatalf("DiffNoIndex: %v", err)
+	}
+	writeFile(t, filepath.Join(repoInfo.PatchesDir, "chrome", "new.cc"), diff)
+	writeFeaturesYAML(t, repoInfo.Root, `version: "1.0"
+features:
+  new-file:
+    description: "feat: new file"
+    files:
+      - chrome/new.cc
+`)
+	runGit(t, repoInfo.Root, "add", "chromium_patches", "bos_build/features.yaml")
+	runGit(t, repoInfo.Root, "commit", "-m", "patch stack")
+
+	_, err = Refresh(ctx, RefreshOptions{
+		Workspace: workspace.Entry{Name: "ws", Path: workspacePath},
+		Repo:      repoInfo,
+		Force:     true,
+		Pull:      false,
+	})
+	if err == nil || !strings.Contains(err.Error(), "untracked files collide") {
+		t.Fatalf("expected untracked collision error, got %v", err)
+	}
+	assertFile(t, filepath.Join(workspacePath, "chrome", "new.cc"), "untracked local\n")
 }
 
 func TestFeatureLintReportsUnclaimedAndDuplicatePatchClaims(t *testing.T) {

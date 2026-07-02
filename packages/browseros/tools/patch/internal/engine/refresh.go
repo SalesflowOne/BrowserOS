@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -120,6 +121,13 @@ func Refresh(ctx context.Context, opts RefreshOptions) (*RefreshResult, error) {
 	repoSet, err := patch.LoadRepoPatchSet(repoInfo.PatchesDir, nil)
 	if err != nil {
 		return nil, err
+	}
+	collisions, err := untrackedPatchCollisions(ctx, opts.Workspace.Path, repoInfo.BaseCommit, repoSet)
+	if err != nil {
+		return nil, err
+	}
+	if len(collisions) > 0 {
+		return nil, fmt.Errorf("untracked files collide with patch targets; move them aside before refresh: %s", strings.Join(collisions, ", "))
 	}
 	warnings := baseChangeWarnings(ctx, opts.Workspace.Path, state.BaseCommit, repoInfo.BaseCommit)
 	reportProgress(opts.Progress, "Checking out base %s", shortRev(repoInfo.BaseCommit))
@@ -254,6 +262,47 @@ func stagePathsForPatches(repoSet patch.PatchSet, paths []string) []string {
 		}
 	}
 	return stage
+}
+
+func untrackedPatchCollisions(ctx context.Context, workspacePath string, base string, repoSet patch.PatchSet) ([]string, error) {
+	untracked, err := git.ListUntracked(ctx, workspacePath, nil)
+	if err != nil {
+		return nil, err
+	}
+	if len(untracked) == 0 {
+		return nil, nil
+	}
+	seen := map[string]bool{}
+	var collisions []string
+	for _, patchFile := range repoSet {
+		for _, rel := range []string{patchFile.OldPath, patchFile.Path} {
+			if rel == "" || seen[rel] {
+				continue
+			}
+			seen[rel] = true
+			existsAtBase, err := git.FileExistsAtCommit(ctx, workspacePath, base, rel)
+			if err != nil {
+				return nil, err
+			}
+			if existsAtBase {
+				continue
+			}
+			if collidesWithUntracked(rel, untracked) {
+				collisions = append(collisions, rel)
+			}
+		}
+	}
+	slices.Sort(collisions)
+	return collisions, nil
+}
+
+func collidesWithUntracked(rel string, untracked []string) bool {
+	for _, candidate := range untracked {
+		if candidate == rel || strings.HasPrefix(candidate, rel+"/") || strings.HasPrefix(rel, candidate+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func baseChangeWarnings(ctx context.Context, workspacePath string, previousBase string, nextBase string) []string {

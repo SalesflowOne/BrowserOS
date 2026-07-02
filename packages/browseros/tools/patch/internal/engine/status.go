@@ -150,6 +150,10 @@ func materializedFreshness(ctx context.Context, repoRoot string, workspacePath s
 	case tipRev == repoHead:
 		return tipRev, tipRev, "fresh", 0
 	default:
+		ancestor, err := git.IsAncestor(ctx, repoRoot, tipRev, repoHead)
+		if err != nil || !ancestor {
+			return tipRev, tipRev, "mismatch", 0
+		}
 		behind, err := git.RevListCount(ctx, repoRoot, tipRev, repoHead)
 		if err != nil || behind == 0 {
 			return tipRev, tipRev, "unknown", 0

@@ -407,6 +407,21 @@ func RevListCount(ctx context.Context, dir string, start string, end string) (in
 	return count, nil
 }
 
+func IsAncestor(ctx context.Context, dir string, ancestor string, descendant string) (bool, error) {
+	result, err := Run(ctx, dir, nil, "merge-base", "--is-ancestor", ancestor, descendant)
+	if err != nil {
+		return false, err
+	}
+	switch result.Code {
+	case 0:
+		return true, nil
+	case 1:
+		return false, nil
+	default:
+		return false, errors.New(strings.TrimSpace(result.Stderr))
+	}
+}
+
 func ApplyPatch(ctx context.Context, dir string, patch []byte) (string, error) {
 	strategies := [][]string{
 		{"apply", "--ignore-whitespace", "--whitespace=nowarn", "-p1"},
