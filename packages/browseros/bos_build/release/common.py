@@ -12,37 +12,27 @@ from ..lib.r2 import get_release_json, get_r2_client, BOTO3_AVAILABLE
 PLATFORMS = ["macos", "win", "linux"]
 PLATFORM_DISPLAY_NAMES = {"macos": "macOS", "win": "Windows", "linux": "Linux"}
 
-DOWNLOAD_PATH_MAPPING = {
-    "macos": {
-        "arm64": "download/BrowserOS-arm64.dmg",
-        "x64": "download/BrowserOS-x86_64.dmg",
-        "universal": "download/BrowserOS.dmg",
-    },
-    "win": {
-        "x64_installer": "download/BrowserOS_installer.exe",
-    },
-    "linux": {
-        "x64_appimage": "download/BrowserOS.AppImage",
-        "x64_deb": "download/BrowserOS.deb",
-        "arm64_appimage": "download/BrowserOS-arm64.AppImage",
-        "arm64_deb": "download/BrowserOS-arm64.deb",
-    },
-}
-
-
 def get_download_path_mapping(
     product: ProductDescriptor | None = None,
 ) -> Dict[str, Dict[str, str]]:
     """Return product-specific latest-download aliases."""
     product = product or default_product_descriptor()
-    if product.id == "browseros":
-        return DOWNLOAD_PATH_MAPPING
+    prefix = product.artifact_prefix
     return {
-        platform: {
-            key: value.replace("BrowserOS", product.artifact_prefix)
-            for key, value in mapping.items()
-        }
-        for platform, mapping in DOWNLOAD_PATH_MAPPING.items()
+        "macos": {
+            "arm64": f"download/{prefix}-arm64.dmg",
+            "x64": f"download/{prefix}-x86_64.dmg",
+            "universal": f"download/{prefix}.dmg",
+        },
+        "win": {
+            "x64_installer": f"download/{prefix}_installer.exe",
+        },
+        "linux": {
+            "x64_appimage": f"download/{prefix}.AppImage",
+            "x64_deb": f"download/{prefix}.deb",
+            "arm64_appimage": f"download/{prefix}-arm64.AppImage",
+            "arm64_deb": f"download/{prefix}-arm64.deb",
+        },
     }
 
 
