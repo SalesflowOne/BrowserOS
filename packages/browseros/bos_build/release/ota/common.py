@@ -19,9 +19,10 @@ from ..feeds.render import (
     ExistingAppcast as ExistingAppcast,
     SignedArtifact as SignedArtifact,
     parse_existing_appcast as parse_existing_appcast,
+    parse_server_appcast_content,
     render_server_appcast,
 )
-from ..feeds.spec import server_feed
+from ..feeds.spec import FeedSpec, server_feed
 
 SERVER_PLATFORMS = [
     {"name": "darwin_arm64", "binary": "browseros-server-darwin-arm64", "target": "darwin-arm64", "os": "macos", "arch": "arm64"},
@@ -53,6 +54,25 @@ def generate_server_appcast(
     """Render a server appcast for a bundle+channel via its FeedSpec."""
     spec = server_feed(bundle_id, channel)
     return render_server_appcast(spec, version, artifacts, existing)
+
+
+def promote_appcast_content(source_content: str, target_spec: FeedSpec) -> str:
+    """Re-render an appcast under another channel's spec (title/link swap).
+
+    Version, pubDate and enclosures are preserved; promoting alpha→prod goes
+    through render so the prod key can never carry alpha channel metadata
+    (the historical byte-copy bug).
+    """
+    existing = parse_server_appcast_content(source_content)
+    if existing is None:
+        raise ValueError(
+            "source appcast is not a valid single-item server appcast"
+        )
+    if not existing.artifacts:
+        raise ValueError("source appcast has no parseable enclosures")
+    return render_server_appcast(
+        target_spec, existing.version, [], existing=existing
+    )
 
 
 def create_server_bundle_zip(resources_dir: Path, output_zip: Path) -> bool:

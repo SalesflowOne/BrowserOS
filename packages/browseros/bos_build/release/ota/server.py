@@ -20,7 +20,6 @@ from .common import (
     SERVER_PLATFORMS,
     SignedArtifact,
     sparkle_sign_file,
-    generate_server_appcast,
     parse_existing_appcast,
     create_server_bundle_zip,
     get_appcast_path,
@@ -31,11 +30,11 @@ from .sign_binary import (
     sign_server_bundle_macos,
     sign_server_bundle_windows,
 )
+from ..feeds.render import render_server_appcast
+from ..feeds.spec import CDN_BASE_URL, server_feed
+from ...products.server_binaries import ServerBundle, server_bundles_for_product
 from ...lib.r2 import get_r2_client, upload_file_to_r2, download_file_from_r2
 from ...steps.storage.download import extract_artifact_zip
-
-# R2 key pattern for server artifact zips
-ARTIFACT_R2_KEY = "artifacts/server/latest/browseros-server-resources-{target}.zip"
 
 
 class ServerOTAModule(Step):
@@ -54,11 +53,31 @@ class ServerOTAModule(Step):
         version: str = "",
         channel: str = "alpha",
         platform_filter: Optional[str] = None,
+        product_id: str = "browseros",
     ):
         self.version = version
         self.channel = channel
         self.platform_filter = platform_filter
+        self.product_id = product_id
         self._download_dir: Optional[Path] = None
+
+    @property
+    def bundle(self) -> ServerBundle:
+        bundles = server_bundles_for_product(self.product_id)
+        if not bundles:
+            raise RuntimeError(
+                f"Product '{self.product_id}' has no server bundle"
+            )
+        return bundles[0]
+
+    def artifact_key(self, target: str) -> str:
+        """R2 source key of the unsigned server resources zip for a target."""
+        return f"artifacts/server/latest/{self.bundle.id}-resources-{target}.zip"
+
+    def zip_filename(self, platform_name: str) -> str:
+        """Sparkle payload zip name (also the enclosure URL basename)."""
+        prefix = self.bundle.id.replace("-", "_")
+        return f"{prefix}_{self.version}_{platform_name}.zip"
 
     def validate(self, context: Context) -> None:
         if not self.version:
@@ -66,6 +85,11 @@ class ServerOTAModule(Step):
 
         if self.channel not in ["alpha", "prod"]:
             raise ValidationError("Channel must be 'alpha' or 'prod'")
+
+        if not server_bundles_for_product(self.product_id):
+            raise ValidationError(
+                f"Product '{self.product_id}' has no server bundle"
+            )
 
         if IS_MACOS():
             if not context.env.macos_certificate_name:
@@ -100,7 +124,7 @@ class ServerOTAModule(Step):
 
         for platform in platforms:
             target = platform["target"]
-            r2_key = ARTIFACT_R2_KEY.format(target=target)
+            r2_key = self.artifact_key(target)
             zip_path = download_dir / f"{target}.zip"
             extract_dir = download_dir / target
 
@@ -156,7 +180,7 @@ class ServerOTAModule(Step):
             if not self._sign_bundle(staging_resources, platform, ctx):
                 raise RuntimeError(f"Signing failed for {platform['name']}")
 
-            zip_name = f"browseros_server_{self.version}_{platform['name']}.zip"
+            zip_name = self.zip_filename(platform["name"])
             zip_path = temp_dir / zip_name
 
             if not create_server_bundle_zip(staging_resources, zip_path):
@@ -192,13 +216,14 @@ class ServerOTAModule(Step):
     ) -> None:
         """Write the appcast, upload every signed zip to R2, and surface URLs."""
         log_info("\n📝 Generating appcast...")
-        appcast_path = get_appcast_path(self.channel)
+        spec = server_feed(self.bundle.id, self.channel)
+        appcast_path = get_appcast_path(self.channel, self.bundle.id)
         existing_appcast = parse_existing_appcast(appcast_path)
 
-        appcast_content = generate_server_appcast(
+        appcast_content = render_server_appcast(
+            spec,
             self.version,
             signed_artifacts,
-            self.channel,
             existing=existing_appcast,
         )
         appcast_path.parent.mkdir(parents=True, exist_ok=True)
@@ -225,7 +250,7 @@ class ServerOTAModule(Step):
 
         log_info("\nArtifact URLs:")
         for artifact in signed_artifacts:
-            log_info(f"  https://cdn.browseros.com/server/{artifact.zip_path.name}")
+            log_info(f"  {CDN_BASE_URL}/server/{artifact.zip_path.name}")
 
         log_info(f"\nAppcast saved to: {appcast_path}")
         log_info("\n📋 Next step: Run 'browseros ota server release-appcast' to make the release live")

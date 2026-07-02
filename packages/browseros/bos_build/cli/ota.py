@@ -16,9 +16,12 @@ from ..lib.utils import log_info, log_error, log_success
 from ..release.ota import ServerOTAModule
 from ..release.ota.common import (
     get_appcast_path,
+    promote_appcast_content,
     SERVER_PLATFORMS,
 )
-from ..lib.r2 import get_r2_client, upload_file_to_r2
+from ..release.feeds.publisher import FeedPublisher
+from ..release.feeds.spec import server_feed
+from ..products.server_binaries import server_bundles_for_product
 
 app = typer.Typer(
     help="OTA (Over-The-Air) update automation",
@@ -54,6 +57,25 @@ def execute_module(ctx: Context, module) -> None:
         raise typer.Exit(130)
 
 
+def _server_bundle_id(product: str) -> str:
+    bundles = server_bundles_for_product(product)
+    if not bundles:
+        log_error(f"Product '{product}' has no server bundle")
+        raise typer.Exit(1)
+    return bundles[0].id
+
+
+def _feed_publisher() -> FeedPublisher:
+    env = EnvConfig()
+    if not env.has_r2_config():
+        log_error(
+            "R2 configuration not set. Required env vars: R2_ACCOUNT_ID, "
+            "R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY"
+        )
+        raise typer.Exit(1)
+    return FeedPublisher(env=env)
+
+
 @server_app.command("release")
 def server_release(
     version: str = typer.Option(
@@ -65,6 +87,9 @@ def server_release(
     platform: Optional[str] = typer.Option(
         None, "--platform", "-p",
         help="Platform(s) to process, comma-separated (darwin_arm64, darwin_x64, linux_arm64, linux_x64, windows_x64)"
+    ),
+    product: str = typer.Option(
+        "browseros", "--product", help="Product whose server bundle to release"
     ),
 ):
     """Release BrowserOS Server OTA update
@@ -93,6 +118,7 @@ def server_release(
         version=version,
         channel=channel,
         platform_filter=platform,
+        product_id=product,
     )
 
     execute_module(ctx, module)
@@ -106,59 +132,106 @@ def server_release_appcast(
     appcast_file: Optional[Path] = typer.Option(
         None, "--file", "-f", help="Custom appcast file to upload"
     ),
+    product: str = typer.Option(
+        "browseros", "--product", help="Product whose server appcast to publish"
+    ),
+    publish: bool = typer.Option(
+        False,
+        "--publish",
+        help="Write to R2 (default is a dry run: full XML + diff vs live)",
+    ),
+    allow_downgrade: bool = typer.Option(
+        False, "--allow-downgrade", help="Override the version-downgrade guard"
+    ),
 ):
     """Publish appcast XML to make the release live
 
-    This is the final step after 'release' uploads artifacts.
-    Publishing the appcast makes the update available to clients.
+    This is the final step after 'release' uploads artifacts. Runs through
+    the feed publisher rails: title/link must match the channel, every
+    enclosure is HEAD-checked, the live feed is backed up to feeds-history/
+    before the write, and downgrades are refused.
 
     \b
-    Release alpha appcast:
+    Preview the alpha appcast (dry run):
       browseros ota server release-appcast --channel alpha
 
     \b
-    Release production appcast:
-      browseros ota server release-appcast --channel prod
+    Publish it:
+      browseros ota server release-appcast --channel alpha --publish
+    """
+    bundle_id = _server_bundle_id(product)
+    spec = server_feed(bundle_id, channel)
+
+    source_path = appcast_file or get_appcast_path(channel, bundle_id)
+    if not source_path.exists():
+        log_error(f"Appcast file not found: {source_path}")
+        if not appcast_file:
+            log_error(
+                "Run 'browseros ota server release' first to generate the appcast"
+            )
+        raise typer.Exit(1)
+
+    publisher = _feed_publisher()
+    if not publisher.publish(
+        spec,
+        source_path.read_text(),
+        publish=publish,
+        allow_downgrade=allow_downgrade,
+    ):
+        raise typer.Exit(1)
+
+
+@server_app.command("promote")
+def server_promote(
+    product: str = typer.Option(
+        "browseros", "--product", help="Product whose server appcast to promote"
+    ),
+    publish: bool = typer.Option(
+        False,
+        "--publish",
+        help="Write to R2 (default is a dry run: full XML + diff vs live)",
+    ),
+    allow_downgrade: bool = typer.Option(
+        False, "--allow-downgrade", help="Override the version-downgrade guard"
+    ),
+):
+    """Promote the live alpha server appcast to prod.
+
+    Re-renders the alpha item with the prod feed's title/link (never a byte
+    copy — the historical bug where prod carried alpha metadata), keeping
+    version, pubDate and enclosures, then publishes through the rails.
 
     \b
-    Release custom appcast file:
-      browseros ota server release-appcast --file /path/to/appcast.xml
+    Preview (dry run):
+      browseros ota server promote
+
+    \b
+    Promote for real:
+      browseros ota server promote --publish
     """
-    if appcast_file:
-        if not appcast_file.exists():
-            log_error(f"Appcast file not found: {appcast_file}")
-            raise typer.Exit(1)
-        source_path = appcast_file
-    else:
-        source_path = get_appcast_path(channel)
-        if not source_path.exists():
-            log_error(f"Appcast file not found: {source_path}")
-            log_error("Run 'browseros ota server release' first to generate the appcast")
-            raise typer.Exit(1)
+    bundle_id = _server_bundle_id(product)
+    alpha_spec = server_feed(bundle_id, "alpha")
+    prod_spec = server_feed(bundle_id, "prod")
 
-    if channel == "alpha":
-        r2_key = "appcast-server.alpha.xml"
-    else:
-        r2_key = "appcast-server.xml"
-
-    log_info(f"📤 Uploading {source_path.name} to {r2_key}...")
-
-    env = EnvConfig()
-    if not env.has_r2_config():
-        log_error("R2 configuration not set. Required env vars: R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY")
+    publisher = _feed_publisher()
+    live_alpha = publisher.fetch_live(alpha_spec.key)
+    if live_alpha is None:
+        log_error(f"No live {alpha_spec.key} to promote")
         raise typer.Exit(1)
 
-    r2_client = get_r2_client(env)
-    if not r2_client:
-        log_error("Failed to create R2 client")
+    try:
+        content = promote_appcast_content(live_alpha, prod_spec)
+    except ValueError as e:
+        log_error(str(e))
         raise typer.Exit(1)
 
-    if upload_file_to_r2(r2_client, source_path, r2_key, env.r2_bucket):
-        cdn_url = f"https://cdn.browseros.com/{r2_key}"
-        log_success(f"✅ Published: {cdn_url}")
-    else:
-        log_error("Upload failed")
+    log_info(f"Promoting {alpha_spec.key} -> {prod_spec.key}")
+    if not publisher.publish(
+        prod_spec, content, publish=publish, allow_downgrade=allow_downgrade
+    ):
         raise typer.Exit(1)
+    if publish:
+        log_success(f"✅ Promoted to {prod_spec.url}")
 
 
 @server_app.command("list-platforms")
