@@ -256,7 +256,7 @@ class Context:
         """Update feed version compared by Sparkle/WinSparkle.
 
         Epoch-prefixed BrowserOS version (see the derivation notes in
-        core/versions.py). Stamped into CFBundleVersion at signing,
+        lib/versions.py). Stamped into CFBundleVersion at signing,
         mirrored by chrome/browser/win/winsparkle_glue.cc, and carried in
         the appcast's sparkle:version — the three must stay in lockstep.
         Returns: e.g., "10000.0.47.0.2"
