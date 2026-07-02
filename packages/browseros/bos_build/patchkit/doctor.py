@@ -194,10 +194,30 @@ def check_repo(
 
 
 def load_features(root_dir: Path) -> Dict:
+    """Load and shape-validate features.yaml; raises ValueError on a broken file."""
     from .features_io import load_features_yaml
 
-    data = load_features_yaml(root_dir / "bos_build" / "features.yaml")
-    return data.get("features") or {}
+    features_file = root_dir / "bos_build" / "features.yaml"
+    data = load_features_yaml(features_file)
+    if not isinstance(data, dict):
+        raise ValueError(f"{features_file}: top level must be a mapping")
+    features = data.get("features") or {}
+    if not isinstance(features, dict):
+        raise ValueError(f"{features_file}: 'features' must be a mapping")
+    for name, spec in features.items():
+        if not isinstance(spec, dict):
+            raise ValueError(
+                f"{features_file}: feature '{name}' must be a mapping "
+                "with description/files"
+            )
+        files = spec.get("files") or []
+        if not isinstance(files, list) or not all(
+            isinstance(entry, str) for entry in files
+        ):
+            raise ValueError(
+                f"{features_file}: feature '{name}' files must be a list of paths"
+            )
+    return features
 
 
 def diagnose_repo(root_dir: Path, feature: Optional[str] = None) -> List[Finding]:
@@ -238,15 +258,6 @@ def check_apply(
         total=total,
         clean=total - len(failures),
         failures=failures,
-    )
-
-
-def diagnose_apply(
-    root_dir: Path, chromium_src: Path, feature: Optional[str] = None
-) -> ApplyReport:
-    """Apply-check against a browseros package root's patch stack."""
-    return check_apply(
-        load_features(root_dir), root_dir / "chromium_patches", chromium_src, feature
     )
 
 

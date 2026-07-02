@@ -153,7 +153,9 @@ browseros dev doctor --feature llm-chat --json  # filtered / machine-readable
 
 Exit 0 healthy / 1 findings / 2 usage or environment errors. `--against`
 only ever dry-runs (`git apply --check`); the chromium tree is never
-modified.
+modified. The dry-run is stricter than the build's apply step (which
+falls back to `--ignore-whitespace`/`--3way`), so a doctor failure means
+"needs attention", not necessarily "won't build".
 
 ## Tests
 

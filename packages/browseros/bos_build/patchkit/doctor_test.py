@@ -17,6 +17,7 @@ from bos_build.patchkit.doctor import (
     check_repo,
     compute_claims,
     diagnose_repo,
+    load_features,
     patch_base_paths,
 )
 
@@ -423,6 +424,41 @@ class ComputeClaimsTest(unittest.TestCase):
         self.assertEqual(
             compute_claims(features, bases), {"chrome/sub/a.cc": ["abc", "zed"]}
         )
+
+
+class LoadFeaturesTest(unittest.TestCase):
+    def _root(self, features_yaml: str) -> Path:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        (root / "bos_build").mkdir()
+        (root / "bos_build" / "features.yaml").write_text(features_yaml)
+        return root
+
+    def test_well_formed_file_loads(self):
+        root = self._root(
+            'version: "1.0"\nfeatures:\n  one:\n'
+            '    description: "feat: x"\n    files:\n      - chrome/a.cc\n'
+        )
+        self.assertEqual(list(load_features(root)), ["one"])
+
+    def test_feature_with_null_body_is_a_value_error(self):
+        root = self._root("features:\n  foo:\n")
+        with self.assertRaisesRegex(ValueError, "foo"):
+            load_features(root)
+
+    def test_non_mapping_top_level_is_a_value_error(self):
+        root = self._root("- not\n- a\n- mapping\n")
+        with self.assertRaisesRegex(ValueError, "mapping"):
+            load_features(root)
+
+    def test_non_string_file_entry_is_a_value_error(self):
+        root = self._root(
+            'features:\n  one:\n    description: "feat: x"\n'
+            "    files:\n      - [nested, list]\n"
+        )
+        with self.assertRaisesRegex(ValueError, "list of paths"):
+            load_features(root)
 
 
 class RepoTruthTest(unittest.TestCase):
