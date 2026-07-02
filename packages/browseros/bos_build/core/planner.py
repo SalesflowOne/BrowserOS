@@ -160,7 +160,6 @@ def _plan_universal_runs(
             "string_replaces",
             "series_patches",
             "patches",
-            "product_identity",
         ]
     )
 
@@ -195,7 +194,6 @@ def _plan_release(switches: Switches, platform: str) -> List[str]:
             "string_replaces",
             "series_patches",
             "patches",
-            "product_identity",
         ]
     )
 
@@ -226,7 +224,6 @@ def _plan_debug(switches: Switches, platform: str) -> List[str]:
             "chromium_replace",
             "string_replaces",
             "patches",
-            "product_identity",
             "configure",
             "compile",
         ]

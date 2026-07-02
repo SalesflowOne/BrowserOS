@@ -1,17 +1,32 @@
 diff --git a/chrome/install_static/chromium_install_modes.h b/chrome/install_static/chromium_install_modes.h
-index ee62888f89705..7ec72d302bc4b 100644
+index ee62888f89705..372975b647760 100644
 --- a/chrome/install_static/chromium_install_modes.h
 +++ b/chrome/install_static/chromium_install_modes.h
-@@ -21,7 +21,7 @@ inline constexpr wchar_t kCompanyPathName[] = L"";
+@@ -10,6 +10,7 @@
+ #include <array>
+ 
+ #include "chrome/app/chrome_dll_resource.h"
++#include "chrome/browser/browseros/buildflags.h"
+ #include "chrome/common/chrome_icon_resources_win.h"
+ #include "chrome/install_static/install_constants.h"
+ 
+@@ -20,8 +21,13 @@ namespace install_static {
+ inline constexpr wchar_t kCompanyPathName[] = L"";
  
  // The brand-specific product name to be included as a component of the install
- // and user data directory paths.
+-// and user data directory paths.
 -inline constexpr wchar_t kProductPathName[] = L"Chromium";
++// and user data directory paths. Per-product so BrowserOS and BrowserClaw get
++// disjoint user-data roots (and singletons) under %LOCALAPPDATA%.
++#if BUILDFLAG(BROWSEROS_PRODUCT_BROWSERCLAW)
++inline constexpr wchar_t kProductPathName[] = L"BrowserClaw";
++#else
 +inline constexpr wchar_t kProductPathName[] = L"BrowserOS";
++#endif
  
  // The brand-specific safe browsing client name.
  inline constexpr char kSafeBrowsingName[] = "chromium";
-@@ -44,48 +44,49 @@ inline constexpr auto kInstallModes = std::to_array<InstallConstants>({
+@@ -44,48 +50,49 @@ inline constexpr auto kInstallModes = std::to_array<InstallConstants>({
              L"",  // Empty install_suffix for the primary install mode.
          .logo_suffix = L"",  // No logo suffix for the primary install mode.
          .app_guid =
