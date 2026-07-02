@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import type { McpServerLink } from 'agent-mcp-manager'
+import { env } from '../../src/env'
 import {
   resetMcpManagerForTesting,
   setMcpManagerForTesting,
@@ -18,8 +19,14 @@ function stubWithLinks(links: McpServerLink[]) {
 }
 
 describe('connectBrowserosToHarness', () => {
-  beforeEach(() => resetMcpManagerForTesting())
-  afterEach(() => resetMcpManagerForTesting())
+  beforeEach(() => {
+    env.proxyPort = null
+    resetMcpManagerForTesting()
+  })
+  afterEach(() => {
+    env.proxyPort = null
+    resetMcpManagerForTesting()
+  })
 
   it('writes a "browseros" entry with the canonical URL and links it to the right agent id', async () => {
     const stub = createStubMcpManager()
@@ -64,15 +71,44 @@ describe('connectBrowserosToHarness', () => {
     expect(payload.spec.url).not.toContain('/cockpit')
   })
 
-  it('uses the caller-provided public MCP URL when server and proxy ports differ', async () => {
+  it('uses the trusted proxy port when server and proxy ports differ', async () => {
+    env.proxyPort = 9512
     const stub = createStubMcpManager()
     setMcpManagerForTesting(stub)
-    await connectBrowserosToHarness('Claude Code', 'http://127.0.0.1:9512/mcp')
+    await connectBrowserosToHarness('Claude Code')
     const add = stub.calls.find((c) => c.method === 'add')
     const payload = add?.payload as {
       spec: { transport: string; url?: string }
     }
     expect(payload.spec.url).toBe('http://127.0.0.1:9512/mcp')
+  })
+
+  it('relinks an existing managed entry so URL drift rewrites the harness config', async () => {
+    env.proxyPort = 9512
+    const stub = createStubMcpManager()
+    stub.listLinks = async () => {
+      stub.calls.push({
+        method: 'listLinks',
+        payload: { serverNames: ['BrowserClaw'] },
+      })
+      return [
+        {
+          serverName: 'BrowserClaw',
+          agent: 'claude-code',
+          configPath: '/tmp/stub-claude-code.json',
+        },
+      ]
+    }
+    setMcpManagerForTesting(stub)
+    await connectBrowserosToHarness('Claude Code')
+    expect(stub.calls.map((call) => call.method)).toEqual([
+      'add',
+      'listLinks',
+      'unlink',
+      'link',
+    ])
+    const link = stub.calls.find((c) => c.method === 'link')
+    expect((link?.payload as { agent: string }).agent).toBe('claude-code')
   })
 
   it('short-circuits as a no-op for BrowserOS-internal harnesses (Hermes, OpenClaw)', async () => {

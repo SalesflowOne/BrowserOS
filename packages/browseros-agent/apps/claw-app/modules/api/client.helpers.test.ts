@@ -50,7 +50,14 @@ function installWindow(search: string, storage = new Map<string, string>()) {
   })
 }
 
-function installFetchRecorder(unhealthyOrigins = new Set<string>()): string[] {
+function installFetchRecorder(options?: {
+  unhealthyServerOrigins?: Set<string>
+  unhealthyProxyOrigins?: Set<string>
+}): string[] {
+  const unhealthyServerOrigins =
+    options?.unhealthyServerOrigins ?? new Set<string>()
+  const unhealthyProxyOrigins =
+    options?.unhealthyProxyOrigins ?? new Set<string>()
   const requests: string[] = []
   Object.defineProperty(globalThis, 'fetch', {
     configurable: true,
@@ -59,10 +66,17 @@ function installFetchRecorder(unhealthyOrigins = new Set<string>()): string[] {
       requests.push(url)
       if (url.endsWith('/system/health')) {
         const origin = new URL(url).origin
-        if (unhealthyOrigins.has(origin)) {
+        if (unhealthyServerOrigins.has(origin)) {
           return new Response('{}', { status: 503 })
         }
         return Response.json({ status: 'ok' })
+      }
+      if (url.endsWith('/health')) {
+        const origin = new URL(url).origin
+        if (unhealthyProxyOrigins.has(origin)) {
+          return new Response('{}', { status: 503 })
+        }
+        return new Response('ok')
       }
       return new Response('{}', { status: 200 })
     },
@@ -171,7 +185,9 @@ describe('BrowserOS managed port resolution', () => {
 
   it('prefers the BrowserOS proxy port pref for MCP traffic', async () => {
     installBrowserOSPrefs({ 'browseros.server.proxy_port': 9512 })
-    installFetchRecorder()
+    const requests = installFetchRecorder({
+      unhealthyServerOrigins: new Set(['http://127.0.0.1:9512']),
+    })
 
     await expect(
       resolveBrowserOSMcpBaseUrl({
@@ -181,6 +197,7 @@ describe('BrowserOS managed port resolution', () => {
         fallback,
       }),
     ).resolves.toBe('http://127.0.0.1:9512')
+    expect(requests).toEqual(['http://127.0.0.1:9512/health'])
   })
 
   it('falls back to trusted sources when the pref is invalid', async () => {
@@ -198,7 +215,9 @@ describe('BrowserOS managed port resolution', () => {
 
   it('falls back when a valid server port pref is not serving claw-system health', async () => {
     installBrowserOSPrefs({ 'browseros.server.server_port': 9511 })
-    const requests = installFetchRecorder(new Set(['http://127.0.0.1:9511']))
+    const requests = installFetchRecorder({
+      unhealthyServerOrigins: new Set(['http://127.0.0.1:9511']),
+    })
 
     await expect(
       resolveBrowserOSServerBaseUrl({
@@ -211,9 +230,11 @@ describe('BrowserOS managed port resolution', () => {
     expect(requests).toEqual(['http://127.0.0.1:9511/system/health'])
   })
 
-  it('falls back when a valid proxy port pref is not serving claw-system health', async () => {
+  it('falls back when a valid proxy port pref is not serving proxy health', async () => {
     installBrowserOSPrefs({ 'browseros.server.proxy_port': 9000 })
-    const requests = installFetchRecorder(new Set(['http://127.0.0.1:9000']))
+    const requests = installFetchRecorder({
+      unhealthyProxyOrigins: new Set(['http://127.0.0.1:9000']),
+    })
 
     await expect(
       resolveBrowserOSMcpBaseUrl({
@@ -223,7 +244,7 @@ describe('BrowserOS managed port resolution', () => {
         fallback,
       }),
     ).resolves.toBe(fallback)
-    expect(requests).toEqual(['http://127.0.0.1:9000/system/health'])
+    expect(requests).toEqual(['http://127.0.0.1:9000/health'])
   })
 
   it('routes Hono API calls through the BrowserOS server port pref', async () => {

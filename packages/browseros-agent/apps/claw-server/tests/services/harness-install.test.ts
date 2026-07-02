@@ -5,6 +5,7 @@
  */
 
 import { describe, expect, test } from 'bun:test'
+import { env } from '../../src/env'
 import { setMcpManagerForTesting } from '../../src/lib/mcp-manager'
 import type { NewAgentValues } from '../../src/routes/agents/schemas'
 import * as agents from '../../src/routes/agents/service'
@@ -151,7 +152,7 @@ describe('harness install service', () => {
       // Reconcile installs the new slug FIRST so the harness has a
       // working entry continuously, then unlinks the old slug.
       expect(order[0]).toEqual({ method: 'add', name: 'renamed-profile' })
-      expect(order[1]).toEqual({ method: 'link', name: 'renamed-profile' })
+      expect(order[2]).toEqual({ method: 'link', name: 'renamed-profile' })
       const unlinkIdx = order.findIndex(
         (o) => o.method === 'unlink' && o.name === 'original-name',
       )
@@ -202,6 +203,49 @@ describe('harness install service', () => {
       })
       expect(stub.calls).toEqual([])
       void created
+    })
+  })
+
+  test('update with only an MCP URL change re-links the existing slug', async () => {
+    await withTempBrowserosDir(async () => {
+      const previousProxyPort = env.proxyPort
+      const stub = createStubMcpManager()
+      setMcpManagerForTesting(stub)
+      const created = await agents.create(makeInput({ name: 'Same Url Drift' }))
+      stub.reset()
+      env.proxyPort = 9512
+      stub.listLinks = async () => {
+        stub.calls.push({
+          method: 'listLinks',
+          payload: { serverNames: [created.slug] },
+        })
+        return [
+          {
+            serverName: created.slug,
+            agent: 'claude-desktop',
+            configPath: '/tmp/stub-claude-desktop.json',
+          },
+        ]
+      }
+      try {
+        await agents.update(created.id, makeInput({ name: 'Same Url Drift' }))
+      } finally {
+        env.proxyPort = previousProxyPort
+      }
+      expect(stub.calls.map((c) => c.method)).toEqual([
+        'add',
+        'listLinks',
+        'unlink',
+        'link',
+      ])
+      const add = stub.calls.find((c) => c.method === 'add')
+      expect(add?.payload).toMatchObject({
+        name: created.slug,
+        spec: {
+          command: 'npx',
+          args: ['mcp-remote', `http://127.0.0.1:9512/mcp/${created.slug}`],
+        },
+      })
     })
   })
 

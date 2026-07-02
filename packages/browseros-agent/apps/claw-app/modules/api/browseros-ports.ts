@@ -12,7 +12,8 @@ const BROWSEROS_SERVER_PORT_PREF = 'browseros.server.server_port'
 const BROWSEROS_PROXY_PORT_PREF = 'browseros.server.proxy_port'
 const PORT_HEALTH_TIMEOUT_MS = 500
 const PORT_HEALTH_CACHE_TTL_MS = 2_000
-const SYSTEM_HEALTH_PATH = '/system/health'
+const SERVER_HEALTH_PATH = '/system/health'
+const PROXY_HEALTH_PATH = '/health'
 
 const portHealthCache = new Map<
   string,
@@ -66,7 +67,7 @@ export async function resolveBrowserOSServerBaseUrl(
 ): Promise<string> {
   const port = await readBrowserOSPort(BROWSEROS_SERVER_PORT_PREF)
   const baseUrl = port ? loopbackBaseUrl(port) : null
-  return baseUrl && (await servesClawSystem(baseUrl))
+  return baseUrl && (await servesClawSystem(baseUrl, SERVER_HEALTH_PATH))
     ? baseUrl
     : resolveApiBaseUrlFromSources(sources)
 }
@@ -77,7 +78,7 @@ export async function resolveBrowserOSMcpBaseUrl(
 ): Promise<string> {
   const port = await readBrowserOSPort(BROWSEROS_PROXY_PORT_PREF)
   const baseUrl = port ? loopbackBaseUrl(port) : null
-  return baseUrl && (await servesClawSystem(baseUrl))
+  return baseUrl && (await servesClawSystem(baseUrl, PROXY_HEALTH_PATH))
     ? baseUrl
     : resolveApiBaseUrlFromSources(sources)
 }
@@ -123,28 +124,36 @@ function loopbackBaseUrl(port: number): string {
   return `http://127.0.0.1:${port}`
 }
 
-async function servesClawSystem(baseUrl: string): Promise<boolean> {
-  const cached = portHealthCache.get(baseUrl)
+async function servesClawSystem(
+  baseUrl: string,
+  healthPath: string,
+): Promise<boolean> {
+  const cacheKey = `${baseUrl}${healthPath}`
+  const cached = portHealthCache.get(cacheKey)
   if (cached && Date.now() - cached.checkedAt < PORT_HEALTH_CACHE_TTL_MS) {
     return cached.healthy
   }
 
-  const healthy = await probeClawSystem(baseUrl)
-  portHealthCache.set(baseUrl, { checkedAt: Date.now(), healthy })
+  const healthy = await probeClawSystem(baseUrl, healthPath)
+  portHealthCache.set(cacheKey, { checkedAt: Date.now(), healthy })
   return healthy
 }
 
-async function probeClawSystem(baseUrl: string): Promise<boolean> {
+async function probeClawSystem(
+  baseUrl: string,
+  healthPath: string,
+): Promise<boolean> {
   if (typeof fetch !== 'function') return false
 
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), PORT_HEALTH_TIMEOUT_MS)
   try {
-    const response = await fetch(`${baseUrl}${SYSTEM_HEALTH_PATH}`, {
+    const response = await fetch(`${baseUrl}${healthPath}`, {
       cache: 'no-store',
       signal: controller.signal,
     })
     if (!response.ok) return false
+    if (healthPath === PROXY_HEALTH_PATH) return true
     const body = await response.json().catch(() => null)
     return (
       body !== null &&

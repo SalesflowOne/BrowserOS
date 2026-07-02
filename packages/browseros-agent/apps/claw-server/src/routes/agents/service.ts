@@ -28,7 +28,6 @@ import {
   uninstallForAgent,
 } from '../../services/harness-install'
 import {
-  type AgentMutationValues,
   type AgentProfileSummary,
   type CreatedAgent,
   type DeletedAgent,
@@ -80,12 +79,12 @@ function backendBaseUrl(): string {
   return getLocalServerUrl() ?? `http://127.0.0.1:${env.port}`
 }
 
-function mcpBaseUrl(publicMcpBaseUrl?: string): string {
-  return publicMcpBaseUrl ?? backendBaseUrl()
+function mcpBaseUrl(): string {
+  return env.proxyPort ? `http://127.0.0.1:${env.proxyPort}` : backendBaseUrl()
 }
 
-function buildMcpUrl(slug: string, publicMcpBaseUrl?: string): string {
-  return `${mcpBaseUrl(publicMcpBaseUrl)}/mcp/${slug}`
+function buildMcpUrl(slug: string): string {
+  return `${mcpBaseUrl()}/mcp/${slug}`
 }
 
 function buildCliCommand(slug: string): string {
@@ -154,10 +153,7 @@ async function loadById(id: string): Promise<StoredAgentProfile | null> {
   }
 }
 
-function summariseProfile(
-  profile: StoredAgentProfile,
-  publicMcpBaseUrl?: string,
-): AgentProfileSummary {
+function summariseProfile(profile: StoredAgentProfile): AgentProfileSummary {
   const blockedActionCount = Object.values(profile.approvals).filter(
     (verdict) => verdict === 'Block',
   ).length
@@ -182,7 +178,7 @@ function summariseProfile(
     alwaysAllowCount: 0,
     lastRunAt: 'Never run',
     status: profile.status,
-    mcpUrl: buildMcpUrl(profile.slug, publicMcpBaseUrl),
+    mcpUrl: buildMcpUrl(profile.slug),
   }
 }
 
@@ -198,13 +194,11 @@ function stripWizardShape(profile: StoredAgentProfile): NewAgentValues {
   }
 }
 
-export async function list(
-  publicMcpBaseUrl?: string,
-): Promise<AgentProfileSummary[]> {
+export async function list(): Promise<AgentProfileSummary[]> {
   const profiles = await loadAll()
   return profiles
     .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
-    .map((profile) => summariseProfile(profile, publicMcpBaseUrl))
+    .map((profile) => summariseProfile(profile))
 }
 
 export async function getDetail(id: string): Promise<NewAgentValues | null> {
@@ -212,28 +206,20 @@ export async function getDetail(id: string): Promise<NewAgentValues | null> {
   return profile ? stripWizardShape(profile) : null
 }
 
-function storedValues(input: AgentMutationValues): NewAgentValues {
-  const { publicMcpBaseUrl: _publicMcpBaseUrl, ...values } = input
-  return values
-}
-
-export async function create(
-  input: AgentMutationValues,
-): Promise<CreatedAgent> {
+export async function create(input: NewAgentValues): Promise<CreatedAgent> {
   return slugMutex.run(async () => {
-    const values = storedValues(input)
     const id = nanoid(8)
     const existing = await loadAll()
     const slug = uniqueSlug(
-      toSlug(values.name),
+      toSlug(input.name),
       new Set(existing.map((p) => p.slug)),
     )
     const now = nowIso()
     const profile: StoredAgentProfile = {
-      ...values,
+      ...input,
       id,
       slug,
-      mcpUrl: buildMcpUrl(slug, input.publicMcpBaseUrl),
+      mcpUrl: buildMcpUrl(slug),
       status: 'configured',
       createdAt: now,
       updatedAt: now,
@@ -262,14 +248,13 @@ export async function create(
 
 export async function update(
   id: string,
-  input: AgentMutationValues,
+  input: NewAgentValues,
 ): Promise<StoredAgentProfile | null> {
   return slugMutex.run(async () => {
-    const values = storedValues(input)
     const existing = await loadById(id)
     if (!existing) return null
     const existingProfiles = await loadAll()
-    const nameSlug = toSlug(values.name)
+    const nameSlug = toSlug(input.name)
     const slug =
       nameSlug === toSlug(existing.name)
         ? existing.slug
@@ -283,10 +268,10 @@ export async function update(
           )
     const next: StoredAgentProfile = {
       ...existing,
-      ...values,
+      ...input,
       id,
       slug,
-      mcpUrl: buildMcpUrl(slug, input.publicMcpBaseUrl),
+      mcpUrl: buildMcpUrl(slug),
       status: existing.status,
       createdAt: existing.createdAt,
       updatedAt: nowIso(),
@@ -297,7 +282,11 @@ export async function update(
     // Failures are logged inside the helpers and do NOT roll back the
     // profile rewrite.
     await reconcileHarnessLink({
-      before: { slug: existing.slug, harness: existing.harness },
+      before: {
+        slug: existing.slug,
+        mcpUrl: existing.mcpUrl,
+        harness: existing.harness,
+      },
       after: { slug: next.slug, mcpUrl: next.mcpUrl, harness: next.harness },
     })
     return next
@@ -328,7 +317,6 @@ export async function remove(id: string): Promise<DeletedAgent | null> {
 
 export async function regenerateMcpUrl(
   id: string,
-  publicMcpBaseUrl?: string,
 ): Promise<RegeneratedMcpUrl | null> {
   return slugMutex.run(async () => {
     const existing = await loadById(id)
@@ -348,7 +336,7 @@ export async function regenerateMcpUrl(
     const next: StoredAgentProfile = {
       ...existing,
       slug,
-      mcpUrl: buildMcpUrl(slug, publicMcpBaseUrl),
+      mcpUrl: buildMcpUrl(slug),
       updatedAt: nowIso(),
     }
     await writeJson(fileFor(id), next, storedAgentProfileSchema)
@@ -357,7 +345,11 @@ export async function regenerateMcpUrl(
     // automatically. Harness is unchanged so only the slug pair
     // differs.
     await reconcileHarnessLink({
-      before: { slug: existing.slug, harness: existing.harness },
+      before: {
+        slug: existing.slug,
+        mcpUrl: existing.mcpUrl,
+        harness: existing.harness,
+      },
       after: { slug: next.slug, mcpUrl: next.mcpUrl, harness: next.harness },
     })
     return { id, mcpUrl: next.mcpUrl }

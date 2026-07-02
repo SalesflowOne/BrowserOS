@@ -78,6 +78,15 @@ export async function installForAgent(
     // `add` overwrites any existing entry with the same name so URL
     // drift (port change between boots) gets caught on every install.
     await mgr.add({ name: profile.slug, spec })
+    const existingLinks = await mgr.listLinks({ serverNames: [profile.slug] })
+    const existingLink = existingLinks.find((link) => link.agent === agentId)
+    if (existingLink) {
+      await mgr.unlink({
+        serverName: profile.slug,
+        agent: agentId,
+        configPath: existingLink.configPath,
+      })
+    }
     const link = await mgr.link({ serverName: profile.slug, agent: agentId })
     logger.info('installed cockpit agent into harness', {
       slug: profile.slug,
@@ -132,12 +141,12 @@ export async function uninstallForAgent(
  * working entry continuously; the stale entry under the old
  * (harness, slug) is unlinked afterwards.
  *
- * No-op when both the harness and slug stayed the same. Returns the
+ * No-op when harness, slug, and URL all stayed the same. Returns the
  * install + uninstall outcomes so callers can log them (today) or
  * surface them in the response (later).
  */
 export async function reconcileHarnessLink(input: {
-  before: Pick<StoredAgentProfile, 'slug' | 'harness'>
+  before: Pick<StoredAgentProfile, 'slug' | 'mcpUrl' | 'harness'>
   after: Pick<StoredAgentProfile, 'slug' | 'mcpUrl' | 'harness'>
 }): Promise<{
   install: InstallOutcome | null
@@ -146,11 +155,13 @@ export async function reconcileHarnessLink(input: {
   const { before, after } = input
   const harnessChanged = before.harness !== after.harness
   const slugChanged = before.slug !== after.slug
-  if (!harnessChanged && !slugChanged) {
+  const urlChanged = before.mcpUrl !== after.mcpUrl
+  if (!harnessChanged && !slugChanged && !urlChanged) {
     return { install: null, uninstall: null }
   }
   const install = await installForAgent(after)
-  const uninstall = await uninstallForAgent(before)
+  const uninstall =
+    harnessChanged || slugChanged ? await uninstallForAgent(before) : null
   return { install, uninstall }
 }
 

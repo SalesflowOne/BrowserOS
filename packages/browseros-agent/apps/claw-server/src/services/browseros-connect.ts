@@ -53,12 +53,11 @@ export interface ConnectionState {
 const ALL_HARNESSES: readonly Harness[] = harnessEnum.options
 
 function canonicalMcpUrl(): string {
-  return canonicalMcpUrlForPort(env.port)
+  return canonicalMcpUrlForPort(env.proxyPort ?? env.port)
 }
 
 export async function connectBrowserosToHarness(
   harness: Harness,
-  publicMcpUrl?: string,
 ): Promise<ConnectionState> {
   const agentId = HARNESS_TO_AGENT_ID[harness]
   if (agentId === null) {
@@ -70,12 +69,23 @@ export async function connectBrowserosToHarness(
     }
   }
   const mgr = getMcpManager()
-  const url = publicMcpUrl ?? canonicalMcpUrl()
+  const url = canonicalMcpUrl()
   try {
     await mgr.add({
       name: BROWSEROS_MCP_SERVER_NAME,
       spec: specFor(agentId, url),
     })
+    const existingLinks = await mgr.listLinks({
+      serverNames: [BROWSEROS_MCP_SERVER_NAME],
+    })
+    const existingLink = existingLinks.find((link) => link.agent === agentId)
+    if (existingLink) {
+      await mgr.unlink({
+        serverName: BROWSEROS_MCP_SERVER_NAME,
+        agent: agentId,
+        configPath: existingLink.configPath,
+      })
+    }
     const link = await mgr.link({
       serverName: BROWSEROS_MCP_SERVER_NAME,
       agent: agentId,
