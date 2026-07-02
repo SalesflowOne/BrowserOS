@@ -8,7 +8,6 @@ from .common import (
     ExistingAppcast,
     SignedArtifact,
     SERVER_PLATFORMS,
-    APPCAST_TEMPLATE,
     find_server_resources_dir,
     create_server_bundle_zip,
 )
@@ -43,5 +42,4 @@ __all__ = [
     "sign_server_bundle_macos",
     "sign_server_bundle_windows",
     "SERVER_PLATFORMS",
-    "APPCAST_TEMPLATE",
 ]
