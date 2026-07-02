@@ -6,10 +6,17 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from bos_build.core.planner import Switches, load_profile, plan, required_env
+from bos_build.core.planner import (
+    Switches,
+    load_profile,
+    plan,
+    plan_runs,
+    required_env,
+)
 
 RELEASE = Switches(preset="release")
 CI = Switches(preset="release", clean=False, provision="none", sign=False, upload=False)
+UNIVERSAL = Switches(preset="release", architectures=("universal",))
 
 
 class ReleaseGoldenTest(unittest.TestCase):
@@ -84,27 +91,53 @@ class ReleaseGoldenTest(unittest.TestCase):
         self.assertFalse(any(s.startswith("sign") for s in steps))
 
     def test_macos_universal(self):
-        # release.browseros.macos.universal.yaml — universal_build replaces
-        # the tail and the resources copy is skipped
+        # release.browseros.macos.universal.yaml — three sequential runs on
+        # one prepped tree: prep exactly once (repeating clean/git_setup/
+        # patches would reset it), resources per arch, then the merge
         self.assertEqual(
-            plan(RELEASE, "universal", "macos"),
+            plan_runs(UNIVERSAL, "macos"),
             [
-                "clean",
-                "git_setup",
-                "sparkle_setup",
-                "download_resources",
-                "bundled_extensions",
-                "chromium_replace",
-                "string_replaces",
-                "series_patches",
-                "patches",
-                "universal_build",
+                (
+                    "arm64",
+                    [
+                        "clean",
+                        "git_setup",
+                        "sparkle_setup",
+                        "download_resources",
+                        "bundled_extensions",
+                        "chromium_replace",
+                        "string_replaces",
+                        "series_patches",
+                        "patches",
+                        "resources",
+                        "configure",
+                        "compile",
+                        "sign_macos",
+                        "package_macos",
+                        "upload",
+                    ],
+                ),
+                (
+                    "x64",
+                    [
+                        "resources",
+                        "configure",
+                        "compile",
+                        "sign_macos",
+                        "package_macos",
+                        "upload",
+                    ],
+                ),
+                (
+                    "universal",
+                    ["merge_universal", "sign_macos", "package_macos", "upload"],
+                ),
             ],
         )
 
     def test_universal_rejected_off_macos(self):
         with self.assertRaisesRegex(ValueError, "only supported on macos"):
-            plan(RELEASE, "universal", "linux")
+            plan_runs(UNIVERSAL, "linux")
 
     def test_noupload_variant(self):
         # release.macos.arm64.noupload.yaml == release minus upload
@@ -192,7 +225,11 @@ class DebugGoldenTest(unittest.TestCase):
 
     def test_debug_rejects_universal(self):
         with self.assertRaisesRegex(ValueError, "not supported for debug"):
-            plan(Switches(preset="debug"), "universal", "macos")
+            plan_runs(Switches(preset="debug", architectures=("universal",)), "macos")
+
+    def test_debug_rejection_wins_over_platform(self):
+        with self.assertRaisesRegex(ValueError, "not supported for debug"):
+            plan_runs(Switches(preset="debug", architectures=("universal",)), "linux")
 
 
 class SwitchesTest(unittest.TestCase):
@@ -365,19 +402,57 @@ class DownloadSwitchTest(unittest.TestCase):
 
 
 
-class UniversalEnvTest(unittest.TestCase):
-    def test_universal_release_requires_signing_env_upfront(self):
-        # parity with the deleted release.*.macos.universal.yaml required_envs
-        env = required_env(plan(RELEASE, "universal", "macos"))
-        self.assertEqual(
-            env,
-            [
-                "MACOS_CERTIFICATE_NAME",
-                "PROD_MACOS_NOTARIZATION_APPLE_ID",
-                "PROD_MACOS_NOTARIZATION_TEAM_ID",
-                "PROD_MACOS_NOTARIZATION_PWD",
-            ],
+class UniversalRunsTest(unittest.TestCase):
+    def test_flat_plan_rejects_universal(self):
+        with self.assertRaisesRegex(ValueError, "plan_runs"):
+            plan(RELEASE, "universal", "macos")
+
+    def test_universal_requires_sign(self):
+        with self.assertRaisesRegex(ValueError, "always signed"):
+            plan_runs(
+                Switches(preset="release", architectures=("universal",), sign=False),
+                "macos",
+            )
+
+    def test_universal_rejected_in_multi_arch_list(self):
+        with self.assertRaisesRegex(ValueError, "cannot be combined"):
+            plan_runs(
+                Switches(preset="release", architectures=("x64", "universal")),
+                "macos",
+            )
+
+    def test_noupload_drops_upload_from_every_run(self):
+        runs = plan_runs(
+            Switches(preset="release", architectures=("universal",), upload=False),
+            "macos",
         )
+        self.assertEqual([arch for arch, _ in runs], ["arm64", "x64", "universal"])
+        for arch, steps in runs:
+            self.assertNotIn("upload", steps, arch)
+            self.assertEqual(steps[-1], "package_macos", arch)
+
+    def test_non_universal_runs_match_flat_plan_per_arch(self):
+        sw = Switches(preset="release", architectures=("x64", "arm64"))
+        self.assertEqual(
+            plan_runs(sw, "linux"),
+            [(arch, plan(sw, arch, "linux")) for arch in ("x64", "arm64")],
+        )
+
+
+class UniversalEnvTest(unittest.TestCase):
+    def test_universal_runs_require_signing_env_upfront(self):
+        # parity with the deleted release.*.macos.universal.yaml required_envs
+        for arch, steps in plan_runs(UNIVERSAL, "macos"):
+            self.assertEqual(
+                required_env(steps),
+                [
+                    "MACOS_CERTIFICATE_NAME",
+                    "PROD_MACOS_NOTARIZATION_APPLE_ID",
+                    "PROD_MACOS_NOTARIZATION_TEAM_ID",
+                    "PROD_MACOS_NOTARIZATION_PWD",
+                ],
+                arch,
+            )
 
 if __name__ == "__main__":
     unittest.main()
