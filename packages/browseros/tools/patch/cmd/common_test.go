@@ -411,6 +411,9 @@ func TestParseRevRange(t *testing.T) {
 	if _, _, err := parseRevRange("browseros"); err == nil {
 		t.Fatalf("expected invalid range error")
 	}
+	if _, _, err := parseRevRange("browseros...task/demo"); err == nil {
+		t.Fatalf("expected three-dot range error")
+	}
 }
 
 func TestCheckoutCommandExamplesUseNamedCheckout(t *testing.T) {

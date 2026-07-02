@@ -1656,13 +1656,15 @@ func TestFeatureAddExcludesExistingClaimsAndLintPasses(t *testing.T) {
 	runGit(t, workspacePath, "commit", "-m", "feat: demo")
 
 	repoInfo := newPatchRepo(t, baseCommit)
-	writeFeaturesYAML(t, repoInfo.Root, `version: "1.0"
+	initialFeatures := `version: "1.0"
 features:
+  # keep curated comments
   existing:
     description: "chore: existing"
     files:
       - chrome/existing.cc
-`)
+`
+	writeFeaturesYAML(t, repoInfo.Root, initialFeatures)
 	if _, err := Extract(ctx, ExtractOptions{
 		Workspace:  workspace.Entry{Name: "ws", Path: workspacePath},
 		Repo:       repoInfo,
@@ -1700,6 +1702,9 @@ features:
 	body, err := os.ReadFile(filepath.Join(repoInfo.Root, "bos_build", "features.yaml"))
 	if err != nil {
 		t.Fatalf("read features: %v", err)
+	}
+	if !strings.HasPrefix(string(body), initialFeatures+"\n") {
+		t.Fatalf("feature add should preserve existing yaml text, got:\n%s", body)
 	}
 	for _, want := range []string{"demo:", `description: "feat: demo"`, "chrome/new.cc"} {
 		if !strings.Contains(string(body), want) {

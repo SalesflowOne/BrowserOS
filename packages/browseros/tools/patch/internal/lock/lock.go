@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/browseros-ai/BrowserOS/packages/browseros/tools/patch/internal/git"
 	"golang.org/x/sys/unix"
@@ -59,14 +60,20 @@ func repoLockPath(ctx context.Context, repoRoot string) (string, error) {
 }
 
 func flock(ctx context.Context, fd int) error {
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
 	for {
-		if err := unix.Flock(fd, unix.LOCK_EX); err != unix.EINTR {
+		err := unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB)
+		if err == nil {
+			return nil
+		}
+		if err != unix.EWOULDBLOCK && err != unix.EAGAIN && err != unix.EINTR {
 			return err
 		}
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("acquire patch repo lock: %w", ctx.Err())
-		default:
+		case <-ticker.C:
 		}
 	}
 }

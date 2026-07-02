@@ -124,6 +124,9 @@ func newFeatureAddCommand() *cobra.Command {
 }
 
 func parseRevRange(spec string) (string, string, error) {
+	if strings.Contains(spec, "...") {
+		return "", "", fmt.Errorf(`expected --files-from-range in "<start>..<end>" form, not three-dot syntax`)
+	}
 	parts := strings.Split(spec, "..")
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return "", "", fmt.Errorf(`expected --files-from-range in "<start>..<end>" form`)

@@ -13,6 +13,7 @@ func init() {
 	var src string
 	var force bool
 	var remote string
+	var noPull bool
 	command := &cobra.Command{
 		Use:         "refresh [checkout]",
 		Annotations: map[string]string{"group": "Core:"},
@@ -39,7 +40,7 @@ func init() {
 					Repo:      lockedInfo,
 					Remote:    remote,
 					Force:     force,
-					Pull:      true,
+					Pull:      !noPull,
 					Progress:  progress,
 				})
 				return refreshErr
@@ -70,6 +71,7 @@ func init() {
 	}
 	command.Flags().StringVar(&src, "src", "", srcFlagUsage)
 	command.Flags().BoolVar(&force, "force", false, "Abandon tracked checkout state before rebuilding")
+	command.Flags().BoolVar(&noPull, "no-pull", false, "Use the local patch repo state without pulling first")
 	command.Flags().StringVar(&remote, "remote", "origin", "Remote to pull patch repo updates from")
 	rootCmd.AddCommand(command)
 }

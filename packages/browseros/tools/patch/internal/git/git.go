@@ -229,6 +229,7 @@ func CommitIndexWithBodyEnv(ctx context.Context, dir string, subject string, bod
 	if body != "" {
 		message += "\n" + body + "\n"
 	}
+	// Bypass hooks and signing so refresh materialization hashes match across checkouts.
 	result, err := RunEnv(ctx, dir, []byte(message), env, "-c", "commit.gpgsign=false", "commit-tree", tree, "-p", parent)
 	if err != nil {
 		return "", err

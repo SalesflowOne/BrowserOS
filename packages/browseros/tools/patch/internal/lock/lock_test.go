@@ -2,11 +2,13 @@ package lock
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestWithRepoLockUsesGitPrivateLockFile(t *testing.T) {
@@ -27,6 +29,32 @@ func TestWithRepoLockUsesGitPrivateLockFile(t *testing.T) {
 	}
 	if status := gitOutput(t, repoRoot, "status", "--porcelain"); status != "" {
 		t.Fatalf("lock file must not dirty repo, got %q", status)
+	}
+}
+
+func TestWithRepoLockHonorsContextWhileWaiting(t *testing.T) {
+	ctx := context.Background()
+	repoRoot := initGitRepo(t)
+	if err := WithRepoLock(ctx, repoRoot, nil, func() error {
+		waitCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+		defer cancel()
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- WithRepoLock(waitCtx, repoRoot, nil, func() error {
+				return errors.New("inner lock callback ran")
+			})
+		}()
+		select {
+		case err := <-errCh:
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("expected deadline exceeded, got %v", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("waiting lock did not honor context deadline")
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("WithRepoLock: %v", err)
 	}
 }
 

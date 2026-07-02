@@ -254,20 +254,42 @@ func appendFeature(featuresFile string, feature FeatureSpec) error {
 	if featuresNode == nil || featuresNode.Kind != yaml.MappingNode {
 		return fmt.Errorf("no features mapping found in %s", featuresFile)
 	}
-	featuresNode.Content = append(featuresNode.Content,
-		&yaml.Node{Kind: yaml.ScalarNode, Value: feature.Name},
-		featureNode(feature),
-	)
+	entry, err := formatFeatureEntry(feature)
+	if err != nil {
+		return err
+	}
+	var builder strings.Builder
+	builder.Write(body)
+	if len(body) > 0 && body[len(body)-1] != '\n' {
+		builder.WriteByte('\n')
+	}
+	builder.WriteByte('\n')
+	for _, line := range strings.Split(strings.TrimRight(entry, "\n"), "\n") {
+		builder.WriteString("  ")
+		builder.WriteString(line)
+		builder.WriteByte('\n')
+	}
+	return os.WriteFile(featuresFile, []byte(builder.String()), 0o644)
+}
+
+func formatFeatureEntry(feature FeatureSpec) (string, error) {
 	var builder strings.Builder
 	encoder := yaml.NewEncoder(&builder)
 	encoder.SetIndent(2)
-	if err := encoder.Encode(&root); err != nil {
-		return err
+	root := &yaml.Node{
+		Kind: yaml.MappingNode,
+		Content: []*yaml.Node{
+			{Kind: yaml.ScalarNode, Value: feature.Name},
+			featureNode(feature),
+		},
+	}
+	if err := encoder.Encode(root); err != nil {
+		return "", err
 	}
 	if err := encoder.Close(); err != nil {
-		return err
+		return "", err
 	}
-	return os.WriteFile(featuresFile, []byte(builder.String()), 0o644)
+	return builder.String(), nil
 }
 
 func featureNode(feature FeatureSpec) *yaml.Node {
@@ -299,8 +321,9 @@ func matchingFeatureNames(features []FeatureSpec, rel string) []string {
 func featurePatchPaths(feature FeatureSpec, repoSet patch.PatchSet) []string {
 	seen := map[string]bool{}
 	var paths []string
+	scope := patch.ScopeFromSet(repoSet)
 	for _, filter := range feature.Files {
-		for _, rel := range patch.ScopeFromSet(repoSet) {
+		for _, rel := range scope {
 			if !patch.PathMatches(rel, []string{filter}) || seen[rel] {
 				continue
 			}
