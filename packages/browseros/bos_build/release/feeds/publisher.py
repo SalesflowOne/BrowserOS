@@ -61,7 +61,7 @@ class FeedPublisher:
     ):
         self.env = env or EnvConfig()
         self._client = r2_client
-        self._http_head = http_head or _default_http_head
+        self.http_head = http_head or _default_http_head
         self._appcast_staging_dir = (
             appcast_staging_dir or _default_appcast_staging_dir()
         )
@@ -188,7 +188,7 @@ class FeedPublisher:
             return True
 
         for url in extract_enclosure_urls(content):
-            status = self._http_head(url)
+            status = self.http_head(url)
             if status != 200:
                 log_error(
                     f"{spec.key}: download URL check failed "

@@ -7,6 +7,8 @@ additions. Context/execute helpers are intentionally local for the same
 reason — importing them from cli/release.py would be a circular import.
 """
 
+from typing import List
+
 import typer
 
 from ..core.context import Context
@@ -15,6 +17,7 @@ from ..lib.paths import get_package_root
 from ..core.runner import StepExecutionError, run as run_steps
 from ..lib.utils import log_error
 from ..release.appcast import AppcastModule
+from ..release.extensions import ExtensionsFeedModule, parse_set_options
 
 feeds_app = typer.Typer(
     help="Update-feed inspection",
@@ -85,6 +88,55 @@ def appcast_command(
     )
 
 
+def extensions_command(
+    channel: str = typer.Option(
+        ..., "--channel", "-c", help="Target channel: alpha or prod"
+    ),
+    set_versions: List[str] = typer.Option(
+        [],
+        "--set",
+        help="Pin an extension version as name=version (repeatable); "
+        "extensions not set carry over from the live manifests",
+    ),
+    publish: bool = typer.Option(
+        False,
+        "--publish",
+        help="Write to R2 (default is a dry run: full files + diff vs live)",
+    ),
+    allow_downgrade: bool = typer.Option(
+        False, "--allow-downgrade", help="Override the version-downgrade guard"
+    ),
+):
+    """Regenerate update-manifest, extensions.json and bundled-manifest coherently.
+
+    \b
+    Bump the agent on alpha (dry run):
+      browseros release extensions --channel alpha --set agent=0.0.118
+
+    \b
+    Publish, pinning two extensions:
+      browseros release extensions --channel alpha --set agent=0.0.118 \\
+        --set bugreporter=54.0.0.0 --publish
+    """
+    try:
+        versions = parse_set_options(set_versions)
+    except ValueError as e:
+        log_error(str(e))
+        raise typer.Exit(1)
+
+    ctx = _create_context()
+    _execute(
+        ctx,
+        ExtensionsFeedModule(
+            channel=channel,
+            set_versions=versions,
+            publish=publish,
+            allow_downgrade=allow_downgrade,
+        ),
+    )
+
+
 def register(app: typer.Typer) -> None:
     """Attach the feed-publisher commands to the release CLI."""
     app.command("appcast")(appcast_command)
+    app.command("extensions")(extensions_command)
