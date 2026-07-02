@@ -296,13 +296,8 @@ class Context:
         return [base / "common", base / "products" / self.product.id]
 
     def get_product_gn_args(self) -> list[str]:
-        """Return BrowserOS product GN args for configure.
-
-        Release bakes product identity: runtime override off, only the
-        baked product's server resources packaged. Debug allows the
-        --browseros-product runtime switch, so it packages both products'
-        server resources — the switch is useless without them.
-        """
+        """Product GN args: release bakes identity; debug keeps the runtime
+        product switch working (it needs both server resource sets)."""
         dev_build = "true" if self.build_type == "debug" else "false"
         return [
             f'browseros_product = "{self.product.gn_product}"',
