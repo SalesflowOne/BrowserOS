@@ -45,6 +45,9 @@ def collect_product_rows(
     Bare pre-product releases predate the registry, so they surface under
     the default product only.
     """
+    # Listing keys off release_prefix (R2 layout) while release.json fetches
+    # key off product.id (get_release_json's contract); the two are equal
+    # for every registered product today.
     productized = list_all_versions(product.release_prefix, env)
     legacy = list_legacy_versions(env) if product.id == DEFAULT_PRODUCT_ID else []
     return merge_product_versions(productized, legacy)

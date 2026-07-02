@@ -7,11 +7,13 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 from ..lib.env import EnvConfig
+from ..lib.utils import log_warning
 from ..core.products import ProductDescriptor, default_product_descriptor
 from ..lib.r2 import get_release_json, get_r2_client, BOTO3_AVAILABLE
 
 PLATFORMS = ["macos", "win", "linux"]
 PLATFORM_DISPLAY_NAMES = {"macos": "macOS", "win": "Windows", "linux": "Linux"}
+
 
 def get_download_path_mapping(
     product: ProductDescriptor | None = None,
@@ -99,7 +101,9 @@ def _list_common_prefixes(client, bucket: str, prefix: str) -> List[str]:
 
         try:
             response = client.list_objects_v2(**kwargs)
-        except Exception:
+        except Exception as e:
+            # A partial listing renders as "(no releases found)" — flag it.
+            log_warning(f"R2 listing failed for {prefix}: {e}")
             break
 
         for entry in response.get("CommonPrefixes", []):
