@@ -1,9 +1,9 @@
 diff --git a/chrome/browser/browseros/core/browseros_constants.h b/chrome/browser/browseros/core/browseros_constants.h
 new file mode 100644
-index 0000000000000..fb5ac988ee89c
+index 0000000000000..ceb1c631d1e98
 --- /dev/null
 +++ b/chrome/browser/browseros/core/browseros_constants.h
-@@ -0,0 +1,251 @@
+@@ -0,0 +1,247 @@
 +// Copyright 2024 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -36,9 +36,6 @@ index 0000000000000..fb5ac988ee89c
 +
 +inline constexpr char kBugReporterExtensionId[] =
 +    "adlpneommgkgeanpaekgoaolcpncohkf";
-+
-+inline constexpr char kControllerExtensionId[] =
-+    "nlnihljpboknmfagkikhkdblbedophja";
 +
 +inline constexpr char kBrowserClawExtensionId[] =
 +    "pjimfkbpehlcllblajnpfamdfjhhlgkc";
@@ -73,8 +70,6 @@ index 0000000000000..fb5ac988ee89c
 +inline constexpr BrowserOSExtensionInfo kBrowserOSExtensions[] = {
 +    {kAgentExtensionId, false, false, BrowserOSExtensionProduct::kBrowserOS},
 +    {kBugReporterExtensionId, true, false, BrowserOSExtensionProduct::kAll},
-+    {kControllerExtensionId, false, false,
-+     BrowserOSExtensionProduct::kBrowserOS},
 +    {kBrowserClawExtensionId, true, false,
 +     BrowserOSExtensionProduct::kBrowserClaw},
 +};
@@ -142,6 +137,7 @@ index 0000000000000..fb5ac988ee89c
 +    {"/settings", kAgentExtensionId, "app.html", "/settings"},
 +    {"/mcp", kAgentExtensionId, "app.html", "/mcp"},
 +    {"/onboarding", kAgentExtensionId, "app.html", "/onboarding"},
++    {"/claw", kBrowserClawExtensionId, "newtab.html", ""},
 +};
 +
 +inline constexpr size_t kBrowserOSURLRoutesCount =
