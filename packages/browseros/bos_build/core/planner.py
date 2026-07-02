@@ -34,6 +34,7 @@ class Switches:
     download: Optional[bool] = None
     sign: Optional[bool] = None
     upload: Optional[bool] = None
+    skip: Tuple[str, ...] = ()
 
     def resolved(self) -> "Switches":
         """Fill None fields with the preset's defaults."""
@@ -62,6 +63,13 @@ class Switches:
                 f"Invalid provision mode '{resolved.provision}'. "
                 f"Valid: {', '.join(PROVISION_MODES)}"
             )
+        registry = all_steps()
+        for name in resolved.skip:
+            if name not in registry:
+                raise ValueError(
+                    f"Unknown step '{name}' in skip. "
+                    f"Valid steps: {', '.join(sorted(registry))}"
+                )
         return resolved
 
     @property
@@ -90,8 +98,16 @@ def plan(switches: Switches, arch: str, platform: Optional[str] = None) -> List[
     switches = switches.resolved()
 
     if switches.preset == "debug":
-        return _plan_debug(switches, arch, platform)
-    return _plan_release(switches, arch, platform)
+        steps = _plan_debug(switches, arch, platform)
+    else:
+        steps = _plan_release(switches, arch, platform)
+
+    # skip subtracts AFTER composition: removing a step never re-triggers
+    # composition rules (skipping sign_windows won't add mini_installer).
+    if switches.skip:
+        skipped = set(switches.skip)
+        steps = [s for s in steps if s not in skipped]
+    return steps
 
 
 def _plan_release(switches: Switches, arch: str, platform: str) -> List[str]:

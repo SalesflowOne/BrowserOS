@@ -219,6 +219,66 @@ class SwitchesTest(unittest.TestCase):
         self.assertEqual(Switches(preset="debug").build_type, "debug")
 
 
+class SkipTest(unittest.TestCase):
+    def test_skip_subtracts_from_composed_plan(self):
+        steps = plan(
+            Switches(preset="release", skip=("upload", "series_patches")),
+            "arm64",
+            "macos",
+        )
+        self.assertEqual(
+            steps,
+            [
+                s
+                for s in plan(RELEASE, "arm64", "macos")
+                if s not in ("upload", "series_patches")
+            ],
+        )
+
+    def test_skip_is_subtraction_not_switch_flip(self):
+        # Skipping sign_windows must not resurrect mini_installer or drop
+        # the other signing-conditional steps — composition already ran.
+        steps = plan(
+            Switches(preset="release", skip=("sign_windows",)), "x64", "windows"
+        )
+        self.assertNotIn("sign_windows", steps)
+        self.assertNotIn("mini_installer", steps)
+        self.assertIn("winsparkle_setup", steps)
+        self.assertIn("sparkle_sign", steps)
+
+    def test_skip_applies_to_universal_plan(self):
+        steps = plan(
+            Switches(preset="release", skip=("series_patches",)),
+            "universal",
+            "macos",
+        )
+        self.assertNotIn("series_patches", steps)
+        self.assertIn("universal_build", steps)
+
+    def test_skip_absent_step_is_noop(self):
+        # mini_installer never appears in a signed windows plan; upload is
+        # already absent when upload=False. Both subtract to nothing.
+        self.assertEqual(
+            plan(
+                Switches(preset="release", skip=("mini_installer",)), "x64", "windows"
+            ),
+            plan(RELEASE, "x64", "windows"),
+        )
+        steps = plan(
+            Switches(preset="release", upload=False, skip=("upload",)),
+            "arm64",
+            "macos",
+        )
+        self.assertNotIn("upload", steps)
+
+    def test_skip_unknown_step_rejected_listing_valid(self):
+        with self.assertRaises(ValueError) as err:
+            plan(Switches(preset="release", skip=("uplod",)), "arm64", "macos")
+        message = str(err.exception)
+        self.assertIn("uplod", message)
+        self.assertIn("compile", message)
+
+
 class RequiredEnvTest(unittest.TestCase):
     def test_signed_macos_requires_cert_and_notarization(self):
         # parity with release.*.macos.*.yaml required_envs
