@@ -10,6 +10,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -102,19 +103,33 @@ describe('logger.setLogFile', () => {
   test('rotates on stale creation time even when recently written', () => {
     const dir = makeTempDir()
     const logPath = join(dir, LOG_NAME)
-    writeFileSync(logPath, '{"level":30,"msg":"stale"}\n')
+    writeFileSync(logPath, '{"level":30,"msg":"old lines"}\n')
     setSystemTime(new Date(Date.now() + STALE_JUMP_MS))
-    // A write refreshes mtime but not creation time
-    logger.setLogFile(dir)
-    logger.info('recent write')
-    logger.closeLogFile()
-    setSystemTime(new Date(Date.now() + STALE_JUMP_MS))
+    // Refresh mtime to the mocked "now" so this only passes when
+    // rotation keys on creation time — an mtime key would see a
+    // fresh file and skip.
+    const mockedNowSec = Date.now() / 1000
+    utimesSync(logPath, mockedNowSec, mockedNowSec)
 
     logger.setLogFile(dir)
 
     const backup = readLines(`${logPath}.old`)
-    expect(backup.at(-1)).toMatchObject({ msg: 'recent write' })
+    expect(backup.at(-1)).toMatchObject({ msg: 'old lines' })
     expect(readLines(logPath)).toHaveLength(0)
+  })
+
+  test('rotates when the log outgrows the size cap', () => {
+    const dir = makeTempDir()
+    const logPath = join(dir, LOG_NAME)
+    writeFileSync(logPath, Buffer.alloc(20 * 1024 * 1024 + 1, 0x61))
+
+    logger.setLogFile(dir)
+    logger.info('fresh')
+
+    expect(existsSync(`${logPath}.old`)).toBe(true)
+    const lines = readLines(logPath)
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toMatchObject({ msg: 'fresh' })
   })
 
   test('replaces an existing .old backup on rotation', () => {
@@ -186,6 +201,12 @@ describe('logger event shape', () => {
     const lines = readLines(join(dir, LOG_NAME))
     expect(lines[0]).toMatchObject({ level: 30, msg: 'real message', extra: 1 })
     expect(typeof lines[0]?.time).toBe('number')
+    // pino-canonical key order so prefix-matching consumers keep working
+    expect(Object.keys(lines[0] ?? {}).slice(0, 3)).toEqual([
+      'level',
+      'time',
+      'msg',
+    ])
   })
 
   test('unserializable fields do not throw and keep the message', () => {
