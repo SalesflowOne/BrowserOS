@@ -105,15 +105,19 @@ app.add_typer(extract_app, name="extract")
 
 def _render_doctor_report(report: dict) -> None:
     repo = report["repo"]
+    scope = f" for feature '{report['feature']}'" if report["feature"] else ""
     if repo["findings"]:
         log_info(
-            f"Repo checks: {repo['errors']} error(s), {repo['warnings']} warning(s)"
+            f"Repo checks{scope}: "
+            f"{repo['errors']} error(s), {repo['warnings']} warning(s)"
         )
         for finding in repo["findings"]:
             if finding["severity"] == "error":
                 log_error(f"  {finding['message']}")
             else:
                 log_warning(f"  {finding['message']}")
+    elif scope:
+        log_success(f"Repo checks clean{scope}")
     else:
         log_success(
             f"Repo checks clean: {repo['patches']} patches "
@@ -169,8 +173,11 @@ def doctor(
     Verifies features.yaml against the patches on disk (every entry resolves,
     every patch is claimed by a feature, claims don't overlap); with --against,
     dry-runs every patch and groups failures by feature. Read-only: nothing is
-    written to the chromium tree. Exit 0 healthy / 1 findings.
+    written to the chromium tree. Exit 0 healthy / 1 findings / 2 usage or
+    environment errors.
     """
+    import yaml
+
     from ..lib.paths import get_package_root
     from ..patchkit.doctor import (
         build_report,
@@ -178,20 +185,21 @@ def doctor(
         check_repo,
         load_features,
     )
+    from ..patchkit.extract.utils import GitError
 
     root = get_package_root()
     patches_dir = root / "chromium_patches"
-    features = load_features(root)
     try:
+        features = load_features(root)
         findings = check_repo(features, patches_dir, feature)
         apply_report = (
             check_apply(features, patches_dir, against, feature) if against else None
         )
-    except ValueError as e:
+    except (ValueError, yaml.YAMLError, GitError) as e:
         log_error(str(e))
         raise typer.Exit(2)
 
-    report = build_report(root, features, findings, apply_report)
+    report = build_report(root, features, findings, apply_report, feature)
     if json_output:
         typer.echo(json.dumps(report, indent=2))
     else:

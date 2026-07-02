@@ -229,7 +229,7 @@ def check_apply(
             failures.append(
                 ApplyFailure(
                     patch=rel,
-                    feature=owners[0] if owners else UNCLASSIFIED,
+                    feature=feature or (owners[0] if owners else UNCLASSIFIED),
                     error=(error or "").strip(),
                 )
             )
@@ -255,6 +255,7 @@ def build_report(
     features: Dict,
     findings: List[Finding],
     apply_report: Optional[ApplyReport] = None,
+    feature: Optional[str] = None,
 ) -> Dict:
     """Assemble the stable machine-readable report consumed by --json and renderers."""
     from .batch_apply import find_patch_files
@@ -263,6 +264,7 @@ def build_report(
     warnings = sum(1 for f in findings if f.severity == "warning")
     report: Dict = {
         "root": str(root_dir),
+        "feature": feature,
         "repo": {
             "patches": len(find_patch_files(root_dir / "chromium_patches")),
             "features": len(features),

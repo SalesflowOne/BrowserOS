@@ -21,8 +21,10 @@ from bos_build.patchkit.doctor import (
 )
 
 
-def _patches_dir(files: List[str]) -> Path:
-    root = Path(tempfile.mkdtemp()) / "chromium_patches"
+def _patches_dir(case: unittest.TestCase, files: List[str]) -> Path:
+    tmp = tempfile.TemporaryDirectory()
+    case.addCleanup(tmp.cleanup)
+    root = Path(tmp.name) / "chromium_patches"
     for rel in files:
         path = root / rel
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -37,13 +39,14 @@ def _feature(files: List[str], description: str = "feat: test feature") -> Dict:
 class PatchBasePathsTest(unittest.TestCase):
     def test_markers_map_to_base_and_dotfiles_skipped(self):
         patches = _patches_dir(
+            self,
             [
                 "chrome/a.cc",
                 "chrome/b.cc.deleted",
                 "chrome/c.mm.binary",
                 "chrome/d.h.rename",
                 "chrome/.gitignore",
-            ]
+            ],
         )
         self.assertEqual(
             patch_base_paths(patches),
@@ -56,7 +59,7 @@ class PatchBasePathsTest(unittest.TestCase):
 
 class EntryResolutionTest(unittest.TestCase):
     def test_clean_tree_has_no_findings(self):
-        patches = _patches_dir(["chrome/a.cc", "third_party/lib/x.gn"])
+        patches = _patches_dir(self, ["chrome/a.cc", "third_party/lib/x.gn"])
         features = {
             "one": _feature(["chrome/a.cc"]),
             "two": _feature(["third_party/lib/"]),
@@ -64,7 +67,7 @@ class EntryResolutionTest(unittest.TestCase):
         self.assertEqual(check_repo(features, patches), [])
 
     def test_missing_file_entry_reported_with_feature_and_path(self):
-        patches = _patches_dir(["chrome/a.cc"])
+        patches = _patches_dir(self, ["chrome/a.cc"])
         features = {"one": _feature(["chrome/a.cc", "chrome/gone.cc"])}
         findings = check_repo(features, patches)
         self.assertEqual(len(findings), 1)
@@ -76,7 +79,7 @@ class EntryResolutionTest(unittest.TestCase):
 
     def test_marker_variants_resolve_file_entries(self):
         patches = _patches_dir(
-            ["chrome/a.cc.deleted", "chrome/b.mm.binary", "chrome/c.h.rename"]
+            self, ["chrome/a.cc.deleted", "chrome/b.mm.binary", "chrome/c.h.rename"]
         )
         features = {
             "one": _feature(["chrome/a.cc", "chrome/b.mm", "chrome/c.h"]),
@@ -84,7 +87,7 @@ class EntryResolutionTest(unittest.TestCase):
         self.assertEqual(check_repo(features, patches), [])
 
     def test_empty_directory_entry_reported(self):
-        patches = _patches_dir(["chrome/a.cc"])
+        patches = _patches_dir(self, ["chrome/a.cc"])
         features = {
             "one": _feature(["chrome/a.cc"]),
             "two": _feature(["third_party/lib/"]),
@@ -98,7 +101,7 @@ class EntryResolutionTest(unittest.TestCase):
         )
 
     def test_directory_prefix_does_not_match_sibling(self):
-        patches = _patches_dir(["chrome/subfoo/a.cc"])
+        patches = _patches_dir(self, ["chrome/subfoo/a.cc"])
         features = {
             "one": _feature(["chrome/sub/"]),
             "two": _feature(["chrome/subfoo/a.cc"]),
@@ -110,7 +113,7 @@ class EntryResolutionTest(unittest.TestCase):
 
 class ClassificationTest(unittest.TestCase):
     def test_unclassified_patch_reported(self):
-        patches = _patches_dir(["chrome/a.cc", "chrome/orphan.cc"])
+        patches = _patches_dir(self, ["chrome/a.cc", "chrome/orphan.cc"])
         features = {"one": _feature(["chrome/a.cc"])}
         findings = check_repo(features, patches)
         self.assertEqual(len(findings), 1)
@@ -121,14 +124,14 @@ class ClassificationTest(unittest.TestCase):
         )
 
     def test_unclaimed_marker_reported_under_base_path(self):
-        patches = _patches_dir(["chrome/gone.cc.deleted"])
+        patches = _patches_dir(self, ["chrome/gone.cc.deleted"])
         findings = check_repo({}, patches)
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0].check, "unclassified")
         self.assertEqual(findings[0].path, "chrome/gone.cc")
 
     def test_multi_file_claim_is_warning_naming_all_claimants(self):
-        patches = _patches_dir(["chrome/a.cc"])
+        patches = _patches_dir(self, ["chrome/a.cc"])
         features = {
             "one": _feature(["chrome/a.cc"]),
             "two": _feature(["chrome/a.cc"]),
@@ -141,7 +144,7 @@ class ClassificationTest(unittest.TestCase):
         self.assertIn("two", f.message)
 
     def test_dir_and_file_entry_overlap_is_multi_claim(self):
-        patches = _patches_dir(["chrome/sub/a.cc"])
+        patches = _patches_dir(self, ["chrome/sub/a.cc"])
         features = {
             "one": _feature(["chrome/sub/"]),
             "two": _feature(["chrome/sub/a.cc"]),
@@ -150,14 +153,14 @@ class ClassificationTest(unittest.TestCase):
         self.assertEqual([f.check for f in findings], ["multi-claim"])
 
     def test_same_feature_claiming_via_file_and_dir_is_not_multi_claim(self):
-        patches = _patches_dir(["chrome/sub/a.cc"])
+        patches = _patches_dir(self, ["chrome/sub/a.cc"])
         features = {"one": _feature(["chrome/sub/", "chrome/sub/a.cc"])}
         self.assertEqual(check_repo(features, patches), [])
 
 
 class SeriesExemptionTest(unittest.TestCase):
     def test_series_feature_entries_do_not_need_patches(self):
-        patches = _patches_dir(["chrome/a.cc"])
+        patches = _patches_dir(self, ["chrome/a.cc"])
         features = {
             "one": _feature(["chrome/a.cc"]),
             "win": _feature(
@@ -168,7 +171,7 @@ class SeriesExemptionTest(unittest.TestCase):
         self.assertEqual(check_repo(features, patches), [])
 
     def test_series_feature_does_not_claim_disk_patches(self):
-        patches = _patches_dir(["chrome/a.cc"])
+        patches = _patches_dir(self, ["chrome/a.cc"])
         features = {
             "win": _feature(["chrome/a.cc"], description="series: windows"),
         }
@@ -178,7 +181,7 @@ class SeriesExemptionTest(unittest.TestCase):
 
 class FeatureMetadataTest(unittest.TestCase):
     def test_invalid_name_and_description_reported(self):
-        patches = _patches_dir(["chrome/a.cc"])
+        patches = _patches_dir(self, ["chrome/a.cc"])
         features = {
             "Bad Name": _feature(["chrome/a.cc"]),
             "two": _feature([], description="no prefix here"),
@@ -189,7 +192,7 @@ class FeatureMetadataTest(unittest.TestCase):
         self.assertIn(("invalid-feature", "two"), checks)
 
     def test_series_features_still_get_metadata_checks(self):
-        patches = _patches_dir([])
+        patches = _patches_dir(self, [])
         features = {"BAD": _feature([], description="series: x")}
         findings = check_repo(features, patches)
         self.assertEqual([f.check for f in findings], ["invalid-feature"])
@@ -197,7 +200,7 @@ class FeatureMetadataTest(unittest.TestCase):
 
 class FeatureFilterTest(unittest.TestCase):
     def _fixture(self):
-        patches = _patches_dir(["chrome/a.cc", "chrome/orphan.cc"])
+        patches = _patches_dir(self, ["chrome/a.cc", "chrome/orphan.cc"])
         features = {
             "one": _feature(["chrome/a.cc", "chrome/gone1.cc"]),
             "two": _feature(["chrome/a.cc", "chrome/gone2.cc"]),
@@ -226,7 +229,7 @@ class FeatureFilterTest(unittest.TestCase):
             check_repo(features, patches, feature="nope")
 
     def test_findings_sorted_deterministically(self):
-        patches = _patches_dir([])
+        patches = _patches_dir(self, [])
         features = {
             "zed": _feature(["chrome/z.cc"]),
             "abc": _feature(["chrome/b.cc", "chrome/a.cc"]),
@@ -259,7 +262,7 @@ def _fake_git(failing_fragments: set, calls: Optional[List] = None):
 
 class CheckApplyTest(unittest.TestCase):
     def test_failures_grouped_by_owning_feature(self):
-        patches = _patches_dir(["chrome/a.cc", "chrome/b.cc", "chrome/orphan.cc"])
+        patches = _patches_dir(self, ["chrome/a.cc", "chrome/b.cc", "chrome/orphan.cc"])
         features = {"one": _feature(["chrome/a.cc", "chrome/b.cc"])}
         with mock.patch(
             "bos_build.patchkit.batch_apply.run_git_command",
@@ -276,7 +279,7 @@ class CheckApplyTest(unittest.TestCase):
         self.assertIn("patch failed", report.failures[0].error)
 
     def test_markers_excluded_from_apply_set(self):
-        patches = _patches_dir(["chrome/a.cc", "chrome/gone.cc.deleted"])
+        patches = _patches_dir(self, ["chrome/a.cc", "chrome/gone.cc.deleted"])
         features = {"one": _feature(["chrome/a.cc", "chrome/gone.cc"])}
         calls = []
         with mock.patch(
@@ -288,7 +291,7 @@ class CheckApplyTest(unittest.TestCase):
         self.assertIn("chrome/a.cc", calls[0][0][-1])
 
     def test_feature_filter_limits_apply_set_to_claimed_patches(self):
-        patches = _patches_dir(["chrome/a.cc", "sub/dir/b.cc", "chrome/orphan.cc"])
+        patches = _patches_dir(self, ["chrome/a.cc", "sub/dir/b.cc", "chrome/orphan.cc"])
         features = {
             "one": _feature(["chrome/a.cc", "sub/dir/"]),
             "two": _feature(["chrome/orphan.cc"]),
@@ -303,21 +306,36 @@ class CheckApplyTest(unittest.TestCase):
         self.assertTrue(all("orphan" not in path for path in ran))
 
     def test_unknown_feature_raises(self):
-        patches = _patches_dir(["chrome/a.cc"])
+        patches = _patches_dir(self, ["chrome/a.cc"])
         with self.assertRaises(ValueError):
             check_apply({}, patches, Path("/fake/src"), feature="nope")
+
+    def test_filtered_failures_attributed_to_the_filtered_feature(self):
+        patches = _patches_dir(self, ["chrome/a.cc"])
+        features = {
+            "aaa": _feature(["chrome/a.cc"]),
+            "zzz": _feature(["chrome/a.cc"]),
+        }
+        with mock.patch(
+            "bos_build.patchkit.batch_apply.run_git_command", _fake_git({"a.cc"})
+        ):
+            report = check_apply(features, patches, Path("/fake/src"), feature="zzz")
+        self.assertEqual([f.feature for f in report.failures], ["zzz"])
 
 
 class BuildReportTest(unittest.TestCase):
     def test_repo_only_report_shape_and_health(self):
-        patches = _patches_dir(["chrome/a.cc"])
+        patches = _patches_dir(self, ["chrome/a.cc"])
         features = {"one": _feature(["chrome/a.cc"])}
         findings = check_repo(features, patches)
 
         report = build_report(patches.parent, features, findings)
 
-        self.assertEqual(set(report), {"root", "repo", "apply", "healthy"})
+        self.assertEqual(
+            set(report), {"root", "feature", "repo", "apply", "healthy"}
+        )
         self.assertIsNone(report["apply"])
+        self.assertIsNone(report["feature"])
         self.assertTrue(report["healthy"])
         self.assertEqual(report["repo"]["patches"], 1)
         self.assertEqual(report["repo"]["features"], 1)
@@ -325,7 +343,7 @@ class BuildReportTest(unittest.TestCase):
         self.assertEqual(report["repo"]["findings"], [])
 
     def test_errors_flip_health_and_serialize_findings(self):
-        patches = _patches_dir(["chrome/a.cc"])
+        patches = _patches_dir(self, ["chrome/a.cc"])
         features = {"one": _feature(["chrome/a.cc", "chrome/gone.cc"])}
         findings = check_repo(features, patches)
 
@@ -340,7 +358,7 @@ class BuildReportTest(unittest.TestCase):
         self.assertEqual(finding["check"], "missing-patch")
 
     def test_warnings_alone_stay_healthy(self):
-        patches = _patches_dir(["chrome/a.cc"])
+        patches = _patches_dir(self, ["chrome/a.cc"])
         features = {
             "one": _feature(["chrome/a.cc"]),
             "two": _feature(["chrome/a.cc"]),
@@ -353,7 +371,7 @@ class BuildReportTest(unittest.TestCase):
         self.assertTrue(report["healthy"])
 
     def test_apply_failures_flip_health_with_stable_keys(self):
-        patches = _patches_dir(["chrome/a.cc"])
+        patches = _patches_dir(self, ["chrome/a.cc"])
         features = {"one": _feature(["chrome/a.cc"])}
         apply_report = ApplyReport(
             against="/src",
@@ -376,7 +394,7 @@ class BuildReportTest(unittest.TestCase):
         )
 
     def test_clean_apply_report_stays_healthy(self):
-        patches = _patches_dir(["chrome/a.cc"])
+        patches = _patches_dir(self, ["chrome/a.cc"])
         features = {"one": _feature(["chrome/a.cc"])}
         apply_report = ApplyReport(against="/src", total=1, clean=1, failures=[])
 
@@ -385,10 +403,18 @@ class BuildReportTest(unittest.TestCase):
         self.assertTrue(report["healthy"])
         self.assertEqual(report["apply"]["failed"], 0)
 
+    def test_feature_filter_recorded_in_report(self):
+        patches = _patches_dir(self, ["chrome/a.cc"])
+        features = {"one": _feature(["chrome/a.cc"])}
+
+        report = build_report(patches.parent, features, [], feature="one")
+
+        self.assertEqual(report["feature"], "one")
+
 
 class ComputeClaimsTest(unittest.TestCase):
     def test_claims_are_sorted_and_deduplicated(self):
-        patches = _patches_dir(["chrome/sub/a.cc"])
+        patches = _patches_dir(self, ["chrome/sub/a.cc"])
         bases = patch_base_paths(patches)
         features = {
             "zed": _feature(["chrome/sub/"]),

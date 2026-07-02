@@ -3,7 +3,9 @@
 
 import json
 import unittest
+from unittest import mock
 
+import yaml
 from typer.testing import CliRunner
 
 from bos_build.browseros import app
@@ -48,13 +50,14 @@ class DoctorCliTest(unittest.TestCase):
 
         report = json.loads(result.output)
         self.assertEqual(
-            set(report), {"root", "repo", "apply", "healthy"}
+            set(report), {"root", "feature", "repo", "apply", "healthy"}
         )
         self.assertEqual(
             set(report["repo"]),
             {"patches", "features", "errors", "warnings", "findings"},
         )
         self.assertIsNone(report["apply"])
+        self.assertIsNone(report["feature"])
         self.assertEqual(result.exit_code, 0 if report["healthy"] else 1)
 
     def test_unknown_feature_is_a_usage_error(self):
@@ -62,6 +65,16 @@ class DoctorCliTest(unittest.TestCase):
 
         self.assertEqual(result.exit_code, 2, combined(result))
         self.assertIn("unknown feature", combined(result))
+
+    def test_broken_features_yaml_is_a_clean_usage_error(self):
+        with mock.patch(
+            "bos_build.patchkit.doctor.load_features",
+            side_effect=yaml.YAMLError("features.yaml is broken"),
+        ):
+            result = invoke("doctor")
+
+        self.assertEqual(result.exit_code, 2, combined(result))
+        self.assertIn("features.yaml is broken", combined(result))
 
 
 if __name__ == "__main__":

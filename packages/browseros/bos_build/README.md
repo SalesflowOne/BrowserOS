@@ -151,8 +151,9 @@ browseros dev doctor --against ~/chromium/src   # + which patches fail, by featu
 browseros dev doctor --feature llm-chat --json  # filtered / machine-readable
 ```
 
-Exit 0 healthy / 1 findings. `--against` only ever dry-runs
-(`git apply --check`); the chromium tree is never modified.
+Exit 0 healthy / 1 findings / 2 usage or environment errors. `--against`
+only ever dry-runs (`git apply --check`); the chromium tree is never
+modified.
 
 ## Tests
 
