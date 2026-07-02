@@ -3,10 +3,13 @@ import {
   resolveBrowserOSMcpBaseUrl,
   resolveBrowserOSServerBaseUrl,
 } from './browseros-ports'
+import { api } from './client'
 import { resolveApiBaseUrlFromSources } from './client.helpers'
 
 const fallback = 'http://127.0.0.1:9200'
 const originalChrome = globalThis.chrome
+const originalFetch = globalThis.fetch
+const originalWindow = globalThis.window
 
 function installBrowserOSPrefs(values: Record<string, unknown>) {
   Object.defineProperty(globalThis, 'chrome', {
@@ -29,10 +32,47 @@ function installBrowserOSPrefs(values: Record<string, unknown>) {
   })
 }
 
+function installWindow(search: string, storage = new Map<string, string>()) {
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: {
+      location: { search },
+      sessionStorage: {
+        getItem(key: string) {
+          return storage.get(key) ?? null
+        },
+        setItem(key: string, value: string) {
+          storage.set(key, value)
+        },
+      },
+    },
+  })
+}
+
+function installFetchRecorder(): string[] {
+  const requests: string[] = []
+  Object.defineProperty(globalThis, 'fetch', {
+    configurable: true,
+    value: async (input: Parameters<typeof fetch>[0]) => {
+      requests.push(input instanceof Request ? input.url : String(input))
+      return new Response('{}', { status: 200 })
+    },
+  })
+  return requests
+}
+
 afterEach(() => {
   Object.defineProperty(globalThis, 'chrome', {
     configurable: true,
     value: originalChrome,
+  })
+  Object.defineProperty(globalThis, 'fetch', {
+    configurable: true,
+    value: originalFetch,
+  })
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: originalWindow,
   })
 })
 
@@ -142,5 +182,26 @@ describe('BrowserOS managed port resolution', () => {
         fallback,
       }),
     ).resolves.toBe('http://127.0.0.1:9202')
+  })
+
+  it('routes Hono API calls through the BrowserOS server port pref', async () => {
+    installBrowserOSPrefs({ 'browseros.server.server_port': 9511 })
+    const requests = installFetchRecorder()
+
+    const response = await api.system.health.$get()
+
+    expect(response.status).toBe(200)
+    expect(requests).toEqual(['http://127.0.0.1:9511/system/health'])
+  })
+
+  it('routes Hono API calls through trusted fallbacks when the pref is invalid', async () => {
+    installWindow('?apiUrl=http%3A%2F%2F127.0.0.1%3A9432')
+    installBrowserOSPrefs({ 'browseros.server.server_port': '9511' })
+    const requests = installFetchRecorder()
+
+    const response = await api.system.health.$get()
+
+    expect(response.status).toBe(200)
+    expect(requests).toEqual(['http://127.0.0.1:9432/system/health'])
   })
 })

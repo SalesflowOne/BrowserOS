@@ -6,10 +6,7 @@ import {
   useConnectBrowseros,
   useDisconnectBrowseros,
 } from '@/modules/api/connections.hooks'
-import {
-  buildCanonicalMcpEndpointUrl,
-  resolveCanonicalMcpEndpointUrl,
-} from '@/modules/api/mcp-endpoint'
+import { resolveCanonicalMcpEndpointUrl } from '@/modules/api/mcp-endpoint'
 import {
   type Harness,
   RETIRED_HARNESSES,
@@ -43,7 +40,7 @@ const HIDDEN_HARNESSES: readonly Harness[] = [
 ]
 
 export function Mcp() {
-  const [url, setUrl] = useState(buildCanonicalMcpEndpointUrl())
+  const [url, setUrl] = useState<string | null>(null)
   const connections = useBrowserosConnections()
   const connect = useConnectBrowseros()
   const disconnect = useDisconnectBrowseros()
