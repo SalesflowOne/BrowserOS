@@ -95,6 +95,20 @@ class ConfigureExecuteTest(unittest.TestCase):
             "browseros_package_all_server_resources = false\n",
         )
 
+    def test_debug_args_enable_override_and_all_server_resources(self):
+        ctx, chromium, _ = self._execute(
+            "debug", architecture="arm64", flags="is_debug = true\n"
+        )
+
+        args_gn = (chromium.src / ctx.out_dir / "args.gn").read_text()
+        self.assertEqual(
+            args_gn,
+            'is_debug = true\n\ntarget_cpu = "arm64"\n'
+            'browseros_product = "browseros"\n'
+            "browseros_allow_runtime_product_override = true\n"
+            "browseros_package_all_server_resources = true\n",
+        )
+
     def test_release_build_fails_on_unused_args(self):
         ctx, _, run_cmd = self._execute("release")
 

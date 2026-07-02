@@ -296,12 +296,18 @@ class Context:
         return [base / "common", base / "products" / self.product.id]
 
     def get_product_gn_args(self) -> list[str]:
-        """Return BrowserOS product GN args for configure."""
-        runtime_override = "true" if self.build_type == "debug" else "false"
+        """Return BrowserOS product GN args for configure.
+
+        Release bakes product identity: runtime override off, only the
+        baked product's server resources packaged. Debug allows the
+        --browseros-product runtime switch, so it packages both products'
+        server resources — the switch is useless without them.
+        """
+        dev_build = "true" if self.build_type == "debug" else "false"
         return [
             f'browseros_product = "{self.product.gn_product}"',
-            f"browseros_allow_runtime_product_override = {runtime_override}",
-            "browseros_package_all_server_resources = false",
+            f"browseros_allow_runtime_product_override = {dev_build}",
+            f"browseros_package_all_server_resources = {dev_build}",
         ]
 
     def get_features_yaml_path(self) -> Path:
