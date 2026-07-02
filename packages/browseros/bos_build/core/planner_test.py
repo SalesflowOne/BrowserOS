@@ -6,7 +6,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from bos_build.core.planner import Switches, load_profile, plan, required_env
+from bos_build.core.planner import (
+    Switches,
+    load_profile,
+    plan,
+    required_env,
+    slice_from,
+)
 
 RELEASE = Switches(preset="release")
 CI = Switches(preset="release", clean=False, provision="none", sign=False, upload=False)
@@ -277,6 +283,39 @@ class SkipTest(unittest.TestCase):
         message = str(err.exception)
         self.assertIn("uplod", message)
         self.assertIn("compile", message)
+
+
+class SliceFromTest(unittest.TestCase):
+    def test_slices_composed_plan_from_step(self):
+        self.assertEqual(
+            slice_from(plan(RELEASE, "arm64", "macos"), "sign_macos"),
+            ["sign_macos", "package_macos", "upload"],
+        )
+
+    def test_slice_from_first_step_is_identity(self):
+        full = plan(RELEASE, "arm64", "macos")
+        self.assertEqual(slice_from(full, full[0]), full)
+
+    def test_unknown_step_rejected_listing_valid(self):
+        with self.assertRaises(ValueError) as err:
+            slice_from(plan(RELEASE, "arm64", "macos"), "sing_macos")
+        message = str(err.exception)
+        self.assertIn("sing_macos", message)
+        self.assertIn("compile", message)
+
+    def test_step_absent_from_plan_rejected_showing_plan(self):
+        with self.assertRaises(ValueError) as err:
+            slice_from(plan(RELEASE, "arm64", "macos"), "mini_installer")
+        message = str(err.exception)
+        self.assertIn("mini_installer", message)
+        self.assertIn("sign_macos", message)
+
+    def test_from_a_skipped_step_rejected(self):
+        steps = plan(
+            Switches(preset="release", skip=("sign_macos",)), "arm64", "macos"
+        )
+        with self.assertRaisesRegex(ValueError, "not in the composed plan"):
+            slice_from(steps, "sign_macos")
 
 
 class RequiredEnvTest(unittest.TestCase):

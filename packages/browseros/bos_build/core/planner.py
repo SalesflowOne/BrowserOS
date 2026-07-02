@@ -200,6 +200,25 @@ def _provision_steps(switches: Switches) -> List[str]:
     return steps
 
 
+def slice_from(steps: List[str], start: str) -> List[str]:
+    """Resume slice for --from: the composed plan from `start` onward.
+
+    Applied after skip subtraction, so resuming from a skipped step fails
+    with the absent-step error.
+    """
+    registry = all_steps()
+    if start not in registry:
+        raise ValueError(
+            f"Unknown step '{start}'. Valid steps: {', '.join(sorted(registry))}"
+        )
+    if start not in steps:
+        raise ValueError(
+            f"Step '{start}' is not in the composed plan "
+            f"({' → '.join(steps)}); nothing to resume from"
+        )
+    return steps[steps.index(start) :]
+
+
 def required_env(step_names: List[str]) -> List[str]:
     """Union of env vars declared by the selected steps, in step order."""
     registry = all_steps()
