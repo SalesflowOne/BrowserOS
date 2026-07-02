@@ -93,6 +93,7 @@ async function readBrowserOSPort(prefName: string): Promise<number | null> {
 }
 
 function validPort(value: unknown): number | null {
+  if (typeof value !== 'number') return null
   return Number.isInteger(value) && value > 0 && value <= 65535 ? value : null
 }
 

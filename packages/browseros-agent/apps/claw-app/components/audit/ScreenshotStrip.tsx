@@ -4,6 +4,7 @@ import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 import {
   type ToolDispatchRow,
   taskScreenshotUrl,
+  useTaskScreenshotBaseUrl,
 } from '@/modules/api/audit.hooks'
 
 interface ScreenshotStripProps {
@@ -25,6 +26,7 @@ export function ScreenshotStrip({
   startedAt,
   onSelect,
 }: ScreenshotStripProps) {
+  const screenshotBaseUrl = useTaskScreenshotBaseUrl()
   const meta = useMemo(() => {
     const byId = new Map(dispatches.map((d) => [d.id, d]))
     return screenshotDispatchIds.map((id) => {
@@ -65,7 +67,7 @@ export function ScreenshotStrip({
                 className="overflow-hidden rounded-lg border border-border-2 bg-bg-sunken transition group-hover:border-accent"
               >
                 <img
-                  src={taskScreenshotUrl(s.id)}
+                  src={taskScreenshotUrl(s.id, screenshotBaseUrl)}
                   alt={`Screenshot ${idx + 1}`}
                   className="h-full w-full object-cover"
                   loading="lazy"
