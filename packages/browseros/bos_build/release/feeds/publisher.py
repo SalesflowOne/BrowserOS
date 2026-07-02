@@ -91,10 +91,15 @@ class FeedPublisher:
         return self._client
 
     def fetch_live(self, key: str) -> Optional[str]:
-        """Live object content from R2 (authoritative — CDN caches xml 60s)."""
+        """Live object content from R2 (authoritative — CDN caches xml 60s).
+
+        Decodes with errors="replace": a binary/corrupt live object must
+        still read as "exists" so the guard fails closed and the backup runs,
+        rather than being mistaken for a first publish.
+        """
         try:
             response = self.client.get_object(Bucket=self.env.r2_bucket, Key=key)
-            return response["Body"].read().decode("utf-8")
+            return response["Body"].read().decode("utf-8", errors="replace")
         except self.client.exceptions.NoSuchKey:
             return None
 
@@ -204,13 +209,21 @@ class FeedPublisher:
 
         if spec.kind == "extensions" and spec.key.endswith(".json"):
             expected = update_manifest_feed(spec.channel).url
-            configs = json.loads(content).get("extensions", {}).values()
-            urls = {config.get("external_update_url") for config in configs}
+            extensions = json.loads(content).get("extensions")
+            if not isinstance(extensions, dict):
+                log_error(f"{spec.key}: 'extensions' is not an object")
+                return False
+            urls = {
+                config.get("external_update_url")
+                if isinstance(config, dict)
+                else None
+                for config in extensions.values()
+            }
             if urls - {expected}:
                 log_error(
                     f"{spec.key}: external_update_url mismatch — got "
-                    f"{sorted(urls - {expected})}, this channel requires "
-                    f"{expected}. Refusing to publish."
+                    f"{sorted(str(u) for u in urls - {expected})}, this "
+                    f"channel requires {expected}. Refusing to publish."
                 )
                 return False
 
@@ -264,7 +277,23 @@ class FeedPublisher:
         if not live_versions:
             return self._refuse_unguardable_live(spec, allow_downgrade)
 
-        for ext_id, new_version in extract_manifest_versions(content).items():
+        new_versions = extract_manifest_versions(content)
+
+        removed = sorted(set(live_versions) - set(new_versions))
+        if removed:
+            if not allow_downgrade:
+                log_error(
+                    f"{spec.key}: live entries would be removed: "
+                    f"{', '.join(removed)}. Pass --allow-downgrade to drop "
+                    "extensions from the live manifest."
+                )
+                return False
+            log_warning(
+                f"{spec.key}: dropping live entries {', '.join(removed)} "
+                "(--allow-downgrade)"
+            )
+
+        for ext_id, new_version in new_versions.items():
             live_version = live_versions.get(ext_id)
             if live_version is None:
                 continue

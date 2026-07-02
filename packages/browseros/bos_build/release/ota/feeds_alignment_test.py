@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Tests for the server OTA flow's alignment on the FeedSpec table."""
 
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,7 +11,7 @@ from ...core.context import Context
 from ...core.step import ValidationError
 from ..feeds.render import ExistingAppcast, SignedArtifact, render_server_appcast
 from ..feeds.spec import server_feed
-from .common import get_appcast_path, promote_appcast_content
+from .common import get_appcast_path, merge_base_appcast, promote_appcast_content
 from .server import ServerOTAModule
 
 
@@ -94,6 +95,46 @@ class BundleDerivationTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValidationError, "nope"):
             module.validate(ctx)
+
+
+class MergeBaseAppcastTest(unittest.TestCase):
+    class _FakePublisher:
+        def __init__(self, live=None):
+            self.live = live
+
+        def fetch_live(self, key):
+            return self.live
+
+    def test_live_feed_wins_over_staging_file(self):
+        spec = server_feed("browseros-server", "alpha")
+        with tempfile.TemporaryDirectory() as tmp:
+            staging = Path(tmp) / "appcast-server.alpha.xml"
+            staging.write_text(_alpha_content())
+
+            base = merge_base_appcast(
+                self._FakePublisher(live=_alpha_content().replace("0.0.9", "0.0.12")),
+                spec,
+                staging,
+            )
+
+        self.assertEqual(base.version, "0.0.12")
+
+    def test_staging_file_is_fallback_when_no_live(self):
+        spec = server_feed("browseros-server", "alpha")
+        with tempfile.TemporaryDirectory() as tmp:
+            staging = Path(tmp) / "appcast-server.alpha.xml"
+            staging.write_text(_alpha_content())
+
+            base = merge_base_appcast(self._FakePublisher(live=None), spec, staging)
+
+        self.assertEqual(base.version, "0.0.9")
+
+    def test_no_live_and_no_staging_returns_none(self):
+        spec = server_feed("browseros-server", "alpha")
+        base = merge_base_appcast(
+            self._FakePublisher(live=None), spec, Path("/nonexistent/appcast.xml")
+        )
+        self.assertIsNone(base)
 
 
 class PromoteContentTest(unittest.TestCase):

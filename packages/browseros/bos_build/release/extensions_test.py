@@ -123,6 +123,63 @@ class ExtensionsFeedModuleTest(unittest.TestCase):
             {AGENT_ID: "0.0.117.0", BUGREPORTER_ID: "54.0.0.0"},
         )
 
+    def test_bundled_never_regresses_below_live_on_channel_run(self):
+        # Alpha runs push bundled ahead; a prod run must neither downgrade
+        # bundled nor need --allow-downgrade to proceed.
+        publisher = FakePublisher(
+            live={
+                "extensions/update-manifest.xml": render_update_manifest(
+                    {"agent": "0.0.118.0", "bugreporter": "54.0.0.0"}
+                ),
+                "extensions/bundled-manifest.xml": render_update_manifest(
+                    {
+                        "agent": "0.0.119.0",
+                        "bugreporter": "54.0.0.0",
+                        "browserclaw": "0.0.0.2",
+                    }
+                ),
+            }
+        )
+
+        self._run(channel="prod", publisher=publisher, publish=True)
+
+        manifest = publisher.calls[0].content
+        bundled = publisher.calls[2].content
+        self.assertEqual(
+            extract_manifest_versions(manifest)[AGENT_ID], "0.0.118.0"
+        )
+        self.assertEqual(extract_manifest_versions(bundled)[AGENT_ID], "0.0.119.0")
+        # Both agent crx versions are referenced somewhere — both checked.
+        self.assertIn(
+            "https://cdn.browseros.com/extensions/agent-0.0.118.0.crx",
+            publisher.head_calls,
+        )
+        self.assertIn(
+            "https://cdn.browseros.com/extensions/agent-0.0.119.0.crx",
+            publisher.head_calls,
+        )
+
+    def test_allow_downgrade_forces_bundled_to_run_versions(self):
+        publisher = FakePublisher(
+            live={
+                "extensions/update-manifest.xml": render_update_manifest(
+                    {"agent": "0.0.118.0", "bugreporter": "54.0.0.0"}
+                ),
+                "extensions/bundled-manifest.xml": render_update_manifest(
+                    {
+                        "agent": "0.0.119.0",
+                        "bugreporter": "54.0.0.0",
+                        "browserclaw": "0.0.0.2",
+                    }
+                ),
+            }
+        )
+
+        self._run(channel="prod", publisher=publisher, allow_downgrade=True)
+
+        bundled = publisher.calls[2].content
+        self.assertEqual(extract_manifest_versions(bundled)[AGENT_ID], "0.0.118.0")
+
     def test_missing_version_with_no_live_source_raises(self):
         publisher = FakePublisher(live={})
 

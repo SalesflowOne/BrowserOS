@@ -90,7 +90,12 @@ def _browser_feeds(product_id: str) -> Tuple[FeedSpec, ...]:
     hardcode the browseros keys, so claw feeds have no client until the
     product-aware URL chromium patch lands.
     """
-    slug = _BROWSER_FEED_SLUGS[product_id]
+    slug = _BROWSER_FEED_SLUGS.get(product_id)
+    if slug is None:
+        raise ValueError(
+            f"Product '{product_id}' has no browser feed key slug — add it "
+            "to _BROWSER_FEED_SLUGS in release/feeds/spec.py"
+        )
     infix = f"-{slug}" if slug else ""
     display = get_product_descriptor(product_id).display_name
     publishable = product_id == "browseros"
@@ -121,7 +126,12 @@ def _browser_feeds(product_id: str) -> Tuple[FeedSpec, ...]:
 
 
 def _server_feeds(bundle: ServerBundle) -> Tuple[FeedSpec, ...]:
-    slug = _SERVER_FEED_SLUGS[bundle.id]
+    slug = _SERVER_FEED_SLUGS.get(bundle.id)
+    if slug is None:
+        raise ValueError(
+            f"Server bundle '{bundle.id}' has no feed key slug — add it to "
+            "_SERVER_FEED_SLUGS in release/feeds/spec.py"
+        )
     product_id = bundle.product_ids[0]
 
     def feed(channel: str, suffix: str, title: str) -> FeedSpec:

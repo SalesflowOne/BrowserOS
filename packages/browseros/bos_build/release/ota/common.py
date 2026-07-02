@@ -56,6 +56,22 @@ def generate_server_appcast(
     return render_server_appcast(spec, version, artifacts, existing)
 
 
+def merge_base_appcast(publisher, spec: FeedSpec, staging_path: Path) -> Optional[ExistingAppcast]:
+    """Same-version merge base for a server appcast: live feed first.
+
+    A stale checkout's git-tracked staging copy must not silently drop (or
+    resurrect) platforms already live for this version; the staging file is
+    only the fallback when there is no readable live object.
+    """
+    live = publisher.fetch_live(spec.key)
+    if live is not None:
+        parsed = parse_server_appcast_content(live)
+        if parsed is not None:
+            return parsed
+        log_error(f"Live {spec.key} is unparseable — falling back to {staging_path}")
+    return parse_existing_appcast(staging_path)
+
+
 def promote_appcast_content(source_content: str, target_spec: FeedSpec) -> str:
     """Re-render an appcast under another channel's spec (title/link swap).
 

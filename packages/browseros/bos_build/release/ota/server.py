@@ -20,11 +20,12 @@ from .common import (
     SERVER_PLATFORMS,
     SignedArtifact,
     sparkle_sign_file,
-    parse_existing_appcast,
     create_server_bundle_zip,
     get_appcast_path,
     find_server_resources_dir,
+    merge_base_appcast,
 )
+from ..feeds.publisher import FeedPublisher
 from .sign_binary import (
     notarize_macos_zip,
     sign_server_bundle_macos,
@@ -218,7 +219,9 @@ class ServerOTAModule(Step):
         log_info("\n📝 Generating appcast...")
         spec = server_feed(self.bundle.id, self.channel)
         appcast_path = get_appcast_path(self.channel, self.bundle.id)
-        existing_appcast = parse_existing_appcast(appcast_path)
+        existing_appcast = merge_base_appcast(
+            FeedPublisher(env=ctx.env), spec, appcast_path
+        )
 
         appcast_content = render_server_appcast(
             spec,
@@ -253,7 +256,10 @@ class ServerOTAModule(Step):
             log_info(f"  {CDN_BASE_URL}/server/{artifact.zip_path.name}")
 
         log_info(f"\nAppcast saved to: {appcast_path}")
-        log_info("\n📋 Next step: Run 'browseros ota server release-appcast' to make the release live")
+        log_info(
+            "\n📋 Next step: Run 'browseros ota server release-appcast "
+            f"--channel {self.channel} --publish' to make the release live"
+        )
 
     def _sign_bundle(
         self, staging_resources: Path, platform: dict, ctx: Context

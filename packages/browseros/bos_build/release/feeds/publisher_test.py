@@ -221,6 +221,38 @@ class PublisherTestCase(unittest.TestCase):
         self.assertEqual(self.client.calls, [])
         self.assertIn(url, self.head_calls)
 
+    def test_failed_backup_blocks_the_put(self):
+        publisher = self._publisher(
+            {"appcast.xml": _mac_appcast("10000.0.46.0.0").encode()}
+        )
+
+        def broken_copy(**kwargs):
+            raise RuntimeError("copy exploded")
+
+        self.client.copy_object = broken_copy
+
+        ok = publisher.publish(
+            feed_by_key("appcast.xml"), _mac_appcast(), publish=True
+        )
+
+        self.assertFalse(ok)
+        self.assertEqual(self.client.calls, [])
+
+    def test_manifest_entry_removal_refused_without_flag(self):
+        spec = update_manifest_feed("alpha")
+        live = render_update_manifest(
+            {"agent": "0.0.118.0", "bugreporter": "54.0.0.0"}
+        )
+        publisher = self._publisher({spec.key: live.encode()})
+
+        only_agent = render_update_manifest({"agent": "0.0.118.0"})
+        self.assertFalse(publisher.publish(spec, only_agent, publish=True))
+        self.assertEqual(self.client.calls, [])
+
+        self.assertTrue(
+            publisher.publish(spec, only_agent, publish=True, allow_downgrade=True)
+        )
+
     def test_update_manifest_guards_per_extension(self):
         spec = update_manifest_feed("alpha")
         live = render_update_manifest(

@@ -16,6 +16,7 @@ from ..lib.utils import log_info
 from .feeds.publisher import FeedPublisher
 from .feeds.render import (
     extract_manifest_versions,
+    parse_dotted_version,
     render_extensions_json,
     render_update_manifest,
 )
@@ -87,13 +88,15 @@ class ExtensionsFeedModule(Step):
     def execute(self, ctx: Context) -> None:
         publisher = self._publisher or FeedPublisher(env=ctx.env)
 
-        versions = self._resolve_versions(publisher)
+        versions, live_bundled = self._resolve_versions(publisher)
+        bundled_versions = self._bundled_versions(versions, live_bundled)
         log_info(
             "Extension versions: "
             + ", ".join(f"{n}={v}" for n, v in sorted(versions.items()))
         )
 
-        self._check_crx_objects(publisher, versions)
+        crx_targets = sorted(set(versions.items()) | set(bundled_versions.items()))
+        self._check_crx_objects(publisher, crx_targets)
 
         update_feed_versions = {
             ext.name: versions[ext.name]
@@ -106,13 +109,13 @@ class ExtensionsFeedModule(Step):
              render_update_manifest(update_feed_versions)),
             (extensions_json_feed(self.channel),
              render_extensions_json(self.channel)),
-            (bundled_manifest_feed(), render_update_manifest(versions)),
+            (bundled_manifest_feed(), render_update_manifest(bundled_versions)),
         )
 
         # Preflight all three through the rails before the first write so a
-        # guard refusal (e.g. the bundled manifest holding a newer version
-        # from an earlier alpha run) cannot leave the trio half-updated.
-        # In dry-run mode this preflight IS the run.
+        # guard refusal (e.g. a typo'd --set below the live version) cannot
+        # leave the trio half-updated. In dry-run mode this preflight IS
+        # the run.
         for spec, content in outputs:
             if not publisher.publish(
                 spec,
@@ -140,28 +143,29 @@ class ExtensionsFeedModule(Step):
                     "were already written"
                 )
 
-    def _resolve_versions(self, publisher: FeedPublisher) -> Dict[str, str]:
+    def _live_versions(self, publisher: FeedPublisher, key: str) -> Dict[str, str]:
+        live = publisher.fetch_live(key)
+        if live is None:
+            return {}
+        id_to_name = {ext.extension_id: ext.name for ext in EXTENSIONS}
+        return {
+            id_to_name[ext_id]: version
+            for ext_id, version in extract_manifest_versions(live).items()
+            if ext_id in id_to_name
+        }
+
+    def _resolve_versions(self, publisher: FeedPublisher):
         """Final name→version map: live bundled < live channel manifest < --set.
 
         Extensions not being bumped carry over from the live objects so one
-        --set can never drop or silently regress the others.
+        --set can never drop or silently regress the others. Also returns
+        the live bundled versions for the bundled no-regress rule.
         """
-        id_to_name = {ext.extension_id: ext.name for ext in EXTENSIONS}
-        versions: Dict[str, str] = {}
-
-        for key in (
-            bundled_manifest_feed().key,
-            update_manifest_feed(self.channel).key,
-        ):
-            live = publisher.fetch_live(key)
-            if live is None:
-                continue
-            for ext_id, version in extract_manifest_versions(live).items():
-                name = id_to_name.get(ext_id)
-                if name:
-                    versions[name] = version
-
-        versions.update(self.set_versions)
+        live_bundled = self._live_versions(publisher, bundled_manifest_feed().key)
+        live_channel = self._live_versions(
+            publisher, update_manifest_feed(self.channel).key
+        )
+        versions = {**live_bundled, **live_channel, **self.set_versions}
 
         missing = [ext.name for ext in EXTENSIONS if ext.name not in versions]
         if missing:
@@ -170,13 +174,33 @@ class ExtensionsFeedModule(Step):
                 + ", ".join(sorted(missing))
                 + f" (channel {self.channel})"
             )
-        return versions
+        return versions, live_bundled
 
-    def _check_crx_objects(
-        self, publisher: FeedPublisher, versions: Dict[str, str]
-    ) -> None:
+    def _bundled_versions(
+        self, versions: Dict[str, str], live_bundled: Dict[str, str]
+    ) -> Dict[str, str]:
+        """Bundled keeps its live version when newer than this run's.
+
+        An alpha run legitimately pushes bundled past prod's versions; a
+        later prod run must not need --allow-downgrade (which would disable
+        the guard on the client-facing manifest too) just to get through.
+        --allow-downgrade remains the explicit path to force bundled down.
+        """
+        if self.allow_downgrade:
+            return dict(versions)
+
+        merged = {}
+        for name, version in versions.items():
+            live = live_bundled.get(name)
+            keep_live = live and parse_dotted_version(live) > parse_dotted_version(
+                version
+            )
+            merged[name] = live if keep_live else version
+        return merged
+
+    def _check_crx_objects(self, publisher: FeedPublisher, targets) -> None:
         """Every crx referenced by any output must already exist in R2."""
-        for name, version in sorted(versions.items()):
+        for name, version in targets:
             url = extension_by_name(name).crx_url(version)
             status = publisher.http_head(url)
             if status != 200:

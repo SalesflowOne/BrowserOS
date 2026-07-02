@@ -340,15 +340,23 @@ def parse_dotted_version(version: str) -> Tuple[int, ...]:
 
 
 def extract_appcast_version(content: str) -> Optional[str]:
-    """First item's sparkle:version from an appcast document, or None."""
+    """Highest sparkle:version across an appcast's items, or None.
+
+    Our feeds are single-item, but a hand-made multi-item live feed must
+    still guard against the newest version it serves, not the first listed.
+    """
     try:
         root = ET.fromstring(content)
     except ET.ParseError:
         return None
-    version_elem = root.find(f"channel/item/{{{SPARKLE_NS}}}version")
-    if version_elem is None or not version_elem.text:
+    versions = [
+        elem.text
+        for elem in root.findall(f"channel/item/{{{SPARKLE_NS}}}version")
+        if elem.text
+    ]
+    if not versions:
         return None
-    return version_elem.text
+    return max(versions, key=parse_dotted_version)
 
 
 def _gupdate_apps(root: ET.Element) -> List[ET.Element]:

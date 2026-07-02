@@ -160,7 +160,11 @@ def server_release_appcast(
       browseros ota server release-appcast --channel alpha --publish
     """
     bundle_id = _server_bundle_id(product)
-    spec = server_feed(bundle_id, channel)
+    try:
+        spec = server_feed(bundle_id, channel)
+    except ValueError as e:
+        log_error(str(e))
+        raise typer.Exit(1)
 
     source_path = appcast_file or get_appcast_path(channel, bundle_id)
     if not source_path.exists():
