@@ -25,33 +25,32 @@ class FindChromeBinaryTest(unittest.TestCase):
     def test_first_valid_platform_candidate(self):
         import os
 
-        os.environ.pop("CHROME_BINARY", None)
-        found = find_chrome_binary(
-            None,
-            is_valid=lambda p: p == "google-chrome",
-            platform_name="Linux",
-        )
+        with patch.dict("os.environ", {}, clear=False):
+            os.environ.pop("CHROME_BINARY", None)
+            found = find_chrome_binary(
+                None,
+                is_valid=lambda p: p == "google-chrome",
+                platform_name="Linux",
+            )
         self.assertEqual(found, "google-chrome")
 
     def test_none_found_raises_actionable(self):
         import os
 
-        os.environ.pop("CHROME_BINARY", None)
-        with self.assertRaisesRegex(RuntimeError, "CHROME_BINARY"):
+        with patch.dict("os.environ", {}, clear=False):
+            os.environ.pop("CHROME_BINARY", None)
+            with self.assertRaisesRegex(RuntimeError, "CHROME_BINARY"):
+                find_chrome_binary(
+                    None, is_valid=lambda p: False, platform_name="Darwin"
+                )
+
+    def test_invalid_explicit_binary_raises(self):
+        with self.assertRaisesRegex(RuntimeError, "/broken/path"):
             find_chrome_binary(
-                None, is_valid=lambda p: False, platform_name="Darwin"
+                "/broken/path",
+                is_valid=lambda p: p == "chromium",
+                platform_name="Linux",
             )
-
-    def test_invalid_explicit_falls_through_to_candidates(self):
-        import os
-
-        os.environ.pop("CHROME_BINARY", None)
-        found = find_chrome_binary(
-            "/broken/path",
-            is_valid=lambda p: p == "chromium",
-            platform_name="Linux",
-        )
-        self.assertEqual(found, "chromium")
 
 
 class PackExtensionCommandTest(unittest.TestCase):

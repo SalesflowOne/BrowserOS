@@ -38,9 +38,16 @@ def find_chrome_binary(
     is_valid: Callable[[str], bool] = _is_valid_binary,
     platform_name: Optional[str] = None,
 ) -> str:
-    """Resolve the chrome binary: explicit flag > CHROME_BINARY > candidates."""
-    if preferred and is_valid(preferred):
-        return preferred
+    """Resolve the chrome binary: explicit flag > CHROME_BINARY > candidates.
+
+    An explicit flag that does not validate is an error, not a fallback —
+    silently packing with a different chrome than the operator asked for is
+    worse than failing.
+    """
+    if preferred:
+        if is_valid(preferred):
+            return preferred
+        raise RuntimeError(f"Requested chrome binary is not usable: {preferred}")
 
     env_binary = os.environ.get("CHROME_BINARY")
     if env_binary and is_valid(env_binary):

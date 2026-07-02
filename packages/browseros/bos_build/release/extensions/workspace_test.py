@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from .specs import ExternalRepoSource, InRepoSource, spec_by_name
 from .workspace import (
+    _format_git_error,
     clone_url,
     resolve_source,
     run_command,
@@ -134,6 +135,35 @@ class ResolveSourceTest(unittest.TestCase):
         args, _ = git.calls[0]
         self.assertIn("release-candidate", args)
         self.assertNotIn("main", args)
+
+
+class GitErrorRedactionTest(unittest.TestCase):
+    def test_token_in_clone_args_and_stderr_is_masked(self):
+        args = [
+            "clone",
+            "--branch",
+            "main",
+            "https://x-access-token:tok3n@github.com/browseros-ai/x.git",
+            "/work/repos/x",
+        ]
+        stderr = (
+            "fatal: repository "
+            "'https://x-access-token:tok3n@github.com/browseros-ai/x.git' "
+            "not found"
+        )
+        message = _format_git_error(args, stderr)
+        self.assertNotIn("tok3n", message)
+        self.assertIn("://***@github.com", message)
+        self.assertIn("git clone --branch main", message)
+
+    def test_plain_urls_pass_through(self):
+        message = _format_git_error(
+            ["fetch", "origin", "main"], "fatal: could not read from remote"
+        )
+        self.assertEqual(
+            message,
+            "git fetch origin main failed: fatal: could not read from remote",
+        )
 
 
 class UpdateManifestVersionTest(unittest.TestCase):

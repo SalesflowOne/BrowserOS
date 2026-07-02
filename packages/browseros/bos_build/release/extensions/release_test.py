@@ -92,6 +92,30 @@ class BuildPipelineTest(unittest.TestCase):
         )
         self.assertFalse(feeds.publish)
 
+    def test_bad_channel_rejected_at_assembly_even_without_feeds_step(self):
+        for name in ("agent", "controller"):
+            with self.assertRaisesRegex(ValueError, "alpha/prod"):
+                build_pipeline(
+                    version="1.0.0",
+                    name=name,
+                    channel="pord",
+                    publish_manifest=False,
+                    branch=None,
+                    chrome_binary=None,
+                )
+
+    def test_malformed_version_rejected_at_assembly(self):
+        for version in ("1.0.0-beta", "abc", "", "1..2"):
+            with self.assertRaisesRegex(ValueError, "version"):
+                build_pipeline(
+                    version=version,
+                    name="agent",
+                    channel="alpha",
+                    publish_manifest=False,
+                    branch=None,
+                    chrome_binary=None,
+                )
+
     def test_dry_run_is_default_for_manifests(self):
         _, feeds = build_pipeline(
             version="1.0.0",

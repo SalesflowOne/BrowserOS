@@ -68,37 +68,15 @@ jobs:
       - name: Verify Chrome is available
         run: google-chrome --version
 
-      - name: Build release command
-        id: cmd
+      - name: Run extension release
+        working-directory: packages/browseros
         env:
           VERSION: ${{ inputs.version }}
           EXTENSION: ${{ inputs.extension }}
           BRANCH: ${{ inputs.branch }}
           CHANNEL: ${{ inputs.channel }}
           PUBLISH_MANIFEST: ${{ inputs.publish_manifest }}
-        run: |
-          set -euo pipefail
-          CMD="uv run browseros ext release --version \"$VERSION\" --channel \"$CHANNEL\""
-          if [ "$EXTENSION" != "all" ]; then
-            CMD="$CMD --name \"$EXTENSION\""
-          fi
-          if [ -n "$BRANCH" ]; then
-            CMD="$CMD --branch \"$BRANCH\""
-          fi
-          if [ "$PUBLISH_MANIFEST" = "true" ]; then
-            CMD="$CMD --publish-manifest"
-          fi
-          echo "command=$CMD" >> "$GITHUB_OUTPUT"
-          {
-            echo "### Release command"
-            echo '```bash'
-            echo "$CMD"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Run extension release
-        working-directory: packages/browseros
-        env:
           # Cloning private external extension repos
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
 
@@ -124,7 +102,27 @@ jobs:
           VITE_PUBLIC_POSTHOG_HOST: ${{ secrets.VITE_PUBLIC_POSTHOG_HOST }}
           VITE_PUBLIC_BROWSEROS_API: https://api.browseros.com
           NODE_ENV: production
-        run: ${{ steps.cmd.outputs.command }}
+        # Args are quoted at execution time (never baked into a command
+        # string) so a crafted dispatch input cannot break into this shell.
+        run: |
+          set -euo pipefail
+          args=(--version "$VERSION" --channel "$CHANNEL")
+          if [ "$EXTENSION" != "all" ]; then
+            args+=(--name "$EXTENSION")
+          fi
+          if [ -n "$BRANCH" ]; then
+            args+=(--branch "$BRANCH")
+          fi
+          if [ "$PUBLISH_MANIFEST" = "true" ]; then
+            args+=(--publish-manifest)
+          fi
+          {
+            echo "### Release command"
+            echo '```bash'
+            echo "browseros ext release ${args[*]}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          uv run browseros ext release "${args[@]}"
 
       - name: Upload CRX artifacts
         if: always()

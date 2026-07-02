@@ -6,6 +6,7 @@ build from the working tree instead of cloning this monorepo into itself."""
 
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 from typing import Callable, Iterable, List, Optional
@@ -17,15 +18,29 @@ from .specs import ExtensionSpec, ExternalRepoSource, InRepoSource
 
 RunGit = Callable[..., None]
 
+_URL_CREDENTIALS_RE = re.compile(r"://[^/@\s]+@")
+
+
+def _redact_credentials(text: str) -> str:
+    return _URL_CREDENTIALS_RE.sub("://***@", text)
+
+
+def _format_git_error(args: List[str], stderr: str) -> str:
+    """Git failure message with URL credentials masked.
+
+    Clone args (and git's own stderr) can carry the GH_TOKEN-embedded URL;
+    this string reaches Slack via the notify subscriber, which unlike the
+    Actions log does no secret masking.
+    """
+    return _redact_credentials(f"git {' '.join(args)} failed: {stderr.strip()}")
+
 
 def _run_git(args: List[str], cwd: Optional[Path] = None) -> None:
     result = subprocess.run(
         ["git", *args], cwd=cwd, capture_output=True, text=True
     )
     if result.returncode != 0:
-        raise RuntimeError(
-            f"git {' '.join(args)} failed: {result.stderr.strip()}"
-        )
+        raise RuntimeError(_format_git_error(args, result.stderr))
 
 
 def clone_url(repo: str) -> str:

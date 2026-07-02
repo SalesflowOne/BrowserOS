@@ -10,17 +10,18 @@ longer drift apart.
 """
 
 import os
+import re
 from pathlib import Path
 from typing import List, Optional, Tuple
 
 from ...core.step import Step, ValidationError
 from ...lib.paths import get_package_root
 from ...lib.r2 import BOTO3_AVAILABLE, get_r2_client, upload_file_to_r2
-from ...lib.utils import log_info, log_success
+from ...lib.utils import log_info, log_success, log_warning
 from ..feeds.spec import CDN_BASE_URL, EXTENSIONS as FEED_EXTENSIONS
 from .crx import find_chrome_binary, pack_crx
-from .manifests import ExtensionsFeedModule
-from .specs import ExtensionSpec, select_specs, spec_by_name
+from .manifests import CHANNELS, ExtensionsFeedModule
+from .specs import ExtensionSpec, InRepoSource, select_specs, spec_by_name
 from .workspace import (
     resolve_source,
     run_command,
@@ -28,9 +29,14 @@ from .workspace import (
     write_env_file,
 )
 
+# Chrome requires extension versions to be 1-4 dot-separated integers.
+_VERSION_RE = re.compile(r"^\d+(\.\d+){0,3}$")
+
 
 def _require_env(name: str) -> str:
     value = os.environ.get(name, "").strip()
+    # <=1 mirrors the old release tool's guard: 0-1 chars is an unset or
+    # placeholder value ("0", "-"), never a real key.
     if len(value) <= 1:
         raise EnvironmentError(f"Missing or empty environment variable: {name}")
     return value
@@ -112,6 +118,11 @@ class ExtensionReleaseModule(Step):
             update_manifest_version(
                 source_root / spec.manifest_path, self.version
             )
+            if isinstance(spec.source, InRepoSource):
+                log_warning(
+                    f"stamped {spec.manifest_path} in the working tree — "
+                    "revert it if this was a local test run"
+                )
             if spec.env:
                 env_dir = (
                     source_root / spec.env_dir if spec.env_dir else source_root
@@ -147,7 +158,20 @@ def build_pipeline(
     Extensions the feeds table knows get their new version pinned into an
     ExtensionsFeedModule step; a selection with no feed members (controller)
     releases the crx only — there is nothing to regenerate.
+
+    Channel and version are rejected here, at assembly time — the runner
+    validates steps just-in-time, so leaving this to the feeds step would
+    burn a full build + crx upload before a typo surfaces.
     """
+    if channel not in CHANNELS:
+        raise ValueError(
+            f"channel must be one of {'/'.join(CHANNELS)}, got '{channel}'"
+        )
+    if not _VERSION_RE.fullmatch(version):
+        raise ValueError(
+            f"Invalid version '{version}' — Chrome extension versions are "
+            "1-4 dot-separated integers (e.g. 0.0.118)"
+        )
     specs = select_specs(name)
     steps: List[Step] = [
         ExtensionReleaseModule(
