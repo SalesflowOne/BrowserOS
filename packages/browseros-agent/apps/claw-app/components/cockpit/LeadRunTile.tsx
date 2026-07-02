@@ -75,7 +75,7 @@ function Caption({
   isFailed: boolean
 }) {
   return (
-    <div className="flex flex-col gap-1 bg-ink px-5 py-3 text-white">
+    <div className="flex flex-col gap-1 bg-surface-inverse px-5 py-3 text-white">
       <div className="flex items-center gap-3 font-mono text-[10.5px] text-white/80 uppercase tracking-[0.08em]">
         <span className="inline-flex items-center gap-1.5">
           <AgentDot slug={task.slug} />

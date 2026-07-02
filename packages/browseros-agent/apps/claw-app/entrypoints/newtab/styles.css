@@ -53,6 +53,11 @@
   --color-card-tint: var(--card-tint);
   --color-border-2: var(--border-2);
   --color-border-strong: var(--border-strong);
+  /* Inverted metadata band. Stays a dark chip in both themes (elevated
+     in dark so it reads as raised, not lost against the dark page) —
+     unlike --ink, which flips to light for text. Carries hardcoded
+     white text. */
+  --color-surface-inverse: var(--surface-inverse);
 
   /* Ink scale (typography hierarchy) */
   --color-ink: var(--ink);
@@ -265,6 +270,7 @@ body {
   --card-tint: hsl(40 35% 98.5%);
   --border-2: hsl(40 18% 88%);
   --border-strong: hsl(40 14% 83%);
+  --surface-inverse: hsl(40 8% 10%);
   --ink: hsl(40 8% 10%);
   --ink-2: hsl(35 6% 32%);
   --ink-3: hsl(35 5% 51%);
@@ -328,6 +334,7 @@ body {
   --card-tint: hsl(35 8% 13%);
   --border-2: hsl(35 6% 22%);
   --border-strong: hsl(35 6% 28%);
+  --surface-inverse: hsl(35 7% 18%);
   --ink: hsl(40 18% 94%);
   --ink-2: hsl(38 10% 74%);
   --ink-3: hsl(36 6% 58%);
