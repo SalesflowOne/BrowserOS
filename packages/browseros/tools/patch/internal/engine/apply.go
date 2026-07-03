@@ -98,9 +98,11 @@ func Apply(ctx context.Context, opts ApplyOptions) (*ApplyResult, error) {
 
 // requireNoPendingResolution stops a new run from operating on a paused or
 // conflicted checkout: a pending resolve state would be silently clobbered
-// (stranding continue/skip and losing the run's persisted intent), and
-// unmerged index entries mean a stash pop is waiting on the user — committing
-// or re-applying over either bakes conflict debris into the tree.
+// (stranding continue/skip and losing the run's persisted intent), unmerged
+// index entries mean a stash pop is waiting on the user, and leftover conflict
+// markers mean a stash rebase left work half-merged (git leaves those as plain
+// modified files, not unmerged entries). Committing or re-applying over any of
+// these bakes conflict debris into the tree.
 func requireNoPendingResolution(ctx context.Context, ws workspace.Entry) error {
 	if resolve.Exists(ws.Path) {
 		return fmt.Errorf(
@@ -115,6 +117,15 @@ func requireNoPendingResolution(ctx context.Context, ws workspace.Entry) error {
 		return fmt.Errorf(
 			"%s has unresolved merge conflicts (%s); resolve them before running this command",
 			ws.Name, strings.Join(unmerged, ", "))
+	}
+	markers, err := git.ConflictMarkerFiles(ctx, ws.Path)
+	if err != nil {
+		return err
+	}
+	if len(markers) > 0 {
+		return fmt.Errorf(
+			"%s has leftover conflict markers (%s); resolve them (then \"git stash drop\" if a sync left a stash) before running this command",
+			ws.Name, strings.Join(markers, ", "))
 	}
 	return nil
 }
@@ -136,34 +147,17 @@ func finishApply(ctx context.Context, opts ApplyOptions, repoRev string, result 
 }
 
 // annotateApplied runs the auto-annotate step of a completed apply. A repo
-// without a features registry or a checkout with a live pending stash skips
-// with a recorded reason, and a failure is recorded on the result instead of
-// returned: the apply itself succeeded and its state is already settled, so
-// the caller must still see what was applied.
+// without a features registry skips with a recorded reason, and a failure is
+// recorded on the result instead of returned: the apply itself succeeded and
+// its state is already settled, so the caller must still see what was applied.
+// A parked --no-rebase stash needs no special case here — its local changes
+// sit in the stash, not the worktree, so the tree is pure patches and annotate
+// commits them correctly; the shared guard blocks the unsafe case (conflict
+// markers from a stash rebase) inside Annotate.
 func annotateApplied(ctx context.Context, ws workspace.Entry, repoInfo *repo.Info, exclude []string, result *ApplyResult, progress Progress) {
 	if _, err := FeatureFilePath(repoInfo.Root); err != nil {
 		result.AnnotateSkipped = "no features registry"
 		return
-	}
-	// A recorded stash that still exists means local changes are parked or a
-	// stash rebase conflicted; either way the tree is not purely patches, so
-	// auto-committing feature history could sweep user work or conflict
-	// markers. A standalone annotate stays available once the stash settles.
-	state, err := workspace.LoadState(ws.Path)
-	if err != nil {
-		result.AnnotateError = err.Error()
-		return
-	}
-	if state.PendingStash != "" {
-		live, err := git.StashEntryExists(ctx, ws.Path, state.PendingStash)
-		if err != nil {
-			result.AnnotateError = err.Error()
-			return
-		}
-		if live {
-			result.AnnotateSkipped = "pending stash holds local changes"
-			return
-		}
 	}
 	annotateResult, err := Annotate(ctx, AnnotateOptions{
 		Workspace: ws,

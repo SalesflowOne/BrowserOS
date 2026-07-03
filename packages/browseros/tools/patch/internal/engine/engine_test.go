@@ -924,6 +924,82 @@ func TestApplyRefusesWithUnmergedFiles(t *testing.T) {
 	}
 }
 
+func TestAnnotateRefusesOnConflictMarkers(t *testing.T) {
+	ctx := context.Background()
+	workspacePath := initGitRepo(t)
+	rel := "chrome/core.cc"
+	writeFile(t, filepath.Join(workspacePath, rel), "base\n")
+	runGit(t, workspacePath, "add", rel)
+	runGit(t, workspacePath, "commit", "-m", "workspace base")
+	baseCommit := gitOutput(t, workspacePath, "rev-parse", "HEAD")
+
+	// The plain-modified-with-markers state a stash rebase leaves (no UU entry).
+	writeFile(t, filepath.Join(workspacePath, rel), "<<<<<<< local\nmine\n=======\ntheirs\n>>>>>>> stashed\n")
+
+	repoInfo := newPatchRepo(t, baseCommit)
+	writeFeaturesYAML(t, repoInfo.Root, `version: "1.0"
+features:
+  browseros-core:
+    description: "chore: core"
+    files:
+      - chrome/
+`)
+	ws := workspace.Entry{Name: "ws", Path: workspacePath}
+	if _, err := Annotate(ctx, AnnotateOptions{Workspace: ws, Repo: repoInfo}); err == nil || !strings.Contains(err.Error(), "leftover conflict markers") {
+		t.Fatalf("expected annotate to refuse on conflict markers, got %v", err)
+	}
+	if _, err := Apply(ctx, ApplyOptions{Workspace: ws, Repo: repoInfo}); err == nil || !strings.Contains(err.Error(), "leftover conflict markers") {
+		t.Fatalf("expected apply to refuse on conflict markers, got %v", err)
+	}
+}
+
+func TestApplyAnnotatesWithParkedCleanStash(t *testing.T) {
+	ctx := context.Background()
+	workspacePath := initGitRepo(t)
+	rel := "chrome/core.cc"
+	writeFile(t, filepath.Join(workspacePath, rel), "base\n")
+	writeFile(t, filepath.Join(workspacePath, "local.txt"), "local\n")
+	runGit(t, workspacePath, "add", ".")
+	runGit(t, workspacePath, "commit", "-m", "workspace base")
+	baseCommit := gitOutput(t, workspacePath, "rev-parse", "HEAD")
+
+	repoInfo := newPatchRepo(t, baseCommit)
+	writePatchFromEdit(t, ctx, workspacePath, repoInfo, baseCommit, rel, "patched\n")
+	writeFeaturesYAML(t, repoInfo.Root, `version: "1.0"
+features:
+  browseros-core:
+    description: "chore: core"
+    files:
+      - chrome/
+`)
+
+	// Simulate a --no-rebase sync that parked local changes: the change is in
+	// a stash, removed from the worktree, and recorded on workspace state.
+	writeFile(t, filepath.Join(workspacePath, "local.txt"), "local changed\n")
+	stashRef, err := git.StashPush(ctx, workspacePath, "parked", true, []string{"local.txt"})
+	if err != nil {
+		t.Fatalf("StashPush: %v", err)
+	}
+	if err := workspace.SaveState(workspacePath, &workspace.State{Version: 1, Workspace: workspacePath, BaseCommit: baseCommit, PendingStash: stashRef}); err != nil {
+		t.Fatalf("SaveState: %v", err)
+	}
+
+	result, err := Apply(ctx, ApplyOptions{
+		Workspace:    workspace.Entry{Name: "ws", Path: workspacePath},
+		Repo:         repoInfo,
+		AutoAnnotate: true,
+	})
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if result.AnnotateSkipped != "" {
+		t.Fatalf("a parked-clean stash must not block annotation, got skip=%q", result.AnnotateSkipped)
+	}
+	if result.Annotate == nil || result.Annotate.CommitsCreated != 1 {
+		t.Fatalf("expected feature commit for the pure-patch tree, got %+v", result.Annotate)
+	}
+}
+
 func TestApplyAutoAnnotateSkipsWithoutFeaturesRegistry(t *testing.T) {
 	ctx := context.Background()
 	workspacePath := initGitRepo(t)

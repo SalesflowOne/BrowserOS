@@ -600,6 +600,40 @@ func UnmergedFiles(ctx context.Context, dir string) ([]string, error) {
 	return splitLines(result.Stdout), nil
 }
 
+// ConflictMarkerFiles returns tracked files that carry leftover conflict
+// markers relative to HEAD — the state a stash-rebase conflict leaves as plain
+// modified files (no unmerged index entry). It relies on git's own detector
+// ("git diff --check"), filtering to marker lines so trailing-whitespace
+// warnings in legitimately patched files are ignored.
+func ConflictMarkerFiles(ctx context.Context, dir string) ([]string, error) {
+	result, err := Run(ctx, dir, nil, "-c", "core.quotepath=false", "diff", "--check", "HEAD")
+	if err != nil {
+		return nil, err
+	}
+	// --check exits 2 when it reports markers or whitespace; both are expected
+	// signals, not command failures. A negative code means git never ran.
+	if result.Code < 0 {
+		return nil, errors.New(strings.TrimSpace(result.Stderr))
+	}
+	seen := map[string]bool{}
+	var files []string
+	for _, line := range splitLines(result.Stdout) {
+		if !strings.HasSuffix(line, "leftover conflict marker") {
+			continue
+		}
+		path := line
+		if idx := strings.Index(line, ":"); idx > 0 {
+			path = line[:idx]
+		}
+		if path == "" || seen[path] {
+			continue
+		}
+		seen[path] = true
+		files = append(files, path)
+	}
+	return files, nil
+}
+
 // StashRebase replays a stash on top of the current working tree with a
 // per-file 3-way merge (stash parent as base). Unlike `git stash pop`, it
 // works when the files were modified after the stash was taken — exactly the
