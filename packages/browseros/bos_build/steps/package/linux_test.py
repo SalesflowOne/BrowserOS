@@ -12,7 +12,9 @@ from bos_build.core.context import Context
 from bos_build.core.products import get_product_descriptor
 from bos_build.steps.package.linux import (
     LINUX_HOST_APPIMAGETOOL,
+    appimage_icon_source,
     copy_browser_files,
+    copy_icon,
     create_apparmor_profile,
     create_desktop_file,
     create_launcher_script,
@@ -169,6 +171,49 @@ class LinuxProductMetadataTest(unittest.TestCase):
             self.assertTrue((root / "bin" / "browserclaw").exists())
             self.assertTrue((root / "apparmor" / "browserclaw").exists())
             self.assertTrue((root / "metainfo" / "browserclaw.metainfo.xml").exists())
+
+    def test_browserclaw_icons_copy_from_product_resource_tree(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            icon_src = root / "resources" / "browserclaw" / "icons"
+            icon_src.mkdir(parents=True)
+            (icon_src / "product_logo_16.png").write_text("browserclaw-16")
+            browseros_icons = root / "resources" / "browseros" / "icons"
+            browseros_icons.mkdir(parents=True)
+            (browseros_icons / "product_logo_16.png").write_text("browseros-16")
+            ctx = cast(
+                Context,
+                SimpleNamespace(
+                    root_dir=root,
+                    product=get_product_descriptor("browserclaw"),
+                ),
+            )
+
+            self.assertTrue(copy_icon(ctx, root / "hicolor"))
+
+            dest = root / "hicolor" / "16x16" / "apps" / "browserclaw.png"
+            self.assertEqual(dest.read_text(), "browserclaw-16")
+
+    def test_appimage_icon_source_uses_active_product_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            icon_dir = root / "resources" / "browserclaw" / "icons"
+            icon_dir.mkdir(parents=True)
+            fallback = icon_dir / "product_logo.png"
+            fallback.write_text("fallback")
+            ctx = cast(
+                Context,
+                SimpleNamespace(
+                    root_dir=root,
+                    product=get_product_descriptor("browserclaw"),
+                ),
+            )
+
+            self.assertEqual(appimage_icon_source(ctx), fallback)
+
+            preferred = icon_dir / "product_logo_256.png"
+            preferred.write_text("preferred")
+            self.assertEqual(appimage_icon_source(ctx), preferred)
 
 
 if __name__ == "__main__":

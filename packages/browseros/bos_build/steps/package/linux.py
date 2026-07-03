@@ -77,6 +77,21 @@ def get_host_appimagetool() -> tuple[str, str]:
     return tool
 
 
+def product_icons_dir(ctx: Context) -> Path:
+    """Return the committed icon resource root for the active product."""
+    return Path(ctx.root_dir) / "resources" / ctx.product.id / "icons"
+
+
+def appimage_icon_source(ctx: Context) -> Optional[Path]:
+    """Return the best AppImage root icon for the active product."""
+    icons_base = product_icons_dir(ctx)
+    for filename in ("product_logo_256.png", "product_logo.png"):
+        icon = icons_base / filename
+        if icon.exists():
+            return icon
+    return None
+
+
 @step("package_linux", phase="package", platforms=("linux",), notify=True)
 class LinuxPackageModule(Step):
     produces = ["appimage", "deb"]
@@ -258,20 +273,12 @@ StartupWMClass=chromium-browser
 
 
 def copy_icon(ctx: Context, icons_dir: Path) -> bool:
-    """Copy product icons at multiple sizes to hicolor icon directory.
-
-    Args:
-        ctx: Build context
-        icons_dir: Base icons directory (usr/share/icons/hicolor)
-
-    Returns:
-        True if at least one icon was copied, False if none found
-    """
-    icons_base = Path(join_paths(ctx.root_dir, "resources", "icons"))
+    """Copy active-product icons to the hicolor icon directory."""
+    icons_base = product_icons_dir(ctx)
     copied = False
 
     for size in [16, 22, 24, 32, 48, 64, 128, 256]:
-        icon_src = Path(join_paths(icons_base, f"product_logo_{size}.png"))
+        icon_src = icons_base / f"product_logo_{size}.png"
         if icon_src.exists():
             icon_dest = Path(
                 join_paths(
@@ -288,7 +295,7 @@ def copy_icon(ctx: Context, icons_dir: Path) -> bool:
     if copied:
         log_info("  ✓ Copied icons (multiple sizes)")
     else:
-        log_warning("  ⚠ No icon files found in resources/icons/")
+        log_warning(f"  ⚠ No icon files found in {icons_base}")
 
     return copied
 
@@ -329,11 +336,8 @@ def prepare_appdir(ctx: Context, appdir: Path) -> bool:
     )
     appdir_desktop.write_text(desktop_content)
 
-    # AppImage-specific: Copy icon to root (256px for best quality)
-    icon_src = Path(join_paths(ctx.root_dir, "resources", "icons", "product_logo_256.png"))
-    if not icon_src.exists():
-        icon_src = Path(join_paths(ctx.root_dir, "resources", "icons", "product_logo.png"))
-    if icon_src.exists():
+    icon_src = appimage_icon_source(ctx)
+    if icon_src:
         appdir_icon = Path(join_paths(appdir, f"{ctx.product.linux.icon_name}.png"))
         shutil.copy2(icon_src, appdir_icon)
 
