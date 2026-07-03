@@ -41,7 +41,7 @@ async function start(): Promise<void> {
 
   const httpServer = Bun.serve({
     hostname: '127.0.0.1',
-    port: env.port,
+    port: env.serverPort,
     fetch: server.fetch,
   })
   // File sink attaches only after the port bind succeeds: the bind is

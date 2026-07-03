@@ -10,14 +10,6 @@
  * harness, idempotent connect / disconnect, list reads through the
  * library's manifest so the UI reflects the current install state
  * within the polling interval.
- *
- * Distinct from `harness-install.ts` (the legacy per-agent path).
- * That path writes one entry per cockpit agent profile, keyed by the
- * profile's slug, with a slug-shaped URL. v2 has no per-agent
- * profile, so this layer writes one entry keyed by the constant
- * `BROWSEROS_MCP_SERVER_NAME` ("BrowserClaw") with the slugless URL.
- * Both layers share `specFor` for transport selection (HTTP vs the
- * stdio `npx mcp-remote` fallback for stdio-only agents).
  */
 
 import type { AgentId } from 'agent-mcp-manager'
@@ -54,7 +46,7 @@ export interface ConnectionState {
 const ALL_HARNESSES: readonly Harness[] = harnessEnum.options
 
 function canonicalMcpUrl(): string {
-  return canonicalMcpUrlForPort(env.proxyPort ?? env.port)
+  return canonicalMcpUrlForPort(env.proxyPort ?? env.serverPort)
 }
 
 export async function connectBrowserosToHarness(

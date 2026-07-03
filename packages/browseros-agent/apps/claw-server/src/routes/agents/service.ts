@@ -76,7 +76,7 @@ function nowIso(): string {
 }
 
 function backendBaseUrl(): string {
-  return getLocalServerUrl() ?? `http://127.0.0.1:${env.port}`
+  return getLocalServerUrl() ?? `http://127.0.0.1:${env.serverPort}`
 }
 
 function mcpBaseUrl(): string {
@@ -125,9 +125,8 @@ async function loadAll(): Promise<StoredAgentProfile[]> {
 
 /**
  * Stored profile for a slug, or null when no agent owns that slug.
- * Used by the MCP route to resolve `/mcp/:slug` against the agents
- * directory. Slugs are unique per Phase 1's `uniqueSlug` invariant so
- * the linear scan never collides.
+ * Slugs are unique per Phase 1's `uniqueSlug` invariant so the
+ * linear scan never collides.
  */
 export async function findBySlug(
   slug: string,
