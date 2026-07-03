@@ -169,6 +169,59 @@ class CopyResourcesTest(unittest.TestCase):
             (self.chromium.src / "chrome" / "kept.txt").read_text(), "kept"
         )
 
+    def test_real_config_copies_icons_for_active_product(self):
+        self.root.write_copy_config(self._real_copy_config())
+        for product_id, marker in (
+            ("browseros", "browseros"),
+            ("browserclaw", "claw"),
+        ):
+            icons = self.root.root / "resources" / product_id / "icons"
+            (icons / "linux").mkdir(parents=True)
+            (icons / "default_100_percent").mkdir(parents=True)
+            (icons / "product_logo_16.png").write_text(f"{marker}-root")
+            (icons / "linux" / "product_logo_24.png").write_text(f"{marker}-linux")
+            (icons / "default_100_percent" / "product_logo_16.png").write_text(
+                f"{marker}-dpi"
+            )
+
+        for product_id, marker in (
+            ("browseros", "browseros"),
+            ("browserclaw", "claw"),
+        ):
+            with self.subTest(product=product_id):
+                ctx = make_context(
+                    self.chromium,
+                    self.root,
+                    architecture="x64",
+                    build_type="release",
+                    product=product_id,
+                )
+                self.assertTrue(copy_resources_impl(ctx))
+
+                theme = self.chromium.src / "chrome" / "app" / "theme"
+                self.assertEqual(
+                    (theme / "chromium" / "product_logo_16.png").read_text(),
+                    f"{marker}-root",
+                )
+                self.assertEqual(
+                    (
+                        theme
+                        / "chromium"
+                        / "linux"
+                        / "product_logo_24.png"
+                    ).read_text(),
+                    f"{marker}-linux",
+                )
+                self.assertEqual(
+                    (
+                        theme
+                        / "default_100_percent"
+                        / "chromium"
+                        / "product_logo_16.png"
+                    ).read_text(),
+                    f"{marker}-dpi",
+                )
+
     def test_missing_source_is_tolerated(self):
         self.root.write_copy_config(
             {

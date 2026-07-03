@@ -30,7 +30,7 @@ SCRIPT_DIR = Path(__file__).parent
 DEFAULT_CONFIG = SCRIPT_DIR / "generate_icons.txt"
 SOURCE_DIR = SCRIPT_DIR / "source"
 STATIC_DIR = SCRIPT_DIR / "static"
-OUTPUT_DIR = SCRIPT_DIR.parent.parent.parent / "resources" / "icons"
+OUTPUT_DIR = SCRIPT_DIR.parent.parent.parent / "resources" / "browseros" / "icons"
 
 MIN_SOURCE_SIZE = 1024
 

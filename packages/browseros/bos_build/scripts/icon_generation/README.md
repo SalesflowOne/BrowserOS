@@ -15,7 +15,7 @@ cp your_logo.svg static/product_logo.svg
 # 3. Run generation
 python generate_icons.py
 
-# 4. Icons are output to packages/browseros/resources/icons/
+# 4. Icons are output to packages/browseros/resources/browseros/icons/
 ```
 
 ## Directory Structure
