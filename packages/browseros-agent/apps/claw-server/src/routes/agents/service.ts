@@ -6,9 +6,9 @@
  * File-backed agent profile service. One profile per file at
  * <browserosDir>/claw-server/agents/<id>.json keyed by a nanoid;
  * the slug is the user-facing identifier and is unique across all
- * profiles. mcpUrl is recomputed from getLocalServerUrl() on every
- * read so a port change between boots doesn't strand the stored
- * value.
+ * profiles. mcpUrl is recomputed from the current proxy or bind URL
+ * on every read so a port change between boots doesn't strand the
+ * stored value.
  *
  * Route handlers stay thin: they translate HTTP shape and surface
  * 404s; everything else (validation, persistence, slug resolution,
@@ -27,6 +27,7 @@ import {
   reconcileHarnessLink,
   uninstallForAgent,
 } from '../../services/harness-install'
+import { canonicalMcpUrlForPort, MCP_PATH } from '../../shared/mcp-url'
 import {
   type AgentProfileSummary,
   type CreatedAgent,
@@ -75,16 +76,12 @@ function nowIso(): string {
   return new Date().toISOString()
 }
 
-function backendBaseUrl(): string {
-  return getLocalServerUrl() ?? `http://127.0.0.1:${env.serverPort}`
-}
-
-function mcpBaseUrl(): string {
-  return env.proxyPort ? `http://127.0.0.1:${env.proxyPort}` : backendBaseUrl()
-}
-
-function buildMcpUrl(slug: string): string {
-  return `${mcpBaseUrl()}/mcp/${slug}`
+function buildMcpUrl(): string {
+  if (env.proxyPort) return canonicalMcpUrlForPort(env.proxyPort)
+  const localServerUrl = getLocalServerUrl()
+  return localServerUrl
+    ? `${localServerUrl}${MCP_PATH}`
+    : canonicalMcpUrlForPort(env.serverPort)
 }
 
 function buildCliCommand(slug: string): string {
@@ -177,7 +174,7 @@ function summariseProfile(profile: StoredAgentProfile): AgentProfileSummary {
     alwaysAllowCount: 0,
     lastRunAt: 'Never run',
     status: profile.status,
-    mcpUrl: buildMcpUrl(profile.slug),
+    mcpUrl: buildMcpUrl(),
   }
 }
 
@@ -218,7 +215,7 @@ export async function create(input: NewAgentValues): Promise<CreatedAgent> {
       ...input,
       id,
       slug,
-      mcpUrl: buildMcpUrl(slug),
+      mcpUrl: buildMcpUrl(),
       status: 'configured',
       createdAt: now,
       updatedAt: now,
@@ -270,7 +267,7 @@ export async function update(
       ...input,
       id,
       slug,
-      mcpUrl: buildMcpUrl(slug),
+      mcpUrl: buildMcpUrl(),
       status: existing.status,
       createdAt: existing.createdAt,
       updatedAt: nowIso(),
@@ -335,14 +332,13 @@ export async function regenerateMcpUrl(
     const next: StoredAgentProfile = {
       ...existing,
       slug,
-      mcpUrl: buildMcpUrl(slug),
+      mcpUrl: buildMcpUrl(),
       updatedAt: nowIso(),
     }
     await writeJson(fileFor(id), next, storedAgentProfileSchema)
-    // The whole point of rotating is to issue a fresh URL to the
-    // harness; reconcile the link so the harness picks it up
-    // automatically. Harness is unchanged so only the slug pair
-    // differs.
+    // Rotating still changes the harness server name even though the
+    // endpoint URL is shared; reconcile so the new slug entry replaces
+    // the old one. Harness is unchanged so only the slug pair differs.
     await reconcileHarnessLink({
       before: {
         slug: existing.slug,

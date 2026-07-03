@@ -6,8 +6,8 @@
  * One-shot startup migration for stored cockpit MCP URLs.
  *
  * The migration walks the profile directory, rewrites `mcpUrl` to
- * the runtime's current `buildMcpUrl(slug)` shape, and re-installs
- * the harness entry so it picks up the new value.
+ * the runtime's current canonical MCP URL, and re-installs the
+ * harness entry so it picks up the new value.
  *
  * Failures are logged per-profile; one bad file does not abort the
  * sweep. The migration is idempotent: a second run is a no-op once
@@ -25,7 +25,7 @@ import { listFiles, readJson, writeJson } from './storage'
 const AGENTS_SUBDIR = 'agents'
 
 export async function migrateMcpUrls(
-  buildMcpUrl: (slug: string) => string,
+  targetMcpUrl: string,
 ): Promise<{ migrated: number; skipped: number; failed: number }> {
   let migrated = 0
   let skipped = 0
@@ -35,7 +35,7 @@ export async function migrateMcpUrls(
     const file = `${AGENTS_SUBDIR}/${name}`
     try {
       const profile = await readJson(file, storedAgentProfileSchema)
-      const next = buildMcpUrl(profile.slug)
+      const next = targetMcpUrl
       if (profile.mcpUrl === next) {
         skipped++
         continue
