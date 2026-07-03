@@ -47,6 +47,17 @@ describe('claw server build descriptor', () => {
     expect(config.envVars.NODE_ENV).toBe('production')
   })
 
+  it('forces CI builds to production NODE_ENV over ambient env', async () => {
+    process.env.NODE_ENV = 'development'
+    const rootDir = await writeClawPackageRoot()
+
+    const config = loadBuildConfig(rootDir, clawServerBuildProduct, {
+      ci: true,
+    })
+
+    expect(config.envVars.NODE_ENV).toBe('production')
+  })
+
   async function writeClawPackageRoot(envContent?: string): Promise<string> {
     tempRoot = await mkdtemp(join(tmpdir(), 'claw-server-build-descriptor-'))
     const packageDir = join(tempRoot, 'apps/claw-server')
