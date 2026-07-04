@@ -37,14 +37,10 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
 
-  /* BrowserOS bespoke surfaces. ink-deep and its ink-deep-2 gradient partner
-     stay dark navy chips in both themes (the terminal/command block), so they
-     read as one deep surface; they carry hardcoded light text. */
+  /* BrowserOS bespoke surfaces (canvas/sunken washes, tinted cards, borders). */
   --color-bg-canvas: var(--bg-canvas);
   --color-bg-sunken: var(--bg-sunken);
   --color-card-tint: var(--card-tint);
-  --color-ink-deep: var(--ink-deep);
-  --color-ink-deep-2: var(--ink-deep-2);
   --color-border-2: var(--border-2);
   --color-border-strong: var(--border-strong);
 
@@ -206,8 +202,6 @@ body {
   --bg-canvas: #f9fbff;
   --bg-sunken: #eef3fb;
   --card-tint: #fbfcff;
-  --ink-deep: #01123f;
-  --ink-deep-2: #0a2158;
   --border-2: #e3e9f4;
   --border-strong: #c7d3e8;
   --ink: #25242f;
@@ -253,8 +247,6 @@ body {
   --bg-canvas: #090d14;
   --bg-sunken: #070b11;
   --card-tint: #151d2e;
-  --ink-deep: #172138;
-  --ink-deep-2: #1f2c4a;
   --border-2: #253046;
   --border-strong: #34405c;
   --ink: #eef2f9;
