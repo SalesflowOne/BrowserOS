@@ -59,7 +59,7 @@ describe('OnboardingV2 shell', () => {
 
   it('renders the visual rail with the v2 quote and three feature blocks', () => {
     const html = renderApp()
-    expect(html).toContain('BrowserOS')
+    expect(html).toContain('BrowserClaw')
     expect(html).toContain('Let the agent you already run')
     expect(html).toContain('Fast &amp; token-cheap')
     expect(html).toContain('Logged in as you')
@@ -70,7 +70,7 @@ describe('OnboardingV2 shell', () => {
     const html = renderApp()
     expect(html).toContain('<main')
     expect(html).not.toContain('role="dialog"')
-    expect(html).not.toContain('Welcome to BrowserOS')
+    expect(html).not.toContain('Welcome to BrowserClaw')
     expect(html).not.toContain('#FF5F57')
   })
 

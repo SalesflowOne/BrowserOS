@@ -1,6 +1,6 @@
 import { Lock, ShieldCheck, Zap } from 'lucide-react'
 
-/** Renders the persistent BrowserOS visual rail beside the onboarding steps. */
+/** Renders the persistent BrowserClaw visual rail beside the onboarding steps. */
 export function VisualRail() {
   return (
     <div
@@ -23,7 +23,7 @@ export function VisualRail() {
           B
         </div>
         <div className="font-extrabold text-[17px] tracking-tight">
-          BrowserOS
+          BrowserClaw
         </div>
       </div>
       <div className="relative">
