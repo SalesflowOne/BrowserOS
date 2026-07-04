@@ -16,6 +16,10 @@
     "./shared/mcp-url": {
       "types": "./src/shared/mcp-url.ts",
       "default": "./src/shared/mcp-url.ts"
+    },
+    "./shared/mcp-url-common": {
+      "types": "./src/shared/mcp-url-common.ts",
+      "default": "./src/shared/mcp-url-common.ts"
     }
   },
   "scripts": {
