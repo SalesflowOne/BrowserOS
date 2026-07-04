@@ -34,6 +34,17 @@ type ApplyOptions struct {
 	Progress     Progress
 }
 
+type AnnotationOutcome struct {
+	Annotate *AnnotateResult `json:"annotate,omitempty"`
+	// AnnotateError reports an auto-annotate failure without discarding the
+	// main command outcome: the patches landed and state is already settled,
+	// so the recovery is a standalone annotate, not a retry.
+	AnnotateError string `json:"annotate_error,omitempty"`
+	// AnnotateSkipped names why auto-annotate did not run, so a missing
+	// annotate section is explained.
+	AnnotateSkipped string `json:"annotate_skipped,omitempty"`
+}
+
 type ApplyResult struct {
 	Workspace          string              `json:"workspace"`
 	Mode               string              `json:"mode"`
@@ -46,14 +57,7 @@ type ApplyResult struct {
 	StashConflict      bool                `json:"stash_conflict,omitempty"`
 	StashConflictFiles []string            `json:"stash_conflict_files,omitempty"`
 	Conflicts          []resolve.Operation `json:"conflicts,omitempty"`
-	Annotate           *AnnotateResult     `json:"annotate,omitempty"`
-	// AnnotateError reports an auto-annotate failure without discarding the
-	// apply outcome: the patches landed and the resolve state is already
-	// settled, so the recovery is a standalone annotate, not a retry.
-	AnnotateError string `json:"annotate_error,omitempty"`
-	// AnnotateSkipped names why auto-annotate did not run (no features
-	// registry, pending stash) so a missing annotate section is explained.
-	AnnotateSkipped string `json:"annotate_skipped,omitempty"`
+	AnnotationOutcome
 }
 
 func Apply(ctx context.Context, opts ApplyOptions) (*ApplyResult, error) {
@@ -142,7 +146,7 @@ func finishApply(ctx context.Context, opts ApplyOptions, repoRev string, result 
 	if !opts.AutoAnnotate {
 		return nil
 	}
-	annotateApplied(ctx, opts.Workspace, opts.Repo, nil, result, opts.Progress)
+	annotateApplied(ctx, opts.Workspace, opts.Repo, nil, &result.AnnotationOutcome, opts.Progress)
 	return nil
 }
 
@@ -154,29 +158,34 @@ func finishApply(ctx context.Context, opts ApplyOptions, repoRev string, result 
 // sit in the stash, not the worktree, so the tree is pure patches and annotate
 // commits them correctly; the shared guard blocks the unsafe case (conflict
 // markers from a stash rebase) inside Annotate.
-func annotateApplied(ctx context.Context, ws workspace.Entry, repoInfo *repo.Info, exclude []string, result *ApplyResult, progress Progress) {
+func annotateApplied(ctx context.Context, ws workspace.Entry, repoInfo *repo.Info, exclude []string, outcome *AnnotationOutcome, progress Progress) {
+	annotateWorkspaceChanges(ctx, ws, repoInfo, exclude, outcome, progress, "")
+}
+
+func annotateWorkspaceChanges(ctx context.Context, ws workspace.Entry, repoInfo *repo.Info, exclude []string, outcome *AnnotationOutcome, progress Progress, commitBody string) {
 	if _, err := FeatureFilePath(repoInfo.Root); err != nil {
-		result.AnnotateSkipped = "no features registry"
+		outcome.AnnotateSkipped = "no features registry"
 		return
 	}
 	annotateResult, err := Annotate(ctx, AnnotateOptions{
-		Workspace: ws,
-		Repo:      repoInfo,
-		Exclude:   exclude,
-		Progress:  progress,
+		Workspace:  ws,
+		Repo:       repoInfo,
+		Exclude:    exclude,
+		CommitBody: commitBody,
+		Progress:   progress,
 	})
 	if err != nil {
-		result.AnnotateError = err.Error()
+		outcome.AnnotateError = err.Error()
 		if len(exclude) > 0 {
 			// A standalone annotate would not know about these: warn before
 			// the user follows the recovery hint and sweeps them in.
-			result.AnnotateError += fmt.Sprintf(
+			outcome.AnnotateError += fmt.Sprintf(
 				"; skipped conflicts remain uncommitted (%s) — resolve or reset them before annotating",
 				strings.Join(exclude, ", "))
 		}
 		return
 	}
-	result.Annotate = annotateResult
+	outcome.Annotate = annotateResult
 }
 
 type ContinueOptions struct {
@@ -280,7 +289,7 @@ func finishResolvedRun(ctx context.Context, ws workspace.Entry, repoInfo *repo.I
 		return err
 	}
 	if state.AutoAnnotate {
-		annotateApplied(ctx, ws, repoInfo, skippedExcludePaths(state), result, progress)
+		annotateApplied(ctx, ws, repoInfo, skippedExcludePaths(state), &result.AnnotationOutcome, progress)
 	}
 	if state.RestorePendingStash {
 		if err := restorePendingStash(ctx, ws.Path, result, progress); err != nil {

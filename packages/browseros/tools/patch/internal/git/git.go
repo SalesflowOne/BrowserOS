@@ -716,11 +716,18 @@ func stashTrackedFiles(ctx context.Context, dir string, stashRef string) ([]stri
 }
 
 func stashUntrackedFiles(ctx context.Context, dir string, stashRef string) ([]string, error) {
-	exists, err := CommitExists(ctx, dir, stashRef+"^3")
-	if err != nil || !exists {
+	parents, err := Run(ctx, dir, nil, "rev-list", "--parents", "-n", "1", stashRef)
+	if err != nil {
 		return nil, err
 	}
-	result, err := Run(ctx, dir, nil, "-c", "core.quotepath=false", "ls-tree", "-r", "--name-only", stashRef+"^3")
+	if parents.Code != 0 {
+		return nil, errors.New(strings.TrimSpace(parents.Stderr))
+	}
+	fields := strings.Fields(parents.Stdout)
+	if len(fields) < 4 {
+		return nil, nil
+	}
+	result, err := Run(ctx, dir, nil, "-c", "core.quotepath=false", "ls-tree", "-r", "--name-only", fields[3])
 	if err != nil {
 		return nil, err
 	}

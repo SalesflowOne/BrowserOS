@@ -17,8 +17,11 @@ type AnnotateOptions struct {
 	Repo      *repo.Info
 	// Exclude lists checkout paths deliberately left uncommitted — skipped
 	// conflicts whose files may hold partially applied hunks.
-	Exclude  []string
-	Progress Progress
+	Exclude []string
+	// CommitBody is appended to every feature commit. Refresh uses this to
+	// keep the browseros branch carrying its materialized Patches-Rev trailer.
+	CommitBody string
+	Progress   Progress
 }
 
 type AnnotateResult struct {
@@ -105,7 +108,7 @@ func Annotate(ctx context.Context, opts AnnotateOptions) (*AnnotateResult, error
 			result.FeaturesSkipped++
 			continue
 		}
-		commit, committedFiles, committed, err := commitFeatureFiles(ctx, opts.Workspace.Path, feature.Description, files.stage, files.commit)
+		commit, committedFiles, committed, err := commitFeatureFiles(ctx, opts.Workspace.Path, feature.Description, opts.CommitBody, files.stage, files.commit)
 		if err != nil {
 			return nil, fmt.Errorf("commit feature %s: %w", feature.Name, err)
 		}
@@ -304,7 +307,7 @@ func appendUniquePath(paths *[]string, seen map[string]bool, rel string) {
 }
 
 // commitFeatureFiles normalizes selected paths into the index and commits only real HEAD deltas.
-func commitFeatureFiles(ctx context.Context, workspacePath string, message string, stagePaths []string, commitPaths []string) (string, []string, bool, error) {
+func commitFeatureFiles(ctx context.Context, workspacePath string, message string, body string, stagePaths []string, commitPaths []string) (string, []string, bool, error) {
 	if err := git.AddAllPaths(ctx, workspacePath, stagePaths); err != nil {
 		return "", nil, false, err
 	}
@@ -315,7 +318,7 @@ func commitFeatureFiles(ctx context.Context, workspacePath string, message strin
 	if !dirty {
 		return "", nil, false, nil
 	}
-	commit, err := git.CommitPaths(ctx, workspacePath, message, commitPaths)
+	commit, err := git.CommitPathsWithBody(ctx, workspacePath, message, body, commitPaths)
 	if err != nil {
 		return "", nil, false, err
 	}

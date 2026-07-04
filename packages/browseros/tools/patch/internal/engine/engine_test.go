@@ -888,6 +888,9 @@ func TestApplyRefusesDuringConflictResolution(t *testing.T) {
 	if _, err := Sync(ctx, SyncOptions{Workspace: ws, Repo: repoInfo}); err == nil || !strings.Contains(err.Error(), "conflict resolution is in progress") {
 		t.Fatalf("expected sync to refuse during pending resolution, got %v", err)
 	}
+	if _, err := Refresh(ctx, RefreshOptions{Workspace: ws, Repo: repoInfo, Pull: false}); err == nil || !strings.Contains(err.Error(), "conflict resolution is in progress") {
+		t.Fatalf("expected refresh to refuse during pending resolution, got %v", err)
+	}
 	if !resolve.Exists(workspacePath) {
 		t.Fatalf("pending resolve state must survive the refused runs")
 	}
@@ -1973,6 +1976,121 @@ features:
 	assertFile(t, filepath.Join(workspacePath, "scratch.txt"), "keep me\n")
 	if got := gitOutput(t, workspacePath, "branch", "--show-current"); got != "browseros" {
 		t.Fatalf("branch = %q, want browseros", got)
+	}
+}
+
+func TestRefreshAutoAnnotatesPreservedLocalTrackedChanges(t *testing.T) {
+	ctx := context.Background()
+	workspacePath := initGitRepo(t)
+	writeFile(t, filepath.Join(workspacePath, "chrome", "a.cc"), "a base\n")
+	writeFile(t, filepath.Join(workspacePath, "chrome", "local.cc"), "local base\n")
+	runGit(t, workspacePath, "add", "chrome")
+	runGit(t, workspacePath, "commit", "-m", "workspace base")
+	baseCommit := gitOutput(t, workspacePath, "rev-parse", "HEAD")
+
+	repoInfo := newPatchRepo(t, baseCommit)
+	writePatchFromEdit(t, ctx, workspacePath, repoInfo, baseCommit, "chrome/a.cc", "a patched\n")
+	writeFeaturesYAML(t, repoInfo.Root, `version: "1.0"
+features:
+  canonical:
+    description: "feat: canonical"
+    files:
+      - chrome/a.cc
+  local:
+    description: "feat: local"
+    files:
+      - chrome/local.cc
+`)
+	runGit(t, repoInfo.Root, "add", "chromium_patches", "bos_build/features.yaml")
+	runGit(t, repoInfo.Root, "commit", "-m", "patch stack")
+	repoHead := gitOutput(t, repoInfo.Root, "rev-parse", "HEAD")
+
+	writeFile(t, filepath.Join(workspacePath, "chrome", "local.cc"), "local changed\n")
+	result, err := Refresh(ctx, RefreshOptions{
+		Workspace:    workspace.Entry{Name: "ws", Path: workspacePath},
+		Repo:         repoInfo,
+		AutoAnnotate: true,
+		Pull:         false,
+	})
+	if err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+	if result.Annotate == nil || result.Annotate.CommitsCreated != 1 {
+		t.Fatalf("expected one auto-annotate commit, got %+v", result.Annotate)
+	}
+	if result.Annotate.Committed[0].Name != "local" {
+		t.Fatalf("expected local feature commit, got %+v", result.Annotate.Committed)
+	}
+	if !slices.Equal(result.Annotate.Committed[0].Files, []string{"chrome/local.cc"}) {
+		t.Fatalf("expected local file committed, got %v", result.Annotate.Committed[0].Files)
+	}
+	if status := gitOutput(t, workspacePath, "status", "--porcelain", "--", "chrome"); status != "" {
+		t.Fatalf("expected clean checkout after annotate, got %q", status)
+	}
+	if subject := gitOutput(t, workspacePath, "log", "-1", "--format=%s"); subject != "feat: local" {
+		t.Fatalf("unexpected HEAD subject %q", subject)
+	}
+	if body := gitOutput(t, workspacePath, "log", "-1", "--format=%B"); !strings.Contains(body, "Patches-Rev: "+repoHead) {
+		t.Fatalf("auto-annotate commit should preserve refresh trailer:\n%s", body)
+	}
+
+	fresh, err := Refresh(ctx, RefreshOptions{
+		Workspace:    workspace.Entry{Name: "ws", Path: workspacePath},
+		Repo:         repoInfo,
+		AutoAnnotate: true,
+		Pull:         false,
+	})
+	if err != nil {
+		t.Fatalf("second Refresh: %v", err)
+	}
+	if fresh.Result != "fresh" || fresh.Annotate != nil {
+		t.Fatalf("expected clean second refresh to stay a plain fresh no-op, got %+v", fresh)
+	}
+}
+
+func TestRefreshNoAnnotateRestoresLocalChangesDirty(t *testing.T) {
+	ctx := context.Background()
+	workspacePath := initGitRepo(t)
+	writeFile(t, filepath.Join(workspacePath, "chrome", "a.cc"), "a base\n")
+	writeFile(t, filepath.Join(workspacePath, "chrome", "local.cc"), "local base\n")
+	runGit(t, workspacePath, "add", "chrome")
+	runGit(t, workspacePath, "commit", "-m", "workspace base")
+	baseCommit := gitOutput(t, workspacePath, "rev-parse", "HEAD")
+
+	repoInfo := newPatchRepo(t, baseCommit)
+	writePatchFromEdit(t, ctx, workspacePath, repoInfo, baseCommit, "chrome/a.cc", "a patched\n")
+	writeFeaturesYAML(t, repoInfo.Root, `version: "1.0"
+features:
+  canonical:
+    description: "feat: canonical"
+    files:
+      - chrome/a.cc
+  local:
+    description: "feat: local"
+    files:
+      - chrome/local.cc
+`)
+	runGit(t, repoInfo.Root, "add", "chromium_patches", "bos_build/features.yaml")
+	runGit(t, repoInfo.Root, "commit", "-m", "patch stack")
+
+	writeFile(t, filepath.Join(workspacePath, "chrome", "local.cc"), "local changed\n")
+	result, err := Refresh(ctx, RefreshOptions{
+		Workspace: workspace.Entry{Name: "ws", Path: workspacePath},
+		Repo:      repoInfo,
+		Pull:      false,
+	})
+	if err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+	if result.Annotate != nil || result.AnnotateError != "" {
+		t.Fatalf("expected annotation disabled, got %+v / %q", result.Annotate, result.AnnotateError)
+	}
+	assertFile(t, filepath.Join(workspacePath, "chrome", "local.cc"), "local changed\n")
+	if status := gitOutput(t, workspacePath, "status", "--porcelain", "--", "chrome/local.cc"); status != "M chrome/local.cc" {
+		t.Fatalf("expected restored local file to stay dirty, got %q", status)
+	}
+	if subject := gitOutput(t, workspacePath, "log", "-1", "--format=%s"); subject != "feat: canonical" {
+		t.Fatalf("unexpected HEAD subject %q", subject)
 	}
 }
 
