@@ -2000,12 +2000,17 @@ features:
     description: "feat: local"
     files:
       - chrome/local.cc
+  untracked:
+    description: "feat: untracked"
+    files:
+      - chrome/untracked.cc
 `)
 	runGit(t, repoInfo.Root, "add", "chromium_patches", "bos_build/features.yaml")
 	runGit(t, repoInfo.Root, "commit", "-m", "patch stack")
 	repoHead := gitOutput(t, repoInfo.Root, "rev-parse", "HEAD")
 
 	writeFile(t, filepath.Join(workspacePath, "chrome", "local.cc"), "local changed\n")
+	writeFile(t, filepath.Join(workspacePath, "chrome", "untracked.cc"), "do not sweep\n")
 	result, err := Refresh(ctx, RefreshOptions{
 		Workspace:    workspace.Entry{Name: "ws", Path: workspacePath},
 		Repo:         repoInfo,
@@ -2024,8 +2029,11 @@ features:
 	if !slices.Equal(result.Annotate.Committed[0].Files, []string{"chrome/local.cc"}) {
 		t.Fatalf("expected local file committed, got %v", result.Annotate.Committed[0].Files)
 	}
-	if status := gitOutput(t, workspacePath, "status", "--porcelain", "--", "chrome"); status != "" {
-		t.Fatalf("expected clean checkout after annotate, got %q", status)
+	if status := gitOutput(t, workspacePath, "status", "--porcelain", "--", "chrome/local.cc"); status != "" {
+		t.Fatalf("expected tracked local file clean after annotate, got %q", status)
+	}
+	if status := gitOutput(t, workspacePath, "status", "--porcelain", "--", "chrome/untracked.cc"); status != "?? chrome/untracked.cc" {
+		t.Fatalf("untracked file should stay out of refresh annotation, got %q", status)
 	}
 	if subject := gitOutput(t, workspacePath, "log", "-1", "--format=%s"); subject != "feat: local" {
 		t.Fatalf("unexpected HEAD subject %q", subject)
@@ -2045,6 +2053,51 @@ features:
 	}
 	if fresh.Result != "fresh" || fresh.Annotate != nil {
 		t.Fatalf("expected clean second refresh to stay a plain fresh no-op, got %+v", fresh)
+	}
+}
+
+func TestRefreshDoesNotAnnotateUntrackedOnlyChanges(t *testing.T) {
+	ctx := context.Background()
+	workspacePath := initGitRepo(t)
+	writeFile(t, filepath.Join(workspacePath, "chrome", "a.cc"), "a base\n")
+	runGit(t, workspacePath, "add", "chrome/a.cc")
+	runGit(t, workspacePath, "commit", "-m", "workspace base")
+	baseCommit := gitOutput(t, workspacePath, "rev-parse", "HEAD")
+
+	repoInfo := newPatchRepo(t, baseCommit)
+	writePatchFromEdit(t, ctx, workspacePath, repoInfo, baseCommit, "chrome/a.cc", "a patched\n")
+	writeFeaturesYAML(t, repoInfo.Root, `version: "1.0"
+features:
+  canonical:
+    description: "feat: canonical"
+    files:
+      - chrome/a.cc
+  untracked:
+    description: "feat: untracked"
+    files:
+      - chrome/untracked.cc
+`)
+	runGit(t, repoInfo.Root, "add", "chromium_patches", "bos_build/features.yaml")
+	runGit(t, repoInfo.Root, "commit", "-m", "patch stack")
+
+	writeFile(t, filepath.Join(workspacePath, "chrome", "untracked.cc"), "local untracked\n")
+	result, err := Refresh(ctx, RefreshOptions{
+		Workspace:    workspace.Entry{Name: "ws", Path: workspacePath},
+		Repo:         repoInfo,
+		AutoAnnotate: true,
+		Pull:         false,
+	})
+	if err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+	if result.Annotate != nil {
+		t.Fatalf("untracked-only refresh must not auto-annotate, got %+v", result.Annotate)
+	}
+	if status := gitOutput(t, workspacePath, "status", "--porcelain", "--", "chrome/untracked.cc"); status != "?? chrome/untracked.cc" {
+		t.Fatalf("untracked file should stay uncommitted, got %q", status)
+	}
+	if subject := gitOutput(t, workspacePath, "log", "-1", "--format=%s"); subject != "feat: canonical" {
+		t.Fatalf("unexpected HEAD subject %q", subject)
 	}
 }
 
@@ -2091,6 +2144,66 @@ features:
 	}
 	if subject := gitOutput(t, workspacePath, "log", "-1", "--format=%s"); subject != "feat: canonical" {
 		t.Fatalf("unexpected HEAD subject %q", subject)
+	}
+}
+
+func TestRefreshStashConflictBlocksFollowupCommands(t *testing.T) {
+	ctx := context.Background()
+	workspacePath := initGitRepo(t)
+	rel := "chrome/local.cc"
+	writeFile(t, filepath.Join(workspacePath, rel), "base\n")
+	runGit(t, workspacePath, "add", rel)
+	runGit(t, workspacePath, "commit", "-m", "workspace base")
+	baseCommit := gitOutput(t, workspacePath, "rev-parse", "HEAD")
+
+	repoInfo := newPatchRepo(t, baseCommit)
+	if err := os.Remove(filepath.Join(workspacePath, rel)); err != nil {
+		t.Fatalf("remove %s: %v", rel, err)
+	}
+	diff, err := git.DiffText(ctx, workspacePath, baseCommit, "--", rel)
+	if err != nil {
+		t.Fatalf("DiffText delete: %v", err)
+	}
+	writeFile(t, filepath.Join(repoInfo.PatchesDir, filepath.FromSlash(rel)), diff)
+	writeFeaturesYAML(t, repoInfo.Root, `version: "1.0"
+features:
+  deleted:
+    description: "feat: delete local"
+    files:
+      - chrome/local.cc
+`)
+	runGit(t, repoInfo.Root, "add", "chromium_patches", "bos_build/features.yaml")
+	runGit(t, repoInfo.Root, "commit", "-m", "delete patch")
+	runGit(t, workspacePath, "checkout", baseCommit, "--", rel)
+
+	writeFile(t, filepath.Join(workspacePath, rel), "local edit\n")
+	ws := workspace.Entry{Name: "ws", Path: workspacePath}
+	result, err := Refresh(ctx, RefreshOptions{
+		Workspace:    ws,
+		Repo:         repoInfo,
+		AutoAnnotate: true,
+		Pull:         false,
+	})
+	if err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+	if !result.StashConflict || result.AnnotateSkipped == "" {
+		t.Fatalf("expected refresh stash conflict and annotation skip, got %+v", result)
+	}
+	state, err := workspace.LoadState(workspacePath)
+	if err != nil {
+		t.Fatalf("LoadState: %v", err)
+	}
+	if !state.PendingStashConflict || state.PendingStash == "" {
+		t.Fatalf("expected pending stash conflict recorded, got %+v", state)
+	}
+	if _, err := Annotate(ctx, AnnotateOptions{Workspace: ws, Repo: repoInfo}); err == nil || !strings.Contains(err.Error(), "unresolved stashed local changes") {
+		t.Fatalf("expected annotate to refuse pending stash conflict, got %v", err)
+	}
+
+	runGit(t, workspacePath, "stash", "drop")
+	if _, err := Annotate(ctx, AnnotateOptions{Workspace: ws, Repo: repoInfo}); err != nil {
+		t.Fatalf("expected stale pending stash conflict record to clear after stash drop, got %v", err)
 	}
 }
 

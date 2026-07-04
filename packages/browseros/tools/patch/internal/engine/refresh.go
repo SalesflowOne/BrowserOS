@@ -104,6 +104,7 @@ func Refresh(ctx context.Context, opts RefreshOptions) (*RefreshResult, error) {
 		return nil, err
 	}
 	refreshStashRef := ""
+	refreshChangePaths := []string{}
 	if dirty && opts.Force {
 		reportProgress(opts.Progress, "Resetting tracked checkout changes")
 		if err := git.ResetHard(ctx, opts.Workspace.Path); err != nil {
@@ -115,6 +116,11 @@ func Refresh(ctx context.Context, opts RefreshOptions) (*RefreshResult, error) {
 		if !dirty || refreshStashRef != "" {
 			return nil
 		}
+		paths, err := trackedRefreshChangePaths(ctx, opts.Workspace.Path)
+		if err != nil {
+			return err
+		}
+		refreshChangePaths = paths
 		reportProgress(opts.Progress, "Stashing tracked checkout changes")
 		stashRef, err := git.StashPush(ctx, opts.Workspace.Path, "browseros-patch refresh stash", false, nil)
 		if err != nil {
@@ -127,7 +133,7 @@ func Refresh(ctx context.Context, opts RefreshOptions) (*RefreshResult, error) {
 		if err == nil || refreshStashRef == "" {
 			return err
 		}
-		return fmt.Errorf("%w; tracked local changes are saved in stash %s", err, shortRev(refreshStashRef))
+		return fmt.Errorf("%w; tracked local changes are saved in stash %s", err, refreshStashRef)
 	}
 	materializeErr := func(step string, err error) error {
 		return withRefreshStashRecovery(refreshMaterializeError(step, err))
@@ -151,7 +157,7 @@ func Refresh(ctx context.Context, opts RefreshOptions) (*RefreshResult, error) {
 			PatchesRev: repoRev,
 			Warnings:   []string{},
 		}
-		if err := finishRefresh(ctx, opts, repoInfo, result, refreshStashRef, repoRev); err != nil {
+		if err := finishRefresh(ctx, opts, repoInfo, result, refreshStashRef, refreshChangePaths, repoRev); err != nil {
 			return nil, withRefreshStashRecovery(err)
 		}
 		return result, nil
@@ -244,13 +250,13 @@ func Refresh(ctx context.Context, opts RefreshOptions) (*RefreshResult, error) {
 	if err := workspace.SaveState(opts.Workspace.Path, state); err != nil {
 		return nil, withRefreshStashRecovery(err)
 	}
-	if err := finishRefresh(ctx, opts, repoInfo, result, refreshStashRef, repoRev); err != nil {
+	if err := finishRefresh(ctx, opts, repoInfo, result, refreshStashRef, refreshChangePaths, repoRev); err != nil {
 		return nil, withRefreshStashRecovery(err)
 	}
 	return result, nil
 }
 
-func finishRefresh(ctx context.Context, opts RefreshOptions, repoInfo *repo.Info, result *RefreshResult, refreshStashRef string, repoRev string) error {
+func finishRefresh(ctx context.Context, opts RefreshOptions, repoInfo *repo.Info, result *RefreshResult, refreshStashRef string, refreshChangePaths []string, repoRev string) error {
 	if refreshStashRef != "" {
 		reportProgress(opts.Progress, "Rebasing stashed local changes")
 		if err := git.StashRebase(ctx, opts.Workspace.Path, refreshStashRef); err != nil {
@@ -264,14 +270,14 @@ func finishRefresh(ctx context.Context, opts RefreshOptions, repoInfo *repo.Info
 			result.StashConflict = true
 			result.StashConflictFiles = conflict.Files
 			result.AnnotateSkipped = "local changes conflict after refresh"
-			return nil
+			return recordRefreshStashConflict(opts.Workspace.Path, refreshStashRef, conflict.Files)
 		}
 		result.StashRestored = true
 	}
-	if !opts.AutoAnnotate || result.StashConflict {
+	if !opts.AutoAnnotate || result.StashConflict || len(refreshChangePaths) == 0 {
 		return nil
 	}
-	hasChanges, err := hasAnnotatableChanges(ctx, opts.Workspace, repoInfo)
+	hasChanges, err := hasAnnotatableChanges(ctx, opts.Workspace, repoInfo, refreshChangePaths)
 	if err != nil {
 		result.AnnotateError = err.Error()
 		return nil
@@ -279,16 +285,46 @@ func finishRefresh(ctx context.Context, opts RefreshOptions, repoInfo *repo.Info
 	if !hasChanges {
 		return nil
 	}
-	annotateWorkspaceChanges(ctx, opts.Workspace, repoInfo, nil, &result.AnnotationOutcome, opts.Progress, patchesRevTrailer+": "+repoRev)
+	annotateWorkspaceChanges(ctx, opts.Workspace, repoInfo, refreshChangePaths, nil, &result.AnnotationOutcome, opts.Progress, patchesRevTrailer+": "+repoRev)
 	return nil
 }
 
-func hasAnnotatableChanges(ctx context.Context, ws workspace.Entry, repoInfo *repo.Info) (bool, error) {
+func trackedRefreshChangePaths(ctx context.Context, workspacePath string) ([]string, error) {
+	changes, err := git.StatusPorcelain(ctx, workspacePath, nil)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	var paths []string
+	for _, change := range changes {
+		if change.Status == "??" {
+			continue
+		}
+		for _, rel := range changeReportPaths(change) {
+			appendUniquePath(&paths, seen, rel)
+		}
+	}
+	slices.Sort(paths)
+	return paths, nil
+}
+
+func recordRefreshStashConflict(workspacePath string, stashRef string, files []string) error {
+	state, err := workspace.LoadState(workspacePath)
+	if err != nil {
+		return err
+	}
+	state.PendingStash = stashRef
+	state.PendingStashConflict = true
+	state.PendingStashConflictFiles = append([]string{}, files...)
+	return workspace.SaveState(workspacePath, state)
+}
+
+func hasAnnotatableChanges(ctx context.Context, ws workspace.Entry, repoInfo *repo.Info, include []string) (bool, error) {
 	ignore, err := patch.LoadIgnoreSet(repoInfo.Root, nil)
 	if err != nil {
 		return false, err
 	}
-	changes, err := annotateChanges(ctx, ws.Path, ignore, nil)
+	changes, err := annotateChanges(ctx, ws.Path, ignore, include, nil)
 	if err != nil {
 		return false, err
 	}

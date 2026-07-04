@@ -15,6 +15,9 @@ import (
 type AnnotateOptions struct {
 	Workspace workspace.Entry
 	Repo      *repo.Info
+	// Include limits annotation to these checkout paths. Nil means all
+	// eligible working-tree changes.
+	Include []string
 	// Exclude lists checkout paths deliberately left uncommitted — skipped
 	// conflicts whose files may hold partially applied hunks.
 	Exclude []string
@@ -81,7 +84,7 @@ func Annotate(ctx context.Context, opts AnnotateOptions) (*AnnotateResult, error
 	// Chromium checkout. Each feature consumes the entries it matched —
 	// commitFeatureFiles settles them (committed, or staged clean) — so what
 	// remains at the end is exactly the unclaimed leftovers.
-	changes, err := annotateChanges(ctx, opts.Workspace.Path, ignore, opts.Exclude)
+	changes, err := annotateChanges(ctx, opts.Workspace.Path, ignore, opts.Include, opts.Exclude)
 	if err != nil {
 		return nil, err
 	}
@@ -182,8 +185,8 @@ func stringSequence(node *yaml.Node, key string) []string {
 // Untracked junk (reject files, logs, .browseros-patchignore patterns) is
 // filtered like extract does; tracked modifications always pass through
 // unless explicitly excluded.
-func annotateChanges(ctx context.Context, workspacePath string, ignore *patch.IgnoreSet, exclude []string) ([]git.FileChange, error) {
-	changes, err := git.StatusPorcelain(ctx, workspacePath, nil)
+func annotateChanges(ctx context.Context, workspacePath string, ignore *patch.IgnoreSet, include []string, exclude []string) ([]git.FileChange, error) {
+	changes, err := git.StatusPorcelain(ctx, workspacePath, include)
 	if err != nil {
 		return nil, err
 	}

@@ -113,6 +113,9 @@ func requireNoPendingResolution(ctx context.Context, ws workspace.Entry) error {
 			"conflict resolution is in progress for %s; finish it with \"browseros-patch continue\", \"browseros-patch skip\", or \"browseros-patch abort\" first",
 			ws.Name)
 	}
+	if err := requireNoPendingStashConflict(ctx, ws); err != nil {
+		return err
+	}
 	unmerged, err := git.UnmergedFiles(ctx, ws.Path)
 	if err != nil {
 		return err
@@ -132,6 +135,35 @@ func requireNoPendingResolution(ctx context.Context, ws workspace.Entry) error {
 			ws.Name, strings.Join(markers, ", "))
 	}
 	return nil
+}
+
+func requireNoPendingStashConflict(ctx context.Context, ws workspace.Entry) error {
+	state, err := workspace.LoadState(ws.Path)
+	if err != nil {
+		return err
+	}
+	if !state.PendingStashConflict {
+		return nil
+	}
+	if state.PendingStash != "" {
+		live, err := git.StashEntryExists(ctx, ws.Path, state.PendingStash)
+		if err != nil {
+			return err
+		}
+		if live {
+			files := strings.Join(state.PendingStashConflictFiles, ", ")
+			if files == "" {
+				files = "unknown files"
+			}
+			return fmt.Errorf(
+				"%s has unresolved stashed local changes (%s); resolve them, then \"git stash drop\" before running this command",
+				ws.Name, files)
+		}
+	}
+	state.PendingStash = ""
+	state.PendingStashConflict = false
+	state.PendingStashConflictFiles = nil
+	return workspace.SaveState(ws.Path, state)
 }
 
 // finishApply records completion state and, when requested, turns the applied
@@ -159,10 +191,10 @@ func finishApply(ctx context.Context, opts ApplyOptions, repoRev string, result 
 // commits them correctly; the shared guard blocks the unsafe case (conflict
 // markers from a stash rebase) inside Annotate.
 func annotateApplied(ctx context.Context, ws workspace.Entry, repoInfo *repo.Info, exclude []string, outcome *AnnotationOutcome, progress Progress) {
-	annotateWorkspaceChanges(ctx, ws, repoInfo, exclude, outcome, progress, "")
+	annotateWorkspaceChanges(ctx, ws, repoInfo, nil, exclude, outcome, progress, "")
 }
 
-func annotateWorkspaceChanges(ctx context.Context, ws workspace.Entry, repoInfo *repo.Info, exclude []string, outcome *AnnotationOutcome, progress Progress, commitBody string) {
+func annotateWorkspaceChanges(ctx context.Context, ws workspace.Entry, repoInfo *repo.Info, include []string, exclude []string, outcome *AnnotationOutcome, progress Progress, commitBody string) {
 	if _, err := FeatureFilePath(repoInfo.Root); err != nil {
 		outcome.AnnotateSkipped = "no features registry"
 		return
@@ -170,6 +202,7 @@ func annotateWorkspaceChanges(ctx context.Context, ws workspace.Entry, repoInfo 
 	annotateResult, err := Annotate(ctx, AnnotateOptions{
 		Workspace:  ws,
 		Repo:       repoInfo,
+		Include:    include,
 		Exclude:    exclude,
 		CommitBody: commitBody,
 		Progress:   progress,
