@@ -4,10 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import type {
-  ClientCapabilities,
-  ElicitRequestFormParams,
-  ElicitResult,
+import {
+  type ClientCapabilities,
+  type ElicitRequestFormParams,
+  type ElicitResult,
+  ErrorCode,
+  McpError,
 } from '@modelcontextprotocol/sdk/types.js'
 import { getBrowserSession } from '../lib/browser-session'
 import { logger } from '../lib/logger'
@@ -69,7 +71,13 @@ async function elicitWithRetry(
   }
   try {
     return await server.elicitInput(params, { timeout: ELICITATION_TIMEOUT_MS })
-  } catch {
+  } catch (err) {
+    if (err instanceof McpError && err.code === ErrorCode.RequestTimeout) {
+      logger.info('mcp session naming elicitation unavailable', {
+        error: err.message,
+      })
+      return null
+    }
     await delay(ELICITATION_RETRY_DELAY_MS)
   }
   try {

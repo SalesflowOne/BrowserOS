@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'bun:test'
-import type {
-  ClientCapabilities,
-  ElicitRequestFormParams,
-  ElicitResult,
+import {
+  type ClientCapabilities,
+  type ElicitRequestFormParams,
+  type ElicitResult,
+  ErrorCode,
+  McpError,
 } from '@modelcontextprotocol/sdk/types.js'
 import {
   agentIdentityFromClient,
@@ -134,6 +136,19 @@ describe('requestSessionNaming', () => {
     await requestSessionNaming({ server, sessionId: 'sid-1' }, deps)
     expect(server.calls).toHaveLength(2)
     expect(delays).toEqual([2_000])
+    expect(identityService.getIdentity('sid-1')?.sessionLabel).toBeNull()
+    expect(applyCalls).toEqual([])
+  })
+
+  it('does not retry when the user ignores the elicitation prompt', async () => {
+    const { applyCalls, delays, deps, identityService } = setup()
+    const server = fakeServer({
+      capabilities: { elicitation: {} },
+      results: [new McpError(ErrorCode.RequestTimeout, 'timeout')],
+    })
+    await requestSessionNaming({ server, sessionId: 'sid-1' }, deps)
+    expect(server.calls).toHaveLength(1)
+    expect(delays).toEqual([])
     expect(identityService.getIdentity('sid-1')?.sessionLabel).toBeNull()
     expect(applyCalls).toEqual([])
   })
