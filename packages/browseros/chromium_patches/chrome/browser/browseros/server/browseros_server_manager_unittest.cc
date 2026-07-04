@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000000000..aee8a1fadceaf
 --- /dev/null
 +++ b/chrome/browser/browseros/server/browseros_server_manager_unittest.cc
-@@ -0,0 +1,514 @@
+@@ -0,0 +1,543 @@
 +// Copyright 2024 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -488,6 +488,35 @@ index 0000000000000..aee8a1fadceaf
 +            manager_->GetServerPort());
 +  EXPECT_EQ(browseros_server::kDefaultServerPort + 1,
 +            prefs_.GetInteger(browseros_server::kServerPort));
++}
++
++TEST_F(BrowserOSServerManagerTest,
++       PortConflictAdvanceConsumedThenManagedRestartKeepsPort) {
++  SetupSuccessfulLaunch();
++  manager_->SetRunningForTesting(true);
++  manager_->SetPortsForTesting(MakePorts(browseros_server::kDefaultServerPort));
++  UseFakePortFinder(browseros_server::kDefaultServerPort + 1);
++
++  manager_->OnProcessExitedForTesting(2);
++  task_environment_.RunUntilIdle();
++
++  EXPECT_EQ(1, port_finder_call_count_);
++  EXPECT_EQ(browseros_server::kDefaultServerPort + 1,
++            port_finder_starting_port_);
++  EXPECT_FALSE(port_finder_allow_reuse_);
++  EXPECT_EQ(browseros_server::kDefaultServerPort + 1,
++            manager_->GetServerPort());
++
++  manager_->OnHealthCheckComplete(false);
++  manager_->OnHealthCheckComplete(false);
++  task_environment_.RunUntilIdle();
++
++  EXPECT_EQ(2, port_finder_call_count_);
++  EXPECT_EQ(browseros_server::kDefaultServerPort + 1,
++            port_finder_starting_port_);
++  EXPECT_TRUE(port_finder_allow_reuse_);
++  EXPECT_EQ(browseros_server::kDefaultServerPort + 1,
++            manager_->GetServerPort());
 +}
 +
 +TEST_F(BrowserOSServerManagerTest, UpdateRestartKeepsServerPortWithReuse) {
