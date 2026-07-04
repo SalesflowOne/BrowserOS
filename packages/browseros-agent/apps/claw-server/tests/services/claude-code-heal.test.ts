@@ -55,7 +55,7 @@ afterEach(() => {
 })
 
 describe('healClaudeCodeTransportTags', () => {
-  it('repairs bare managed claude-code http entries for BrowserClaw and profile slugs', async () => {
+  it('repairs BrowserClaw, legacy browseros, and profile claude-code http entries', async () => {
     await withTempConfig(async (configPath) => {
       await writeFile(
         configPath,
@@ -63,6 +63,9 @@ describe('healClaudeCodeTransportTags', () => {
           {
             mcpServers: {
               BrowserClaw: {
+                url: 'http://127.0.0.1:9200/mcp',
+              },
+              browseros: {
                 url: 'http://127.0.0.1:9200/mcp',
               },
               'profile-one': {
@@ -124,11 +127,15 @@ describe('healClaudeCodeTransportTags', () => {
         ],
       )
 
-      await expect(healClaudeCodeTransportTags()).resolves.toBe(2)
+      await expect(healClaudeCodeTransportTags()).resolves.toBe(3)
 
       expect(JSON.parse(await readFile(configPath, 'utf8')).mcpServers).toEqual(
         {
           BrowserClaw: {
+            url: 'http://127.0.0.1:9200/mcp',
+            type: 'http',
+          },
+          browseros: {
             url: 'http://127.0.0.1:9200/mcp',
             type: 'http',
           },
@@ -175,6 +182,10 @@ describe('healClaudeCodeTransportTags', () => {
         {
           mcpServers: {
             BrowserClaw: {
+              url: 'http://127.0.0.1:9200/mcp',
+              type: 'http',
+            },
+            browseros: {
               url: 'http://127.0.0.1:9200/mcp',
               type: 'http',
             },
