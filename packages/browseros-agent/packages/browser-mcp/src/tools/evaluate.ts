@@ -54,11 +54,13 @@ export const evaluate = defineTool({
     const origin = ctx.session.pages.getInfo(args.page)?.url ?? 'unknown'
     if (text.length > TOOL_LIMITS.INLINE_PAGE_CONTENT_MAX_CHARS) {
       const excerpt = text.slice(0, TOOL_LIMITS.INLINE_PAGE_CONTENT_MAX_CHARS)
+      const wrappedText = wrapUntrusted(text, origin)
+      const contentLength = wrappedText.length
       try {
         const path = await writeTempToolOutputFile({
           toolName: 'evaluate',
-          extension: typeof value === 'string' ? 'txt' : 'json',
-          content: wrapUntrusted(text, origin),
+          extension: 'txt',
+          content: wrappedText,
         })
         return textResult(
           [
@@ -67,7 +69,7 @@ export const evaluate = defineTool({
           ].join('\n\n'),
           {
             page: args.page,
-            contentLength: text.length,
+            contentLength,
             writtenToFile: true,
             path,
           },
@@ -81,7 +83,7 @@ export const evaluate = defineTool({
           ].join('\n\n'),
           {
             page: args.page,
-            contentLength: text.length,
+            contentLength,
             writtenToFile: false,
             outputWriteFailed: true,
             error: saveError,

@@ -6,6 +6,7 @@ import type { BrowserSession } from '@browseros/browser-core/core/session'
 import { TOOL_LIMITS } from '@browseros/shared/constants/limits'
 import { evaluate } from './evaluate'
 import { executeTool } from './framework'
+import { wrapUntrusted } from './trust-boundary'
 
 function sessionWithEvaluateValue(value: unknown): BrowserSession {
   return {
@@ -108,7 +109,6 @@ describe('evaluate tool', () => {
       expect(result.isError).toBeFalsy()
       expect(data).toMatchObject({
         page: 3,
-        contentLength: value.length,
         writtenToFile: true,
       })
       const path = data?.path
@@ -118,11 +118,13 @@ describe('evaluate tool', () => {
       expect(path.endsWith('.txt')).toBe(true)
       expect(text).toContain(path)
       expect(text).not.toContain(tail)
-      expect(readFileSync(path, 'utf8')).toContain(tail)
+      const savedContent = readFileSync(path, 'utf8')
+      expect(savedContent).toContain(tail)
+      expect(data?.contentLength).toBe(savedContent.length)
     })
   })
 
-  it('spills huge object results to a json output file', async () => {
+  it('spills huge object results to a text output file', async () => {
     await withBrowserosDir(async () => {
       const value = {
         html: 'x'.repeat(TOOL_LIMITS.INLINE_PAGE_CONTENT_MAX_CHARS + 1),
@@ -133,7 +135,12 @@ describe('evaluate tool', () => {
         { session: sessionWithEvaluateValue(value) },
       )
       const data = result.structuredContent as
-        | { writtenToFile: boolean; path: string; value?: unknown }
+        | {
+            contentLength: number
+            writtenToFile: boolean
+            path: string
+            value?: unknown
+          }
         | undefined
 
       expect(result.isError).toBeFalsy()
@@ -144,8 +151,10 @@ describe('evaluate tool', () => {
       expect(typeof path).toBe('string')
       if (typeof path !== 'string') throw new Error('expected output path')
       expect(data).not.toHaveProperty('value')
-      expect(path.endsWith('.json')).toBe(true)
-      expect(readFileSync(path, 'utf8')).toContain('"html"')
+      expect(path.endsWith('.txt')).toBe(true)
+      const savedContent = readFileSync(path, 'utf8')
+      expect(savedContent).toContain('"html"')
+      expect(data?.contentLength).toBe(savedContent.length)
     })
   })
 
@@ -161,7 +170,8 @@ describe('evaluate tool', () => {
       expect(result.isError).toBeFalsy()
       expect(result.structuredContent).toMatchObject({
         page: 3,
-        contentLength: value.length,
+        contentLength: wrapUntrusted(value, 'https://example.com/evaluate')
+          .length,
         writtenToFile: false,
         outputWriteFailed: true,
         error: expect.any(String),

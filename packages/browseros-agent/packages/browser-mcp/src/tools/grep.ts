@@ -62,30 +62,49 @@ export const grep = defineTool({
     })
     const totalTruncated =
       renderedText.length > TOOL_LIMITS.INLINE_PAGE_CONTENT_MAX_CHARS
+    const inlineText = clampText(
+      renderedText,
+      TOOL_LIMITS.INLINE_PAGE_CONTENT_MAX_CHARS,
+    )
 
     if (lineTruncated || totalTruncated) {
-      const path = await writeTempToolOutputFile({
-        toolName: 'grep',
-        extension: 'txt',
-        content: wrapUntrusted(fullMatchesText, origin),
-      })
-      const inlineText = clampText(
-        renderedText,
-        TOOL_LIMITS.INLINE_PAGE_CONTENT_MAX_CHARS,
-      )
-      return textResult(
-        [
-          wrapUntrusted(inlineText, origin),
-          `Grep output truncated for ${matches.length} match(es). Full matches (${fullMatchesText.length} chars) saved to: ${path}`,
-        ].join('\n\n'),
-        {
-          page: args.page,
-          over: args.over,
-          count: matches.length,
-          truncated: true,
-          path,
-        },
-      )
+      try {
+        const path = await writeTempToolOutputFile({
+          toolName: 'grep',
+          extension: 'txt',
+          content: wrapUntrusted(fullMatchesText, origin),
+        })
+        return textResult(
+          [
+            wrapUntrusted(inlineText, origin),
+            `Grep output truncated for ${matches.length} match(es). Full matches (${fullMatchesText.length} chars) saved to: ${path}`,
+          ].join('\n\n'),
+          {
+            page: args.page,
+            over: args.over,
+            count: matches.length,
+            truncated: true,
+            path,
+          },
+        )
+      } catch (error) {
+        const saveError = error instanceof Error ? error.message : String(error)
+        return textResult(
+          [
+            wrapUntrusted(inlineText, origin),
+            `Grep output truncated for ${matches.length} match(es). Full matches (${fullMatchesText.length} chars) could not be saved to a BrowserOS output file: ${saveError}`,
+          ].join('\n\n'),
+          {
+            page: args.page,
+            over: args.over,
+            count: matches.length,
+            truncated: true,
+            writtenToFile: false,
+            outputWriteFailed: true,
+            error: saveError,
+          },
+        )
+      }
     }
 
     return textResult(wrapUntrusted(renderedText, origin), {
