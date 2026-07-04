@@ -284,7 +284,7 @@ export class BrowserOSAppManager {
     while (Date.now() - startTime < SERVER_HEALTH_TIMEOUT_MS) {
       try {
         const res = await fetch(
-          `http://127.0.0.1:${this.ports.server}/health`,
+          `http://127.0.0.1:${this.ports.server}/system/health`,
           { signal: AbortSignal.timeout(1000) },
         )
         if (res.ok) return true
