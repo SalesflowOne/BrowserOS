@@ -69,6 +69,10 @@ export function createApiRoutes(deps: CreateApiRoutesDeps) {
     new Hono<Env>()
       .use('/*', cors(defaultCorsConfig))
       .use('/*', requireTrustedOrigin())
+      .route('/system/health', createHealthRoute({ browser }))
+      .route('/system/shutdown', createShutdownRoute({ onShutdown }))
+      // Compatibility aliases for shipped browsers that still probe root paths
+      // while the server binary can update independently during OTA.
       .route('/health', createHealthRoute({ browser }))
       .route('/shutdown', createShutdownRoute({ onShutdown }))
       .route('/status', createStatusRoute({ browser, activity }))

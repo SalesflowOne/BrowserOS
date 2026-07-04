@@ -51,7 +51,17 @@ function createTestApp(
 }
 
 describe('createApiRoutes', () => {
-  it('mounts the health route', async () => {
+  it('mounts the canonical system health route', async () => {
+    const response = await createTestApp().request('/system/health')
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({
+      status: 'ok',
+      cdpConnected: false,
+    })
+  })
+
+  it('keeps the health compatibility route', async () => {
     const response = await createTestApp().request('/health')
 
     expect(response.status).toBe(200)
@@ -61,7 +71,24 @@ describe('createApiRoutes', () => {
     })
   })
 
-  it('mounts the shutdown compatibility route', async () => {
+  it('mounts the canonical system shutdown route', async () => {
+    const onShutdown = mock(() => {})
+    const response = await createTestApp(undefined, onShutdown).request(
+      '/system/shutdown',
+      {
+        method: 'POST',
+      },
+    )
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({ status: 'ok' })
+
+    await new Promise<void>((resolve) => setImmediate(resolve))
+
+    expect(onShutdown).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the shutdown compatibility route', async () => {
     const onShutdown = mock(() => {})
     const response = await createTestApp(undefined, onShutdown).request(
       '/shutdown',
