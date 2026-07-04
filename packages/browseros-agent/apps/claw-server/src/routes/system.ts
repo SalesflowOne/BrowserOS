@@ -10,9 +10,21 @@ import { Hono } from 'hono'
 import pkg from '../../package.json' with { type: 'json' }
 import { getLocalServerUrl } from '../local-server-url'
 
-export const systemRoute = new Hono()
-  .get('/system/health', (c) => c.json({ status: 'ok' as const }))
-  .get('/system/version', (c) =>
-    c.json({ name: pkg.name, version: pkg.version }),
-  )
-  .get('/system/url', (c) => c.json({ url: getLocalServerUrl() }))
+interface SystemRouteConfig {
+  onShutdown?: () => void
+}
+
+export function createSystemRoute(config: SystemRouteConfig = {}) {
+  return new Hono()
+    .get('/system/health', (c) => c.json({ status: 'ok' as const }))
+    .post('/system/shutdown', (c) => {
+      setImmediate(() => config.onShutdown?.())
+      return c.json({ status: 'ok' as const })
+    })
+    .get('/system/version', (c) =>
+      c.json({ name: pkg.name, version: pkg.version }),
+    )
+    .get('/system/url', (c) => c.json({ url: getLocalServerUrl() }))
+}
+
+export const systemRoute = createSystemRoute()
