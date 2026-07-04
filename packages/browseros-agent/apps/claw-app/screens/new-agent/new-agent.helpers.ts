@@ -49,7 +49,6 @@ export function toSlug(input: string): string {
 }
 
 export {
-  buildCanonicalMcpEndpointUrl as buildMcpUrl,
   buildMcpCliCommand as buildCliCommand,
   resolveCanonicalMcpEndpointUrl as resolveMcpUrl,
 } from '@/modules/api/mcp-endpoint'
