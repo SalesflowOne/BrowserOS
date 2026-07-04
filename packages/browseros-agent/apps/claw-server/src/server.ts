@@ -13,6 +13,7 @@
  * recipe.
  */
 
+import type { MiddlewareHandler } from 'hono'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { HttpError } from './lib/errors'
@@ -61,7 +62,10 @@ app.use('*', cors({ origin: '*' }))
 // here. Sub-400 traffic stays unlogged on purpose: the logger has no
 // level filtering and the claw-app polls several endpoints, so a
 // per-request access log would flood the rotating log file.
-app.use('*', async (c, next) => {
+// Named export so tests can exercise the throwing paths on a fixture
+// app; this shared app's route matcher is already built (and frozen)
+// by the first test file that fetches through it.
+export const requestFailureLog: MiddlewareHandler = async (c, next) => {
   const start = Date.now()
   await next()
   const status = c.res.status
@@ -77,7 +81,9 @@ app.use('*', async (c, next) => {
   } else {
     logger.warn('request failed', fields)
   }
-})
+}
+
+app.use('*', requestFailureLog)
 
 // Catch-all for genuinely unexpected errors. Routes today resolve
 // their own expected failures (404s, validation) inline and return
