@@ -54,6 +54,31 @@ const app = new Hono()
 // fetching from `http://127.0.0.1:<port>`.
 app.use('*', cors({ origin: '*' }))
 
+// One structured line per failed request, however the failure was
+// produced: a router 404, a thrown HttpError, a direct 4xx/5xx JSON
+// return, or an unhandled error — hono materialises the onError
+// response before `next()` resolves, so `c.res.status` is final
+// here. Sub-400 traffic stays unlogged on purpose: the logger has no
+// level filtering and the claw-app polls several endpoints, so a
+// per-request access log would flood the rotating log file.
+app.use('*', async (c, next) => {
+  const start = Date.now()
+  await next()
+  const status = c.res.status
+  if (status < 400) return
+  const fields = {
+    method: c.req.method,
+    path: c.req.path,
+    status,
+    durationMs: Date.now() - start,
+  }
+  if (status >= 500) {
+    logger.error('request failed', fields)
+  } else {
+    logger.warn('request failed', fields)
+  }
+})
+
 // Catch-all for genuinely unexpected errors. Routes today resolve
 // their own expected failures (404s, validation) inline and return
 // structured 4xx JSON. Anything that escapes that lands here, gets
