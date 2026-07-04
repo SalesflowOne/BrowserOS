@@ -1,5 +1,10 @@
 import type { AssetBuildProductDescriptor } from '@browseros/build-server-tools'
 
+const INLINED_ENV_VARS = ['NODE_ENV'] as const
+const PRODUCTION_INLINE_ENV = {
+  NODE_ENV: 'production',
+}
+
 // build:chromium runs tsc, vite --mode chromium, and the WebUI contract
 // verification, so the staged dist is always contract-checked before upload.
 export const clawOnboardBuildProduct: AssetBuildProductDescriptor = {
@@ -13,7 +18,9 @@ export const clawOnboardBuildProduct: AssetBuildProductDescriptor = {
     prodEnvPath: 'apps/claw-onboard/.env.production',
     requireProdEnvFile: false,
     requiredInlineEnvKeys: [],
-    inlineEnvKeys: [],
+    inlineEnvKeys: INLINED_ENV_VARS,
+    ciInlineEnvDefaults: PRODUCTION_INLINE_ENV,
+    inlineEnvOverrides: PRODUCTION_INLINE_ENV,
     defaultR2UploadPrefix: 'claw-onboard/prod-resources',
   },
 }

@@ -106,10 +106,13 @@ export async function runProdAssetBuild(
     throw new Error(`Missing build command for ${product.label}`)
   }
   log.step(`Running ${product.buildCommand.join(' ')}`)
+  // Unlike the binary flow, inline env reaches the asset build as process
+  // env — it must win over ambient values (e.g. NODE_ENV=test under bun
+  // test) so the artifact is always a production build.
   await runCommand(
     command,
     commandArgs,
-    buildConfig.processEnv,
+    { ...buildConfig.processEnv, ...buildConfig.envVars },
     join(rootDir, product.packageDir),
   )
 

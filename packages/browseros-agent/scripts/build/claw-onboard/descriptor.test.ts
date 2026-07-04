@@ -75,6 +75,24 @@ describe('claw onboard build descriptor', () => {
     expect(config.r2?.uploadPrefix).toBe('custom/onboard')
   })
 
+  it('forces production NODE_ENV over ambient env', async () => {
+    const originalNodeEnv = process.env.NODE_ENV
+    process.env.NODE_ENV = 'test'
+    try {
+      const rootDir = await writeOnboardPackageRoot()
+
+      const config = loadBuildConfig(rootDir, clawOnboardBuildProduct)
+
+      expect(config.envVars.NODE_ENV).toBe('production')
+    } finally {
+      if (originalNodeEnv === undefined) {
+        delete process.env.NODE_ENV
+      } else {
+        process.env.NODE_ENV = originalNodeEnv
+      }
+    }
+  })
+
   it('builds the chromium dist of the claw-onboard app', () => {
     expect(clawOnboardBuildProduct.packageDir).toBe('apps/claw-onboard')
     expect(clawOnboardBuildProduct.buildCommand).toEqual([
