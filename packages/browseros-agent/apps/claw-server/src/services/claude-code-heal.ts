@@ -17,22 +17,23 @@ export async function healClaudeCodeTransportTags(): Promise<number> {
     mgr.listServers(),
     mgr.listLinks(),
   ])
-  const httpServers = new Set(
-    servers
-      .filter((server) => server.spec.transport === 'http')
-      .map((server) => server.name),
-  )
+  const serversByName = new Map(servers.map((server) => [server.name, server]))
   let healed = 0
 
   for (const link of links) {
     if (link.agent !== 'claude-code') continue
-    if (!httpServers.has(link.serverName)) continue
+    const server = serversByName.get(link.serverName)
+    if (server?.spec.transport !== 'http') continue
     if (!link.configPath) continue
 
-    for (const serverName of claudeCodeServerNamesToHeal(link.serverName)) {
+    for (const entry of claudeCodeServerNamesToHeal(
+      link.serverName,
+      server.spec.url,
+    )) {
       const changed = await ensureClaudeCodeHttpTransportTag({
         configPath: link.configPath,
-        serverName,
+        serverName: entry.serverName,
+        expectedUrl: entry.expectedUrl,
         logger,
       })
       if (changed) healed++
@@ -42,18 +43,23 @@ export async function healClaudeCodeTransportTags(): Promise<number> {
   return healed
 }
 
-function claudeCodeServerNamesToHeal(serverName: string): string[] {
+function claudeCodeServerNamesToHeal(
+  serverName: string,
+  expectedUrl: string,
+): Array<{ serverName: string; expectedUrl?: string }> {
   if (
     serverName !== BROWSEROS_MCP_SERVER_NAME &&
     serverName !== LEGACY_BROWSEROS_MCP_SERVER_NAME
   ) {
-    return [serverName]
+    return [{ serverName }]
   }
-  return Array.from(
-    new Set([
-      serverName,
-      BROWSEROS_MCP_SERVER_NAME,
-      LEGACY_BROWSEROS_MCP_SERVER_NAME,
-    ]),
-  )
+  const aliases = new Set([
+    serverName,
+    BROWSEROS_MCP_SERVER_NAME,
+    LEGACY_BROWSEROS_MCP_SERVER_NAME,
+  ])
+  return Array.from(aliases, (alias) => ({
+    serverName: alias,
+    expectedUrl: alias === serverName ? undefined : expectedUrl,
+  }))
 }

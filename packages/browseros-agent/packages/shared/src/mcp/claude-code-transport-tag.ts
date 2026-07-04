@@ -26,12 +26,14 @@ const FORMATTING = {
 export interface EnsureClaudeCodeHttpTransportTagOptions {
   configPath: string
   serverName: string
+  expectedUrl?: string
   logger?: LoggerInterface
 }
 
 export async function ensureClaudeCodeHttpTransportTag({
   configPath,
   serverName,
+  expectedUrl,
   logger,
 }: EnsureClaudeCodeHttpTransportTagOptions): Promise<boolean> {
   try {
@@ -61,6 +63,24 @@ export async function ensureClaudeCodeHttpTransportTag({
         serverName,
       })
       return false
+    }
+
+    if (expectedUrl !== undefined) {
+      const urlNode = findNodeAtLocation(tree, [
+        'mcpServers',
+        serverName,
+        'url',
+      ])
+      if (urlNode?.type !== 'string' || getNodeValue(urlNode) !== expectedUrl) {
+        logger?.debug(
+          'Claude Code MCP entry URL mismatch; skipping transport tag',
+          {
+            configPath,
+            serverName,
+          },
+        )
+        return false
+      }
     }
 
     const typeNode = findNodeAtLocation(tree, [

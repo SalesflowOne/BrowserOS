@@ -115,6 +115,47 @@ describe('ensureClaudeCodeHttpTransportTag', () => {
     })
   })
 
+  it('requires the expected URL when one is supplied', async () => {
+    await withTempConfig(async (configPath) => {
+      const before = `{
+  "mcpServers": {
+    "browseros": {
+      "url": "http://127.0.0.1:9200/mcp"
+    }
+  }
+}
+`
+      const expected = `{
+  "mcpServers": {
+    "browseros": {
+      "url": "http://127.0.0.1:9200/mcp",
+      "type": "http"
+    }
+  }
+}
+`
+      await writeFile(configPath, before, 'utf8')
+
+      await expect(
+        ensureClaudeCodeHttpTransportTag({
+          configPath,
+          serverName: 'browseros',
+          expectedUrl: 'http://127.0.0.1:9300/mcp',
+        }),
+      ).resolves.toBe(false)
+      await expect(readFile(configPath, 'utf8')).resolves.toBe(before)
+
+      await expect(
+        ensureClaudeCodeHttpTransportTag({
+          configPath,
+          serverName: 'browseros',
+          expectedUrl: 'http://127.0.0.1:9200/mcp',
+        }),
+      ).resolves.toBe(true)
+      await expect(readFile(configPath, 'utf8')).resolves.toBe(expected)
+    })
+  })
+
   it('preserves unrelated keys and surrounding formatting outside the entry', async () => {
     await withTempConfig(async (configPath) => {
       const before = `{

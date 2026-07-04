@@ -176,6 +176,60 @@ describe('healClaudeCodeTransportTags', () => {
     })
   })
 
+  it('does not rewrite a foreign legacy browseros entry while healing BrowserClaw', async () => {
+    await withTempConfig(async (configPath) => {
+      await writeFile(
+        configPath,
+        JSON.stringify(
+          {
+            mcpServers: {
+              BrowserClaw: {
+                url: 'http://127.0.0.1:9200/mcp',
+              },
+              browseros: {
+                command: 'node',
+                args: ['foreign-server.js'],
+              },
+            },
+          },
+          null,
+          2,
+        ),
+        'utf8',
+      )
+      installManifest(
+        [
+          server('BrowserClaw', {
+            transport: 'http',
+            url: 'http://127.0.0.1:9200/mcp',
+          }),
+        ],
+        [
+          {
+            serverName: 'BrowserClaw',
+            agent: 'claude-code',
+            configPath,
+          },
+        ],
+      )
+
+      await expect(healClaudeCodeTransportTags()).resolves.toBe(1)
+
+      expect(JSON.parse(await readFile(configPath, 'utf8')).mcpServers).toEqual(
+        {
+          BrowserClaw: {
+            url: 'http://127.0.0.1:9200/mcp',
+            type: 'http',
+          },
+          browseros: {
+            command: 'node',
+            args: ['foreign-server.js'],
+          },
+        },
+      )
+    })
+  })
+
   it('is a steady-state no-op for already-tagged entries', async () => {
     await withTempConfig(async (configPath) => {
       const source = JSON.stringify(

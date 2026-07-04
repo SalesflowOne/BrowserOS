@@ -46,7 +46,7 @@ describe('connectBrowserosToHarness', () => {
     resetMcpManagerForTesting()
   })
 
-  it('writes a "browseros" entry with the canonical URL and links it to the right agent id', async () => {
+  it('writes a BrowserClaw entry with the canonical URL and links it to the right agent id', async () => {
     const stub = createStubMcpManager()
     setMcpManagerForTesting(stub)
     const result = await connectBrowserosToHarness('Claude Code')
