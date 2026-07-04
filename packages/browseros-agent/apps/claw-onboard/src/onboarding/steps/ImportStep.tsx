@@ -250,7 +250,7 @@ export function ImportStep({
           />
           <Button type="button" size="lg" onClick={onContinue}>
             <ArrowRight className="size-4" />
-            Connect to Claude
+            Continue
           </Button>
         </>
       )}
