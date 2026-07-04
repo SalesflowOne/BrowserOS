@@ -89,6 +89,7 @@
     "drizzle-orm": "^0.45.2",
     "hono": "^4.12.26",
     "jimp": "^1.6.1",
+    "jsonc-parser": "^3.3.1",
     "jose": "^5.10.0",
     "partysocket": "^1.2.0",
     "pino": "^9.14.0",
