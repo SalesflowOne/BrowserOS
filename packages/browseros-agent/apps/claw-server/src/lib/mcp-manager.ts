@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
  * Singleton accessor for `agent-mcp-manager`. Manifest lives at
- * `<browserosDir>/claw-server/mcp-manager` so the per-cockpit-
+ * `<browserclawDir>/mcp-manager` so the per-cockpit-
  * agent server entries stay isolated from the BrowserOS-wide entry
- * `apps/server` manages under `<browserosDir>/mcp-manager`.
+ * `apps/server` manages under `<browserclawDir>/mcp-manager`.
  *
  * The library writes config to the user's per-harness MCP file
  * (e.g. Claude Desktop's `~/Library/Application Support/Claude/
@@ -16,7 +16,7 @@
 
 import { join } from 'node:path'
 import { createMcpManager, type McpManager } from 'agent-mcp-manager'
-import { getClawServerDir } from './browseros-dir'
+import { getClawServerDir } from './browserclaw-dir'
 
 let cached: McpManager | null = null
 
