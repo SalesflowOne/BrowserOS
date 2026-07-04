@@ -54,7 +54,10 @@ The **claw-server** flows never call it. Both of its write paths funnel through
 `mgr.add()` + `mgr.link()` and returns — no fixup:
 
 - **Connect button:** `routes/connections/index.ts` → `services/browseros-connect.ts`
-  `connectBrowserosToHarness()` → `relinkManagedServer()` (serverName `browseros`).
+  `connectBrowserosToHarness()` → `relinkManagedServer()` (serverName
+  `BROWSEROS_MCP_SERVER_NAME` = `'BrowserClaw'` since commit `bfd5de08`; older installs
+  wrote `'browseros'` — see `docs/design/mcp-dual-entry-cleanup.md` for the legacy-name
+  cleanup).
 - **Profile install:** `services/harness-install.ts` `installForAgent()` →
   `relinkManagedServer()` (serverName = profile slug). Also reached by
   `reconcileHarnessLink()` (profile edits) and `lib/migrate-mcp-urls.ts` (boot URL sweep).
@@ -148,8 +151,9 @@ Concrete shape of the lift — new file
 ### 3.3 Heal-on-startup
 
 Users who clicked Connect (or created a profile) before this fix have broken entries on
-disk, and `~/.claude.json` may hold **several** of them: the shared `browseros` entry plus
-one per cockpit profile slug. Neither existing boot step repairs them today
+disk, and `~/.claude.json` may hold **several** of them: the shared connect entry
+(`BrowserClaw` — or `browseros` from installs before the `bfd5de08` rename) plus one per
+cockpit profile slug. Neither existing boot step repairs them today
 (`migrateMcpUrls` skips profiles whose URL is already current, and the shared `browseros`
 Connect entry has no boot reconcile at all in claw-server).
 
@@ -239,7 +243,7 @@ No UI change: `apps/claw-app/screens/mcp/Mcp.tsx` just POSTs
      entry is tagged.
    - fixup failure (unwritable path) does not fail the relink result.
 3. **Heal sweep** (stub manager `listServers`/`listLinks` + temp config file): bare
-   `browseros` entry and a bare profile-slug entry both healed in one pass; stdio-spec
+   `BrowserClaw` entry and a bare profile-slug entry both healed in one pass; stdio-spec
    server names skipped; non-claude-code links skipped; missing config file → 0 healed,
    no throw; already-tagged steady state → 0 healed.
 4. **Existing suites** `apps/claw-server/tests/services/browseros-connect.test.ts` and
@@ -257,9 +261,11 @@ Run: `bun run check && bun run test` from `packages/browseros-agent` (repo groun
    `curl -X POST http://127.0.0.1:<claw-port>/connections/Claude%20Code/connect`
    (or click Connect on the MCP settings page).
 4. Assert the on-disk shape:
-   `jq '.mcpServers.browseros' ~/.claude.json` →
-   `{ "type": "http", "url": "http://127.0.0.1:9200/mcp" }`.
-5. Assert Claude Code accepts it: `claude mcp list` shows `browseros` as a connected
+   `jq '.mcpServers.BrowserClaw' ~/.claude.json` →
+   `{ "type": "http", "url": "http://127.0.0.1:9200/mcp" }`
+   (the entry name is `BrowserClaw` — claw-server's `BROWSEROS_MCP_SERVER_NAME` value —
+   not `browseros`, which is the legacy/apps-server name).
+5. Assert Claude Code accepts it: `claude mcp list` shows `BrowserClaw` as a connected
    http server (no "invalid MCP server config" skip).
 6. Idempotency: re-POST connect; file bytes for the entry unchanged.
 7. Heal: hand-edit the entry to remove `"type"`, restart claw-server, confirm the tag
