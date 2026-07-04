@@ -15,6 +15,7 @@ import {
 import { createBrowserOSOnboardingBridge } from './browseros-onboarding-bridge'
 import { OnboardingShell } from './components/OnboardingShell'
 import {
+  selectableItemsForSource,
   selectedSourceById,
   startImportRequestFor,
 } from './onboarding-v2.helpers'
@@ -91,10 +92,17 @@ export function OnboardingV2() {
       if (currentSourceId) {
         form.setValue('selectedSourceId', '', { shouldValidate: true })
       }
+      if (form.getValues('selectedItems').length > 0) {
+        form.setValue('selectedItems', [], { shouldValidate: true })
+      }
       return
     }
     if (!selectedSourceById(onboardingState.sources, currentSourceId)) {
-      form.setValue('selectedSourceId', onboardingState.sources[0].id, {
+      const nextSource = onboardingState.sources[0]
+      form.setValue('selectedSourceId', nextSource.id, {
+        shouldValidate: true,
+      })
+      form.setValue('selectedItems', selectableItemsForSource(nextSource), {
         shouldValidate: true,
       })
     }
@@ -120,7 +128,10 @@ export function OnboardingV2() {
       form.getValues('selectedSourceId'),
     )
     if (!source) return
-    const request = startImportRequestFor(source)
+    const request = startImportRequestFor(
+      source,
+      form.getValues('selectedItems'),
+    )
     if (!request) return
     bridge.startImport(request)
   }
