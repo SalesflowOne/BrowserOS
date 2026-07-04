@@ -34,6 +34,7 @@ import {
 import { closeAgentTabGroupForAgent } from '../services/tab-group-ops'
 import { VERSION } from '../version'
 import { registerBrowserToolsForSingleServer } from './register'
+import { requestSessionNaming } from './session-naming'
 
 const SERVER_NAME = 'browseros-claw-server'
 const SERVER_TITLE = 'BrowserOS'
@@ -118,6 +119,14 @@ function buildSession(): Session {
       clientName: identity.clientName,
       clientVersion: identity.clientVersion,
     })
+    void requestSessionNaming({ server: server.server, sessionId }).catch(
+      (err) => {
+        logger.warn('mcp session naming failed unexpectedly', {
+          sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      },
+    )
     logger.info('cockpit v2 mcp session opened', {
       sessionId,
       clientName: clientInfo?.name ?? '',

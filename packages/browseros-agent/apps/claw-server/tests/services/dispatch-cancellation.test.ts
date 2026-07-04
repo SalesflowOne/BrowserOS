@@ -22,6 +22,7 @@ function makeIdentity(over: Partial<ClientIdentity>): ClientIdentity {
     clientName: 'claude-code',
     clientVersion: '0.1.0',
     clientTitle: null,
+    sessionLabel: null,
     firstSeenAt: 1_000_000,
     ...over,
   }

@@ -26,6 +26,7 @@ describe('IdentityService', () => {
       clientName: 'Claude Code',
       clientVersion: '1.4.2',
       clientTitle: 'Claude Code',
+      sessionLabel: null,
       firstSeenAt: 1_000_000,
     })
     expect(svc.getIdentity('s1')).toEqual(record)
@@ -55,6 +56,19 @@ describe('IdentityService', () => {
     svc.registerInitialize({ sessionId: 's1', clientInfo: { name: 'a' } })
     svc.dropSession('s1')
     expect(svc.getIdentity('s1')).toBeNull()
+    expect(svc.size()).toBe(0)
+  })
+
+  it('stores an accepted session label when the session is live', () => {
+    const svc = setup()
+    svc.registerInitialize({ sessionId: 's1', clientInfo: { name: 'a' } })
+    svc.setSessionLabel('s1', 'invoice-processing')
+    expect(svc.getIdentity('s1')?.sessionLabel).toBe('invoice-processing')
+  })
+
+  it('setSessionLabel is a no-op for an unknown session', () => {
+    const svc = setup()
+    svc.setSessionLabel('missing', 'invoice-processing')
     expect(svc.size()).toBe(0)
   })
 
@@ -122,6 +136,7 @@ describe('agentIdentityFromClient', () => {
       clientName: 'Claude Code',
       clientVersion: '1.0.0',
       clientTitle: null,
+      sessionLabel: null,
       firstSeenAt: 0,
     })
     const b = agentIdentityFromClient({
@@ -129,6 +144,7 @@ describe('agentIdentityFromClient', () => {
       clientName: 'Claude Code',
       clientVersion: '1.0.0',
       clientTitle: null,
+      sessionLabel: null,
       firstSeenAt: 0,
     })
     expect(a.agentId).toMatch(/^claude-code-[0-9a-f]{6}$/)
@@ -144,6 +160,7 @@ describe('agentIdentityFromClient', () => {
       clientName: 'Claude Code',
       clientVersion: '1.0.0',
       clientTitle: null,
+      sessionLabel: null,
       firstSeenAt: 0,
     }
     expect(agentIdentityFromClient(identity)).toEqual(
@@ -157,6 +174,7 @@ describe('agentIdentityFromClient', () => {
       clientName: '',
       clientVersion: '',
       clientTitle: null,
+      sessionLabel: null,
       firstSeenAt: 0,
     }
     const result = agentIdentityFromClient(identity)
@@ -170,6 +188,7 @@ describe('agentIdentityFromClient', () => {
       clientName: '日本語',
       clientVersion: '',
       clientTitle: null,
+      sessionLabel: null,
       firstSeenAt: 0,
     }
     const result = agentIdentityFromClient(identity)

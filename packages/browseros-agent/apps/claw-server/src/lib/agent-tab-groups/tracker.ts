@@ -27,6 +27,7 @@ export interface TabGroupRecord {
   pageIds: Set<number>
   color: TabGroupColor
   title: string
+  titleExplicit: boolean
   firstOpenedAt: number
   /** Live MCP sessions whose identity resolves to this agentId. */
   refCount: number
@@ -53,6 +54,7 @@ export interface TabGroupTracker {
   recordOpen(input: RecordOpenInput): TabGroupRecord
   /** Called after `tab_groups create` returns so the cockpit can reuse the groupId for subsequent pages. */
   rememberGroup(input: RememberGroupInput): void
+  setTitle(agentId: string, title: string): void
   /** Called once per MCP session-init keyed by agentId. */
   incrementSession(agentId: string): void
   /**
@@ -87,7 +89,7 @@ export function createTabGroupTracker(
         if (existing.pageIds.size === 0 && existing.groupId === null) {
           existing.slug = slug
           existing.color = colorForSlug(slug)
-          existing.title = slug
+          if (!existing.titleExplicit) existing.title = slug
         }
         existing.pageIds.add(pageId)
         return existing
@@ -100,6 +102,7 @@ export function createTabGroupTracker(
         pageIds: new Set([pageId]),
         color: colorForSlug(slug),
         title: slug,
+        titleExplicit: false,
         firstOpenedAt: now(),
         refCount: 0,
       }
@@ -111,6 +114,12 @@ export function createTabGroupTracker(
       if (!record) return
       record.groupId = groupId
       if (typeof windowId === 'number') record.windowId = windowId
+    },
+    setTitle(agentId, title) {
+      const record = records.get(agentId)
+      if (!record) return
+      record.title = title
+      record.titleExplicit = true
     },
     incrementSession(agentId) {
       const record = records.get(agentId)
@@ -128,6 +137,7 @@ export function createTabGroupTracker(
         pageIds: new Set(),
         color: colorForSlug(agentId),
         title: agentId,
+        titleExplicit: false,
         firstOpenedAt: now(),
         refCount: 1,
       })

@@ -43,6 +43,7 @@ function identityStub(
         clientName: i.clientName,
         clientVersion: i.clientVersion ?? '0.0.1',
         clientTitle: i.clientTitle ?? null,
+        sessionLabel: null,
         firstSeenAt: i.firstSeenAt ?? 1_000_000,
       })),
   }
@@ -68,6 +69,7 @@ function identityFor(sessionId: string, clientName: string): ClientIdentity {
     clientName,
     clientVersion: '0.0.1',
     clientTitle: null,
+    sessionLabel: null,
     firstSeenAt: 1_000_000,
   }
 }

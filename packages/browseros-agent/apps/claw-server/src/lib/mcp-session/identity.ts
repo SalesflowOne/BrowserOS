@@ -29,6 +29,7 @@ export interface ClientIdentity {
   clientName: string
   clientVersion: string
   clientTitle: string | null
+  sessionLabel: string | null
   firstSeenAt: number
 }
 
@@ -42,6 +43,7 @@ export interface IdentityService {
     }
   }): ClientIdentity
   getIdentity(sessionId: string): ClientIdentity | null
+  setSessionLabel(sessionId: string, label: string): void
   dropSession(sessionId: string): void
   /** Snapshot of every live identity. Used by the tabs route to enrich registry records by agentId. */
   list(): ClientIdentity[]
@@ -70,6 +72,7 @@ export function createIdentityService(
         clientName: input.clientInfo.name?.trim() ?? '',
         clientVersion: input.clientInfo.version?.trim() ?? '',
         clientTitle: input.clientInfo.title?.trim() || null,
+        sessionLabel: null,
         firstSeenAt: now(),
       }
       records.set(input.sessionId, record)
@@ -77,6 +80,10 @@ export function createIdentityService(
     },
     getIdentity(sessionId) {
       return records.get(sessionId) ?? null
+    },
+    setSessionLabel(sessionId, label) {
+      const record = records.get(sessionId)
+      if (record) record.sessionLabel = label
     },
     dropSession(sessionId) {
       records.delete(sessionId)
