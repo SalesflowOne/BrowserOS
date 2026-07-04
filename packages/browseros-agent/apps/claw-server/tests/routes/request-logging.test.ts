@@ -79,6 +79,7 @@ describe('request-failure logging with thrown errors (fixture app)', () => {
     fx.get('/conflict', () => {
       throw new HttpError(409, 'already exists')
     })
+    fx.get('/direct', (c) => c.json({ error: 'gone' }, 410))
     fx.get('/ok', (c) => c.json({ ok: true }))
     return fx
   }
@@ -110,6 +111,18 @@ describe('request-failure logging with thrown errors (fixture app)', () => {
       method: 'GET',
       path: '/conflict',
       status: 409,
+    })
+  })
+
+  test('direct 4xx JSON return logs one warn with its status', async () => {
+    const res = await fixtureApp().fetch(new Request('http://localhost/direct'))
+    expect(res.status).toBe(410)
+    expect(warnSpy).toHaveBeenCalledTimes(1)
+    expect(errorSpy).not.toHaveBeenCalled()
+    expect(warnSpy.mock.calls[0]?.[1]).toMatchObject({
+      method: 'GET',
+      path: '/direct',
+      status: 410,
     })
   })
 

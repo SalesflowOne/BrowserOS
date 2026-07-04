@@ -419,6 +419,15 @@ export function registerBrowserToolsForSingleServer(
           if (typeof url === 'string' && url.length > 0) {
             const scheme = url.slice(0, url.indexOf(':') + 1).toLowerCase()
             if (NAVIGATE_BLOCKED_SCHEMES.has(scheme)) {
+              // Rejections before dispatchStart get their own message
+              // (vs 'dispatch failed'): nothing was executed, and an
+              // agent probing javascript:/file:/data: URLs is signal
+              // worth spotting on its own.
+              logger.warn('cockpit v2 tool dispatch rejected', {
+                tool: tool.name,
+                sessionId: extra?.sessionId,
+                reason: 'blocked navigate scheme',
+              })
               return {
                 content: [
                   {
@@ -434,6 +443,14 @@ export function registerBrowserToolsForSingleServer(
 
         const session = getBrowserSession()
         if (!session) {
+          // Every call an agent makes while the cockpit runs without
+          // an attached BrowserOS lands here; without this line the
+          // only trace is the single boot-time bootstrap warn.
+          logger.warn('cockpit v2 tool dispatch rejected', {
+            tool: tool.name,
+            sessionId: extra?.sessionId,
+            reason: 'browser session not connected',
+          })
           return {
             content: [
               {
