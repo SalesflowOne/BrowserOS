@@ -101,6 +101,19 @@ export function selectableItemsForSource(
   ]
 }
 
+export function sanitizeImportSelection(
+  source: BrowserOSImportSource,
+  items: readonly BrowserOSImportItem[],
+): BrowserOSImportItem[] {
+  const selectedItems = new Set(items)
+  const emittedItems = new Set<BrowserOSImportItem>()
+  return source.supportedItems.filter((item) => {
+    if (!selectedItems.has(item) || emittedItems.has(item)) return false
+    emittedItems.add(item)
+    return true
+  })
+}
+
 export function selectedSourceById(
   sources: readonly BrowserOSImportSource[],
   sourceId: string,
@@ -110,12 +123,16 @@ export function selectedSourceById(
 
 export function startImportRequestFor(
   source: BrowserOSImportSource,
+  items?: readonly BrowserOSImportItem[],
 ): BrowserOSStartImportRequest | null {
-  const items = selectableItemsForSource(source)
-  if (items.length === 0) return null
+  const importItems =
+    items === undefined
+      ? selectableItemsForSource(source)
+      : sanitizeImportSelection(source, items)
+  if (importItems.length === 0) return null
   return {
     sourceId: source.id,
-    items,
+    items: importItems,
   }
 }
 
@@ -126,10 +143,10 @@ export function completedImportItemCount(
 }
 
 export function importProgressTotal(
-  source: BrowserOSImportSource,
+  selectedItemCount: number,
   progress: BrowserOSImportProgress | undefined,
 ): number {
-  return progress?.totalItems ?? selectableItemsForSource(source).length
+  return progress?.totalItems ?? selectedItemCount
 }
 
 export const STARTER_PROMPTS: readonly string[] = [

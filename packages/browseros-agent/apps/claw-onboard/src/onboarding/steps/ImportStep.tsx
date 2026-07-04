@@ -54,7 +54,7 @@ export function ImportStep({
     Boolean(selectedSource) && hasSelectableItems && !isDetecting
   const completedItems = completedImportItemCount(state.progress)
   const totalItems = selectedSource
-    ? importProgressTotal(selectedSource, state.progress)
+    ? importProgressTotal(selectedItems.length, state.progress)
     : (state.progress?.totalItems ?? 0)
   const currentItemLabel = state.progress?.currentItem
     ? importItemLabel(state.progress.currentItem)
