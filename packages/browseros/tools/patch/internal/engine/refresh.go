@@ -123,6 +123,15 @@ func Refresh(ctx context.Context, opts RefreshOptions) (*RefreshResult, error) {
 		refreshStashRef = stashRef
 		return nil
 	}
+	withRefreshStashRecovery := func(err error) error {
+		if err == nil || refreshStashRef == "" {
+			return err
+		}
+		return fmt.Errorf("%w; tracked local changes are saved in stash %s", err, shortRev(refreshStashRef))
+	}
+	materializeErr := func(step string, err error) error {
+		return withRefreshStashRecovery(refreshMaterializeError(step, err))
+	}
 	if fresh, err := refreshIsFresh(ctx, opts.Workspace.Path, state, repoRev); err != nil {
 		return nil, err
 	} else if fresh {
@@ -131,7 +140,7 @@ func Refresh(ctx context.Context, opts RefreshOptions) (*RefreshResult, error) {
 		}
 		if branch != browserOSBranch {
 			if err := git.CheckoutBranch(ctx, opts.Workspace.Path, browserOSBranch); err != nil {
-				return nil, err
+				return nil, withRefreshStashRecovery(err)
 			}
 		}
 		result := &RefreshResult{
@@ -143,7 +152,7 @@ func Refresh(ctx context.Context, opts RefreshOptions) (*RefreshResult, error) {
 			Warnings:   []string{},
 		}
 		if err := finishRefresh(ctx, opts, repoInfo, result, refreshStashRef, repoRev); err != nil {
-			return nil, err
+			return nil, withRefreshStashRecovery(err)
 		}
 		return result, nil
 	}
@@ -169,7 +178,7 @@ func Refresh(ctx context.Context, opts RefreshOptions) (*RefreshResult, error) {
 		return nil, err
 	}
 	if err := git.CheckoutDetached(ctx, opts.Workspace.Path, repoInfo.BaseCommit); err != nil {
-		return nil, err
+		return nil, withRefreshStashRecovery(err)
 	}
 	result := &RefreshResult{
 		Workspace:  opts.Workspace.Name,
@@ -186,22 +195,22 @@ func Refresh(ctx context.Context, opts RefreshOptions) (*RefreshResult, error) {
 		}
 		reportProgress(opts.Progress, "Materializing feature %s", feature.Name)
 		if err := applyFeaturePatchSet(ctx, opts.Workspace.Path, repoInfo, repoSet, paths); err != nil {
-			return nil, refreshMaterializeError("apply feature "+feature.Name, err)
+			return nil, materializeErr("apply feature "+feature.Name, err)
 		}
 		stagePaths := stagePathsForPatches(repoSet, paths)
 		if err := git.AddAllPaths(ctx, opts.Workspace.Path, stagePaths); err != nil {
-			return nil, refreshMaterializeError("stage feature "+feature.Name, err)
+			return nil, materializeErr("stage feature "+feature.Name, err)
 		}
 		dirty, err := git.IsDirtyPaths(ctx, opts.Workspace.Path, stagePaths)
 		if err != nil {
-			return nil, refreshMaterializeError("check feature "+feature.Name, err)
+			return nil, materializeErr("check feature "+feature.Name, err)
 		}
 		if !dirty {
 			continue
 		}
 		commit, err := git.CommitIndexWithBodyEnv(ctx, opts.Workspace.Path, feature.Description, patchesRevTrailer+": "+repoRev, commitEnv)
 		if err != nil {
-			return nil, refreshMaterializeError("commit feature "+feature.Name, err)
+			return nil, materializeErr("commit feature "+feature.Name, err)
 		}
 		result.Commits = append(result.Commits, RefreshCommit{
 			Feature:     feature.Name,
@@ -213,7 +222,7 @@ func Refresh(ctx context.Context, opts RefreshOptions) (*RefreshResult, error) {
 	if len(result.Commits) == 0 {
 		commit, err := git.CommitIndexWithBodyEnv(ctx, opts.Workspace.Path, "chore: materialize browseros patches", patchesRevTrailer+": "+repoRev, commitEnv)
 		if err != nil {
-			return nil, refreshMaterializeError("commit empty materialization", err)
+			return nil, materializeErr("commit empty materialization", err)
 		}
 		result.Commits = append(result.Commits, RefreshCommit{
 			Feature:     "materialization",
@@ -224,19 +233,19 @@ func Refresh(ctx context.Context, opts RefreshOptions) (*RefreshResult, error) {
 	}
 	reportProgress(opts.Progress, "Moving browseros branch")
 	if err := git.ForceBranch(ctx, opts.Workspace.Path, browserOSBranch, "HEAD"); err != nil {
-		return nil, refreshMaterializeError("move browseros branch", err)
+		return nil, materializeErr("move browseros branch", err)
 	}
 	if err := git.CheckoutBranch(ctx, opts.Workspace.Path, browserOSBranch); err != nil {
-		return nil, refreshMaterializeError("checkout browseros branch", err)
+		return nil, materializeErr("checkout browseros branch", err)
 	}
 	state.BaseCommit = repoInfo.BaseCommit
 	state.LastRefreshRev = repoRev
 	state.LastRefreshAt = time.Now().UTC()
 	if err := workspace.SaveState(opts.Workspace.Path, state); err != nil {
-		return nil, err
+		return nil, withRefreshStashRecovery(err)
 	}
 	if err := finishRefresh(ctx, opts, repoInfo, result, refreshStashRef, repoRev); err != nil {
-		return nil, err
+		return nil, withRefreshStashRecovery(err)
 	}
 	return result, nil
 }
