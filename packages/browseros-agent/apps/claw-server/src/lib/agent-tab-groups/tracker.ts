@@ -9,9 +9,9 @@
  * decrements the ref count and reads back the record so it knows
  * which group to close in BrowserOS.
  *
- * Ref-counted by MCP session: two parallel sessions whose clients
- * identify with the same name share one group; the group only
- * closes when the last session for that agentId ends.
+ * Ref-counted by MCP session. agentId is session-scoped, so each
+ * live session owns its own record; the count remains a defensive
+ * guard around duplicate open/close notifications.
  */
 
 import { colorForSlug, type TabGroupColor } from './group-color'
@@ -83,6 +83,12 @@ export function createTabGroupTracker(
     recordOpen({ agentId, slug, pageId }) {
       const existing = records.get(agentId)
       if (existing) {
+        // Session init pre-seeds refCount-only records before tabs new supplies the client slug.
+        if (existing.pageIds.size === 0 && existing.groupId === null) {
+          existing.slug = slug
+          existing.color = colorForSlug(slug)
+          existing.title = slug
+        }
         existing.pageIds.add(pageId)
         return existing
       }

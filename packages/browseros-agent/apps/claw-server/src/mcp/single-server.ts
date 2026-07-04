@@ -102,9 +102,6 @@ function buildSession(): Session {
         title: clientInfo?.title,
       },
     })
-    // Bump the tab-group tracker's per-agentId ref count so the
-    // close path only deletes the group when the last session for
-    // this agent ends.
     const { agentId, slug } = agentIdentityFromClient(identity)
     tabGroupTracker.incrementSession(agentId)
     const agentLabel =
@@ -163,8 +160,8 @@ function cleanupSessionState(sessionId: string): void {
       // browser to dispatch to.
       tabGroupTracker.decrementSession(agentId)
     }
-    // Drop the per-agent tabs ledger so the next session for this
-    // agentId starts empty. Symmetric with the tab-group tracker.
+    // Drop this session-scoped ownership bucket. Symmetric with the
+    // tab-group tracker cleanup.
     agentTabs.forgetAgent(agentId)
   }
   sessions.delete(sessionId)
