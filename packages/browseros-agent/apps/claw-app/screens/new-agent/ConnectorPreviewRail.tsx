@@ -78,13 +78,13 @@ export function ConnectorPreviewRail({
     }
     let active = true
     setResolvedMcpUrl(null)
-    resolveMcpUrl(slug).then((url) => {
+    resolveMcpUrl().then((url) => {
       if (active) setResolvedMcpUrl(url)
     })
     return () => {
       active = false
     }
-  }, [createdAgent, slug])
+  }, [createdAgent])
 
   const copyMcpUrl = async () => {
     if (mcpUrl === null) return
@@ -136,7 +136,7 @@ export function ConnectorPreviewRail({
         MCP endpoint
       </span>
       <div className="flex items-center gap-2 rounded-lg bg-ink-deep px-3 py-2">
-        <code className="min-w-0 flex-1 truncate font-mono text-[#e9f2ea] text-[11px]">
+        <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-white/90">
           {mcpUrl ?? (
             <span className="block h-[14px] w-full max-w-[220px] animate-pulse rounded bg-white/15" />
           )}
@@ -178,10 +178,10 @@ export function ConnectorPreviewRail({
             </div>
           </div>
         ) : (
-          <div className="flex items-start gap-2 rounded-xl border border-[#BFE3CC] bg-green-tint p-3">
+          <div className="flex items-start gap-2 rounded-xl border border-green/30 bg-green-tint p-3">
             <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-green" />
             <div className="min-w-0">
-              <div className="font-bold text-[#15683A] text-sm">
+              <div className="font-bold text-green text-sm">
                 {successHeadline}
               </div>
               <div className="text-ink-2 text-xs leading-snug">

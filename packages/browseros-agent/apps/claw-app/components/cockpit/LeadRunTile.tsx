@@ -89,10 +89,10 @@ function Caption({
           <span className="text-white">{task.agentLabel}</span>
         </span>
         {isLive && (
-          <span className="inline-flex items-center gap-1.5 text-[#b1dbb8]">
+          <span className="inline-flex items-center gap-1.5 text-[#8fb4ff]">
             <span
               aria-hidden
-              className="inline-block size-1.5 animate-[pulse-dot_1.4s_ease-in-out_infinite] rounded-full bg-[#b1dbb8] shadow-[0_0_8px_hsl(130_37%_78%/0.7)]"
+              className="inline-block size-1.5 animate-[pulse-dot_1.4s_ease-in-out_infinite] rounded-full bg-[#8fb4ff] shadow-[0_0_8px_hsl(221_100%_78%/0.6)]"
             />
             LIVE
           </span>
@@ -128,14 +128,14 @@ function Caption({
 
 /**
  * When the lead session has no screenshot yet the top zone becomes
- * a dark composition of the tool sequence rendered as large mono
- * type. The absence of an image becomes a design opportunity.
+ * a theme-following wash with the tool sequence rendered as large
+ * mono type. The absence of an image becomes a design opportunity.
  */
 function LeadNoShotComposition({ task }: { task: TaskSummary }) {
   const verbs = task.toolSequence.slice(0, 5)
   return (
-    <div className="absolute inset-0 bg-gradient-to-br from-ink via-ink-2 to-ink">
-      <div className="pointer-events-none absolute inset-0 flex flex-col justify-center gap-1 p-8 font-mono text-[30px] text-white/12 leading-[1.05] tracking-tight md:text-[38px]">
+    <div className="absolute inset-0 bg-gradient-to-br from-accent-tint via-secondary to-muted">
+      <div className="pointer-events-none absolute inset-0 flex flex-col justify-center gap-1 p-8 font-mono text-[30px] text-ink/12 leading-[1.05] tracking-tight md:text-[38px]">
         {verbs.map((verb, idx) => (
           <span
             // biome-ignore lint/suspicious/noArrayIndexKey: tool sequence is stable-ordered per session, not a reorderable list

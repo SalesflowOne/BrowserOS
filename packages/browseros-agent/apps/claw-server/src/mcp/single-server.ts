@@ -78,6 +78,10 @@ function buildSession(): Session {
 
   transport.onerror = (err) => {
     const sessionId = transport.sessionId
+    logger.warn('mcp session transport error', {
+      sessionId: sessionId ?? null,
+      error: err instanceof Error ? err.message : String(err),
+    })
     if (!sessionId) return
     recordSessionEnd({
       sessionId,
@@ -214,6 +218,11 @@ export function sweepIdleSessions(now: number): string[] {
       idle.push(sessionId)
     }
   }
+  // Distinguishes sweeper teardowns from client DELETEs in the log:
+  // the 'session closed' lines that follow this one were idle reaps.
+  if (idle.length > 0) {
+    logger.info('sweeping idle mcp sessions', { count: idle.length })
+  }
   for (const sessionId of idle) cleanupSessionState(sessionId)
   return idle
 }
@@ -260,6 +269,12 @@ export async function handleSingleMcpRequest(
     // + transport that the SDK immediately rejects in validateSession
     // (no matching session id), leaving the pair connected and
     // un-tracked: a per-request leak.
+    // Expected after a server restart (every live client's next
+    // request lands here once) — logged because a client stuck in
+    // this state shows up as a run of these lines.
+    logger.warn('rejected request for unknown mcp session', {
+      sessionId: headerSessionId,
+    })
     return new Response(
       JSON.stringify({
         error: 'unknown mcp-session-id',

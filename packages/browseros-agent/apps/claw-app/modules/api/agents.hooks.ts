@@ -47,7 +47,7 @@ const MOCK_AGENTS: AgentRow[] = [
     task: 'See my May invoices and file expenses on SAP Concur',
     status: 'needs-ok',
     liveLine: 'Filling 4 expense lines',
-    color: '#0f3e17',
+    color: '#0254ec',
   },
   {
     id: 'cld-li',
@@ -149,27 +149,6 @@ export const useDeleteAgent = createMutation<
   mutationFn: async ({ id }) => {
     const response = await api.agents[':id'].$delete({ param: { id } })
     return parseResponse<DeleteAgentVariables>(response)
-  },
-})
-
-interface RegenerateMcpVariables {
-  id: string
-}
-
-interface RegenerateMcpResult {
-  id: string
-  mcpUrl: string
-}
-
-export const useRegenerateMcpUrl = createMutation<
-  RegenerateMcpResult,
-  RegenerateMcpVariables
->({
-  mutationFn: async ({ id }) => {
-    const response = await api.agents[':id']['mcp-url:regenerate'].$post({
-      param: { id },
-    })
-    return parseResponse<RegenerateMcpResult>(response)
   },
 })
 

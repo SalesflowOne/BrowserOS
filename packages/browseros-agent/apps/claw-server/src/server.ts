@@ -13,6 +13,7 @@
  * recipe.
  */
 
+import type { MiddlewareHandler } from 'hono'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { HttpError } from './lib/errors'
@@ -25,7 +26,6 @@ import { auditTasksRoute } from './routes/audit/tasks'
 import { auditReplayRoute } from './routes/audit-replay'
 import { replayTabsRoute } from './routes/audit-replay/tabs'
 import { connectionsRoute } from './routes/connections'
-import { mcpRoute } from './routes/mcp'
 import { mcpV2Route } from './routes/mcp-v2'
 import { permissionsRoute } from './routes/permissions'
 import { siteRulesRoute } from './routes/site-rules'
@@ -55,6 +55,36 @@ const app = new Hono()
 // fetching from `http://127.0.0.1:<port>`.
 app.use('*', cors({ origin: '*' }))
 
+// One structured line per failed request, however the failure was
+// produced: a router 404, a thrown HttpError, a direct 4xx/5xx JSON
+// return, or an unhandled error — hono materialises the onError
+// response before `next()` resolves, so `c.res.status` is final
+// here. Sub-400 traffic stays unlogged on purpose: the logger has no
+// level filtering and the claw-app polls several endpoints, so a
+// per-request access log would flood the rotating log file.
+// Named export so tests can exercise the throwing paths on a fixture
+// app; this shared app's route matcher is already built (and frozen)
+// by the first test file that fetches through it.
+export const requestFailureLog: MiddlewareHandler = async (c, next) => {
+  const start = Date.now()
+  await next()
+  const status = c.res.status
+  if (status < 400) return
+  const fields = {
+    method: c.req.method,
+    path: c.req.path,
+    status,
+    durationMs: Date.now() - start,
+  }
+  if (status >= 500) {
+    logger.error('request failed', fields)
+  } else {
+    logger.warn('request failed', fields)
+  }
+}
+
+app.use('*', requestFailureLog)
+
 // Catch-all for genuinely unexpected errors. Routes today resolve
 // their own expected failures (404s, validation) inline and return
 // structured 4xx JSON. Anything that escapes that lands here, gets
@@ -74,18 +104,13 @@ app.onError((err, c) => {
   return c.json({ error: message }, 500)
 })
 
-// v2 single-MCP route always mounts at `/mcp`. The legacy per-slug
-// route at `/mcp/:slug` also mounts always, but its handler returns
-// 404 unless `COCKPIT_LEGACY_PER_AGENT_MCP=1` is set; the gate runs
-// per-request so tests can flip it from `beforeAll` without juggling
-// import order.
+// The single MCP endpoint mounts at `/mcp`.
 const routes = app
   .route('/', systemRoute)
   .route('/', agentsRoute)
   .route('/', siteRulesRoute)
   .route('/', permissionsRoute)
   .route('/', mcpV2Route)
-  .route('/', mcpRoute)
   .route('/', tabsRoute)
   .route('/', tabsFocusRoute)
   .route('/', agentsControlRoute)

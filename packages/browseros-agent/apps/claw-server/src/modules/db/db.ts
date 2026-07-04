@@ -17,6 +17,7 @@ import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { type BunSQLiteDatabase, drizzle } from 'drizzle-orm/bun-sqlite'
 import { resolveClawServerPath } from '../../lib/browseros-dir'
+import { logger } from '../../lib/logger'
 import { runMigrations } from './migrator'
 import * as schema from './schema/schema'
 
@@ -37,8 +38,19 @@ export function getAuditDb(): AuditDb {
   raw.run('PRAGMA synchronous = NORMAL;')
   raw.run('PRAGMA foreign_keys = ON;')
   const db = drizzle({ client: raw, schema })
-  runMigrations(db)
+  try {
+    runMigrations(db)
+  } catch (err) {
+    // Without this line a broken migration surfaces only as
+    // downstream 'audit log write failed' warns or route 500s.
+    logger.error('audit db migration failed', {
+      path,
+      error: err instanceof Error ? err.message : String(err),
+    })
+    throw err
+  }
   cached = { db, raw }
+  logger.info('audit db ready', { path })
   return db
 }
 

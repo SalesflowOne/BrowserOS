@@ -298,6 +298,28 @@ function composeAbortSignals(
 }
 
 /**
+ * First text block of a failed dispatch result, capped so a long
+ * tool message cannot bloat the log line. executeTool's error
+ * results carry their human-readable reason here.
+ */
+const DISPATCH_ERROR_TEXT_MAX = 200
+
+function dispatchErrorText(content: unknown): string | null {
+  if (!Array.isArray(content)) return null
+  for (const block of content) {
+    if (
+      block !== null &&
+      typeof block === 'object' &&
+      (block as { type?: unknown }).type === 'text' &&
+      typeof (block as { text?: unknown }).text === 'string'
+    ) {
+      return (block as { text: string }).text.slice(0, DISPATCH_ERROR_TEXT_MAX)
+    }
+  }
+  return null
+}
+
+/**
  * Rewrite a successful `tabs list` result to only include pages the
  * calling agent owns. Both channels are rebuilt from the surviving
  * subset:
@@ -397,6 +419,15 @@ export function registerBrowserToolsForSingleServer(
           if (typeof url === 'string' && url.length > 0) {
             const scheme = url.slice(0, url.indexOf(':') + 1).toLowerCase()
             if (NAVIGATE_BLOCKED_SCHEMES.has(scheme)) {
+              // Rejections before dispatchStart get their own message
+              // (vs 'dispatch failed'): nothing was executed, and an
+              // agent probing javascript:/file:/data: URLs is signal
+              // worth spotting on its own.
+              logger.warn('cockpit v2 tool dispatch rejected', {
+                tool: tool.name,
+                sessionId: extra?.sessionId,
+                reason: 'blocked navigate scheme',
+              })
               return {
                 content: [
                   {
@@ -412,6 +443,14 @@ export function registerBrowserToolsForSingleServer(
 
         const session = getBrowserSession()
         if (!session) {
+          // Every call an agent makes while the cockpit runs without
+          // an attached BrowserOS lands here; without this line the
+          // only trace is the single boot-time bootstrap warn.
+          logger.warn('cockpit v2 tool dispatch rejected', {
+            tool: tool.name,
+            sessionId: extra?.sessionId,
+            reason: 'browser session not connected',
+          })
           return {
             content: [
               {
@@ -502,6 +541,23 @@ export function registerBrowserToolsForSingleServer(
           if (userCancel.signal.aborted) {
             result = cancellationErrorResult(CANCELLATION_REASON)
           } else {
+            // A client-driven abort (notifications/cancelled, harness
+            // timeout) is normal lifecycle, not a server fault; only a
+            // throw with no abort anywhere is a genuine failure.
+            if (extra?.signal?.aborted) {
+              logger.info('cockpit v2 tool dispatch cancelled by client', {
+                tool: tool.name,
+                sessionId: extra?.sessionId,
+                durationMs: Date.now() - dispatchStart,
+              })
+            } else {
+              logger.error('cockpit v2 tool dispatch threw', {
+                tool: tool.name,
+                sessionId: extra?.sessionId,
+                durationMs: Date.now() - dispatchStart,
+                error: err instanceof Error ? err.message : String(err),
+              })
+            }
             throw err
           }
         } finally {
@@ -514,6 +570,18 @@ export function registerBrowserToolsForSingleServer(
           result = cancellationErrorResult(CANCELLATION_REASON)
         }
         const durationMs = Date.now() - dispatchStart
+
+        // Failed dispatches are otherwise invisible server-side: the
+        // audit DB rows land only for successes and operator cancels,
+        // and the isError result rides back to the agent's harness.
+        if (result.isError && !userCancel.signal.aborted) {
+          logger.warn('cockpit v2 tool dispatch failed', {
+            tool: tool.name,
+            sessionId: extra?.sessionId,
+            durationMs,
+            error: dispatchErrorText(result.content),
+          })
+        }
 
         // Record cancelled dispatches in the audit log so the task
         // timeline shows the operator's intervention. The existing

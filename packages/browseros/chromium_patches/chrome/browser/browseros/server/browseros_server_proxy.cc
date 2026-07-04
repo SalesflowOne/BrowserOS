@@ -1,9 +1,9 @@
 diff --git a/chrome/browser/browseros/server/browseros_server_proxy.cc b/chrome/browser/browseros/server/browseros_server_proxy.cc
 new file mode 100644
-index 0000000000000..17560c9a2c55a
+index 0000000000000..29bd72722ffde
 --- /dev/null
 +++ b/chrome/browser/browseros/server/browseros_server_proxy.cc
-@@ -0,0 +1,225 @@
+@@ -0,0 +1,249 @@
 +// Copyright 2024 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -167,8 +167,16 @@ index 0000000000000..17560c9a2c55a
 +  resource_request->method = info.method;
 +  resource_request->credentials_mode = network::mojom::CredentialsMode::kOmit;
 +
++  // MCP Streamable HTTP keeps session state in headers: the server assigns
++  // mcp-session-id on initialize and the client echoes it (plus
++  // mcp-protocol-version, and last-event-id) on every later request.
++  // last-event-id is forwarded for protocol completeness only; SSE stream
++  // resume still cannot traverse this buffering proxy (DownloadToString).
++  // net::HttpServer lowercases header names.
 +  for (const auto& [name, value] : info.headers) {
-+    if (name == "content-type" || name == "accept" || name == "authorization") {
++    if (name == "content-type" || name == "accept" ||
++        name == "authorization" || name == "mcp-session-id" ||
++        name == "mcp-protocol-version" || name == "last-event-id") {
 +      resource_request->headers.SetHeader(name, value);
 +    }
 +  }
@@ -181,6 +189,11 @@ index 0000000000000..17560c9a2c55a
 +  }
 +
 +  loader->SetTimeoutDuration(base::Seconds(300));
++
++  // Relay backend 4xx/5xx (with bodies) instead of masking them as 503.
++  // Stateful MCP backends answer 4xx for session errors, and clients
++  // recover from the real status (e.g. re-initialize on 404).
++  loader->SetAllowHttpErrorResults(true);
 +
 +  auto* loader_ptr = loader.get();
 +  pending_loaders_[connection_id] = std::move(loader);
@@ -225,6 +238,17 @@ index 0000000000000..17560c9a2c55a
 +  net::HttpServerResponseInfo response(
 +      static_cast<net::HttpStatusCode>(response_code));
 +  response.SetBody(*response_body, content_type);
++
++  // Without the assigned mcp-session-id a stateful MCP client can never
++  // join its session, so relay it alongside the body.
++  if (response_info && response_info->headers) {
++    std::optional<std::string> session_id =
++        response_info->headers->GetNormalizedHeader("mcp-session-id");
++    if (session_id.has_value()) {
++      response.AddHeader("mcp-session-id", *session_id);
++    }
++  }
++
 +  server_->SendResponse(connection_id, response, GetProxyTrafficAnnotation());
 +}
 +

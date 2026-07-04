@@ -11,6 +11,7 @@
  */
 
 import { Hono } from 'hono'
+import { logger } from '../../lib/logger'
 import {
   CANCELLATION_REASON,
   dispatchCancellation,
@@ -34,6 +35,12 @@ export const agentsControlRoute = new Hono().post(
         404,
       )
     }
+    // The operator's Stop button: pairs with the cancelled-dispatch
+    // audit rows so a mid-run abort is attributable in the log.
+    logger.info('cancelled in-flight dispatches for agent', {
+      agentId,
+      cancelled,
+    })
     return c.json({ ok: true, cancelled }, 200)
   },
 )

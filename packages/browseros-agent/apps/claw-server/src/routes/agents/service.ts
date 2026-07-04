@@ -6,9 +6,9 @@
  * File-backed agent profile service. One profile per file at
  * <browserosDir>/claw-server/agents/<id>.json keyed by a nanoid;
  * the slug is the user-facing identifier and is unique across all
- * profiles. mcpUrl is recomputed from getLocalServerUrl() on every
- * read so a port change between boots doesn't strand the stored
- * value.
+ * profiles. mcpUrl is recomputed from the current public MCP URL
+ * on every read so a port change between boots doesn't strand the
+ * stored value.
  *
  * Route handlers stay thin: they translate HTTP shape and surface
  * 404s; everything else (validation, persistence, slug resolution,
@@ -16,17 +16,16 @@
  */
 
 import { nanoid } from 'nanoid'
-import { env } from '../../env'
 import { AsyncMutex } from '../../lib/async-mutex'
 import { logger } from '../../lib/logger'
 import { toSlug, uniqueSlug } from '../../lib/slug'
 import { listFiles, readJson, removeFile, writeJson } from '../../lib/storage'
-import { getLocalServerUrl } from '../../local-server-url'
 import {
   installForAgent,
   reconcileHarnessLink,
   uninstallForAgent,
 } from '../../services/harness-install'
+import { publicMcpUrl } from '../../shared/mcp-url'
 import {
   type AgentProfileSummary,
   type CreatedAgent,
@@ -75,18 +74,6 @@ function nowIso(): string {
   return new Date().toISOString()
 }
 
-function backendBaseUrl(): string {
-  return getLocalServerUrl() ?? `http://127.0.0.1:${env.port}`
-}
-
-function mcpBaseUrl(): string {
-  return env.proxyPort ? `http://127.0.0.1:${env.proxyPort}` : backendBaseUrl()
-}
-
-function buildMcpUrl(slug: string): string {
-  return `${mcpBaseUrl()}/mcp/${slug}`
-}
-
 function buildCliCommand(slug: string): string {
   return `mcp add ${slug}`
 }
@@ -121,19 +108,6 @@ async function loadAll(): Promise<StoredAgentProfile[]> {
     }
   }
   return profiles
-}
-
-/**
- * Stored profile for a slug, or null when no agent owns that slug.
- * Used by the MCP route to resolve `/mcp/:slug` against the agents
- * directory. Slugs are unique per Phase 1's `uniqueSlug` invariant so
- * the linear scan never collides.
- */
-export async function findBySlug(
-  slug: string,
-): Promise<StoredAgentProfile | null> {
-  const all = await loadAll()
-  return all.find((profile) => profile.slug === slug) ?? null
 }
 
 /** Stored profile for an id, or null when the file is missing. */
@@ -178,7 +152,7 @@ function summariseProfile(profile: StoredAgentProfile): AgentProfileSummary {
     alwaysAllowCount: 0,
     lastRunAt: 'Never run',
     status: profile.status,
-    mcpUrl: buildMcpUrl(profile.slug),
+    mcpUrl: publicMcpUrl(),
   }
 }
 
@@ -219,12 +193,17 @@ export async function create(input: NewAgentValues): Promise<CreatedAgent> {
       ...input,
       id,
       slug,
-      mcpUrl: buildMcpUrl(slug),
+      mcpUrl: publicMcpUrl(),
       status: 'configured',
       createdAt: now,
       updatedAt: now,
     }
     await writeJson(fileFor(id), profile, storedAgentProfileSchema)
+    logger.info('agent profile created', {
+      id,
+      slug,
+      harness: profile.harness,
+    })
     // Best-effort harness install. A failure here does NOT roll back
     // the profile; the user can retry or fix the harness state and
     // we'll attempt again on the next create. The outcome rides
@@ -271,12 +250,17 @@ export async function update(
       ...input,
       id,
       slug,
-      mcpUrl: buildMcpUrl(slug),
+      mcpUrl: publicMcpUrl(),
       status: existing.status,
       createdAt: existing.createdAt,
       updatedAt: nowIso(),
     }
     await writeJson(fileFor(id), next, storedAgentProfileSchema)
+    logger.info('agent profile updated', {
+      id,
+      slug: next.slug,
+      harness: next.harness,
+    })
     // Best-effort harness reconcile: if the harness or slug rotated,
     // wire the new entry into the new harness and drop the old one.
     // Failures are logged inside the helpers and do NOT roll back the
@@ -308,6 +292,11 @@ export async function remove(id: string): Promise<DeletedAgent | null> {
   // run uninstallForAgent and the loser would still report 404.
   const existed = await removeFile(fileFor(id))
   if (!existed) return null
+  logger.info('agent profile deleted', {
+    id,
+    slug: profile.slug,
+    harness: profile.harness,
+  })
   const harnessUninstall = await uninstallForAgent({
     slug: profile.slug,
     harness: profile.harness,
@@ -336,14 +325,18 @@ export async function regenerateMcpUrl(
     const next: StoredAgentProfile = {
       ...existing,
       slug,
-      mcpUrl: buildMcpUrl(slug),
+      mcpUrl: publicMcpUrl(),
       updatedAt: nowIso(),
     }
     await writeJson(fileFor(id), next, storedAgentProfileSchema)
-    // The whole point of rotating is to issue a fresh URL to the
-    // harness; reconcile the link so the harness picks it up
-    // automatically. Harness is unchanged so only the slug pair
-    // differs.
+    logger.info('agent mcp url regenerated', {
+      id,
+      slug: next.slug,
+      previousSlug: existing.slug,
+    })
+    // Rotating still changes the harness server name even though the
+    // endpoint URL is shared; reconcile so the new slug entry replaces
+    // the old one. Harness is unchanged so only the slug pair differs.
     await reconcileHarnessLink({
       before: {
         slug: existing.slug,
