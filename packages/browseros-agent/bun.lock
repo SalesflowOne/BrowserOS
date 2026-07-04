@@ -207,7 +207,7 @@
     },
     "apps/claw-server": {
       "name": "@browseros/claw-server",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "dependencies": {
         "@browseros/browser-core": "workspace:*",
         "@browseros/browser-mcp": "workspace:*",
