@@ -63,11 +63,11 @@ export function ScreenshotLightbox({
             {screenshotBaseUrl !== null ? (
               <img
                 src={taskScreenshotUrl(dispatchId, screenshotBaseUrl)}
-                alt={`Screenshot — ${caption}`}
-                className="max-h-[calc(92vh-3.25rem)] w-auto max-w-[94vw] rounded-xl object-contain shadow-2xl ring-1 ring-foreground/10"
+                alt={host ? `Screenshot of ${host}` : 'Screenshot'}
+                className="max-h-[calc(92vh-3.5rem)] w-auto max-w-[94vw] rounded-xl object-contain shadow-2xl ring-1 ring-foreground/10"
               />
             ) : (
-              <div className="aspect-[16/10] w-[70vw] max-w-[94vw] animate-pulse rounded-xl bg-card-tint ring-1 ring-foreground/10" />
+              <div className="aspect-[16/10] max-h-[calc(92vh-3.5rem)] w-[70vw] max-w-[94vw] animate-pulse rounded-xl bg-card-tint ring-1 ring-foreground/10" />
             )}
           </>
         )}
