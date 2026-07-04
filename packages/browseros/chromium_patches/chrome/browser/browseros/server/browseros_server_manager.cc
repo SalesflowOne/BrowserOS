@@ -179,7 +179,7 @@ index 0000000000000..c39cdbe4f8f1c
 +bool BrowserOSServerManager::AcquireLock() {
 +  base::ScopedAllowBlocking allow_blocking;
 +
-+  base::FilePath exec_dir = GetBrowserOSExecutionDir();
++  base::FilePath exec_dir = GetManagedServerExecutionDir();
 +  if (exec_dir.empty()) {
 +    LOG(ERROR) << "browseros: Failed to resolve execution directory for lock";
 +    return false;
@@ -570,7 +570,7 @@ index 0000000000000..c39cdbe4f8f1c
 +
 +  config.paths.fallback_exe = GetBrowserOSServerExecutablePath();
 +  config.paths.fallback_resources = GetBrowserOSServerResourcesPath();
-+  config.paths.execution = GetBrowserOSExecutionDir();
++  config.paths.execution = GetManagedServerExecutionDir();
 +
 +  if (updater_) {
 +    config.paths.exe = updater_->GetBestServerBinaryPath();
@@ -1071,7 +1071,7 @@ index 0000000000000..c39cdbe4f8f1c
 +      .Append(FILE_PATH_LITERAL("resources"));
 +}
 +
-+base::FilePath BrowserOSServerManager::GetBrowserOSExecutionDir() const {
++base::FilePath BrowserOSServerManager::GetManagedServerExecutionDir() const {
 +  base::FilePath user_data_dir;
 +  if (!base::PathService::Get(chrome::DIR_USER_DATA, &user_data_dir)) {
 +    LOG(ERROR) << "browseros: Failed to resolve DIR_USER_DATA path";
@@ -1079,7 +1079,7 @@ index 0000000000000..c39cdbe4f8f1c
 +  }
 +
 +  base::FilePath exec_dir =
-+      user_data_dir.Append(FILE_PATH_LITERAL(".browseros"));
++      user_data_dir.Append(GetManagedServerDescriptor().execution_dir_name);
 +
 +  base::ScopedAllowBlocking allow_blocking;
 +  if (!base::PathExists(exec_dir)) {

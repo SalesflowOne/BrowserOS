@@ -135,7 +135,7 @@ index 0000000000000..6c9a7e03ebc0d
 +  void OnRestartServerRequestedChanged();
 +  void CheckProcessStatus();
 +
-+  base::FilePath GetBrowserOSExecutionDir() const;
++  base::FilePath GetManagedServerExecutionDir() const;
 +
 +  std::unique_ptr<ProcessController> process_controller_;
 +  std::unique_ptr<ServerStateStore> state_store_;
