@@ -2101,6 +2101,109 @@ features:
 	}
 }
 
+func TestRefreshAutoAnnotatesLocalRename(t *testing.T) {
+	ctx := context.Background()
+	workspacePath := initGitRepo(t)
+	writeFile(t, filepath.Join(workspacePath, "chrome", "old.cc"), "base\n")
+	runGit(t, workspacePath, "add", "chrome/old.cc")
+	runGit(t, workspacePath, "commit", "-m", "workspace base")
+	baseCommit := gitOutput(t, workspacePath, "rev-parse", "HEAD")
+
+	repoInfo := newPatchRepo(t, baseCommit)
+	writeFeaturesYAML(t, repoInfo.Root, `version: "1.0"
+features:
+  rename:
+    description: "feat: rename local"
+    files:
+      - chrome/old.cc
+      - chrome/new.cc
+`)
+	runGit(t, repoInfo.Root, "add", "bos_build/features.yaml")
+	runGit(t, repoInfo.Root, "commit", "-m", "feature registry")
+
+	runGit(t, workspacePath, "mv", "chrome/old.cc", "chrome/new.cc")
+	result, err := Refresh(ctx, RefreshOptions{
+		Workspace:    workspace.Entry{Name: "ws", Path: workspacePath},
+		Repo:         repoInfo,
+		AutoAnnotate: true,
+		Pull:         false,
+	})
+	if err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+	if result.Annotate == nil || result.Annotate.CommitsCreated != 1 {
+		t.Fatalf("expected rename auto-annotate commit, got %+v", result.Annotate)
+	}
+	if _, err := os.Stat(filepath.Join(workspacePath, "chrome", "old.cc")); !os.IsNotExist(err) {
+		t.Fatalf("old path should stay deleted after refresh rename annotation, stat err=%v", err)
+	}
+	assertFile(t, filepath.Join(workspacePath, "chrome", "new.cc"), "base\n")
+	if status := gitOutput(t, workspacePath, "status", "--porcelain", "--", "chrome"); status != "" {
+		t.Fatalf("expected clean checkout after rename annotate, got %q", status)
+	}
+	oldInParent, err := git.FileExistsAtCommit(ctx, workspacePath, "HEAD^", "chrome/old.cc")
+	if err != nil {
+		t.Fatalf("FileExistsAtCommit parent old: %v", err)
+	}
+	oldInHead, err := git.FileExistsAtCommit(ctx, workspacePath, "HEAD", "chrome/old.cc")
+	if err != nil {
+		t.Fatalf("FileExistsAtCommit head old: %v", err)
+	}
+	newInHead, err := git.FileExistsAtCommit(ctx, workspacePath, "HEAD", "chrome/new.cc")
+	if err != nil {
+		t.Fatalf("FileExistsAtCommit head new: %v", err)
+	}
+	if !oldInParent || oldInHead || !newInHead {
+		t.Fatalf("rename tree state parentOld=%v headOld=%v headNew=%v", oldInParent, oldInHead, newInHead)
+	}
+}
+
+func TestRefreshAutoAnnotatesModeOnlyChange(t *testing.T) {
+	ctx := context.Background()
+	workspacePath := initGitRepo(t)
+	writeFile(t, filepath.Join(workspacePath, "chrome", "tool.sh"), "#!/bin/sh\n")
+	runGit(t, workspacePath, "add", "chrome/tool.sh")
+	runGit(t, workspacePath, "commit", "-m", "workspace base")
+	baseCommit := gitOutput(t, workspacePath, "rev-parse", "HEAD")
+
+	repoInfo := newPatchRepo(t, baseCommit)
+	writeFeaturesYAML(t, repoInfo.Root, `version: "1.0"
+features:
+  tool:
+    description: "feat: executable tool"
+    files:
+      - chrome/tool.sh
+`)
+	runGit(t, repoInfo.Root, "add", "bos_build/features.yaml")
+	runGit(t, repoInfo.Root, "commit", "-m", "feature registry")
+
+	if err := os.Chmod(filepath.Join(workspacePath, "chrome", "tool.sh"), 0o755); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	result, err := Refresh(ctx, RefreshOptions{
+		Workspace:    workspace.Entry{Name: "ws", Path: workspacePath},
+		Repo:         repoInfo,
+		AutoAnnotate: true,
+		Pull:         false,
+	})
+	if err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+	if result.Annotate == nil || result.Annotate.CommitsCreated != 1 {
+		t.Fatalf("expected mode auto-annotate commit, got %+v", result.Annotate)
+	}
+	mode, err := git.FileModeAtCommit(ctx, workspacePath, "HEAD", "chrome/tool.sh")
+	if err != nil {
+		t.Fatalf("FileModeAtCommit: %v", err)
+	}
+	if mode != "100755" {
+		t.Fatalf("HEAD tool mode = %q, want 100755", mode)
+	}
+	if status := gitOutput(t, workspacePath, "status", "--porcelain", "--", "chrome/tool.sh"); status != "" {
+		t.Fatalf("expected clean checkout after mode annotate, got %q", status)
+	}
+}
+
 func TestRefreshNoAnnotateRestoresLocalChangesDirty(t *testing.T) {
 	ctx := context.Background()
 	workspacePath := initGitRepo(t)

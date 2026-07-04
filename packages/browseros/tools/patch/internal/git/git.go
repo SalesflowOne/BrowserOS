@@ -705,7 +705,7 @@ func StashRebase(ctx context.Context, dir string, stashRef string) error {
 }
 
 func stashTrackedFiles(ctx context.Context, dir string, stashRef string) ([]string, error) {
-	result, err := Run(ctx, dir, nil, "-c", "core.quotepath=false", "diff", "--name-only", stashRef+"^1", stashRef)
+	result, err := Run(ctx, dir, nil, "-c", "core.quotepath=false", "diff", "--name-only", "--no-renames", stashRef+"^1", stashRef)
 	if err != nil {
 		return nil, err
 	}
@@ -753,15 +753,39 @@ func restoreFromTree(ctx context.Context, dir string, treeish string, rel string
 	if err != nil {
 		return err
 	}
-	perm := os.FileMode(0o644)
-	if mode, modeErr := FileModeAtCommit(ctx, dir, treeish, rel); modeErr == nil && mode == "100755" {
-		perm = 0o755
+	perm, err := filePermAtTree(ctx, dir, treeish, rel)
+	if err != nil {
+		return err
 	}
 	workPath := filepath.Join(dir, filepath.FromSlash(rel))
 	if err := os.MkdirAll(filepath.Dir(workPath), 0o755); err != nil {
 		return err
 	}
+	if info, err := os.Lstat(workPath); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		if err := os.Remove(workPath); err != nil {
+			return err
+		}
+	}
 	return os.WriteFile(workPath, content, perm)
+}
+
+func filePermAtTree(ctx context.Context, dir string, treeish string, rel string) (os.FileMode, error) {
+	mode, err := FileModeAtCommit(ctx, dir, treeish, rel)
+	if err != nil {
+		return 0, err
+	}
+	if mode == "100755" {
+		return 0o755, nil
+	}
+	return 0o644, nil
+}
+
+func chmodFromTree(ctx context.Context, dir string, treeish string, rel string) error {
+	perm, err := filePermAtTree(ctx, dir, treeish, rel)
+	if err != nil {
+		return err
+	}
+	return os.Chmod(filepath.Join(dir, filepath.FromSlash(rel)), perm)
 }
 
 func rebaseStashedFile(ctx context.Context, dir string, stashRef string, rel string) (bool, error) {
@@ -810,7 +834,11 @@ func rebaseStashedFile(ctx context.Context, dir string, stashRef string, rel str
 		}
 		return baseExists, nil
 	}
-	return mergeIntoWorkingFile(ctx, dir, rel, base, theirs)
+	conflicted, err := mergeIntoWorkingFile(ctx, dir, rel, base, theirs)
+	if err != nil || conflicted {
+		return conflicted, err
+	}
+	return false, chmodFromTree(ctx, dir, stashRef, rel)
 }
 
 // mergeIntoWorkingFile 3-way merges stashed content into the working file.
