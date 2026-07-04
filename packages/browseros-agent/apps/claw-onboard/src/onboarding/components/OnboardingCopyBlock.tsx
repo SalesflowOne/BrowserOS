@@ -19,9 +19,9 @@ export function OnboardingCopyBlock({ text }: OnboardingCopyBlockProps) {
   }
 
   return (
-    <div className="flex items-center gap-2.5 rounded-xl bg-[#15140F] px-3.5 py-3">
-      <span className="font-mono text-[#6FCF8E] text-[12.5px]">$</span>
-      <code className="flex-1 truncate font-mono text-[#EDEAE2] text-[12.5px]">
+    <div className="flex items-center gap-2.5 rounded-xl bg-ink-deep px-3.5 py-3">
+      <span className="font-mono text-[#6195ff] text-[12.5px]">$</span>
+      <code className="flex-1 truncate font-mono text-[12.5px] text-white/90">
         {text}
       </code>
       <button
