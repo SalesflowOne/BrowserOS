@@ -29,7 +29,7 @@ import { connectionsRoute } from './routes/connections'
 import { mcpV2Route } from './routes/mcp-v2'
 import { permissionsRoute } from './routes/permissions'
 import { siteRulesRoute } from './routes/site-rules'
-import { systemRoute } from './routes/system'
+import { createSystemRoute } from './routes/system'
 import { tabsRoute } from './routes/tabs'
 import { tabsFocusRoute } from './routes/tabs-focus'
 
@@ -48,23 +48,6 @@ export function setRouteErrorHandler(fn: RouteErrorHandler): void {
   captureRouteError = fn
 }
 
-const app = new Hono()
-
-// Loopback-only bind (see main.ts) makes wildcard CORS safe and
-// dodges the `null` Origin a chrome-extension:// page sends when
-// fetching from `http://127.0.0.1:<port>`.
-app.use('*', cors({ origin: '*' }))
-
-// One structured line per failed request, however the failure was
-// produced: a router 404, a thrown HttpError, a direct 4xx/5xx JSON
-// return, or an unhandled error — hono materialises the onError
-// response before `next()` resolves, so `c.res.status` is final
-// here. Sub-400 traffic stays unlogged on purpose: the logger has no
-// level filtering and the claw-app polls several endpoints, so a
-// per-request access log would flood the rotating log file.
-// Named export so tests can exercise the throwing paths on a fixture
-// app; this shared app's route matcher is already built (and frozen)
-// by the first test file that fetches through it.
 export const requestFailureLog: MiddlewareHandler = async (c, next) => {
   const start = Date.now()
   await next()
@@ -83,43 +66,65 @@ export const requestFailureLog: MiddlewareHandler = async (c, next) => {
   }
 }
 
-app.use('*', requestFailureLog)
+interface CreateServerOptions {
+  onShutdown?: () => void
+}
 
-// Catch-all for genuinely unexpected errors. Routes today resolve
-// their own expected failures (404s, validation) inline and return
-// structured 4xx JSON. Anything that escapes that lands here, gets
-// reported via the injected capture, and turns into a structured 5xx
-// JSON body.
-app.onError((err, c) => {
-  captureRouteError(err, c.req.path, c.req.method)
-  if (err instanceof HttpError) {
-    return c.json({ error: err.message }, err.status as 400 | 404 | 409 | 500)
-  }
-  const message = err instanceof Error ? err.message : 'internal error'
-  logger.error('Unhandled route error', {
-    path: c.req.path,
-    method: c.req.method,
-    error: message,
+export function createServer(options: CreateServerOptions = {}) {
+  const app = new Hono()
+
+  // Loopback-only bind (see main.ts) makes wildcard CORS safe and
+  // dodges the `null` Origin a chrome-extension:// page sends when
+  // fetching from `http://127.0.0.1:<port>`.
+  app.use('*', cors({ origin: '*' }))
+
+  // One structured line per failed request, however the failure was
+  // produced: a router 404, a thrown HttpError, a direct 4xx/5xx JSON
+  // return, or an unhandled error — hono materialises the onError
+  // response before `next()` resolves, so `c.res.status` is final
+  // here. Sub-400 traffic stays unlogged on purpose: the logger has no
+  // level filtering and the claw-app polls several endpoints, so a
+  // per-request access log would flood the rotating log file.
+  app.use('*', requestFailureLog)
+
+  // Catch-all for genuinely unexpected errors. Routes today resolve
+  // their own expected failures (404s, validation) inline and return
+  // structured 4xx JSON. Anything that escapes that lands here, gets
+  // reported via the injected capture, and turns into a structured 5xx
+  // JSON body.
+  app.onError((err, c) => {
+    captureRouteError(err, c.req.path, c.req.method)
+    if (err instanceof HttpError) {
+      return c.json({ error: err.message }, err.status as 400 | 404 | 409 | 500)
+    }
+    const message = err instanceof Error ? err.message : 'internal error'
+    logger.error('Unhandled route error', {
+      path: c.req.path,
+      method: c.req.method,
+      error: message,
+    })
+    return c.json({ error: message }, 500)
   })
-  return c.json({ error: message }, 500)
-})
 
-// The single MCP endpoint mounts at `/mcp`.
-const routes = app
-  .route('/', systemRoute)
-  .route('/', agentsRoute)
-  .route('/', siteRulesRoute)
-  .route('/', permissionsRoute)
-  .route('/', mcpV2Route)
-  .route('/', tabsRoute)
-  .route('/', tabsFocusRoute)
-  .route('/', agentsControlRoute)
-  .route('/', connectionsRoute)
-  .route('/', auditRoute)
-  .route('/', auditTasksRoute)
-  .route('/', auditScreenshotsRoute)
-  .route('/', auditReplayRoute)
-  .route('/', replayTabsRoute)
+  // The single MCP endpoint mounts at `/mcp`.
+  return app
+    .route('/', createSystemRoute({ onShutdown: options.onShutdown }))
+    .route('/', agentsRoute)
+    .route('/', siteRulesRoute)
+    .route('/', permissionsRoute)
+    .route('/', mcpV2Route)
+    .route('/', tabsRoute)
+    .route('/', tabsFocusRoute)
+    .route('/', agentsControlRoute)
+    .route('/', connectionsRoute)
+    .route('/', auditRoute)
+    .route('/', auditTasksRoute)
+    .route('/', auditScreenshotsRoute)
+    .route('/', auditReplayRoute)
+    .route('/', replayTabsRoute)
+}
+
+const routes = createServer()
 
 export type AppType = typeof routes
 export default routes
