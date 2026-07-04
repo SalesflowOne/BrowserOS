@@ -5,6 +5,7 @@ import {
   importItemLabel,
   importItemListLabel,
   importProgressTotal,
+  importSourceSelectionChangeFor,
   MOCK_BROWSEROS_IMPORT_SOURCES,
   STARTER_PROMPTS,
   sanitizeImportSelection,
@@ -38,6 +39,34 @@ describe('source selection helpers', () => {
       selectedSourceById(MOCK_BROWSEROS_IMPORT_SOURCES, 'chrome-personal')
         ?.displayName,
     ).toBe('Google Chrome - Personal')
+  })
+
+  it('clears the selected source and items when sources empty', () => {
+    expect(importSourceSelectionChangeFor([], 'chrome-work')).toEqual({
+      selectedSourceId: '',
+      selectedItems: [],
+    })
+  })
+
+  it('selects the first source with default items when the current source vanished', () => {
+    expect(
+      importSourceSelectionChangeFor(
+        MOCK_BROWSEROS_IMPORT_SOURCES,
+        'missing-source',
+      ),
+    ).toEqual({
+      selectedSourceId: MOCK_BROWSEROS_IMPORT_SOURCES[0].id,
+      selectedItems: selectableItemsForSource(MOCK_BROWSEROS_IMPORT_SOURCES[0]),
+    })
+  })
+
+  it('does not change selection when the current source still exists', () => {
+    expect(
+      importSourceSelectionChangeFor(
+        MOCK_BROWSEROS_IMPORT_SOURCES,
+        'chrome-personal',
+      ),
+    ).toBeNull()
   })
 
   it('falls back to supported items when recommended items are empty', () => {

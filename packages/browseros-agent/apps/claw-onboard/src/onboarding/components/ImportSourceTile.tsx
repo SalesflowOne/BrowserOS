@@ -49,7 +49,7 @@ export function ImportSourceTile({
         </div>
       </div>
       <div className="shrink-0 text-right font-mono text-[11.5px] text-ink-2">
-        {itemCount} items
+        {itemCount} {itemCount === 1 ? 'item' : 'items'}
       </div>
     </label>
   )

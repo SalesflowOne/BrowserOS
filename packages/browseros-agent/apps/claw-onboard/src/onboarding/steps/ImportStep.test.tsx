@@ -154,6 +154,24 @@ describe('ImportStep', () => {
     expect(html).toContain('disabled=""')
   })
 
+  it('uses the singular source tile item count for one supported item', () => {
+    const html = render(
+      'picker',
+      readyState({
+        sources: [
+          {
+            ...MOCK_BROWSEROS_IMPORT_SOURCES[0],
+            supportedItems: ['history'],
+            recommendedItems: ['history'],
+          },
+        ],
+      }),
+    )
+
+    expect(html).toContain('1 item')
+    expect(html).not.toContain('1 items')
+  })
+
   it('uses the singular item label when one item is selected', () => {
     const html = render('picker', readyState(), {
       selectedItems: ['history'],

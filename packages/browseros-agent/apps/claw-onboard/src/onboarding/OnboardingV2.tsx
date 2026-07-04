@@ -15,7 +15,7 @@ import {
 import { createBrowserOSOnboardingBridge } from './browseros-onboarding-bridge'
 import { OnboardingShell } from './components/OnboardingShell'
 import {
-  selectableItemsForSource,
+  importSourceSelectionChangeFor,
   selectedSourceById,
   startImportRequestFor,
 } from './onboarding-v2.helpers'
@@ -88,24 +88,25 @@ export function OnboardingV2() {
 
   useEffect(() => {
     const currentSourceId = form.getValues('selectedSourceId')
-    if (onboardingState.sources.length === 0) {
-      if (currentSourceId) {
-        form.setValue('selectedSourceId', '', { shouldValidate: true })
-      }
+    const selectionChange = importSourceSelectionChangeFor(
+      onboardingState.sources,
+      currentSourceId,
+    )
+    if (!selectionChange) return
+    if (selectionChange.selectedSourceId !== currentSourceId) {
+      form.setValue('selectedSourceId', selectionChange.selectedSourceId, {
+        shouldValidate: true,
+      })
+    }
+    if (selectionChange.selectedItems.length === 0) {
       if (form.getValues('selectedItems').length > 0) {
         form.setValue('selectedItems', [], { shouldValidate: true })
       }
       return
     }
-    if (!selectedSourceById(onboardingState.sources, currentSourceId)) {
-      const nextSource = onboardingState.sources[0]
-      form.setValue('selectedSourceId', nextSource.id, {
-        shouldValidate: true,
-      })
-      form.setValue('selectedItems', selectableItemsForSource(nextSource), {
-        shouldValidate: true,
-      })
-    }
+    form.setValue('selectedItems', selectionChange.selectedItems, {
+      shouldValidate: true,
+    })
   }, [form, onboardingState.sources])
 
   useEffect(() => {

@@ -40,7 +40,7 @@ export function ImportItemChecklist({
                 checked={checked}
                 onCheckedChange={() => onToggle(item)}
               />
-              <span className="text-[12.5px] text-ink-1">
+              <span className="text-[12.5px] text-ink">
                 {importItemLabel(item)}
               </span>
             </label>

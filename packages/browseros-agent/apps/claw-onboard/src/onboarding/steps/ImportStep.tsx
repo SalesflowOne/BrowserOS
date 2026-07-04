@@ -179,16 +179,10 @@ export function ImportStep({
             )}
           />
           {selectedSource && hasSupportedItems && (
-            <FormField
-              control={form.control}
-              name="selectedItems"
-              render={() => (
-                <ImportItemChecklist
-                  items={selectedSource.supportedItems}
-                  checkedItems={checkedItems}
-                  onToggle={toggleImportItem}
-                />
-              )}
+            <ImportItemChecklist
+              items={selectedSource.supportedItems}
+              checkedItems={checkedItems}
+              onToggle={toggleImportItem}
             />
           )}
           {state.error && (
@@ -220,7 +214,7 @@ export function ImportStep({
       {phase === 'failed' && (
         <>
           <div className="mb-4 rounded-xl border border-amber/30 bg-amber-tint p-4">
-            <div className="mb-2 flex items-center gap-2 font-bold text-[13px] text-ink-1">
+            <div className="mb-2 flex items-center gap-2 font-bold text-[13px] text-ink">
               <AlertTriangle className="size-4 text-amber" />
               Import failed
             </div>

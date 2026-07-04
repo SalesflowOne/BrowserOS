@@ -121,6 +121,26 @@ export function selectedSourceById(
   return sources.find((source) => source.id === sourceId)
 }
 
+export interface ImportSourceSelectionChange {
+  selectedSourceId: string
+  selectedItems: BrowserOSImportItem[]
+}
+
+export function importSourceSelectionChangeFor(
+  sources: readonly BrowserOSImportSource[],
+  currentSourceId: string,
+): ImportSourceSelectionChange | null {
+  if (sources.length === 0) {
+    return { selectedSourceId: '', selectedItems: [] }
+  }
+  if (selectedSourceById(sources, currentSourceId)) return null
+  const nextSource = sources[0]
+  return {
+    selectedSourceId: nextSource.id,
+    selectedItems: selectableItemsForSource(nextSource),
+  }
+}
+
 export function startImportRequestFor(
   source: BrowserOSImportSource,
   items?: readonly BrowserOSImportItem[],
