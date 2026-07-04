@@ -1,5 +1,5 @@
 import { Monitor, Moon, Sun } from 'lucide-react'
-import type { ComponentType, SVGProps } from 'react'
+import { type ComponentType, type SVGProps, useRef } from 'react'
 import { useTheme } from '@/components/theme-provider'
 import {
   DropdownMenu,
@@ -45,9 +45,17 @@ export function SidebarThemeToggle({
   const current =
     themeOptions.find((option) => option.value === theme) ?? themeOptions[0]
   const CurrentIcon = current.icon
+  // Keep the trigger in one stable subtree across expand/collapse. Swapping it
+  // between a bare and a Tooltip-wrapped trigger remounts the button, which
+  // drops base-ui's popup anchor and flings the open menu to the top-left
+  // (0,0) — the hover-collapse fires while the menu is open because the popup
+  // is portaled outside the sidebar's hover zone. The explicit anchor below
+  // then keeps the popup pinned to the live trigger as the rail resizes.
+  const triggerRef = useRef<HTMLButtonElement>(null)
 
   const trigger = (
     <DropdownMenuTrigger
+      ref={triggerRef}
       aria-label={`Theme: ${current.label}`}
       className="flex h-9 w-full items-center gap-3 overflow-hidden whitespace-nowrap rounded-md px-2.5 font-medium text-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground aria-expanded:bg-sidebar-accent aria-expanded:text-sidebar-accent-foreground"
     >
@@ -65,15 +73,12 @@ export function SidebarThemeToggle({
 
   return (
     <DropdownMenu modal={false}>
-      {expanded ? (
-        trigger
-      ) : (
-        <Tooltip>
-          <TooltipTrigger render={trigger} />
-          <TooltipContent side="right">Theme</TooltipContent>
-        </Tooltip>
-      )}
+      <Tooltip>
+        <TooltipTrigger render={trigger} />
+        {expanded ? null : <TooltipContent side="right">Theme</TooltipContent>}
+      </Tooltip>
       <DropdownMenuContent
+        anchor={() => triggerRef.current}
         side={expanded ? 'top' : 'right'}
         align={expanded ? 'start' : 'end'}
         sideOffset={8}
