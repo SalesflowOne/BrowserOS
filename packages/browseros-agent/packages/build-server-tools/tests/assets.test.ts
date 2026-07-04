@@ -80,6 +80,22 @@ describe('asset artifact staging and archiving', () => {
     }
   })
 
+  it('resolves a relative distRoot against the source root, not the cwd', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'build-server-tools-assets-'))
+    await writeAssetSource(tempDir)
+    const product = testAssetProduct()
+
+    const artifact = await stageAssetArtifact(product, '0.0.0-test', tempDir)
+
+    expect(artifact.rootDir).toBe(
+      join(tempDir, 'dist/prod/test-onboard', 'universal'),
+    )
+    const zipPath = await archiveAssetArtifact(artifact, product)
+    expect(zipPath).toBe(
+      join(tempDir, 'dist/prod/test-onboard', 'test-onboard-resources.zip'),
+    )
+  })
+
   it('rejects a missing assets directory naming the expected path', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'build-server-tools-assets-'))
     const product = testAssetProduct({ distRoot: join(tempDir, 'dist') })

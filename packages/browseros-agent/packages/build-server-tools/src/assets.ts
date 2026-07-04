@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { cp, mkdir, readdir, rm } from 'node:fs/promises'
-import { basename, isAbsolute, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 
 import type { S3Client } from '@aws-sdk/client-s3'
 
@@ -43,7 +43,10 @@ export async function stageAssetArtifact(
     throw new Error(`Built assets directory is empty: ${product.assetsDir}`)
   }
 
-  const rootDir = join(product.distRoot, ASSET_TARGET_ID)
+  const distRoot = isAbsolute(product.distRoot)
+    ? product.distRoot
+    : resolve(sourceRoot, product.distRoot)
+  const rootDir = join(distRoot, ASSET_TARGET_ID)
   const resourcesDir = join(rootDir, 'resources')
   await rm(rootDir, { recursive: true, force: true })
   await mkdir(rootDir, { recursive: true })
@@ -62,7 +65,10 @@ export async function archiveAssetArtifact(
   artifact: StagedAssetArtifact,
   product: AssetBuildProductDescriptor,
 ): Promise<string> {
-  const zipPath = join(product.distRoot, `${product.archiveBaseName}.zip`)
+  const zipPath = join(
+    dirname(artifact.rootDir),
+    `${product.archiveBaseName}.zip`,
+  )
   await zipDirectory(artifact.rootDir, zipPath)
   return zipPath
 }
