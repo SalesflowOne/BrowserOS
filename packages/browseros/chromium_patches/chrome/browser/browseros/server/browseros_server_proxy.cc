@@ -1,9 +1,9 @@
 diff --git a/chrome/browser/browseros/server/browseros_server_proxy.cc b/chrome/browser/browseros/server/browseros_server_proxy.cc
 new file mode 100644
-index 0000000000000..3a8c6b6ad13f4
+index 0000000000000..29bd72722ffde
 --- /dev/null
 +++ b/chrome/browser/browseros/server/browseros_server_proxy.cc
-@@ -0,0 +1,247 @@
+@@ -0,0 +1,249 @@
 +// Copyright 2024 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -169,8 +169,10 @@ index 0000000000000..3a8c6b6ad13f4
 +
 +  // MCP Streamable HTTP keeps session state in headers: the server assigns
 +  // mcp-session-id on initialize and the client echoes it (plus
-+  // mcp-protocol-version, and last-event-id on stream resume) on every
-+  // later request. net::HttpServer lowercases header names.
++  // mcp-protocol-version, and last-event-id) on every later request.
++  // last-event-id is forwarded for protocol completeness only; SSE stream
++  // resume still cannot traverse this buffering proxy (DownloadToString).
++  // net::HttpServer lowercases header names.
 +  for (const auto& [name, value] : info.headers) {
 +    if (name == "content-type" || name == "accept" ||
 +        name == "authorization" || name == "mcp-session-id" ||
