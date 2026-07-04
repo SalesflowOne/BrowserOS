@@ -71,7 +71,7 @@ export function McpRow({ profile, isRegenerating, onRegenerate }: McpRowProps) {
       </div>
 
       <div className="flex items-center gap-2 rounded-lg bg-ink-deep px-3 py-2">
-        <code className="min-w-0 flex-1 truncate font-mono text-[#e9f2ea] text-[11.5px]">
+        <code className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-white/90">
           {profile.mcpUrl}
         </code>
         <button

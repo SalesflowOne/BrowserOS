@@ -41,7 +41,7 @@ export const TASK_COLUMNS: ColumnDef<TaskSummary>[] = [
     header: 'Title',
     accessorKey: 'title',
     cell: ({ row }) => (
-      <span className="block truncate text-[13px] text-ink-1">
+      <span className="block truncate text-[13px] text-ink">
         {row.original.title}
       </span>
     ),
