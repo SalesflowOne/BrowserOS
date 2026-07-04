@@ -98,10 +98,6 @@ async function rewriteServerEntry(
       name: existing.name,
       spec: rebuildSpec(existing.name, currentUrl),
     })
-    await ensureClaudeCodeHttpTransportTagForLink(
-      existing.name,
-      existing.links['claude-code']?.configPath,
-    )
     return true
   } catch (err) {
     logger.warn('MCP manager failed to rewrite server entry', {
@@ -111,10 +107,6 @@ async function rewriteServerEntry(
     if (!removed) return false
     try {
       await mgr.add({ name: existing.name, spec: existing.spec })
-      await ensureClaudeCodeHttpTransportTagForLink(
-        existing.name,
-        existing.links['claude-code']?.configPath,
-      )
       logger.warn('MCP manager restored previous spec after add failure', {
         serverName: existing.name,
       })
