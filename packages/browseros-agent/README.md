@@ -43,7 +43,7 @@ packages/
 │                                                                          │
 │   /mcp ─────── MCP tool endpoints                                        │
 │   /chat ────── Agent streaming                                           │
-│   /health ─── Health check                                               │
+│   /system/health ─ Health check                                          │
 │                                                                          │
 │   Tools:                                                                 │
 │   └── CDP-backed browser tools (tabs, navigation, input, screenshots,   │

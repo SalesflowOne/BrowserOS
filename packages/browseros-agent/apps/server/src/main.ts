@@ -134,7 +134,7 @@ export class Application {
       `HTTP server listening on http://127.0.0.1:${this.config.serverPort}`,
     )
     logger.info(
-      `Health endpoint: http://127.0.0.1:${this.config.serverPort}/health`,
+      `Health endpoint: http://127.0.0.1:${this.config.serverPort}/system/health`,
     )
 
     this.logStartupSummary()
