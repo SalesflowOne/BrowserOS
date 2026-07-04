@@ -99,6 +99,9 @@ export async function migrateLegacyClawServerHome(
         }`,
       )
     }
+    // If the process dies after cp but before rm, both homes remain.
+    // The next startup keeps the new BrowserClaw home and leaves the
+    // legacy copy untouched rather than deleting a possibly divergent source.
     await cp(from, to, { recursive: true, errorOnExist: true, force: false })
     await rm(from, { recursive: true, force: false })
   }
