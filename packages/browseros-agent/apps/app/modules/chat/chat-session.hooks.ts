@@ -217,7 +217,9 @@ export const useChatSession = (options?: ChatSessionOptions) => {
   // The window this panel belongs to, resolved on mount in per-window scope.
   const windowIdRef = useRef<number | null>(null)
 
-  optionsRef.current = options
+  useEffect(() => {
+    optionsRef.current = options
+  }, [options])
 
   useEffect(() => {
     conversationIdRef.current = conversationId
