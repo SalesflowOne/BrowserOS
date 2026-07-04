@@ -199,6 +199,11 @@ export async function create(input: NewAgentValues): Promise<CreatedAgent> {
       updatedAt: now,
     }
     await writeJson(fileFor(id), profile, storedAgentProfileSchema)
+    logger.info('agent profile created', {
+      id,
+      slug,
+      harness: profile.harness,
+    })
     // Best-effort harness install. A failure here does NOT roll back
     // the profile; the user can retry or fix the harness state and
     // we'll attempt again on the next create. The outcome rides
@@ -251,6 +256,11 @@ export async function update(
       updatedAt: nowIso(),
     }
     await writeJson(fileFor(id), next, storedAgentProfileSchema)
+    logger.info('agent profile updated', {
+      id,
+      slug: next.slug,
+      harness: next.harness,
+    })
     // Best-effort harness reconcile: if the harness or slug rotated,
     // wire the new entry into the new harness and drop the old one.
     // Failures are logged inside the helpers and do NOT roll back the
@@ -282,6 +292,11 @@ export async function remove(id: string): Promise<DeletedAgent | null> {
   // run uninstallForAgent and the loser would still report 404.
   const existed = await removeFile(fileFor(id))
   if (!existed) return null
+  logger.info('agent profile deleted', {
+    id,
+    slug: profile.slug,
+    harness: profile.harness,
+  })
   const harnessUninstall = await uninstallForAgent({
     slug: profile.slug,
     harness: profile.harness,
@@ -314,6 +329,11 @@ export async function regenerateMcpUrl(
       updatedAt: nowIso(),
     }
     await writeJson(fileFor(id), next, storedAgentProfileSchema)
+    logger.info('agent mcp url regenerated', {
+      id,
+      slug: next.slug,
+      previousSlug: existing.slug,
+    })
     // Rotating still changes the harness server name even though the
     // endpoint URL is shared; reconcile so the new slug entry replaces
     // the old one. Harness is unchanged so only the slug pair differs.

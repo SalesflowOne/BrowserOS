@@ -17,6 +17,7 @@
 
 import { nanoid } from 'nanoid'
 import { AsyncMutex } from '../../lib/async-mutex'
+import { logger } from '../../lib/logger'
 import { matchDomain } from '../../lib/match-domain'
 import {
   fileExists,
@@ -70,6 +71,13 @@ export async function add(input: AddSiteRuleVariables): Promise<SiteRule> {
     }
     const next = [...existing, rule]
     await writeJson(FILE, next, siteRulesFileSchema)
+    // Rules clamp agent dispatches; the add/remove trail explains a
+    // later "blocked by site-rule" verdict.
+    logger.info('site rule added', {
+      id: rule.id,
+      action: rule.action,
+      domain: rule.domain,
+    })
     return rule
   })
 }
@@ -82,6 +90,7 @@ export async function remove(id: string): Promise<{ id: string } | null> {
     const next = existing.filter((rule) => rule.id !== id)
     if (next.length === existing.length) return null
     await writeJson(FILE, next, siteRulesFileSchema)
+    logger.info('site rule removed', { id })
     return { id }
   })
 }
