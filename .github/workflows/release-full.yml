@@ -187,7 +187,8 @@ jobs:
             require_value BROWSEROS_CONFIG_URL
             require_value POSTHOG_API_KEY
             require_value SENTRY_DSN
-            require_value AGENT_RUNNER_JWT_SECRET
+            # AGENT_RUNNER_JWT_SECRET is inlined when present but optional —
+            # matches release-server.yml and the descriptor's requiredInlineEnvKeys.
           fi
 
           if platform_selected windows && [ "$INPUT_SIGN_WINDOWS" = "true" ]; then
