@@ -22,6 +22,51 @@ uv run browseros build --preset release --arch arm64 --chromium-src "$CHROMIUM_S
 Set `upload_to_r2=false` in the manual dispatch form to run an artifact-only
 build without publishing to R2.
 
+## Release macOS Workflow
+
+`release-macos.yml` uses the same private Mac Mini, signing keychain, local
+`packages/browseros/.env`, Chromium checkout, and server-resource staging path
+as the nightly workflow. It has no schedule; run it manually with
+`workflow_dispatch` or call it from another workflow with `workflow_call`.
+
+Release runs default to rebuilding the current version files without bumping
+them:
+
+```text
+bump=none
+commit_version=false
+upload_to_r2=true
+products=browseros
+arch=arm64
+```
+
+Use `products=browserclaw` to build only BrowserClaw, or `products=all` to
+build BrowserOS first and BrowserClaw second in the same job. The workflow also
+accepts `arch=universal`; universal and two-product runs use a longer timeout
+because they run multiple Chromium build/package passes sequentially on the same
+machine.
+
+The release workflow stages all macOS server bundles locally before packaging,
+regardless of the selected product:
+
+```bash
+bun scripts/build/server.ts --target=darwin-arm64 --ci
+bun scripts/build/claw-server.ts --target=darwin-arm64 --ci
+bun scripts/build/claw-onboard.ts --ci
+```
+
+Each selected product then runs:
+
+```bash
+uv run browseros build --preset release --product <product> --arch <arch> \
+  --no-download --chromium-src "$CHROMIUM_SRC"
+```
+
+Set `upload_to_r2=false` to add `--no-upload` for artifact-only release
+verification. Signing, notarization, R2, and Slack values still come from the
+runner-local `packages/browseros/.env`; do not add those secrets to GitHub
+Actions.
+
 ## One-Time Runner Setup
 
 Register the Mac Mini as a repo-scoped self-hosted runner with the custom
