@@ -11,6 +11,7 @@ from typing import Callable, List, Optional, Tuple
 import typer
 
 from ..core.context import Context
+from ..core.checkout_lock import CheckoutLockError, ChromiumCheckoutLock
 from ..lib.paths import get_package_root
 from ..core.pipeline import validate_pipeline, show_available_modules
 from ..core.planner import (
@@ -53,7 +54,6 @@ EXECUTION_ORDER = [
     (phase, phase_steps(phase))
     for phase in ("setup", "prep", "build", "sign", "package", "upload")
 ]
-
 
 
 def main(
@@ -168,6 +168,12 @@ def main(
         "--chromium-src",
         "-S",
         help="Path to Chromium source directory",
+    ),
+    lock_wait: bool = typer.Option(
+        False,
+        "--lock-wait",
+        help="Wait for another BrowserOS build using the same Chromium checkout "
+        "instead of failing fast",
     ),
     gn_arg: Optional[List[str]] = typer.Option(
         None,
@@ -334,6 +340,54 @@ def main(
             raise typer.Exit(1)
         runs = [(ctx, pipeline) for ctx in arch_ctxs]
 
+    try:
+        _execute_runs_with_checkout_lock(
+            runs,
+            lock_wait=lock_wait,
+            has_flags=has_flags,
+            prep=prep,
+            root_dir=root_dir,
+        )
+    except CheckoutLockError as e:
+        log_error(str(e))
+        raise typer.Exit(1)
+
+
+def _execute_runs_with_checkout_lock(
+    runs: List[Tuple[Context, List[str]]],
+    *,
+    lock_wait: bool,
+    has_flags: bool,
+    prep: bool,
+    root_dir: Path,
+) -> None:
+    if not runs:
+        raise typer.Exit(1)
+
+    summary_ctx = runs[0][0]
+    log_info(f"🔒 Acquiring Chromium checkout lock: {summary_ctx.chromium_src}")
+    with ChromiumCheckoutLock(
+        summary_ctx.chromium_src,
+        product=summary_ctx.product.id,
+        wait=lock_wait,
+    ) as checkout_lock:
+        log_info(f"🔒 Chromium checkout lock acquired: {checkout_lock.lock_path}")
+
+        _execute_runs(
+            runs,
+            has_flags=has_flags,
+            prep=prep,
+            root_dir=root_dir,
+        )
+
+
+def _execute_runs(
+    runs: List[Tuple[Context, List[str]]],
+    *,
+    has_flags: bool,
+    prep: bool,
+    root_dir: Path,
+) -> None:
     if has_flags:
         log_info("\n📋 Execution Plan (auto-ordered):")
         log_info("-" * 70)
@@ -387,9 +441,7 @@ def main(
     if len(runs) > 1:
         # Runs may be heterogeneous (universal), so show each run's steps
         for run_ctx, run_steps in runs:
-            log_info(
-                f"📍 Pipeline[{run_ctx.architecture}]: {' → '.join(run_steps)}"
-            )
+            log_info(f"📍 Pipeline[{run_ctx.architecture}]: {' → '.join(run_steps)}")
     else:
         log_info(f"📍 Pipeline: {' → '.join(runs[0][1])}")
     log_info("=" * 70)
@@ -559,8 +611,7 @@ def _resolve_preset(
                 for run_arch, steps in arch_plans:
                     if not steps:
                         raise ValueError(
-                            f"plan for {run_arch} is empty after skip — "
-                            "nothing to run"
+                            f"plan for {run_arch} is empty after skip — nothing to run"
                         )
                 # Shallow provisioning creates the checkout itself, so the
                 # src dir may not exist yet on a fresh runner.
@@ -743,9 +794,7 @@ def _resolve_profile_path(profile: Path) -> Path:
     candidate = get_package_root() / "bos_build" / "profiles" / f"{profile.name}.yaml"
     if candidate.exists():
         return candidate
-    raise ValueError(
-        f"Profile not found: {profile} (also tried {candidate})"
-    )
+    raise ValueError(f"Profile not found: {profile} (also tried {candidate})")
 
 
 def _resolve_chromium_src(
