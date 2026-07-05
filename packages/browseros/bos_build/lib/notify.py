@@ -135,11 +135,8 @@ class SlackRunSubscriber:
         self.last_failed_step: Optional[_FailedStep] = None
 
     def __call__(self, event) -> None:
-        """Consume a runner event; notification failures are intentionally silent."""
-        try:
-            self._handle(event)
-        except Exception:
-            pass
+        """Consume a runner event; runner._emit logs subscriber failures."""
+        self._handle(event)
 
     def _handle(self, event) -> None:
         from ..core.events import RunFinished, RunStarted, StepFinished, StepStarted
@@ -188,6 +185,8 @@ class SlackRunSubscriber:
                 phase=event.phase,
                 error=event.error or "",
             )
+        elif event.status == "success":
+            self.current_step = ""
 
     def _run_finished(self, event) -> None:
         if event.status == "success":
@@ -249,7 +248,21 @@ class SlackRunSubscriber:
         release_links = self.artifact_registry.get("release_links")
         if not release_links:
             return None
-        links = [f"<{url}|{filename}>" for filename, url in release_links]
+        try:
+            entries = iter(release_links)
+        except TypeError:
+            return None
+
+        links = []
+        for entry in entries:
+            if not isinstance(entry, (list, tuple)) or len(entry) != 2:
+                continue
+            filename, url = entry
+            if not filename or not url:
+                continue
+            links.append(f"<{url}|{filename}>")
+        if not links:
+            return None
         return {"Artifacts": "\n".join(links)}
 
     def _send(

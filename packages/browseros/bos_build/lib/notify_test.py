@@ -45,6 +45,11 @@ class _FakeNotifier:
         )
 
 
+class _RaisingNotifier:
+    def notify(self, *args, **kwargs):
+        raise RuntimeError("notify exploded")
+
+
 def _ctx(product="browseros", arch="arm64", release_version="", semantic_version="1.2.3"):
     return SimpleNamespace(
         product=get_product_descriptor(product),
@@ -153,6 +158,29 @@ class SlackRunSubscriberTest(unittest.TestCase):
             },
         )
 
+    def test_malformed_release_links_do_not_drop_terminal_success(self):
+        for release_links in (["not-a-pair"], object()):
+            with self.subTest(release_links=type(release_links).__name__):
+                ctx = _ctx()
+                ctx.artifact_registry.add("release_links", release_links)
+                fake = _FakeNotifier()
+                sub = SlackRunSubscriber(ctx, notifier=fake)
+
+                sub(RunFinished(run="build", status="success", duration=2.0))
+
+                self.assertEqual(len(fake.messages), 1)
+                self.assertEqual(
+                    fake.messages[0]["title"].split(" — ", 1)[0],
+                    "🏁 Build completed",
+                )
+                self.assertIsNone(fake.messages[0]["details"])
+
+    def test_notifier_failure_propagates_to_runner_guard(self):
+        sub = SlackRunSubscriber(_ctx(), notifier=_RaisingNotifier())
+
+        with self.assertRaisesRegex(RuntimeError, "notify exploded"):
+            sub(RunStarted(run="build", steps=("compile",)))
+
     def test_failure_names_step_phase_error_and_waits(self):
         fake = _FakeNotifier()
         sub = SlackRunSubscriber(_ctx(), notifier=fake)
@@ -204,6 +232,26 @@ class SlackRunSubscriberTest(unittest.TestCase):
         self.assertEqual(terminal["body"], "after 1m 5s")
         self.assertEqual(terminal["color"], COLOR_RED)
         self.assertTrue(terminal["wait"])
+
+    def test_interrupted_between_steps_omits_completed_step_name(self):
+        fake = _FakeNotifier()
+        sub = SlackRunSubscriber(_ctx(), notifier=fake)
+
+        sub(StepStarted(run="build", step="compile", phase="build"))
+        sub(
+            StepFinished(
+                run="build",
+                step="compile",
+                phase="build",
+                status="success",
+                duration=1.0,
+            )
+        )
+        sub(RunFinished(run="build", status="interrupted", duration=65.0))
+
+        terminal = fake.messages[-1]
+        self.assertIn("🛑 Build interrupted —", terminal["title"])
+        self.assertNotIn("at 'compile'", terminal["title"])
 
     def test_unregistered_empty_phase_steps_emit_start_and_terminal_only(self):
         fake = _FakeNotifier()
