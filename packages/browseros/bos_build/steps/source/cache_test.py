@@ -130,8 +130,8 @@ class RestoreTest(unittest.TestCase):
             [call[0] for call in run_calls],
             [
                 ["zstd.exe", "-d", "-f", "-o", str(tar_file), str(tarball)],
-                ["tar.exe", "-xf", str(tar_file)],
-                ["tar.exe", "-xf", str(tar_file)],
+                ["tar.exe", "--force-local", "-xf", str(tar_file)],
+                ["tar.exe", "--force-local", "-xf", str(tar_file)],
             ],
         )
         self.assertNotIn("env", run_calls[0][1])
@@ -184,7 +184,7 @@ class RestoreTest(unittest.TestCase):
             [call[0] for call in run_calls],
             [
                 ["zstd.exe", "-d", "-f", "-o", str(tar_file), str(tarball)],
-                ["tar.exe", "-xf", str(tar_file)],
+                ["tar.exe", "--force-local", "-xf", str(tar_file)],
             ],
         )
 

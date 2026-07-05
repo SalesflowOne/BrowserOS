@@ -144,7 +144,9 @@ def _restore_windows_tarball(tarball: Path, root: Path) -> None:
         # Drop the compressed archive as soon as the rewindable tar exists.
         _unlink_if_exists(tarball)
 
-        tar_cmd = [find_tool("tar"), "-xf", str(tar_file)]
+        # --force-local: MSYS tar reads the colon in C:\... as a remote host
+        # ("Cannot connect to C: resolve failed") without it.
+        tar_cmd = [find_tool("tar"), "--force-local", "-xf", str(tar_file)]
         tar_env = {**os.environ, "MSYS": "winsymlinks:nativestrict"}
         _log("extract pass 1/2")
         first_rc = _run_command(tar_cmd, cwd=root, env=tar_env)
