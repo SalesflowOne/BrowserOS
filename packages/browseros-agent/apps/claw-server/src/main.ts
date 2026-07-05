@@ -28,6 +28,7 @@ import { logger } from './lib/logger'
 import { migrateMcpUrls } from './lib/migrate-mcp-urls'
 import { setLocalServerUrl } from './local-server-url'
 import { createServer } from './server'
+import { healClaudeCodeBrowserOsHttpTransportTags } from './services/claude-code-heal'
 import { startScreencastPoller } from './services/screencast-poller'
 import { publicMcpUrl } from './shared/mcp-url'
 
@@ -54,6 +55,13 @@ async function start(): Promise<void> {
   const url = `http://${httpServer.hostname}:${httpServer.port}`
   setLocalServerUrl(url)
   logger.info('claw-server listening', { url })
+
+  const healedClaudeCodeTags = await healClaudeCodeBrowserOsHttpTransportTags()
+  if (healedClaudeCodeTags > 0) {
+    logger.info('healed Claude Code BrowserOS MCP transport tags', {
+      healed: healedClaudeCodeTags,
+    })
+  }
 
   // Attach to the BrowserOS Chromium so MCP `tools/call` dispatches
   // hit a real browser. The bootstrap soft-fails when BrowserOS is
