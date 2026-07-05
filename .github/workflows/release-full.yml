@@ -243,7 +243,6 @@ jobs:
       contents: write
       pull-requests: write
     with:
-      version: ${{ needs.preflight.outputs.version }}
       ref: ${{ github.ref_name }}
       publish_ota: false
     secrets: inherit
@@ -257,7 +256,6 @@ jobs:
       contents: write
       pull-requests: write
     with:
-      version: ${{ needs.preflight.outputs.version }}
       ref: ${{ github.ref_name }}
       publish_ota: false
     secrets: inherit
@@ -444,21 +442,21 @@ jobs:
             echo
             echo "### Server resources"
             echo
-            echo "| Product | Result | Version | Artifacts |"
+            echo "| Product | Result | Version source | Artifacts |"
             echo "| --- | --- | --- | --- |"
             if [ "$INPUT_INCLUDE_SERVERS" = "true" ]; then
               while IFS= read -r product; do
                 case "$product" in
                   browseros)
-                    echo "| \`browseros\` | \`$SERVER_BROWSEROS_RESULT\` | \`$version\` | browseros-server-resources-{darwin-arm64,darwin-x64,linux-arm64,linux-x64,windows-x64}.zip |"
+                    echo "| \`browseros\` | \`$SERVER_BROWSEROS_RESULT\` | per \`apps/server/package.json\` | browseros-server-resources-{darwin-arm64,darwin-x64,linux-arm64,linux-x64,windows-x64}.zip |"
                     ;;
                   browserclaw)
-                    echo "| \`browserclaw\` | \`$SERVER_BROWSERCLAW_RESULT\` | \`$version\` | browseros-claw-server-resources-{darwin-arm64,darwin-x64,linux-arm64,linux-x64,windows-x64}.zip<br>browseros-claw-onboard-resources.zip |"
+                    echo "| \`browserclaw\` | \`$SERVER_BROWSERCLAW_RESULT\` | per \`apps/claw-server/package.json\` | browseros-claw-server-resources-{darwin-arm64,darwin-x64,linux-arm64,linux-x64,windows-x64}.zip<br>browseros-claw-onboard-resources.zip |"
                     ;;
                 esac
               done < <(selected_products)
             else
-              echo "| all selected products | \`skipped\` | \`$version\` | include_servers=false |"
+              echo "| all selected products | \`skipped\` | not run | include_servers=false |"
             fi
             echo
             echo "### Promotion"

@@ -11,7 +11,7 @@ The full release path is dispatch-only:
 ```text
 release-full.yml
   preflight
-    - read packages/browseros/resources/BROWSEROS_VERSION
+    - read packages/browseros/resources/BROWSEROS_VERSION for browser artifacts
     - optionally cancel only nightly-release.yml WarpBuild runs
     - fail early when selected lane secrets or variables are missing
   server resources, when include_servers=true
@@ -40,6 +40,14 @@ macOS builder.
 | `.github/workflows/release-windows.yml` | Builds Windows x64 browser artifacts on WarpBuild and optionally signs them. | Manual | Yes |
 | `.github/workflows/release-macos.yml` | Builds signed macOS artifacts on the dedicated self-hosted builder. | Manual | Yes |
 | `.github/workflows/release-full.yml` | Orchestrates servers, selected browser platforms, and draft GitHub release asset creation. | Manual only | No reusable entry point |
+
+Browser artifacts use the BrowserOS browser version from
+`packages/browseros/resources/BROWSEROS_VERSION` (for example `0.47.2.2`).
+Server resources do not use that version. `release-server.yml` resolves
+`packages/browseros-agent/apps/server/package.json` and tags
+`agent-server/vX.Y.Z`; `release-claw-server.yml` resolves
+`packages/browseros-agent/apps/claw-server/package.json` and tags
+`claw-server/vX.Y.Z`.
 
 The reusable nesting depth is `release-full.yml -> release-linux.yml or
 release-windows.yml -> build-browseros.yml`, which stays below GitHub's limit
@@ -81,8 +89,8 @@ gh workflow run release-full.yml \
 Individual workflow examples:
 
 ```bash
-gh workflow run release-server.yml -f version=0.47.2.2
-gh workflow run release-claw-server.yml -f version=0.47.2.2
+gh workflow run release-server.yml -f version=0.0.124
+gh workflow run release-claw-server.yml -f version=0.0.3
 gh workflow run release-linux.yml -f products=browseros -f upload_to_r2=true
 gh workflow run release-windows.yml -f products=browserclaw -f sign=false
 gh workflow run release-macos.yml -f products=all -f arch=arm64
