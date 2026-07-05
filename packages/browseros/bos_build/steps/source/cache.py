@@ -84,11 +84,28 @@ def _object_exists(client, bucket: str, key: str) -> bool:
         return False
 
 
-def _run_pipeline(producer, consumer) -> None:
-    _log(f"$ {' '.join(producer)} | {' '.join(consumer)}")
-    p1 = subprocess.Popen(producer, stdout=subprocess.PIPE)
+def _format_pipeline_command(cmd, cwd: Path | None) -> str:
+    command = " ".join(cmd)
+    if cwd is None:
+        return command
+    return f"{command}  (cwd={cwd})"
+
+
+def _run_pipeline(
+    producer,
+    consumer,
+    *,
+    producer_cwd: Path | None = None,
+    consumer_cwd: Path | None = None,
+) -> None:
+    _log(
+        "$ "
+        f"{_format_pipeline_command(producer, producer_cwd)} | "
+        f"{_format_pipeline_command(consumer, consumer_cwd)}"
+    )
+    p1 = subprocess.Popen(producer, stdout=subprocess.PIPE, cwd=producer_cwd)
     assert p1.stdout is not None  # guaranteed by stdout=PIPE
-    p2 = subprocess.Popen(consumer, stdin=p1.stdout)
+    p2 = subprocess.Popen(consumer, stdin=p1.stdout, cwd=consumer_cwd)
     p1.stdout.close()
     rc2 = p2.wait()
     rc1 = p1.wait()
@@ -126,7 +143,8 @@ def restore(key: str, root: Path) -> bool:
 
     _run_pipeline(
         [find_tool("zstd"), "-d", "-c", str(tarball)],
-        [find_tool("tar"), "-xf", "-", "-C", str(root)],
+        [find_tool("tar"), "-xf", "-"],
+        consumer_cwd=root,
     )
     tarball.unlink()
     write_github_output("cache-hit", "true")
@@ -158,11 +176,10 @@ def save(key: str, root: Path) -> None:
             "-cf",
             "-",
             "--exclude=./src/out",
-            "-C",
-            str(root),
             ".",
         ],
         [find_tool("zstd"), "-T0", "-3", "-f", "-o", str(tarball)],
+        producer_cwd=root,
     )
     size_gb = tarball.stat().st_size / 1024**3
     _log(f"Uploading {size_gb:.1f} GiB -> s3://{bucket}/{object_key}")
