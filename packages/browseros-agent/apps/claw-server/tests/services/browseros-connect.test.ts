@@ -83,7 +83,7 @@ describe('connectBrowserosToHarness', () => {
         stub.calls.push({ method: 'link', payload: opts })
         await writeFile(
           configPath,
-          JSON.stringify(
+          `${JSON.stringify(
             {
               mcpServers: {
                 [opts.serverName]: {
@@ -93,7 +93,7 @@ describe('connectBrowserosToHarness', () => {
             },
             null,
             2,
-          ) + '\n',
+          )}\n`,
           'utf8',
         )
         return {
