@@ -3,9 +3,12 @@
 `.github/workflows/nightly-release.yml` builds UNSIGNED release artifacts for
 Linux x64, Windows x64, and macOS arm64 every night on WarpBuild cloud
 runners, uploads them to the Actions run, and refreshes a rolling `nightly`
-prerelease on GitHub. It complements (does not replace) the signed
-self-hosted macOS nightly in `nightly-macos-build.yml`; once signing is wired
-up here, that workflow can be retired.
+prerelease on GitHub. Its per-platform build job delegates to the reusable
+Chromium build workflow in `.github/workflows/build-browseros.yml`, so the
+WarpBuild checkout/cache/build recipe is shared with the release workflows.
+It complements (does not replace) the signed self-hosted macOS nightly in
+`nightly-macos-build.yml`; once signing is wired up here, that workflow can
+be retired.
 
 ## Runners
 
@@ -79,6 +82,12 @@ the build job leave `queued` within ~5 minutes (`gh run watch`).
 
 ## Per-night pipeline (per platform)
 
+`nightly-release.yml` resolves the platform matrix and then calls
+`.github/workflows/build-browseros.yml` once per selected platform with
+`product=browseros`, `profile=nightly-ci`, `sign=false`, `upload=false`, and
+the historical artifact name `browseros-nightly-<platform>-<arch>`. The
+reusable workflow performs the per-platform recipe:
+
 1. `actions/checkout` + `astral-sh/setup-uv`.
 2. Restore the pinned chromium checkout from cache (see below).
 3. `browseros source ensure --step checkout` — ensures depot_tools and
@@ -92,8 +101,9 @@ the build job leave `queued` within ~5 minutes (`gh run watch`).
 6. Save the cache (only when the restore missed, i.e. first run per pin).
 7. `uv run browseros build --profile nightly-ci --arch <arch>
    --chromium-src .../src`.
-8. Upload artifacts (14-day retention); a follow-up job recreates the
-   rolling `nightly` prerelease for scheduled main runs.
+8. Upload artifacts (14-day retention) using the nightly artifact name; a
+   follow-up job in `nightly-release.yml` recreates the rolling `nightly`
+   prerelease for scheduled main runs.
 
 The `nightly-ci` profile is the release preset minus `clean`/
 `git_setup` (steps 4-5 replace them), minus `sign_*`/`upload`. Why not run
