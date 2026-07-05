@@ -113,7 +113,7 @@ function outputText(result: { stdout: string; stderr: string }): string {
 async function prepare(
   dir: string,
   options: {
-    eventName: 'push' | 'workflow_dispatch'
+    eventName: 'push' | 'workflow_dispatch' | 'workflow_call'
     refName?: string
     requestedVersion?: string
   },
@@ -228,6 +228,30 @@ describe('prepare-server-release', () => {
         previous_tag: '',
       })
       expect(await revParse(bareDir, 'refs/heads/main')).toBe(releaseSha)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+      rmSync(bareDir, { recursive: true, force: true })
+    }
+  })
+
+  it('derives a manual release version from package.json when no version is requested', async () => {
+    const { dir, bareDir } = await initFixture('0.0.124')
+    try {
+      const releaseSha = await revParse(dir, 'HEAD')
+
+      const result = await prepare(dir, {
+        eventName: 'workflow_call',
+      })
+
+      expect(result.code, result.stderr || result.stdout).toBe(0)
+      expect(parseOutput(result.stdout)).toMatchObject({
+        version: '0.0.124',
+        tag: 'agent-server/v0.0.124',
+        release_sha: releaseSha,
+      })
+      expect(await revParse(bareDir, 'agent-server/v0.0.124^{commit}')).toBe(
+        releaseSha,
+      )
     } finally {
       rmSync(dir, { recursive: true, force: true })
       rmSync(bareDir, { recursive: true, force: true })

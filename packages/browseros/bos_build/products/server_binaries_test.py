@@ -57,6 +57,14 @@ class MacosServerBinariesTest(unittest.TestCase):
         )
         self.assertTrue(BROWSEROS_SERVER_BUNDLE.required_in_chromium_output)
         self.assertFalse(BROWSEROS_CLAW_SERVER_BUNDLE.required_in_chromium_output)
+        self.assertEqual(
+            BROWSEROS_SERVER_BUNDLE.unsigned_artifact_key("darwin-arm64"),
+            "artifacts/server/latest/browseros-server-resources-darwin-arm64.zip",
+        )
+        self.assertEqual(
+            BROWSEROS_CLAW_SERVER_BUNDLE.unsigned_artifact_key("darwin-arm64"),
+            "claw-server/prod-resources/latest/browseros-claw-server-resources-darwin-arm64.zip",
+        )
 
     def test_server_bundles_filter_by_product(self):
         self.assertEqual(
