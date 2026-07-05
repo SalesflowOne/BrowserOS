@@ -367,7 +367,9 @@ def download_appimagetool(ctx: Context) -> Optional[Path]:
     arch is communicated via the ARCH env var in create_appimage().
     """
     tool_dir = Path(join_paths(ctx.root_dir, "build", "tools"))
-    tool_dir.mkdir(exist_ok=True)
+    # build/ left the repo in the bos_build refactor (#1499) — on a fresh CI
+    # checkout the parent doesn't exist, so create the whole chain.
+    tool_dir.mkdir(parents=True, exist_ok=True)
 
     tool_filename, url = get_host_appimagetool()
     tool_path = Path(join_paths(tool_dir, tool_filename))
