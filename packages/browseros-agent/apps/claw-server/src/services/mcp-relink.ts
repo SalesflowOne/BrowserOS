@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import { ensureClaudeCodeHttpTransportTag } from '@browseros/shared/mcp/claude-code-transport-tag'
 import type {
   AgentId,
   LinkServerResult,
@@ -12,7 +11,6 @@ import type {
   McpServerLink,
   McpServerSpec,
 } from 'agent-mcp-manager'
-import { logger } from '../lib/logger'
 
 interface RelinkManagedServerOptions {
   mgr: McpManager
@@ -44,30 +42,22 @@ export async function relinkManagedServer({
         configPath: existingLink.configPath,
       })
     }
-    const link = await mgr.link({
+    return await mgr.link({
       serverName,
       agent,
       ...(existingLink ? { configPath: existingLink.configPath } : {}),
       ...(allowOverwrite ? { allowOverwrite } : {}),
     })
-    await tagClaudeCodeHttpEntry(agent, spec, serverName, link.configPath)
-    return link
   } catch (err) {
     if (existingLink && previousSpec) {
       try {
         await mgr.add({ name: serverName, spec: previousSpec })
-        const restoredLink = await mgr.link({
+        await mgr.link({
           serverName,
           agent,
           configPath: existingLink.configPath,
           ...(allowOverwrite ? { allowOverwrite } : {}),
         })
-        await tagClaudeCodeHttpEntry(
-          agent,
-          previousSpec,
-          serverName,
-          restoredLink.configPath,
-        )
       } catch (restoreErr) {
         const relinkMessage = err instanceof Error ? err.message : String(err)
         const restoreMessage =
@@ -79,18 +69,6 @@ export async function relinkManagedServer({
     }
     throw err
   }
-}
-
-async function tagClaudeCodeHttpEntry(
-  agent: AgentId,
-  spec: McpServerSpec,
-  serverName: string,
-  configPath: string | undefined,
-): Promise<void> {
-  if (agent !== 'claude-code' || spec.transport !== 'http' || !configPath) {
-    return
-  }
-  await ensureClaudeCodeHttpTransportTag({ configPath, serverName, logger })
 }
 
 async function findExistingLink(
