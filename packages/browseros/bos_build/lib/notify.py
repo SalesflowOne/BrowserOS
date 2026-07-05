@@ -100,7 +100,7 @@ class Notifier:
 def format_duration(seconds: float) -> str:
     """Format seconds for Slack messages without leaking raw float durations."""
     total_seconds = max(0, int(round(seconds)))
-    if seconds < 60:
+    if total_seconds < 60:
         return f"{total_seconds}s"
 
     minutes, remaining_seconds = divmod(total_seconds, 60)

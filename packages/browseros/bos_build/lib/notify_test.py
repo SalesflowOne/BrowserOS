@@ -61,6 +61,7 @@ class FormatDurationTest(unittest.TestCase):
         self.assertEqual(format_duration(5006), "83m 26s")
         self.assertEqual(format_duration(4980), "83m")
         self.assertEqual(format_duration(0.4), "0s")
+        self.assertEqual(format_duration(59.7), "1m")
 
 
 class SlackRunSubscriberTest(unittest.TestCase):
