@@ -193,11 +193,12 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends wine64
-          # ubuntu-24.04's wine64 package ships only the wine64 binary; the
-          # build tooling spawns `wine` (scripts/patch-windows-exe.ts).
+          # The `wine` package provides the /usr/bin/wine wrapper that
+          # patch-windows-exe.ts spawns; ubuntu-24.04's wine64 alone ships
+          # only the loader at /usr/lib/wine/wine64 (no /usr/bin entry).
+          sudo apt-get install -y --no-install-recommends wine
           if ! command -v wine >/dev/null; then
-            sudo ln -s "$(command -v wine64)" /usr/local/bin/wine
+            sudo ln -s /usr/lib/wine/wine64 /usr/local/bin/wine
           fi
           wine --version
 
