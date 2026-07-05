@@ -47,6 +47,11 @@ on:
         required: false
         type: string
         default: ""
+      artifact-name:
+        description: "Optional upload artifact name override"
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -291,7 +296,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ inputs.product }}-${{ inputs.profile }}-${{ inputs.platform }}-${{ inputs.arch }}
+          name: ${{ inputs.artifact-name || format('{0}-{1}-{2}-{3}', inputs.product, inputs.profile, inputs.platform, inputs.arch) }}
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
