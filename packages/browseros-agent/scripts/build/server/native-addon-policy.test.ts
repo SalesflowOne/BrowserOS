@@ -9,6 +9,8 @@ const nativeAddonGuardPath = join(
   process.cwd(),
   'apps/server/src/lib/native-addon-guard.ts',
 )
+const nativeAddonGuardMessage =
+  'BrowserOS server disables native addon loading in compiled production builds'
 
 describe('compiled server native addon policy', () => {
   let tempDir: string | null = null
@@ -97,7 +99,10 @@ describe('compiled server native addon policy', () => {
       stdout: 'pipe',
       stderr: 'pipe',
     })
-    await Bun.sleep(1000)
+    const stdout = collectTextStream(app.stdout)
+    const stderr = collectTextStream(app.stderr)
+
+    await waitForStreamText(stderr, nativeAddonGuardMessage)
 
     const openFiles = await collectProcess(
       Bun.spawn(['lsof', '-p', String(app.pid)], {
@@ -107,11 +112,14 @@ describe('compiled server native addon policy', () => {
     )
 
     app.kill()
-    const appResult = await collectProcess(app)
+    const [stdoutText, stderrText, exitCode] = await Promise.all([
+      stdout.complete,
+      stderr.complete,
+      app.exited,
+    ])
+    const appResult = { exitCode, stdout: stdoutText, stderr: stderrText }
 
-    expect(appResult.stderr).toContain(
-      'BrowserOS server disables native addon loading in compiled production builds',
-    )
+    expect(appResult.stderr).toContain(nativeAddonGuardMessage)
     expect(await listFiles(runTmpDir)).toEqual([])
     expect(openFiles.stdout).not.toContain('.node')
   })
@@ -131,6 +139,54 @@ async function collectProcess(process: CollectableProcess) {
   ])
 
   return { stdout, stderr, exitCode }
+}
+
+interface TextStreamCollector {
+  complete: Promise<string>
+  snapshot: () => string
+}
+
+function collectTextStream(stream: ReadableStream): TextStreamCollector {
+  const decoder = new TextDecoder()
+  let text = ''
+  const complete = (async () => {
+    const reader = stream.getReader()
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        text +=
+          typeof value === 'string'
+            ? value
+            : decoder.decode(value, { stream: true })
+      }
+      text += decoder.decode()
+    } finally {
+      reader.releaseLock()
+    }
+
+    return text
+  })()
+
+  return { complete, snapshot: () => text }
+}
+
+async function waitForStreamText(
+  collector: TextStreamCollector,
+  text: string,
+  timeoutMs = 5000,
+) {
+  const startedAt = Date.now()
+  while (Date.now() - startedAt < timeoutMs) {
+    if (collector.snapshot().includes(text)) return
+    await Bun.sleep(50)
+  }
+
+  throw new Error(
+    `Timed out waiting for process output to include ${JSON.stringify(
+      text,
+    )}. Current output: ${JSON.stringify(collector.snapshot())}`,
+  )
 }
 
 async function listFiles(dir: string): Promise<string[]> {
