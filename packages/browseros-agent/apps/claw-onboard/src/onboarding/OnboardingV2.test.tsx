@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router'
 import {
   importPhaseFor,
   OnboardingV2,
-  openBrowserOsNewTab,
+  openBrowserOsMcpPage,
 } from './OnboardingV2'
 
 const originalWindow = globalThis.window
@@ -81,14 +81,14 @@ describe('OnboardingV2 shell', () => {
     expect(matches.length).toBe(3)
   })
 
-  it('opens BrowserOS new tab when onboarding completes', () => {
+  it('opens BrowserClaw MCP page when onboarding completes', () => {
     const getAssignedUrl = installAssignableWindow(
       '?apiUrl=http%3A%2F%2F127.0.0.1%3A9234',
     )
 
-    openBrowserOsNewTab()
+    openBrowserOsMcpPage()
 
-    expect(getAssignedUrl()).toBe('chrome://newtab')
+    expect(getAssignedUrl()).toBe('chrome://newtab/#/mcp')
   })
 
   it('does not treat failed or completed Chromium states as import success', () => {

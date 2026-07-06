@@ -30,7 +30,7 @@ import { ReadyStep } from './steps/ReadyStep'
 import { WelcomeStep } from './steps/WelcomeStep'
 
 const TOTAL_STEPS = 3
-const BROWSEROS_NEW_TAB_URL = 'chrome://newtab'
+const BROWSEROS_MCP_PAGE_URL = 'chrome://newtab/#/mcp'
 
 const initialOnboardingState: BrowserOSOnboardingState = {
   apiVersion: BROWSEROS_ONBOARDING_API_VERSION,
@@ -46,9 +46,9 @@ export function importPhaseFor(status: BrowserOSImportStatus): ImportPhase {
   return 'picker'
 }
 
-/** Leaves standalone onboarding for BrowserOS's Chromium new-tab page. */
-export function openBrowserOsNewTab() {
-  window.location.assign(BROWSEROS_NEW_TAB_URL)
+/** Leaves standalone onboarding for BrowserClaw's MCP connection page. */
+export function openBrowserOsMcpPage() {
+  window.location.assign(BROWSEROS_MCP_PAGE_URL)
 }
 
 /** Runs the standalone three-step BrowserClaw onboarding flow. */
@@ -114,7 +114,7 @@ export function OnboardingV2() {
 
   function finishOnboarding() {
     bridge.complete()
-    openBrowserOsNewTab()
+    openBrowserOsMcpPage()
   }
 
   return (
@@ -133,7 +133,9 @@ export function OnboardingV2() {
             onContinue={() => setStep(2)}
           />
         )}
-        {step === 2 && <ReadyStep onDone={finishOnboarding} />}
+        {step === 2 && (
+          <ReadyStep phase={importPhase} onDone={finishOnboarding} />
+        )}
       </OnboardingShell>
     </Form>
   )
