@@ -397,11 +397,17 @@ func startRustClawSourceWatcher(ctx context.Context, wg *sync.WaitGroup, root st
 func rustClawWatchInputs(root string) []string {
 	inputs := []string{
 		filepath.Join(root, "apps/claw-server-rust/src"),
+		filepath.Join(root, "apps/claw-server-rust/Cargo.toml"),
 	}
-	crateSources, err := filepath.Glob(filepath.Join(root, "crates", "*", "src"))
-	if err == nil {
-		sort.Strings(crateSources)
-		inputs = append(inputs, crateSources...)
+	for _, pattern := range []string{
+		filepath.Join(root, "crates", "*", "src"),
+		filepath.Join(root, "crates", "*", "Cargo.toml"),
+	} {
+		matches, err := filepath.Glob(pattern)
+		if err == nil {
+			sort.Strings(matches)
+			inputs = append(inputs, matches...)
+		}
 	}
 	inputs = append(inputs,
 		filepath.Join(root, "Cargo.toml"),

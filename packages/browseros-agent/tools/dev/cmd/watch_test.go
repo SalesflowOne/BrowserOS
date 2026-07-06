@@ -235,12 +235,24 @@ func TestRustClawWatchInputsUseSourceAndManifestInputs(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	for _, file := range []string{
+		"apps/claw-server-rust/Cargo.toml",
+		"crates/browseros-core/Cargo.toml",
+		"crates/browseros-cdp/Cargo.toml",
+	} {
+		if err := os.WriteFile(filepath.Join(root, file), []byte("[package]\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	inputs := rustClawWatchInputs(root)
 	for _, want := range []string{
 		filepath.Join(root, "apps/claw-server-rust/src"),
+		filepath.Join(root, "apps/claw-server-rust/Cargo.toml"),
 		filepath.Join(root, "crates/browseros-cdp/src"),
+		filepath.Join(root, "crates/browseros-cdp/Cargo.toml"),
 		filepath.Join(root, "crates/browseros-core/src"),
+		filepath.Join(root, "crates/browseros-core/Cargo.toml"),
 		filepath.Join(root, "Cargo.toml"),
 		filepath.Join(root, "Cargo.lock"),
 	} {
