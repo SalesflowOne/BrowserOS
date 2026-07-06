@@ -106,6 +106,8 @@ pub enum LoginMode {
     Selective,
 }
 
+// Retained for deserializing existing on-disk agent profile JSON.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ApprovalVerdict {
     Auto,
@@ -135,7 +137,10 @@ pub struct StoredAgentProfile {
     pub name: String,
     pub harness: Harness,
     pub login_mode: LoginMode,
+    // Retained for compatibility with existing on-disk agent profile JSON.
+    #[allow(dead_code)]
     pub selected_sites: Vec<String>,
+    #[allow(dead_code)]
     pub approvals: BTreeMap<String, ApprovalVerdict>,
     pub acl_rule_ids: Vec<String>,
     pub custom_acl_rules: Vec<CustomAclRule>,
@@ -172,28 +177,4 @@ impl AgentService {
         }
         Ok(out)
     }
-
-    pub async fn load_by_id(&self, id: &str) -> AppResult<Option<StoredAgentProfile>> {
-        if !is_valid_id(id) {
-            return Ok(None);
-        }
-        let rel = file_for(id);
-        match self.store.read_json(&rel).await {
-            Ok(profile) => Ok(Some(profile)),
-            Err(AppError::StorageNotFound(_)) | Err(AppError::InvalidStoragePath(_)) => Ok(None),
-            Err(err) => Err(err),
-        }
-    }
-}
-
-fn file_for(id: &str) -> String {
-    format!("{AGENTS_SUBDIR}/{id}.json")
-}
-
-fn is_valid_id(id: &str) -> bool {
-    !id.is_empty()
-        && id.len() <= 64
-        && id
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
 }

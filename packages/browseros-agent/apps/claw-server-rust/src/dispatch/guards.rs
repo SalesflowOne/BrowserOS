@@ -1,13 +1,10 @@
 use crate::{
     app::AppState,
-    dispatch::pipeline::{DispatchCtx, ToolHooks, extract_page_id},
-    domain::AgentRef,
-    services::agents::ApprovalVerdict,
+    dispatch::pipeline::{DispatchCtx, extract_page_id},
 };
 use browseros_core::PageId;
 use browseros_mcp::framework::ToolResult;
 use serde_json::Value;
-use url::Url;
 
 const NAVIGATE_BLOCKED_SCHEMES: &[&str] = &["javascript", "file", "data"];
 
@@ -65,64 +62,6 @@ impl PageOwnershipGuard {
             }
         }
     }
-}
-
-pub struct PermissionGuard;
-
-impl PermissionGuard {
-    pub async fn check(
-        state: &AppState,
-        ctx: &DispatchCtx<'_>,
-        hooks: &ToolHooks,
-    ) -> Option<ToolResult> {
-        let profile_id = ctx.session.agent().profile_id()?;
-        let profile = match state.agents.load_by_id(profile_id.as_str()).await {
-            Ok(Some(profile)) => profile,
-            Ok(None) => {
-                return Some(ToolResult::error(
-                    "stored agent profile was not found; refusing dispatch",
-                ));
-            }
-            Err(err) => {
-                tracing::warn!(error = %err, "permission guard profile load failed");
-                return Some(ToolResult::error(
-                    "stored agent profile could not be loaded; refusing dispatch",
-                ));
-            }
-        };
-        let verdict = profile.approvals.get(hooks.permission_verb);
-        match verdict {
-            Some(ApprovalVerdict::Block) => Some(ToolResult::error(format!(
-                "blocked by agent approval profile: {} on {}",
-                ctx.tool.name,
-                domain_for_call(ctx.tool.name, ctx.raw_args, &profile.selected_sites)
-            ))),
-            Some(ApprovalVerdict::Ask) => Some(ToolResult::error(format!(
-                "approval required for verb {}; interactive approvals are not available in this Rust phase, so the dispatch was blocked",
-                hooks.permission_verb
-            ))),
-            Some(ApprovalVerdict::Auto) | None => None,
-        }
-    }
-}
-
-fn domain_for_call(tool_name: &str, raw_args: &Value, selected_sites: &[String]) -> String {
-    if tool_name == "navigate"
-        && let Some(url) = raw_args.get("url").and_then(Value::as_str)
-        && let Ok(parsed) = Url::parse(url)
-        && let Some(host) = parsed.host_str()
-    {
-        return host.to_string();
-    }
-    selected_sites
-        .first()
-        .cloned()
-        .unwrap_or_else(|| "*".to_string())
-}
-
-#[must_use]
-pub fn is_profile_agent(agent: &AgentRef) -> bool {
-    agent.profile_id().is_some()
 }
 
 #[cfg(test)]

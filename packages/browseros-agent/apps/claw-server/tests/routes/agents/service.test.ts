@@ -78,32 +78,6 @@ describe('agents service', () => {
     })
   })
 
-  test('getDetail returns the profile settings shape', async () => {
-    await withTempBrowserClawDir(async () => {
-      const stored = await writeAgentProfile({
-        id: 'detail-test',
-        name: 'Detail Test',
-        slug: 'detail-test',
-        loginMode: 'selective',
-        selectedSites: ['concur.com'],
-      })
-      const detail = await agents.getDetail(stored.id)
-      expect(detail).not.toBeNull()
-      if (!detail) throw new Error('unreachable')
-      expect(detail.name).toBe('Detail Test')
-      expect(detail.loginMode).toBe('selective')
-      expect(detail.selectedSites).toEqual(['concur.com'])
-      expect('id' in detail).toBe(false)
-      expect('slug' in detail).toBe(false)
-    })
-  })
-
-  test('getDetail returns null for unknown ids', async () => {
-    await withTempBrowserClawDir(async () => {
-      expect(await agents.getDetail('ghost')).toBeNull()
-    })
-  })
-
   test('list skips a corrupt agent file instead of rejecting the whole call', async () => {
     await withTempBrowserClawDir(async (dir) => {
       const ok = await writeAgentProfile({ id: 'healthy', name: 'Healthy' })
@@ -114,20 +88,6 @@ describe('agents service', () => {
       )
       const rows = await agents.list()
       expect(rows.map((row) => row.id)).toEqual([ok.id])
-    })
-  })
-
-  test('traversal-shaped ids resolve as not-found', async () => {
-    await withTempBrowserClawDir(async () => {
-      await writeAgentProfile({ id: 'real', name: 'Real' })
-      for (const evilId of [
-        '../config',
-        'agents/../config',
-        '..',
-        '../../etc/passwd',
-      ]) {
-        expect(await agents.getDetail(evilId)).toBeNull()
-      }
     })
   })
 })

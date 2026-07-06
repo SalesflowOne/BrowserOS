@@ -1,8 +1,4 @@
-/**
- * Pins the v2 homepage's section set: hero, running grid, recent
- * activity. Legacy waiting and new-profile surfaces must not render
- * in the default v2 build.
- */
+/** Pins the Claw homepage's hero, running grid, and recent activity sections. */
 
 import { describe, expect, it, mock } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -52,11 +48,6 @@ describe('Cockpit (v2)', () => {
     expect(html).toContain('Recent activity')
     // No agents in the stub data means RunningGrid returns null.
     expect(html).not.toContain('Running now')
-  })
-
-  it('does NOT render the WaitingStrip in the default v2 build', () => {
-    const html = renderApp()
-    expect(html).not.toContain('Waiting on you')
   })
 
   it('does NOT render an add-profile tile in the default v2 build', () => {

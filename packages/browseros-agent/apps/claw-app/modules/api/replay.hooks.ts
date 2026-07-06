@@ -40,7 +40,7 @@ export type ReplayVerb =
   | 'submit'
   | 'done'
 
-export type ReplayKind = 'action' | 'approval' | 'block' | 'done'
+export type ReplayKind = 'action' | 'block' | 'done'
 
 export interface ReplayFrame {
   /** Seconds into the session. */

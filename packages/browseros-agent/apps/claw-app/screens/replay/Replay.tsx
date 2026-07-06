@@ -160,7 +160,6 @@ export function Replay() {
   const stats: { label: string; value: string }[] = [
     { label: 'Duration', value: replay.duration },
     { label: 'Steps', value: replay.steps },
-    { label: 'Approvals', value: replay.approvals },
   ]
 
   return (
