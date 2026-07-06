@@ -13,6 +13,8 @@
     "dev:watch:new": "./tools/dev/run.sh watch --new",
     "dev:claw:watch": "./tools/dev/run.sh watch --claw",
     "dev:claw:watch:new": "./tools/dev/run.sh watch --claw --new",
+    "dev:claw-rust:watch": "./tools/dev/run.sh watch --claw --rust",
+    "dev:claw-rust:watch:new": "./tools/dev/run.sh watch --claw --rust --new",
     "dev:manual": "./tools/dev/run.sh watch --manual",
     "dev:stop": "pkill -f 'browseros-dev watch' ; pkill -f 'bun --watch' ; echo 'dev watch stopped'",
     "devtools": "cd apps/server && bun run devtools",

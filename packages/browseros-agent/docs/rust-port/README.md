@@ -85,6 +85,32 @@ prod resource pipeline (`scripts/build/` descriptor, R2 upload) is a follow-up o
 server reaches parity; the descriptor pattern in `scripts/build/claw-server/descriptor.ts`
 is the template.
 
+## Dev workflow
+
+Use the Rust claw-server in the full BrowserClaw dev stack with:
+
+```bash
+bun run dev:claw-rust:watch
+```
+
+That command runs the normal BrowserClaw app, static web preview, Chromium/CDP profile,
+and sidecar config flow, but swaps the standalone server leg to:
+
+```bash
+cargo run -p claw-server-rust -- --config <sidecar>
+```
+
+The Go dev supervisor polls Rust source inputs (`apps/claw-server-rust/src`, `crates/*/src`,
+`Cargo.toml`, and `Cargo.lock`) and restarts the Cargo process on edits, so debug builds
+recompile without requiring `cargo-watch`, `watchexec`, or `bacon`. Use
+`bun run dev:claw-rust:watch:new` for a fresh profile and random dev ports.
+
+Today this exercises the Phase C Rust server surface: system routes, agent/profile routes,
+storage, harness config, audit/replay routes, and the same sidecar port contract as the TS
+server. `/mcp` still returns the Phase D 503 stub on branches where Phase D has not landed.
+Once Phase D merges, this same command exposes the Rust MCP endpoint at the sidecar server
+port, typically `http://127.0.0.1:9200/mcp`.
+
 ## Delivery phases
 
 1. **Phase A** — workspace scaffold + `browseros-cdp` + `browseros-core` (with ports of the
