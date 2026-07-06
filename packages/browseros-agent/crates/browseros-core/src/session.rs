@@ -14,7 +14,7 @@ use crate::{
 use browseros_cdp::CdpEvent;
 use serde_json::Value;
 use std::{collections::HashMap, sync::Arc};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, broadcast};
 
 #[derive(Clone, Default)]
 pub struct BrowserSessionHooks {
@@ -144,6 +144,11 @@ impl BrowserSession {
             .send_raw_json(method, params_json, Some(&page.session_id))
             .await
             .map_err(CoreError::from)
+    }
+
+    #[must_use]
+    pub fn cdp_events(&self) -> broadcast::Receiver<CdpEvent> {
+        self.connection.events()
     }
 
     #[must_use]
