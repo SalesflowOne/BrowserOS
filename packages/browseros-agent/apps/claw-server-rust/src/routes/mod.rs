@@ -7,6 +7,7 @@ use crate::{
         agents::Harness,
         audit::{ListDispatchesQuery, ListTasksQuery, TaskStatus},
         replay::ReplayService,
+        replay_tabs::{ReplayTabsResponse, list_replay_tabs},
         tab_activity::EnrichedTabRecord,
     },
 };
@@ -324,8 +325,8 @@ async fn replay_exists(
     Ok(Json(value))
 }
 
-async fn replay_tabs() -> Json<Value> {
-    Json(json!({ "tabs": [] }))
+async fn replay_tabs(State(state): State<AppState>) -> Json<ReplayTabsResponse> {
+    Json(list_replay_tabs(&state.sessions, &state.tab_activity).await)
 }
 
 fn validate_limit(limit: Option<i64>, cap: i64) -> AppResult<()> {

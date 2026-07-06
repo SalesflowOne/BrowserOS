@@ -82,6 +82,13 @@ impl SessionRegistry {
         self.sessions.read().await.contains_key(id)
     }
 
+    /// Returns the current live sessions in stable id order for read-side joins.
+    pub async fn snapshot(&self) -> Vec<Arc<Session>> {
+        let mut sessions: Vec<_> = self.sessions.read().await.values().cloned().collect();
+        sessions.sort_by(|left, right| left.id().cmp(right.id()));
+        sessions
+    }
+
     pub async fn touch(&self, id: &SessionId) -> bool {
         let Some(session) = self.lookup(id).await else {
             return false;

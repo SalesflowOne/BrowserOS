@@ -1,7 +1,9 @@
 use crate::domain::{AgentRef, DispatchId, SessionId};
 use browseros_core::PageId;
+use serde::Serialize;
 use std::{
     collections::{BTreeMap, BTreeSet},
+    fmt,
     sync::Arc,
     time::Duration,
 };
@@ -11,6 +13,82 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
+const TAB_GROUP_COLORS: [TabGroupColor; 9] = [
+    TabGroupColor::Grey,
+    TabGroupColor::Blue,
+    TabGroupColor::Red,
+    TabGroupColor::Yellow,
+    TabGroupColor::Green,
+    TabGroupColor::Pink,
+    TabGroupColor::Purple,
+    TabGroupColor::Cyan,
+    TabGroupColor::Orange,
+];
+
+/// Chrome tab-group colour names accepted by the BrowserOS tab_groups tool.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TabGroupColor {
+    Grey,
+    Blue,
+    Red,
+    Yellow,
+    Green,
+    Pink,
+    Purple,
+    Cyan,
+    Orange,
+}
+
+impl TabGroupColor {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Grey => "grey",
+            Self::Blue => "blue",
+            Self::Red => "red",
+            Self::Yellow => "yellow",
+            Self::Green => "green",
+            Self::Pink => "pink",
+            Self::Purple => "purple",
+            Self::Cyan => "cyan",
+            Self::Orange => "orange",
+        }
+    }
+}
+
+impl fmt::Display for TabGroupColor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Selects the deterministic tab-group colour shared with the TS Claw server.
+#[must_use]
+pub fn color_for_slug(slug: &str) -> TabGroupColor {
+    let idx = usize::try_from(fnv1a(slug) % u32::try_from(TAB_GROUP_COLORS.len()).unwrap_or(1))
+        .unwrap_or(0);
+    TAB_GROUP_COLORS
+        .get(idx)
+        .copied()
+        .unwrap_or(TabGroupColor::Grey)
+}
+
+fn fnv1a(input: &str) -> u32 {
+    let mut hash = 0x811c9dc5_u32;
+    for byte in input.as_bytes() {
+        hash ^= u32::from(*byte);
+        hash = hash.wrapping_add(
+            (hash << 1)
+                .wrapping_add(hash << 4)
+                .wrapping_add(hash << 7)
+                .wrapping_add(hash << 8)
+                .wrapping_add(hash << 24),
+        );
+    }
+    hash
+}
+
 pub struct Session {
     id: SessionId,
     agent: AgentRef,
@@ -19,6 +97,7 @@ pub struct Session {
     active_dispatches: Mutex<BTreeMap<DispatchId, CancellationToken>>,
     cancel: CancellationToken,
     tab_group_ref: Mutex<Option<String>>,
+    tab_group_color: Mutex<Option<TabGroupColor>>,
     replay_handle: Mutex<Option<String>>,
     last_activity: Mutex<Instant>,
 }
@@ -34,6 +113,7 @@ impl Session {
             active_dispatches: Mutex::new(BTreeMap::new()),
             cancel: CancellationToken::new(),
             tab_group_ref: Mutex::new(None),
+            tab_group_color: Mutex::new(None),
             replay_handle: Mutex::new(None),
             last_activity: Mutex::new(now),
         })
@@ -90,6 +170,14 @@ impl Session {
         self.tab_group_ref.lock().await.clone()
     }
 
+    pub async fn set_tab_group_color(&self, value: Option<TabGroupColor>) {
+        *self.tab_group_color.lock().await = value;
+    }
+
+    pub async fn tab_group_color(&self) -> Option<TabGroupColor> {
+        *self.tab_group_color.lock().await
+    }
+
     pub async fn set_replay_handle(&self, value: Option<String>) {
         *self.replay_handle.lock().await = value;
     }
@@ -126,5 +214,16 @@ impl Session {
     #[must_use]
     pub fn child_token(&self) -> CancellationToken {
         self.cancel.child_token()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{TabGroupColor, color_for_slug};
+
+    #[test]
+    fn color_for_slug_matches_tab_group_palette() {
+        assert_eq!(color_for_slug("codex"), TabGroupColor::Purple);
+        assert_eq!(color_for_slug("finance-ops"), TabGroupColor::Grey);
     }
 }
