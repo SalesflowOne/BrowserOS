@@ -125,6 +125,19 @@ fn act_schema_stays_flat_at_top_level() {
 }
 
 #[test]
+fn catalog_schemas_do_not_use_boolean_schema_nodes() {
+    for tool in catalog() {
+        let input_schema = Value::Object(tool.input_schema.as_ref().clone());
+        assert_no_boolean_schema_nodes(tool.name, "inputSchema", &input_schema);
+
+        if let Some(output_schema) = tool.output_schema {
+            let output_schema = Value::Object(output_schema.as_ref().clone());
+            assert_no_boolean_schema_nodes(tool.name, "outputSchema", &output_schema);
+        }
+    }
+}
+
+#[test]
 fn run_has_compat_output_schema() {
     let run = catalog()
         .into_iter()
@@ -136,9 +149,19 @@ fn run_has_compat_output_schema() {
             .as_ref()
             .clone(),
     );
-    assert!(schema.pointer("/properties/ok").is_some());
-    assert!(schema.pointer("/properties/logs").is_some());
-    assert!(schema.pointer("/properties/error").is_some());
+    let properties = schema
+        .pointer("/properties")
+        .and_then(Value::as_object)
+        .unwrap_or_else(|| panic!("run output schema should have object properties"));
+    for key in ["ok", "logs", "error", "value"] {
+        let property = properties
+            .get(key)
+            .unwrap_or_else(|| panic!("missing run output property: {key}"));
+        assert!(
+            property.is_object(),
+            "run output property `{key}` should use object schema form: {property}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -227,4 +250,31 @@ fn wait_parse_ms_matches_ts_fallback_rules() {
     assert_eq!(wait::parse_wait_ms(Some(""), 2_000), 2_000);
     assert_eq!(wait::parse_wait_ms(Some("-1"), 2_000), 2_000);
     assert_eq!(wait::parse_wait_ms(Some("1500.6"), 2_000), 1_501);
+}
+
+fn assert_no_boolean_schema_nodes(tool_name: &str, schema_kind: &str, schema: &Value) {
+    let mut paths = Vec::new();
+    collect_boolean_paths(schema, "$".to_string(), &mut paths);
+    assert!(
+        paths.is_empty(),
+        "{tool_name}.{schema_kind} has boolean schema nodes at {}",
+        paths.join(", ")
+    );
+}
+
+fn collect_boolean_paths(value: &Value, path: String, paths: &mut Vec<String>) {
+    match value {
+        Value::Bool(_) => paths.push(path),
+        Value::Array(items) => {
+            for (index, item) in items.iter().enumerate() {
+                collect_boolean_paths(item, format!("{path}[{index}]"), paths);
+            }
+        }
+        Value::Object(object) => {
+            for (key, value) in object {
+                collect_boolean_paths(value, format!("{path}.{key}"), paths);
+            }
+        }
+        _ => {}
+    }
 }
