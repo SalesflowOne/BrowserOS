@@ -100,7 +100,8 @@ and sidecar config flow, but swaps the standalone server leg to:
 cargo run -p claw-server-rust -- --config <sidecar>
 ```
 
-The Go dev supervisor polls Rust source inputs (`apps/claw-server-rust/src`, `crates/*/src`,
+The Go dev supervisor polls Rust source/build inputs (`apps/claw-server-rust/src`,
+`crates/*/src`, package manifests, build scripts, protocol JSON, embedded SQL migrations,
 `Cargo.toml`, and `Cargo.lock`) and restarts the Cargo process on edits, so debug builds
 recompile without requiring `cargo-watch`, `watchexec`, or `bacon`. Use
 `bun run dev:claw-rust:watch:new` for a fresh profile and random dev ports.

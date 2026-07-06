@@ -226,9 +226,11 @@ func TestClawRustServerProcConfigPassesSidecarAndDevEnv(t *testing.T) {
 func TestRustClawWatchInputsUseSourceAndManifestInputs(t *testing.T) {
 	root := t.TempDir()
 	for _, dir := range []string{
+		"apps/claw-server/drizzle",
 		"apps/claw-server-rust/src",
 		"crates/browseros-core/src",
 		"crates/browseros-cdp/src",
+		"crates/browseros-cdp/protocol",
 		"target/debug",
 	} {
 		if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
@@ -239,6 +241,7 @@ func TestRustClawWatchInputsUseSourceAndManifestInputs(t *testing.T) {
 		"apps/claw-server-rust/Cargo.toml",
 		"crates/browseros-core/Cargo.toml",
 		"crates/browseros-cdp/Cargo.toml",
+		"crates/browseros-cdp/build.rs",
 	} {
 		if err := os.WriteFile(filepath.Join(root, file), []byte("[package]\n"), 0o644); err != nil {
 			t.Fatal(err)
@@ -249,8 +252,11 @@ func TestRustClawWatchInputsUseSourceAndManifestInputs(t *testing.T) {
 	for _, want := range []string{
 		filepath.Join(root, "apps/claw-server-rust/src"),
 		filepath.Join(root, "apps/claw-server-rust/Cargo.toml"),
+		filepath.Join(root, "apps/claw-server/drizzle"),
 		filepath.Join(root, "crates/browseros-cdp/src"),
 		filepath.Join(root, "crates/browseros-cdp/Cargo.toml"),
+		filepath.Join(root, "crates/browseros-cdp/build.rs"),
+		filepath.Join(root, "crates/browseros-cdp/protocol"),
 		filepath.Join(root, "crates/browseros-core/src"),
 		filepath.Join(root, "crates/browseros-core/Cargo.toml"),
 		filepath.Join(root, "Cargo.toml"),

@@ -398,10 +398,13 @@ func rustClawWatchInputs(root string) []string {
 	inputs := []string{
 		filepath.Join(root, "apps/claw-server-rust/src"),
 		filepath.Join(root, "apps/claw-server-rust/Cargo.toml"),
+		filepath.Join(root, "apps/claw-server/drizzle"),
 	}
 	for _, pattern := range []string{
 		filepath.Join(root, "crates", "*", "src"),
 		filepath.Join(root, "crates", "*", "Cargo.toml"),
+		filepath.Join(root, "crates", "*", "build.rs"),
+		filepath.Join(root, "crates", "*", "protocol"),
 	} {
 		matches, err := filepath.Glob(pattern)
 		if err == nil {
