@@ -230,18 +230,52 @@ pub fn input_schema<T>() -> Arc<JsonObject>
 where
     T: JsonSchema + std::any::Any,
 {
-    rmcp::handler::server::tool::schema_for_input::<T>().unwrap_or_else(|err| {
+    let schema = rmcp::handler::server::tool::schema_for_input::<T>().unwrap_or_else(|err| {
         panic!("invalid BrowserOS MCP input schema: {err}");
-    })
+    });
+    normalize_schema_object(schema)
 }
 
 pub fn output_schema<T>() -> Arc<JsonObject>
 where
     T: JsonSchema + std::any::Any,
 {
-    rmcp::handler::server::tool::schema_for_output::<T>().unwrap_or_else(|err| {
+    let schema = rmcp::handler::server::tool::schema_for_output::<T>().unwrap_or_else(|err| {
         panic!("invalid BrowserOS MCP output schema: {err}");
-    })
+    });
+    normalize_schema_object(schema)
+}
+
+/// Rewrites generated JSON Schema into the object-only form expected by strict MCP clients.
+fn normalize_schema_object(schema: Arc<JsonObject>) -> Arc<JsonObject> {
+    let mut value = Value::Object(schema.as_ref().clone());
+    normalize_schema_value(&mut value);
+    match value {
+        Value::Object(object) => Arc::new(object),
+        _ => panic!("BrowserOS MCP schema root should remain an object"),
+    }
+}
+
+/// Rewrites boolean schemas and removes boolean default annotations before MCP serialization.
+fn normalize_schema_value(value: &mut Value) {
+    match value {
+        Value::Bool(true) => *value = json!({}),
+        Value::Bool(false) => *value = json!({ "not": {} }),
+        Value::Array(items) => {
+            for item in items {
+                normalize_schema_value(item);
+            }
+        }
+        Value::Object(object) => {
+            if object.get("default").is_some_and(Value::is_boolean) {
+                object.remove("default");
+            }
+            for value in object.values_mut() {
+                normalize_schema_value(value);
+            }
+        }
+        _ => {}
+    }
 }
 
 #[must_use]
