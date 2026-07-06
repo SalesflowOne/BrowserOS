@@ -4,6 +4,7 @@ use crate::{
     services::now_epoch_ms,
 };
 use rusqlite::{Connection, OptionalExtension, params, types::Value};
+use rusqlite_migration::{M, Migrations};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{
@@ -13,11 +14,28 @@ use std::{
 use tokio::sync::Mutex;
 use url::Url;
 
-const DRIZZLE_0000: &str =
-    include_str!("../../../claw-server/drizzle/0000_add_tool_dispatches.sql");
-const DRIZZLE_0001: &str =
-    include_str!("../../../claw-server/drizzle/0001_add_agent_session_events.sql");
+const AUDIT_0000: &str = include_str!("../../migrations/0000_add_tool_dispatches.sql");
+const AUDIT_0001: &str = include_str!("../../migrations/0001_add_agent_session_events.sql");
+const AUDIT_0002: &str = include_str!("../../migrations/0002_add_dispatch_columns.sql");
+const AUDIT_0003: &str = include_str!("../../migrations/0003_add_tasks_table.sql");
+const CURRENT_AUDIT_SCHEMA_VERSION: usize = 4;
 const ARGS_JSON_MAX: usize = 4096;
+
+struct DrizzleCompatMigration {
+    tag: &'static str,
+    created_at: i64,
+}
+
+const DRIZZLE_COMPAT_MIGRATIONS: [DrizzleCompatMigration; 2] = [
+    DrizzleCompatMigration {
+        tag: "0000_add_tool_dispatches",
+        created_at: 1782320133071,
+    },
+    DrizzleCompatMigration {
+        tag: "0001_add_agent_session_events",
+        created_at: 1782387594647,
+    },
+];
 
 #[derive(Clone)]
 pub struct AuditService {
@@ -428,91 +446,109 @@ impl AuditService {
     }
 }
 
+/// Opens the audit SQLite DB with runtime pragmas and the latest schema.
 fn open_connection(path: PathBuf) -> AppResult<Connection> {
-    let conn = Connection::open(path)?;
+    let mut conn = Connection::open(path)?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "synchronous", "NORMAL")?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
-    run_migrations(&conn)?;
+    run_migrations(&mut conn)?;
     Ok(conn)
 }
 
-fn run_migrations(conn: &Connection) -> AppResult<()> {
-    let existing: Option<String> = conn
-        .query_row(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'tool_dispatches'",
-            [],
-            |row| row.get(0),
-        )
-        .optional()?;
-    if existing.is_none() {
-        conn.execute_batch(DRIZZLE_0000)?;
-        conn.execute_batch(DRIZZLE_0001)?;
-        conn.execute_batch(
-            r#"CREATE TABLE IF NOT EXISTS "__drizzle_migrations" (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                hash text NOT NULL,
-                created_at numeric
-            );"#,
-        )?;
-        conn.execute(
-            "INSERT INTO __drizzle_migrations (hash, created_at)
-             SELECT ?1, ?2 WHERE NOT EXISTS (SELECT 1 FROM __drizzle_migrations WHERE created_at = ?2)",
-            params!["0000_add_tool_dispatches", 1782320133071_i64],
-        )?;
-        conn.execute(
-            "INSERT INTO __drizzle_migrations (hash, created_at)
-             SELECT ?1, ?2 WHERE NOT EXISTS (SELECT 1 FROM __drizzle_migrations WHERE created_at = ?2)",
-            params!["0001_add_agent_session_events", 1782387594647_i64],
-        )?;
+/// Baselines legacy audit DBs and applies all Rust-owned schema migrations.
+fn run_migrations(conn: &mut Connection) -> AppResult<()> {
+    let seed_drizzle_compat = baseline_user_version(conn)? == 0;
+    audit_migrations()
+        .to_latest(conn)
+        .map_err(|err| AppError::Internal(format!("audit migration failed: {err}")))?;
+    if seed_drizzle_compat {
+        seed_drizzle_migrations(conn)?;
     }
-    add_column_if_missing(conn, "tool_dispatches", "dispatch_id", "TEXT")?;
-    add_column_if_missing(
-        conn,
-        "tool_dispatches",
-        "has_screenshot",
-        "INTEGER NOT NULL DEFAULT 0",
-    )?;
-    conn.execute_batch(
-        r#"
-        CREATE TABLE IF NOT EXISTS tasks (
-            session_id TEXT PRIMARY KEY NOT NULL,
-            agent_id TEXT NOT NULL,
-            slug TEXT NOT NULL,
-            agent_label TEXT NOT NULL,
-            title TEXT NOT NULL,
-            site TEXT,
-            started_at INTEGER NOT NULL,
-            ended_at INTEGER,
-            duration_ms INTEGER NOT NULL,
-            dispatch_count INTEGER NOT NULL,
-            tool_sequence_json TEXT NOT NULL,
-            status TEXT NOT NULL,
-            error_count INTEGER NOT NULL,
-            last_screenshot_dispatch_id INTEGER,
-            cursor_id INTEGER NOT NULL,
-            has_screenshots INTEGER NOT NULL DEFAULT 0,
-            updated_at INTEGER NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS tasks_cursor_idx ON tasks (cursor_id DESC);
-        CREATE INDEX IF NOT EXISTS tasks_agent_cursor_idx ON tasks (agent_id, cursor_id DESC);
-        CREATE INDEX IF NOT EXISTS tasks_status_cursor_idx ON tasks (status, cursor_id DESC);
-        CREATE INDEX IF NOT EXISTS tasks_site_cursor_idx ON tasks (site, cursor_id DESC);
-        CREATE INDEX IF NOT EXISTS tasks_started_idx ON tasks (started_at);
-        "#,
-    )?;
     Ok(())
 }
 
-fn add_column_if_missing(conn: &Connection, table: &str, column: &str, ddl: &str) -> AppResult<()> {
+/// Returns the ordered Rust-owned migrations tracked by SQLite user_version.
+fn audit_migrations() -> Migrations<'static> {
+    Migrations::new(vec![
+        M::up(AUDIT_0000),
+        M::up(AUDIT_0001),
+        M::up(AUDIT_0002),
+        M::up(AUDIT_0003),
+    ])
+}
+
+/// Marks old Drizzle/Rust-created schemas before native migrations continue.
+fn baseline_user_version(conn: &Connection) -> AppResult<usize> {
+    let version = user_version(conn)?;
+    if version != 0 {
+        return Ok(version);
+    }
+
+    let baseline = detected_schema_version(conn)?;
+    if baseline > 0 {
+        conn.pragma_update(None, "user_version", baseline)?;
+    }
+    Ok(baseline)
+}
+
+/// Infers how far a pre-user_version audit DB had already migrated.
+fn detected_schema_version(conn: &Connection) -> AppResult<usize> {
+    if !table_exists(conn, "tool_dispatches")? {
+        return Ok(0);
+    }
+    if !table_exists(conn, "agent_session_starts")? || !table_exists(conn, "agent_session_ends")? {
+        return Ok(1);
+    }
+    if !column_exists(conn, "tool_dispatches", "dispatch_id")? {
+        return Ok(2);
+    }
+    if !table_exists(conn, "tasks")? {
+        return Ok(3);
+    }
+    Ok(CURRENT_AUDIT_SCHEMA_VERSION)
+}
+
+fn user_version(conn: &Connection) -> AppResult<usize> {
+    conn.query_row("PRAGMA user_version", [], |row| row.get(0))
+        .map_err(AppError::from)
+}
+
+fn table_exists(conn: &Connection, table: &str) -> AppResult<bool> {
+    conn.query_row(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
+        params![table],
+        |_| Ok(()),
+    )
+    .optional()
+    .map(|value| value.is_some())
+    .map_err(AppError::from)
+}
+
+fn column_exists(conn: &Connection, table: &str, column: &str) -> AppResult<bool> {
     let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
-    let exists = stmt
+    let columns = stmt
         .query_map([], |row| row.get::<_, String>(1))?
-        .collect::<Result<Vec<_>, _>>()?
-        .iter()
-        .any(|name| name == column);
-    if !exists {
-        conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {column} {ddl};"))?;
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(columns.iter().any(|name| name == column))
+}
+
+/// Preserves TS startup compatibility only for fresh DBs created by Rust.
+fn seed_drizzle_migrations(conn: &Connection) -> AppResult<()> {
+    // TS-compat: delete with apps/claw-server.
+    conn.execute_batch(
+        r#"CREATE TABLE IF NOT EXISTS "__drizzle_migrations" (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            hash text NOT NULL,
+            created_at numeric
+        );"#,
+    )?;
+    for migration in DRIZZLE_COMPAT_MIGRATIONS {
+        conn.execute(
+            "INSERT INTO __drizzle_migrations (hash, created_at)
+             SELECT ?1, ?2 WHERE NOT EXISTS (SELECT 1 FROM __drizzle_migrations WHERE created_at = ?2)",
+            params![migration.tag, migration.created_at],
+        )?;
     }
     Ok(())
 }
@@ -796,8 +832,10 @@ mod tests {
     use super::{
         AuditService, DispatchResultSummary, ListTasksQuery, RecordToolDispatchInput, TaskStatus,
     };
+    use rusqlite::{Connection, OptionalExtension};
     use serde_json::json;
-    use tempfile::tempdir;
+    use std::path::Path;
+    use tempfile::{TempDir, tempdir};
 
     fn dispatch(session_id: &str, url: &str, is_error: bool) -> RecordToolDispatchInput {
         RecordToolDispatchInput {
@@ -824,6 +862,149 @@ mod tests {
                 content: json!([{ "type": "text", "text": "ok" }]),
             },
         }
+    }
+
+    fn audit_path(dir: &TempDir) -> std::path::PathBuf {
+        dir.path().join("audit.sqlite")
+    }
+
+    fn open_temp_audit(dir: &TempDir) -> anyhow::Result<Connection> {
+        Ok(super::open_connection(audit_path(dir))?)
+    }
+
+    fn seed_ts_drizzle_schema(conn: &Connection) -> anyhow::Result<()> {
+        conn.execute_batch(super::AUDIT_0000)?;
+        conn.execute_batch(super::AUDIT_0001)?;
+        super::seed_drizzle_migrations(conn)?;
+        Ok(())
+    }
+
+    fn seed_legacy_rust_schema(path: &Path) -> anyhow::Result<()> {
+        let conn = Connection::open(path)?;
+        seed_ts_drizzle_schema(&conn)?;
+        conn.execute_batch(super::AUDIT_0002)?;
+        conn.execute_batch(super::AUDIT_0003)?;
+        Ok(())
+    }
+
+    fn drizzle_entries(conn: &Connection) -> anyhow::Result<Vec<(String, i64)>> {
+        if !super::table_exists(conn, "__drizzle_migrations")? {
+            return Ok(Vec::new());
+        }
+        let mut stmt =
+            conn.prepare("SELECT hash, created_at FROM __drizzle_migrations ORDER BY created_at")?;
+        let rows = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    fn expected_drizzle_entries() -> Vec<(String, i64)> {
+        super::DRIZZLE_COMPAT_MIGRATIONS
+            .iter()
+            .map(|migration| (migration.tag.to_string(), migration.created_at))
+            .collect()
+    }
+
+    fn index_exists(conn: &Connection, name: &str) -> anyhow::Result<bool> {
+        let exists = conn
+            .query_row(
+                "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?1",
+                [name],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        Ok(exists)
+    }
+
+    fn assert_current_schema(conn: &Connection) -> anyhow::Result<()> {
+        assert_eq!(
+            super::user_version(conn)?,
+            super::CURRENT_AUDIT_SCHEMA_VERSION
+        );
+        assert!(super::table_exists(conn, "tool_dispatches")?);
+        assert!(super::table_exists(conn, "agent_session_starts")?);
+        assert!(super::table_exists(conn, "agent_session_ends")?);
+        assert!(super::column_exists(
+            conn,
+            "tool_dispatches",
+            "dispatch_id"
+        )?);
+        assert!(super::column_exists(
+            conn,
+            "tool_dispatches",
+            "has_screenshot"
+        )?);
+        assert!(super::table_exists(conn, "tasks")?);
+        assert!(index_exists(conn, "tasks_cursor_idx")?);
+        assert!(index_exists(conn, "tasks_agent_cursor_idx")?);
+        assert!(index_exists(conn, "tasks_status_cursor_idx")?);
+        assert!(index_exists(conn, "tasks_site_cursor_idx")?);
+        assert!(index_exists(conn, "tasks_started_idx")?);
+        Ok(())
+    }
+
+    #[test]
+    fn copied_drizzle_migrations_match_ts_sources() {
+        assert_eq!(
+            super::AUDIT_0000,
+            include_str!("../../../claw-server/drizzle/0000_add_tool_dispatches.sql")
+        );
+        assert_eq!(
+            super::AUDIT_0001,
+            include_str!("../../../claw-server/drizzle/0001_add_agent_session_events.sql")
+        );
+    }
+
+    #[test]
+    fn fresh_db_runs_all_migrations_and_seeds_ts_compat_ledger() -> anyhow::Result<()> {
+        let dir = tempdir()?;
+        let conn = open_temp_audit(&dir)?;
+        assert_current_schema(&conn)?;
+        assert_eq!(drizzle_entries(&conn)?, expected_drizzle_entries());
+        Ok(())
+    }
+
+    #[test]
+    fn ts_drizzle_db_is_baselined_before_rust_migrations() -> anyhow::Result<()> {
+        let dir = tempdir()?;
+        let path = audit_path(&dir);
+        let conn = Connection::open(&path)?;
+        seed_ts_drizzle_schema(&conn)?;
+        drop(conn);
+
+        let conn = super::open_connection(path)?;
+        assert_current_schema(&conn)?;
+        assert_eq!(drizzle_entries(&conn)?, expected_drizzle_entries());
+        Ok(())
+    }
+
+    #[test]
+    fn legacy_rust_touched_db_is_baselined_without_rerunning() -> anyhow::Result<()> {
+        let dir = tempdir()?;
+        let path = audit_path(&dir);
+        seed_legacy_rust_schema(&path)?;
+
+        let conn = super::open_connection(path)?;
+        assert_current_schema(&conn)?;
+        assert_eq!(drizzle_entries(&conn)?, expected_drizzle_entries());
+        Ok(())
+    }
+
+    #[test]
+    fn migrations_are_idempotent_on_double_open() -> anyhow::Result<()> {
+        let dir = tempdir()?;
+        let path = audit_path(&dir);
+        let conn = super::open_connection(path.clone())?;
+        assert_current_schema(&conn)?;
+        assert_eq!(drizzle_entries(&conn)?, expected_drizzle_entries());
+        drop(conn);
+
+        let conn = super::open_connection(path)?;
+        assert_current_schema(&conn)?;
+        assert_eq!(drizzle_entries(&conn)?, expected_drizzle_entries());
+        Ok(())
     }
 
     #[tokio::test]
