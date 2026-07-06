@@ -30,19 +30,43 @@ features:
   branding:
     description: "chore: browseros branding and identity"
     files:
-      # Product-generated identity outputs (BRANDING, updater branding,
-      # string replacements, chrome/VERSION, and logo binaries) are owned by
-      # bos_build product overlays/resources and filtered by bpatch annotate.
+      # Generated branding outputs are explicit so Sparkle setup outputs in
+      # the same theme tree can remain separately owned.
       # Version info
+      - chrome/VERSION
       - base/version_info/BUILD.gn
       - base/version_info/version_info.h
       - base/version_info/version_info_values.h.version
       # Branding file paths
+      - chrome/app/chromium_strings.grd
+      - chrome/app/settings_chromium_strings.grdp
+      - chrome/app/theme/chromium/BRANDING
+      - chrome/app/theme/chromium/chromeos/
+      - chrome/app/theme/chromium/chromium.ai
+      - chrome/app/theme/chromium/linux/
+      - chrome/app/theme/chromium/mac/Assets.car
+      - chrome/app/theme/chromium/mac/Assets.xcassets/
+      - chrome/app/theme/chromium/mac/app.icns
+      - chrome/app/theme/chromium/product_logo.ai
+      - chrome/app/theme/chromium/product_logo.svg
+      - chrome/app/theme/chromium/product_logo_128.png
+      - chrome/app/theme/chromium/product_logo_16.png
+      - chrome/app/theme/chromium/product_logo_22_mono.png
+      - chrome/app/theme/chromium/product_logo_24.png
+      - chrome/app/theme/chromium/product_logo_256.png
+      - chrome/app/theme/chromium/product_logo_48.png
+      - chrome/app/theme/chromium/product_logo_64.png
+      - chrome/app/theme/chromium/product_logo_animation.svg
+      - chrome/app/theme/chromium/win/
+      - chrome/app/theme/default_100_percent/chromium/
+      - chrome/app/theme/default_200_percent/chromium/
       - chrome/common/chrome_constants.cc
       - chrome/common/chrome_paths.cc
       - chrome/common/chrome_paths.h
       - chrome/common/chrome_paths_linux.cc
+      - chrome/enterprise_companion/branding.gni
       - chrome/install_static/chromium_install_modes.h
+      - chrome/updater/branding.gni
       # About page (version + branding display)
       - chrome/browser/resources/settings/about_page/about_page.html
       - chrome/browser/resources/settings/about_page/about_page.ts
@@ -107,6 +131,24 @@ features:
       - chrome/browser/ui/webui/help/version_updater_mac.mm
       - chrome/browser/lifetime/application_lifetime.cc
       - chrome/browser/upgrade_detector/upgrade_detector_impl.cc
+
+  sparkle-setup:
+    description: "chore: sparkle setup resources"
+    files:
+      - chrome/BROWSEROS_VERSION
+      - chrome/app/theme/chromium/mac/AppIcon.icns
+      - chrome/app/theme/chromium/mac/document.icns
+      - chrome/app/theme/chromium/product_logo.png
+      - chrome/app/theme/chromium/product_logo_1024.png
+      - chrome/app/theme/chromium/product_logo_192.png
+      - chrome/app/theme/chromium/product_logo_22.png
+      - chrome/app/theme/chromium/product_logo_32.png
+      - chrome/app/theme/chromium/product_logo_name_22.png
+      - chrome/app/theme/chromium/product_logo_name_22_2x.png
+      - chrome/app/theme/chromium/product_logo_name_22_white.png
+      - chrome/app/theme/chromium/product_logo_name_22_white_2x.png
+      - chrome/browser/browseros/claw_server/
+      - chrome/browser/browseros/onboarding/resources/
 
   sparkle-third-party:
     description: "feat: sparkle third party framework (downloaded on-the-fly)"
