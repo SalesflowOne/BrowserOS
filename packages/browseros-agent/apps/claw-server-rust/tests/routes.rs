@@ -5,7 +5,9 @@ use axum::{
 };
 use browseros_core::TargetId;
 use claw_server_rust::{
-    AppState, build_router, config::Config, domain::SessionId,
+    AppState, build_router,
+    config::Config,
+    domain::{AgentId, AgentRef, Session, SessionId, TabGroupColor},
     services::tab_activity::RecordToolInput,
 };
 use futures_util::{SinkExt, StreamExt};
@@ -149,6 +151,102 @@ async fn audit_empty_and_replay_gone() -> anyhow::Result<()> {
     .await?;
     assert_eq!(status, StatusCode::GONE);
     assert_eq!(body["error"], "session not live");
+    Ok(())
+}
+
+#[tokio::test]
+async fn replay_tabs_tracks_only_live_agent_sessions() -> anyhow::Result<()> {
+    let app = test_app().await?;
+    app.state
+        .tab_activity
+        .record_tool(RecordToolInput {
+            target_id: TargetId::from("target-live".to_string()),
+            page_id: 7,
+            url: "https://example.com/live".to_string(),
+            title: "Live Tab".to_string(),
+            agent_id: "agent-live".to_string(),
+            slug: "codex".to_string(),
+            tool_name: "tabs".to_string(),
+        })
+        .await;
+
+    let (status, body) = request_json(&app.router, "GET", "/replay/tabs", None).await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!({ "tabs": [] }));
+
+    let session_id = SessionId::new("session-live");
+    let session = test_session(session_id.clone(), "agent-live", "codex");
+    app.state.sessions.insert_for_testing(session.clone()).await;
+
+    let (status, body) = request_json(&app.router, "GET", "/replay/tabs", None).await?;
+    assert_eq!(status, StatusCode::OK);
+    let rows = body["tabs"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("tabs not array"))?;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["sessionId"], "session-live");
+    assert_eq!(rows[0]["tabPageId"], 7);
+    assert_eq!(rows[0]["url"], "https://example.com/live");
+    assert_eq!(rows[0]["title"], "Live Tab");
+    assert!(rows[0]["groupColor"].is_null());
+
+    session
+        .set_tab_group_ref(Some("group-live".to_string()))
+        .await;
+    session
+        .set_tab_group_color(Some(TabGroupColor::Purple))
+        .await;
+    let (status, body) = request_json(&app.router, "GET", "/replay/tabs", None).await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["tabs"][0]["groupColor"], "purple");
+
+    assert!(
+        app.state
+            .sessions
+            .remove(&session_id, "closed", Some("test close"))
+            .await?
+    );
+    let (status, body) = request_json(&app.router, "GET", "/replay/tabs", None).await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!({ "tabs": [] }));
+    Ok(())
+}
+
+#[tokio::test]
+async fn replay_tabs_keeps_first_live_session_per_agent_id() -> anyhow::Result<()> {
+    let app = test_app().await?;
+    app.state
+        .tab_activity
+        .record_tool(RecordToolInput {
+            target_id: TargetId::from("target-duplicate".to_string()),
+            page_id: 8,
+            url: "https://example.com/duplicate".to_string(),
+            title: "Duplicate".to_string(),
+            agent_id: "agent-duplicate".to_string(),
+            slug: "codex".to_string(),
+            tool_name: "tabs".to_string(),
+        })
+        .await;
+    app.state
+        .sessions
+        .insert_for_testing(test_session(
+            SessionId::new("session-a"),
+            "agent-duplicate",
+            "codex",
+        ))
+        .await;
+    app.state
+        .sessions
+        .insert_for_testing(test_session(
+            SessionId::new("session-b"),
+            "agent-duplicate",
+            "codex",
+        ))
+        .await;
+
+    let (status, body) = request_json(&app.router, "GET", "/replay/tabs", None).await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["tabs"][0]["sessionId"], "session-a");
     Ok(())
 }
 
@@ -477,6 +575,18 @@ async fn tabs_activity_enriches_by_agent_id_only() -> anyhow::Result<()> {
     assert_eq!(fallback["agentLabel"], "mcp");
     assert!(fallback["harness"].is_null());
     Ok(())
+}
+
+fn test_session(session_id: SessionId, agent_id: &str, slug: &str) -> Arc<Session> {
+    Session::new(
+        session_id,
+        AgentRef::Ephemeral {
+            agent_id: AgentId::new(agent_id),
+            slug: slug.to_string(),
+            label: slug.to_string(),
+        },
+        tokio::time::Instant::now(),
+    )
 }
 
 async fn initialize_mcp(router: &Router) -> anyhow::Result<String> {

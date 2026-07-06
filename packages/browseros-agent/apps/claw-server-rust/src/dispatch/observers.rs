@@ -1,6 +1,7 @@
 use crate::{
     app::AppState,
     dispatch::pipeline::{DispatchCtx, DispatchTiming, extract_page_id, result_page_id},
+    domain::color_for_slug,
     services::{
         audit::{DispatchResultSummary, RecordToolDispatchInput},
         tab_activity::RecordToolInput,
@@ -258,6 +259,8 @@ impl TabGroupOrchestrator {
             return;
         };
         let group_id = ctx.session.tab_group_ref().await;
+        let created_new_group = group_id.is_none();
+        let color = color_for_slug(ctx.session.agent().slug());
         let args = if let Some(group_id) = group_id {
             json!({ "action": "create", "groupId": group_id, "pages": [page_id] })
         } else {
@@ -281,10 +284,33 @@ impl TabGroupOrchestrator {
                     .and_then(|value| value.get("group"))
                     .and_then(|value| value.get("groupId"))
                     .and_then(Value::as_str)
+                    .map(str::to_string)
                 {
-                    ctx.session
-                        .set_tab_group_ref(Some(group_id.to_string()))
-                        .await;
+                    ctx.session.set_tab_group_ref(Some(group_id.clone())).await;
+                    ctx.session.set_tab_group_color(Some(color)).await;
+                    if created_new_group {
+                        match execute_tool(
+                            &tab_groups,
+                            json!({ "action": "update", "groupId": group_id, "color": color }),
+                            &tool_ctx,
+                        )
+                        .await
+                        {
+                            Ok(result) if !result.is_error => {}
+                            Ok(result) => warn!(
+                                dispatch_id = %ctx.dispatch_id,
+                                group_color = %color,
+                                error = first_text(&result),
+                                "tab group color lock returned error"
+                            ),
+                            Err(err) => warn!(
+                                error = %err,
+                                dispatch_id = %ctx.dispatch_id,
+                                group_color = %color,
+                                "tab group color lock failed"
+                            ),
+                        }
+                    }
                 }
             }
             Ok(group_result) => warn!(
