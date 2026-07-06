@@ -279,7 +279,7 @@ where
 }
 
 fn browseros_schema_settings() -> SchemaSettings {
-    SchemaSettings::draft2019_09().with(|settings| {
+    SchemaSettings::draft2020_12().with(|settings| {
         settings.inline_subschemas = true;
     })
 }
@@ -288,6 +288,9 @@ fn browseros_schema_settings() -> SchemaSettings {
 fn normalize_schema_object(schema: JsonObject) -> Arc<JsonObject> {
     let mut value = Value::Object(schema);
     normalize_schema_value(&mut value);
+    if let Some(path) = first_boolean_path(&value) {
+        panic!("unsupported boolean value in BrowserOS MCP schema at {path}");
+    }
     match value {
         Value::Object(object) => Arc::new(object),
         _ => panic!("BrowserOS MCP schema root should remain an object"),
@@ -299,20 +302,72 @@ fn normalize_schema_value(value: &mut Value) {
     match value {
         Value::Bool(true) => *value = json!({}),
         Value::Bool(false) => *value = json!({ "not": {} }),
-        Value::Array(items) => {
-            for item in items {
-                normalize_schema_value(item);
-            }
-        }
+        Value::Array(_) => {}
         Value::Object(object) => {
             if object.get("default").is_some_and(Value::is_boolean) {
                 object.remove("default");
             }
-            for value in object.values_mut() {
-                normalize_schema_value(value);
+
+            for key in [
+                "additionalItems",
+                "additionalProperties",
+                "contains",
+                "contentSchema",
+                "else",
+                "if",
+                "items",
+                "not",
+                "propertyNames",
+                "then",
+                "unevaluatedItems",
+                "unevaluatedProperties",
+            ] {
+                if let Some(value) = object.get_mut(key) {
+                    normalize_schema_value(value);
+                }
+            }
+
+            for key in ["allOf", "anyOf", "oneOf", "prefixItems"] {
+                if let Some(Value::Array(items)) = object.get_mut(key) {
+                    for item in items {
+                        normalize_schema_value(item);
+                    }
+                }
+            }
+
+            for key in [
+                "$defs",
+                "definitions",
+                "dependentSchemas",
+                "patternProperties",
+                "properties",
+            ] {
+                if let Some(Value::Object(schemas)) = object.get_mut(key) {
+                    for value in schemas.values_mut() {
+                        normalize_schema_value(value);
+                    }
+                }
             }
         }
         _ => {}
+    }
+}
+
+fn first_boolean_path(value: &Value) -> Option<String> {
+    first_boolean_path_inner(value, "$".to_string())
+}
+
+fn first_boolean_path_inner(value: &Value, path: String) -> Option<String> {
+    match value {
+        Value::Bool(_) => Some(path),
+        Value::Array(items) => items
+            .iter()
+            .enumerate()
+            .find_map(|(index, item)| first_boolean_path_inner(item, format!("{path}[{index}]"))),
+        Value::Object(object) => object
+            .iter()
+            .find_map(|(key, value)| first_boolean_path_inner(value, format!("{path}.{key}"))),
+        _ => None,
     }
 }
 
