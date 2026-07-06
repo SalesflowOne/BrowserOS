@@ -21,7 +21,7 @@
 import { constants } from 'node:fs'
 import { access, cp, rename, rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { PATHS } from '@browseros/shared/constants/paths'
 import { env } from '../env'
 
@@ -93,20 +93,43 @@ export async function migrateLegacyClawServerHome(
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code
     if (code !== 'EXDEV') {
-      throw new Error(
-        `Failed to migrate legacy claw-server home from ${from} to ${to}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      )
+      throw new Error(formatMigrationError(from, to, error))
     }
-    // If the process dies after cp but before rm, both homes remain.
-    // The next startup keeps the new BrowserClaw home and leaves the
+    const tempTo = join(
+      dirname(to),
+      `.browserclaw-migration-${process.pid}-${Date.now()}-${Math.random()
+        .toString(16)
+        .slice(2)}`,
+    )
+
+    try {
+      await cp(from, tempTo, {
+        recursive: true,
+        errorOnExist: true,
+        force: false,
+      })
+      await rename(tempTo, to)
+    } catch (copyError) {
+      await rm(tempTo, { recursive: true, force: true }).catch(() => {})
+      throw new Error(formatMigrationError(from, to, copyError))
+    }
+    // If the process dies after the final rename but before rm, both homes
+    // remain. The next startup keeps the new BrowserClaw home and leaves the
     // legacy copy untouched rather than deleting a possibly divergent source.
-    await cp(from, to, { recursive: true, errorOnExist: true, force: false })
     await rm(from, { recursive: true, force: false })
   }
 
   return { status: 'migrated', from, to }
+}
+
+function formatMigrationError(
+  from: string,
+  to: string,
+  error: unknown,
+): string {
+  return `Failed to migrate legacy claw-server home from ${from} to ${to}: ${
+    error instanceof Error ? error.message : String(error)
+  }`
 }
 
 async function pathExists(path: string): Promise<boolean> {

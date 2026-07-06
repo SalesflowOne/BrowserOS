@@ -6,7 +6,7 @@
  * Singleton accessor for `agent-mcp-manager`. Manifest lives at
  * `<browserclawDir>/mcp-manager` so the per-cockpit-
  * agent server entries stay isolated from the BrowserOS-wide entry
- * `apps/server` manages under `<browserclawDir>/mcp-manager`.
+ * `apps/server` manages under `<browserosDir>/mcp-manager`.
  *
  * The library writes config to the user's per-harness MCP file
  * (e.g. Claude Desktop's `~/Library/Application Support/Claude/
