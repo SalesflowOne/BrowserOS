@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import { toSlug } from '../../src/lib/slug'
 import { writeJson } from '../../src/lib/storage'
 import {
   type StoredAgentProfile,
@@ -12,10 +11,17 @@ import {
 } from '../../src/routes/agents/schemas'
 import { publicMcpUrl } from '../../src/shared/mcp-url'
 
+function slugForFixture(input: string): string {
+  return input
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+}
+
 export function makeStoredAgentProfile(
   overrides: Partial<StoredAgentProfile> = {},
 ): StoredAgentProfile {
-  const slug = overrides.slug ?? toSlug(overrides.name ?? 'Finance Ops')
+  const slug = overrides.slug ?? slugForFixture(overrides.name ?? 'Finance Ops')
   const id = overrides.id ?? slug
   return {
     id,
