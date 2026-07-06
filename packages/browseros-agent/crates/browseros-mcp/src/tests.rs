@@ -138,6 +138,19 @@ fn catalog_schemas_do_not_use_boolean_schema_nodes() {
 }
 
 #[test]
+fn catalog_schemas_are_inlined() {
+    for tool in catalog() {
+        let input_schema = Value::Object(tool.input_schema.as_ref().clone());
+        assert_no_schema_references(tool.name, "inputSchema", &input_schema);
+
+        if let Some(output_schema) = tool.output_schema {
+            let output_schema = Value::Object(output_schema.as_ref().clone());
+            assert_no_schema_references(tool.name, "outputSchema", &output_schema);
+        }
+    }
+}
+
+#[test]
 fn run_has_compat_output_schema() {
     let run = catalog()
         .into_iter()
@@ -273,6 +286,35 @@ fn collect_boolean_paths(value: &Value, path: String, paths: &mut Vec<String>) {
         Value::Object(object) => {
             for (key, value) in object {
                 collect_boolean_paths(value, format!("{path}.{key}"), paths);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn assert_no_schema_references(tool_name: &str, schema_kind: &str, schema: &Value) {
+    let mut paths = Vec::new();
+    collect_schema_reference_paths(schema, "$".to_string(), &mut paths);
+    assert!(
+        paths.is_empty(),
+        "{tool_name}.{schema_kind} has schema references at {}",
+        paths.join(", ")
+    );
+}
+
+fn collect_schema_reference_paths(value: &Value, path: String, paths: &mut Vec<String>) {
+    match value {
+        Value::Array(items) => {
+            for (index, item) in items.iter().enumerate() {
+                collect_schema_reference_paths(item, format!("{path}[{index}]"), paths);
+            }
+        }
+        Value::Object(object) => {
+            for (key, value) in object {
+                if key == "$ref" || key == "$defs" {
+                    paths.push(format!("{path}.{key}"));
+                }
+                collect_schema_reference_paths(value, format!("{path}.{key}"), paths);
             }
         }
         _ => {}

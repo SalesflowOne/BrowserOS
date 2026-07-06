@@ -4,7 +4,7 @@ use crate::{response::ToolResponse, tools};
 use browseros_core::{BrowserSession, CoreError, PageId, WindowId};
 use futures_util::future::BoxFuture;
 use rmcp::model::{CallToolResult, ContentBlock, JsonObject, Tool, ToolAnnotations};
-use schemars::JsonSchema;
+use schemars::{JsonSchema, generate::SchemaSettings};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use std::{collections::HashSet, path::PathBuf, sync::Arc};
@@ -226,29 +226,67 @@ where
     }
 }
 
+/// Builds the normalized JSON object schema used for MCP tool arguments.
 pub fn input_schema<T>() -> Arc<JsonObject>
 where
     T: JsonSchema + std::any::Any,
 {
-    let schema = rmcp::handler::server::tool::schema_for_input::<T>().unwrap_or_else(|err| {
-        panic!("invalid BrowserOS MCP input schema: {err}");
-    });
-    normalize_schema_object(schema)
+    schema_for_mcp_tool::<T>("inputSchema")
 }
 
+/// Builds the normalized JSON object schema used for MCP structured output.
 pub fn output_schema<T>() -> Arc<JsonObject>
 where
     T: JsonSchema + std::any::Any,
 {
-    let schema = rmcp::handler::server::tool::schema_for_output::<T>().unwrap_or_else(|err| {
-        panic!("invalid BrowserOS MCP output schema: {err}");
-    });
-    normalize_schema_object(schema)
+    schema_for_mcp_tool::<T>("outputSchema")
+}
+
+/// Pins schema generation before applying compatibility rewrites for strict MCP clients.
+fn schema_for_mcp_tool<T>(purpose: &str) -> Arc<JsonObject>
+where
+    T: JsonSchema + std::any::Any,
+{
+    let schema = browseros_schema_settings()
+        .into_generator()
+        .into_root_schema_for::<T>();
+    let Value::Object(mut object) = serde_json::to_value(schema).unwrap_or_else(|err| {
+        panic!("invalid BrowserOS MCP {purpose}: schema should serialize: {err}");
+    }) else {
+        panic!("invalid BrowserOS MCP {purpose}: schema root should be an object");
+    };
+
+    match object.get("type") {
+        Some(Value::String(schema_type)) if schema_type == "object" => {}
+        Some(Value::String(schema_type)) => {
+            panic!(
+                "invalid BrowserOS MCP {purpose}: root type should be object, got {schema_type}"
+            );
+        }
+        Some(schema_type) => {
+            panic!(
+                "invalid BrowserOS MCP {purpose}: root type should be a string, got {schema_type}"
+            );
+        }
+        None => {
+            panic!("invalid BrowserOS MCP {purpose}: root type is missing");
+        }
+    }
+
+    object.remove("title");
+    object.remove("description");
+    normalize_schema_object(object)
+}
+
+fn browseros_schema_settings() -> SchemaSettings {
+    SchemaSettings::draft2019_09().with(|settings| {
+        settings.inline_subschemas = true;
+    })
 }
 
 /// Rewrites generated JSON Schema into the object-only form expected by strict MCP clients.
-fn normalize_schema_object(schema: Arc<JsonObject>) -> Arc<JsonObject> {
-    let mut value = Value::Object(schema.as_ref().clone());
+fn normalize_schema_object(schema: JsonObject) -> Arc<JsonObject> {
+    let mut value = Value::Object(schema);
     normalize_schema_value(&mut value);
     match value {
         Value::Object(object) => Arc::new(object),
