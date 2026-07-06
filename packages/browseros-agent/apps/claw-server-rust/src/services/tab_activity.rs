@@ -1,6 +1,7 @@
 use browseros_core::TargetId;
 use serde::Serialize;
 use std::{
+    cmp::Reverse,
     collections::{HashMap, VecDeque},
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -156,7 +157,7 @@ impl TabActivityService {
                 },
             })
             .collect();
-        rows.sort_by(|a, b| b.last_tool_at.cmp(&a.last_tool_at));
+        rows.sort_by_key(|row| Reverse(row.last_tool_at));
         rows
     }
 }
