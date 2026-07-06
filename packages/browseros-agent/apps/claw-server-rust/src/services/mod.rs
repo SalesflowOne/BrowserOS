@@ -3,6 +3,7 @@ pub mod audit;
 pub mod browser;
 pub mod harness;
 pub mod replay;
+pub mod screencast;
 pub mod screenshots;
 pub mod site_rules;
 pub mod tab_activity;

@@ -56,8 +56,34 @@ impl BrowserService {
         self.session.read().await.clone()
     }
 
+    #[doc(hidden)]
+    pub async fn connect_once_for_testing(&self) -> Result<(), browseros_cdp::CdpError> {
+        let opts = self.connect_options();
+        let client = CdpClient::connect(opts).await?;
+        let browser = Browser::new(Arc::new(client.clone()));
+        *self.session.write().await = Some(browser.session());
+        self.state_tx.send_replace(BrowserConnectionState {
+            connected: true,
+            epoch: client.epoch(),
+            last_error: None,
+        });
+        Ok(())
+    }
+
     pub fn stop(&self) {
         self.cancel.cancel();
+    }
+
+    fn connect_options(&self) -> ConnectOptions {
+        ConnectOptions {
+            port: self.cdp_port,
+            connect_timeout: Duration::from_secs(2),
+            connect_max_retries: 1,
+            reconnect_policy: ReconnectPolicy::KeepTrying,
+            reconnect_delay: Duration::from_secs(1),
+            reconnect_max_retries: usize::MAX,
+            ..ConnectOptions::new(self.cdp_port)
+        }
     }
 
     async fn reattach_loop(self: Arc<Self>) {
@@ -66,22 +92,14 @@ impl BrowserService {
             if self.cancel.is_cancelled() {
                 return;
             }
-            let opts = ConnectOptions {
-                port: self.cdp_port,
-                connect_timeout: Duration::from_secs(2),
-                connect_max_retries: 1,
-                reconnect_policy: ReconnectPolicy::KeepTrying,
-                reconnect_delay: Duration::from_secs(1),
-                reconnect_max_retries: usize::MAX,
-                ..ConnectOptions::new(self.cdp_port)
-            };
+            let opts = self.connect_options();
             match CdpClient::connect(opts).await {
                 Ok(client) => {
                     let browser = Browser::new(Arc::new(client.clone()));
                     let session = browser.session();
                     *self.session.write().await = Some(session);
                     let epoch = client.epoch();
-                    let _ = self.state_tx.send(BrowserConnectionState {
+                    self.state_tx.send_replace(BrowserConnectionState {
                         connected: true,
                         epoch,
                         last_error: None,
@@ -92,9 +110,10 @@ impl BrowserService {
                     backoff = Duration::from_secs(1);
                 }
                 Err(err) => {
-                    let _ = self.state_tx.send(BrowserConnectionState {
+                    let epoch = self.state_tx.borrow().epoch;
+                    self.state_tx.send_replace(BrowserConnectionState {
                         connected: false,
-                        epoch: self.state_tx.borrow().epoch,
+                        epoch,
                         last_error: Some(err.to_string()),
                     });
                     warn!(error = %err, retry_ms = backoff.as_millis(), "CDP connect failed; retrying");
@@ -121,7 +140,7 @@ impl BrowserService {
                     let connected = client.is_connected();
                     let epoch = client.epoch();
                     if connected != last_connected || epoch != last_epoch {
-                        let _ = self.state_tx.send(BrowserConnectionState {
+                        self.state_tx.send_replace(BrowserConnectionState {
                             connected,
                             epoch,
                             last_error: if connected { None } else { Some("CDP disconnected; reconnecting".to_string()) },

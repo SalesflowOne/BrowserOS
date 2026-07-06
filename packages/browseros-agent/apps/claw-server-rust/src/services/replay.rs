@@ -65,7 +65,10 @@ impl ReplayService {
             .with_path(path.clone())?;
         let mut payload = lines.join("\n");
         payload.push('\n');
-        file.write_all(payload.as_bytes()).await.with_path(path)?;
+        file.write_all(payload.as_bytes())
+            .await
+            .with_path(path.clone())?;
+        file.flush().await.with_path(path)?;
         self.bump_lru(session_id).await;
         Ok(())
     }

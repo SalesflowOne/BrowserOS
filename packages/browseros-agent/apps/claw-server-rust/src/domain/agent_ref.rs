@@ -84,6 +84,14 @@ impl AgentRef {
             Self::Profile { label, .. } | Self::Ephemeral { label, .. } => label,
         }
     }
+
+    #[must_use]
+    pub fn profile_id(&self) -> Option<&ProfileId> {
+        match self {
+            Self::Profile { profile_id, .. } => Some(profile_id),
+            Self::Ephemeral { .. } => None,
+        }
+    }
 }
 
 #[must_use]

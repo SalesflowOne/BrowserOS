@@ -5,8 +5,9 @@ use crate::{
     routes,
     services::{
         agents::AgentService, audit::AuditService, browser::BrowserService,
-        harness::HarnessService, replay::ReplayService, screenshots::ScreenshotService,
-        site_rules::SiteRulesService, tab_activity::TabActivityService,
+        harness::HarnessService, replay::ReplayService, screencast::ScreencastService,
+        screenshots::ScreenshotService, site_rules::SiteRulesService,
+        tab_activity::TabActivityService,
     },
     storage::JsonStore,
 };
@@ -26,6 +27,7 @@ pub struct AppState {
     pub site_rules: Arc<SiteRulesService>,
     pub sessions: Arc<SessionRegistry>,
     pub browser: Arc<BrowserService>,
+    pub screencast: Arc<ScreencastService>,
     pub shutdown: Arc<Mutex<Option<oneshot::Sender<()>>>>,
 }
 
@@ -71,17 +73,19 @@ impl AppState {
             config.session_sweep_interval,
         );
         let browser = BrowserService::new(config.cdp_port);
+        let tab_activity = Arc::new(TabActivityService::default());
         Ok(Self {
             config,
             audit,
             replay,
             screenshots,
-            tab_activity: Arc::new(TabActivityService::default()),
+            tab_activity,
             harness,
             agents,
             site_rules,
             sessions,
             browser,
+            screencast: ScreencastService::new(50),
             shutdown: Arc::new(Mutex::new(shutdown_tx)),
         })
     }

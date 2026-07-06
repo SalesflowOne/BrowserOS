@@ -43,6 +43,15 @@ impl SessionRegistry {
         client: ClientInfo,
     ) -> AppResult<Arc<Session>> {
         let id = SessionId::new(Ulid::new().to_string());
+        self.mint_with_id(id, agent, client).await
+    }
+
+    pub async fn mint_with_id(
+        self: &Arc<Self>,
+        id: SessionId,
+        agent: AgentRef,
+        client: ClientInfo,
+    ) -> AppResult<Arc<Session>> {
         let session = Session::new(id.clone(), agent, Instant::now());
         self.audit
             .record_session_start(
@@ -90,11 +99,20 @@ impl SessionRegistry {
         let mut cancelled = 0;
         for session in sessions {
             if session.agent().agent_id().as_str() == agent_id {
-                session.cancel();
-                cancelled += 1;
+                cancelled += session.cancel_active_dispatches().await;
             }
         }
         cancelled
+    }
+
+    pub async fn owner_of_page(&self, page_id: &browseros_core::PageId) -> Option<SessionId> {
+        let sessions: Vec<Arc<Session>> = self.sessions.read().await.values().cloned().collect();
+        for session in sessions {
+            if session.owns_page(page_id).await {
+                return Some(session.id().clone());
+            }
+        }
+        None
     }
 
     pub async fn remove(

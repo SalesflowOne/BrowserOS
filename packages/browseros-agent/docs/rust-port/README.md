@@ -1,6 +1,9 @@
 # BrowserOS Rust port — architecture
 
-Status: design approved, build in progress (July 2026).
+Status: Rust port phases A-D landed (July 2026). The Rust stack now has the CDP/core
+crates, MCP tool crate, claw-server-rust scaffold, MCP dispatch pipeline, screencast
+poller, and end-to-end mock-CDP coverage. The TypeScript packages remain untouched and
+remain the production path until release packaging is switched over.
 
 We are porting the browser-automation stack to Rust as **new, parallel packages** — the
 TypeScript packages stay untouched and remain the production path until the Rust stack
@@ -87,16 +90,32 @@ is the template.
 
 ## Delivery phases
 
-1. **Phase A** — workspace scaffold + `browseros-cdp` + `browseros-core` (with ports of the
-   existing unit tests: refs, render, diff, observer, resolve, keyboard).
-2. **Phase B** (after A) — `browseros-mcp`: all 16 tools, behavior-compatible.
-3. **Phase C** (after A, parallel with B) — `claw-server-rust` scaffold: config, tracing,
-   domain model, storage, all non-MCP HTTP routes.
-4. **Phase D** (after B+C) — dispatch pipeline integration, screencast poller, bun script
-   wiring, end-to-end smoke against a running BrowserOS.
+1. **Phase A** — landed: workspace scaffold + `browseros-cdp` + `browseros-core` (with
+   ports of the existing unit tests: refs, render, diff, observer, resolve, keyboard).
+2. **Phase B** — landed: `browseros-mcp` exports all 16 tools and shared catalog execution.
+   The `run` tool remains an authorized stub; embedding `rquickjs` is a follow-up.
+3. **Phase C** — landed: `claw-server-rust` scaffold: config, tracing, domain model,
+   storage, all non-MCP HTTP routes, audit storage, and CDP reattach loop.
+4. **Phase D** — landed: MCP dispatch pipeline integration, per-session MCP HTTP endpoint,
+   guard/observer hooks, cancellation, screencast poller, session drain, and end-to-end
+   mock-CDP integration coverage.
 
 Each phase is dispatched as its own worktree/PR; `main` must build and pass
 `cargo test/clippy` after every merge.
+
+Phase D notes:
+
+- The claw server keeps one shared MCP catalog and builds a per-dispatch `ToolCtx`; it does
+  not re-register all tools per session.
+- The HTTP endpoint implements the streamable-HTTP JSON request/response surface directly
+  so claw-server-rust can own `mcp-session-id` minting, registry lifecycle, dispatch
+  tracing, and DELETE teardown. The tool execution path still goes through
+  `browseros-mcp::execute_tool`.
+- Stored-profile permissions are enforced by the Rust `PermissionGuard`: `Block` fails the
+  tool call, `Ask` currently fails closed with a message naming the requested verb, and
+  `Auto` passes. Interactive approval elicitation is intentionally deferred.
+- Session naming is best-effort and non-blocking. There is no interactive session naming
+  product flow in Phase D.
 
 ## Compatibility contracts (do not break)
 

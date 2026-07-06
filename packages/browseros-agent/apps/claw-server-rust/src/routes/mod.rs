@@ -2,6 +2,7 @@ use crate::{
     AppState,
     domain::SessionId,
     error::{AppError, AppResult},
+    mcp::endpoint::mcp_endpoint,
     services::{
         agents::{Harness, NewAgentValues},
         audit::{ListDispatchesQuery, ListTasksQuery, TaskStatus},
@@ -62,7 +63,7 @@ pub fn router() -> Router<AppState> {
         .route("/audit/replay/{session_id}", get(replay_get))
         .route("/audit/replay/{session_id}/exists", get(replay_exists))
         .route("/replay/tabs", get(replay_tabs))
-        .route("/mcp", any(mcp_stub))
+        .route("/mcp", any(mcp_endpoint))
         .route("/{*path}", options(preflight))
 }
 
@@ -112,6 +113,7 @@ async fn system_health(State(state): State<AppState>) -> Json<Value> {
 
 async fn system_shutdown(State(state): State<AppState>) -> AppResult<Json<Value>> {
     let drained = state.sessions.shutdown().await?;
+    state.screencast.stop();
     state.browser.stop();
     if let Some(tx) = state.shutdown.lock().await.take() {
         let _ = tx.send(());
@@ -243,23 +245,21 @@ async fn permissions_catalog() -> Json<Value> {
 async fn tabs_activity(State(state): State<AppState>) -> AppResult<Json<Value>> {
     let profiles = state.agents.list().await?;
     let tabs = state.tab_activity.snapshot().await;
-    let enriched: Vec<EnrichedTabRecord> = tabs
-        .into_iter()
-        .map(|record| {
-            let profile = profiles.iter().find(|profile| {
-                profile.id == record.agent_id || profile.mcp_url.contains(&record.slug)
-            });
-            EnrichedTabRecord {
-                agent_label: profile
-                    .map(|profile| profile.name.clone())
-                    .unwrap_or_else(|| record.slug.clone()),
-                harness: profile.map(|profile| profile.harness.to_string()),
-                color: None,
-                screencast: None,
-                record,
-            }
-        })
-        .collect();
+    let mut enriched = Vec::with_capacity(tabs.len());
+    for record in tabs {
+        let profile = profiles.iter().find(|profile| {
+            profile.id == record.agent_id || profile.mcp_url.contains(&record.slug)
+        });
+        enriched.push(EnrichedTabRecord {
+            agent_label: profile
+                .map(|profile| profile.name.clone())
+                .unwrap_or_else(|| record.slug.clone()),
+            harness: profile.map(|profile| profile.harness.to_string()),
+            color: None,
+            screencast: state.screencast.frame_for(record.page_id).await,
+            record,
+        });
+    }
     Ok(Json(json!({ "tabs": enriched })))
 }
 
@@ -459,13 +459,6 @@ async fn replay_exists(
 
 async fn replay_tabs() -> Json<Value> {
     Json(json!({ "tabs": [] }))
-}
-
-async fn mcp_stub() -> impl IntoResponse {
-    (
-        StatusCode::SERVICE_UNAVAILABLE,
-        Json(json!({ "error": "mcp endpoint lands in phase D" })),
-    )
 }
 
 fn json_body<T>(payload: Result<Json<T>, JsonRejection>) -> AppResult<Json<T>> {

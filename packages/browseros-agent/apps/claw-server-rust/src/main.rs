@@ -16,7 +16,12 @@ async fn main() -> anyhow::Result<()> {
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
     let state = AppState::new(config.clone(), Some(shutdown_tx)).await?;
     state.browser.start();
+    state
+        .screencast
+        .clone()
+        .start(state.browser.clone(), state.tab_activity.clone());
     state.sessions.clone().spawn_idle_sweeper();
+    spawn_signal_shutdown(state.clone());
     heal_boot_config(&state).await;
     serve(build_router(state), config, shutdown_rx).await
 }
@@ -62,7 +67,7 @@ async fn serve(
         Err(err) => return Err(err).context("failed to bind claw-server listener"),
     };
     info!(%addr, "claw-server-rust listening");
-    axum::serve(listener, app)
+    axum::serve(listener, app.into_make_service())
         .with_graceful_shutdown(async move {
             let _ = shutdown_rx.await;
         })
@@ -76,4 +81,42 @@ async fn heal_boot_config(state: &AppState) {
         Ok(_) => {}
         Err(err) => error!(error = %err, "Claude Code MCP transport heal failed"),
     }
+}
+
+fn spawn_signal_shutdown(state: AppState) {
+    tokio::spawn(async move {
+        wait_for_shutdown_signal().await;
+        match state.sessions.shutdown().await {
+            Ok(drained) => info!(drained, "drained sessions after shutdown signal"),
+            Err(err) => error!(error = %err, "session drain after shutdown signal failed"),
+        }
+        state.screencast.stop();
+        state.browser.stop();
+        if let Some(tx) = state.shutdown.lock().await.take() {
+            let _ = tx.send(());
+        }
+    });
+}
+
+#[cfg(unix)]
+async fn wait_for_shutdown_signal() {
+    use tokio::signal::unix::{SignalKind, signal};
+    let ctrl_c = tokio::signal::ctrl_c();
+    match signal(SignalKind::terminate()) {
+        Ok(mut terminate) => {
+            tokio::select! {
+                _ = ctrl_c => {}
+                _ = terminate.recv() => {}
+            }
+        }
+        Err(err) => {
+            error!(error = %err, "failed to install SIGTERM handler");
+            let _ = ctrl_c.await;
+        }
+    }
+}
+
+#[cfg(not(unix))]
+async fn wait_for_shutdown_signal() {
+    let _ = tokio::signal::ctrl_c().await;
 }

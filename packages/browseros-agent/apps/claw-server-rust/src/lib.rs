@@ -1,7 +1,9 @@
 pub mod app;
 pub mod config;
+pub mod dispatch;
 pub mod domain;
 pub mod error;
+pub mod mcp;
 pub mod routes;
 pub mod services;
 pub mod storage;

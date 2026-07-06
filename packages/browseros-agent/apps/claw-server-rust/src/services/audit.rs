@@ -59,6 +59,7 @@ pub struct RecordToolDispatchInput {
     pub title: Option<String>,
     pub raw_args: serde_json::Value,
     pub duration_ms: i64,
+    pub dispatch_id: DispatchId,
     pub result: DispatchResultSummary,
 }
 
@@ -193,7 +194,7 @@ impl AuditService {
         let tx = conn.transaction()?;
         let args_json = truncate(&safe_stringify(&input.raw_args));
         let result_meta = summarize_result(&input.result);
-        let dispatch_id = DispatchId::new().into_inner();
+        let dispatch_id = input.dispatch_id.into_inner();
         tx.execute(
             "INSERT INTO tool_dispatches
                 (agent_id, slug, agent_label, session_id, tool_name, page_id, target_id, url, title, args_json, result_meta, duration_ms, dispatch_id, has_screenshot)
@@ -816,6 +817,7 @@ mod tests {
             title: None,
             raw_args: json!({ "url": url }),
             duration_ms: 10,
+            dispatch_id: crate::domain::DispatchId::new(),
             result: DispatchResultSummary {
                 is_error,
                 structured_content: json!({ "page": 1 }),
