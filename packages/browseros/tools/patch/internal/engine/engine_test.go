@@ -738,38 +738,56 @@ features:
 func TestAnnotateSkipsManagedGeneratedOutputs(t *testing.T) {
 	ctx := context.Background()
 	workspacePath := initGitRepo(t)
-	for _, rel := range []string{
+	managedGenerated := []string{
 		"chrome/VERSION",
 		"chrome/BROWSEROS_VERSION",
 		"chrome/app/chromium_strings.grd",
 		"chrome/app/settings_chromium_strings.grdp",
 		"chrome/app/theme/chromium/BRANDING",
-		"chrome/app/theme/chromium/not_managed.txt",
-		"chrome/app/theme/chromium/product_logo_16.png",
 		"chrome/app/theme/chromium/chromeos/chrome_app_icon_32.png",
+		"chrome/app/theme/chromium/chromium.ai",
+		"chrome/app/theme/chromium/linux/product_logo_32.xpm",
+		"chrome/app/theme/chromium/mac/AppIcon.icns",
+		"chrome/app/theme/chromium/mac/Assets.car",
+		"chrome/app/theme/chromium/mac/Assets.xcassets/AppIcon.appiconset/appicon_1024.png",
+		"chrome/app/theme/chromium/mac/app.icns",
+		"chrome/app/theme/chromium/mac/document.icns",
+		"chrome/app/theme/chromium/product_logo.ai",
+		"chrome/app/theme/chromium/product_logo.png",
+		"chrome/app/theme/chromium/product_logo.svg",
+		"chrome/app/theme/chromium/product_logo_1024.png",
+		"chrome/app/theme/chromium/product_logo_16.png",
+		"chrome/app/theme/chromium/product_logo_192.png",
+		"chrome/app/theme/chromium/product_logo_22.png",
+		"chrome/app/theme/chromium/product_logo_22_mono.png",
+		"chrome/app/theme/chromium/product_logo_32.png",
+		"chrome/app/theme/chromium/product_logo_animation.svg",
+		"chrome/app/theme/chromium/product_logo_name_22.png",
+		"chrome/app/theme/chromium/product_logo_name_22_2x.png",
+		"chrome/app/theme/chromium/product_logo_name_22_white.png",
+		"chrome/app/theme/chromium/product_logo_name_22_white_2x.png",
+		"chrome/app/theme/chromium/win/tiles/Logo.png",
+		"chrome/app/theme/default_100_percent/chromium/product_logo_32.png",
+		"chrome/app/theme/default_200_percent/chromium/product_logo_name_22_white.png",
+		"chrome/browser/browseros/claw_server/resources/bin/browseros-claw-server",
+		"chrome/browser/browseros/onboarding/resources/index.html",
 		"chrome/browser/browseros/server/resources/bin/browseros_server",
+		"chrome/enterprise_companion/branding.gni",
 		"chrome/updater/branding.gni",
+	}
+	allFiles := append([]string{}, managedGenerated...)
+	allFiles = append(allFiles,
+		"chrome/app/theme/chromium/not_managed.txt",
 		"content/render.cc",
-	} {
+	)
+	for _, rel := range allFiles {
 		writeFile(t, filepath.Join(workspacePath, filepath.FromSlash(rel)), "base\n")
 	}
 	runGit(t, workspacePath, "add", ".")
 	runGit(t, workspacePath, "commit", "-m", "workspace base")
 	baseCommit := gitOutput(t, workspacePath, "rev-parse", "HEAD")
 
-	for _, rel := range []string{
-		"chrome/VERSION",
-		"chrome/BROWSEROS_VERSION",
-		"chrome/app/chromium_strings.grd",
-		"chrome/app/settings_chromium_strings.grdp",
-		"chrome/app/theme/chromium/BRANDING",
-		"chrome/app/theme/chromium/not_managed.txt",
-		"chrome/app/theme/chromium/product_logo_16.png",
-		"chrome/app/theme/chromium/chromeos/chrome_app_icon_32.png",
-		"chrome/browser/browseros/server/resources/bin/browseros_server",
-		"chrome/updater/branding.gni",
-		"content/render.cc",
-	} {
+	for _, rel := range allFiles {
 		writeFile(t, filepath.Join(workspacePath, filepath.FromSlash(rel)), "changed\n")
 	}
 
@@ -782,8 +800,27 @@ features:
       - chrome/browser/core.cc
 `)
 	writeFile(t, filepath.Join(repoInfo.Root, "chromium_files", "products", "browseros", "chrome", "app", "theme", "chromium", "BRANDING.debug"), "overlay\n")
+	writeFile(t, filepath.Join(repoInfo.Root, "chromium_files", "products", "browseros", "chrome", "enterprise_companion", "branding.gni"), "overlay\n")
 	writeFile(t, filepath.Join(repoInfo.Root, "chromium_files", "products", "browseros", "chrome", "updater", "branding.gni"), "overlay\n")
-	writeFile(t, filepath.Join(repoInfo.Root, "resources", "browseros", "icons", "product_logo_16.png"), "icon\n")
+	for _, rel := range []string{
+		"resources/browseros/icons/chromium.ai",
+		"resources/browseros/icons/product_logo.ai",
+		"resources/browseros/icons/product_logo.png",
+		"resources/browseros/icons/product_logo.svg",
+		"resources/browseros/icons/product_logo_1024.png",
+		"resources/browseros/icons/product_logo_16.png",
+		"resources/browseros/icons/product_logo_192.png",
+		"resources/browseros/icons/product_logo_22.png",
+		"resources/browseros/icons/product_logo_22_mono.png",
+		"resources/browseros/icons/product_logo_32.png",
+		"resources/browseros/icons/product_logo_animation.svg",
+		"resources/browseros/icons/product_logo_name_22.png",
+		"resources/browseros/icons/product_logo_name_22_2x.png",
+		"resources/browseros/icons/product_logo_name_22_white.png",
+		"resources/browseros/icons/product_logo_name_22_white_2x.png",
+	} {
+		writeFile(t, filepath.Join(repoInfo.Root, filepath.FromSlash(rel)), "icon\n")
+	}
 	writeFile(t, filepath.Join(repoInfo.Root, "bos_build", "config", "copy_resources.yaml"), `copy_operations:
   - name: Version
     source: resources/BROWSEROS_VERSION
@@ -793,13 +830,49 @@ features:
     source: resources/browseros/icons/*.png
     destination: chrome/app/theme/chromium/
     type: files
+  - name: Product root AI
+    source: resources/browseros/icons/*.ai
+    destination: chrome/app/theme/chromium/
+    type: files
+  - name: Product root SVG
+    source: resources/browseros/icons/*.svg
+    destination: chrome/app/theme/chromium/
+    type: files
   - name: ChromeOS icons
     source: resources/browseros/icons/chromeos
     destination: chrome/app/theme/chromium/chromeos
     type: directory
+  - name: Linux icons
+    source: resources/browseros/icons/linux
+    destination: chrome/app/theme/chromium/linux
+    type: directory
+  - name: Mac icons
+    source: resources/browseros/icons/mac
+    destination: chrome/app/theme/chromium/mac
+    type: directory
+  - name: Windows icons
+    source: resources/browseros/icons/win
+    destination: chrome/app/theme/chromium/win
+    type: directory
+  - name: DPI 100 icons
+    source: resources/browseros/icons/default_100_percent
+    destination: chrome/app/theme/default_100_percent/chromium
+    type: directory
+  - name: DPI 200 icons
+    source: resources/browseros/icons/default_200_percent
+    destination: chrome/app/theme/default_200_percent/chromium
+    type: directory
   - name: Server resources
     source: resources/binaries/browseros_server/darwin-arm64/resources
     destination: chrome/browser/browseros/server/resources
+    type: directory
+  - name: Claw server resources
+    source: resources/binaries/browseros_claw_server/darwin-arm64/resources
+    destination: chrome/browser/browseros/claw_server/resources
+    type: directory
+  - name: Claw onboarding resources
+    source: resources/binaries/browseros_claw_onboard/resources
+    destination: chrome/browser/browseros/onboarding/resources
     type: directory
 `)
 	writeFile(t, filepath.Join(repoInfo.Root, "bos_build", "steps", "resources", "string_replaces.py"), `target_files = [
