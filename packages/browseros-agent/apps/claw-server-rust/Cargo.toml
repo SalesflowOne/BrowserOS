@@ -24,6 +24,7 @@ base64.workspace = true
 clap.workspace = true
 futures-util.workspace = true
 rusqlite.workspace = true
+rusqlite_migration.workspace = true
 rmcp.workspace = true
 serde.workspace = true
 serde_json.workspace = true
