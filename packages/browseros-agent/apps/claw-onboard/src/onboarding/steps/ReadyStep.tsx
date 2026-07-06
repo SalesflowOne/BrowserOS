@@ -17,8 +17,8 @@ export function ReadyStep({ onDone }: ReadyStepProps) {
         You&rsquo;re <Em>set</Em>.
       </DisplayHeading>
       <StepCopy>
-        Open Claude and try one of these. The task runs here, in BrowserOS. You
-        watch, approve, and audit.
+        Open Claude and try one of these. The task runs here, in BrowserClaw.
+        You watch, approve, and audit.
       </StepCopy>
       <div className="mb-6 flex flex-col gap-2.5">
         {STARTER_PROMPTS.slice(0, 2).map((prompt) => (
@@ -27,7 +27,7 @@ export function ReadyStep({ onDone }: ReadyStepProps) {
       </div>
       <Button type="button" size="lg" onClick={onDone}>
         <Sparkles className="size-4" />
-        Open BrowserOS
+        Open BrowserClaw
       </Button>
     </StepWrap>
   )

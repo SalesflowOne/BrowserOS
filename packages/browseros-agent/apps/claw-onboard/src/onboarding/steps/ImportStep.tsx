@@ -115,7 +115,7 @@ export function ImportStep({
         Import your <Em>logins</Em>.
       </DisplayHeading>
       <StepCopy>
-        BrowserOS copies your saved Chrome sessions so the agent never has to
+        BrowserClaw copies your saved Chrome sessions so the agent never has to
         log in again. Sessions stay in a local vault on this Mac.
       </StepCopy>
 
@@ -220,7 +220,7 @@ export function ImportStep({
             </div>
             <div className="text-[12.5px] text-ink-2">
               {state.error?.message ??
-                'BrowserOS could not finish importing this profile.'}
+                'BrowserClaw could not finish importing this profile.'}
             </div>
           </div>
           <div className="flex flex-wrap gap-2.5">

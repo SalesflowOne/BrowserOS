@@ -34,4 +34,6 @@ BROWSERCLAW_SERVER_BUNDLE = ServerBundle(
     },
     windows_binaries=("browseros-claw-server.exe",),
     required_in_chromium_output=False,
+    unsigned_artifact_prefix="claw-server/prod-resources",
+    unsigned_artifact_base_name="browseros-claw-server-resources",
 )

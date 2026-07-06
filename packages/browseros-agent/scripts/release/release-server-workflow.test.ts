@@ -8,6 +8,9 @@ const workflow = readFileSync(
   'utf8',
 )
 const shellVersionPlaceholder = '$' + '{VERSION}'
+const shellTargetPlaceholder = '$' + '{target}'
+const shellAssetsPlaceholder = '$' + '{assets[@]}'
+const publishOtaIf = '$' + '{{ inputs.publish_ota == true }}'
 const expectedBumpBranch = `chore-bump-server-v${shellVersionPlaceholder}`
 
 function reflectVersionStep(): string {
@@ -17,6 +20,13 @@ function reflectVersionStep(): string {
 }
 
 describe('release-server workflow', () => {
+  it('exposes workflow_call ref and publish_ota inputs', () => {
+    expect(workflow).toContain('workflow_call:')
+    expect(workflow).toContain('ref:')
+    expect(workflow).toContain('publish_ota:')
+    expect(workflow).toContain('default: false')
+  })
+
   it('uses a flat branch for post-release version bump PRs', () => {
     const step = reflectVersionStep()
     const branch = step.match(/^\s*BRANCH="([^"]+)"$/m)?.[1]
@@ -41,5 +51,29 @@ describe('release-server workflow', () => {
       'Branch $BRANCH already exists without an open bump PR; creating it.',
     )
     expect(step).toContain('create_reflection_pr')
+  })
+
+  it('publishes all server resource zips to the consumer R2 prefix', () => {
+    expect(workflow).toContain(
+      'bun scripts/build/server.ts --target=all --upload',
+    )
+    expect(workflow).toContain('R2_UPLOAD_PREFIX: artifacts/server')
+    expect(workflow).toContain(': > apps/server/.env.production')
+    expect(workflow).toContain(
+      'targets=(darwin-arm64 darwin-x64 linux-arm64 linux-x64 windows-x64)',
+    )
+    expect(workflow).toContain(
+      `artifacts/server/latest/browseros-server-resources-${shellTargetPlaceholder}.zip`,
+    )
+  })
+
+  it('attaches built zips to the GitHub release and keeps OTA opt-in', () => {
+    expect(workflow).toContain(
+      `gh release upload "$RELEASE_TAG" "${shellAssetsPlaceholder}" --clobber`,
+    )
+    expect(workflow).toContain(`if: ${publishOtaIf}`)
+    expect(workflow).toContain(
+      'uv run browseros ota server release --version "$VERSION" --channel alpha --product browseros',
+    )
   })
 })

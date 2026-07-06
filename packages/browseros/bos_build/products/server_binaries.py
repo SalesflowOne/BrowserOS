@@ -36,6 +36,13 @@ class ServerBundle:
     macos_binaries: Dict[str, SignSpec]
     windows_binaries: Tuple[str, ...]
     required_in_chromium_output: bool = True
+    unsigned_artifact_prefix: str = "artifacts/server"
+    unsigned_artifact_base_name: Optional[str] = None
+
+    def unsigned_artifact_key(self, target: str) -> str:
+        """R2 source key of the unsigned resource zip consumed by OTA."""
+        base_name = self.unsigned_artifact_base_name or f"{self.id}-resources"
+        return f"{self.unsigned_artifact_prefix}/latest/{base_name}-{target}.zip"
 
 
 def all_server_bundles() -> Tuple[ServerBundle, ...]:

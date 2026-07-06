@@ -13,8 +13,8 @@ function render(): string {
 }
 
 describe('ReadyStep', () => {
-  it('renders the Open BrowserOS CTA', () => {
-    expect(render()).toContain('Open BrowserOS')
+  it('renders the Open BrowserClaw CTA', () => {
+    expect(render()).toContain('Open BrowserClaw')
   })
 
   it('renders the first two starter prompts from the fixture', () => {

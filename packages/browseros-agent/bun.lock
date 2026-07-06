@@ -179,7 +179,7 @@
     },
     "apps/claw-onboard": {
       "name": "@browseros/claw-onboard",
-      "version": "0.0.1",
+      "version": "0.0.5",
       "dependencies": {
         "@base-ui/react": "^1.5.0",
         "@browseros/claw-server": "workspace:*",
@@ -207,7 +207,7 @@
     },
     "apps/claw-server": {
       "name": "@browseros/claw-server",
-      "version": "0.0.3",
+      "version": "0.0.5",
       "dependencies": {
         "@browseros/browser-core": "workspace:*",
         "@browseros/browser-mcp": "workspace:*",
@@ -248,7 +248,7 @@
     },
     "apps/server": {
       "name": "@browseros/server",
-      "version": "0.0.124",
+      "version": "0.0.125",
       "bin": {
         "browseros-server": "./src/index.ts",
       },
@@ -341,6 +341,7 @@
       "name": "@browseros/shared",
       "version": "0.0.1",
       "dependencies": {
+        "jsonc-parser": "^3.3.1",
         "zod": "^3.25.76",
       },
     },
