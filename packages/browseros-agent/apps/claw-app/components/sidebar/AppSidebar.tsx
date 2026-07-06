@@ -1,15 +1,13 @@
 import { cn } from '@/lib/utils'
 import { SidebarBranding } from './SidebarBranding'
+import { SidebarHelp } from './SidebarHelp'
 import { SidebarNavigation } from './SidebarNavigation'
 
 export interface AppSidebarProps {
   expanded?: boolean
 }
 
-/**
- * Wraps the branding + navigation. Room for a footer strip lands in a
- * follow-up when there is a real setting to surface.
- */
+/** Sidebar shell: branding, primary navigation, and a bottom help footer. */
 export function AppSidebar({ expanded = false }: AppSidebarProps) {
   return (
     <div
@@ -20,6 +18,7 @@ export function AppSidebar({ expanded = false }: AppSidebarProps) {
     >
       <SidebarBranding expanded={expanded} />
       <SidebarNavigation expanded={expanded} />
+      <SidebarHelp expanded={expanded} />
     </div>
   )
 }
