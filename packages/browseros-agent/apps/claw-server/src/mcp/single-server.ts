@@ -3,14 +3,14 @@
  * Copyright 2025 BrowserOS
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * v2 single MCP endpoint. Every agent connects to the same public
- * URL (`POST /mcp`); the SDK's stateful Streamable HTTP
- * transport supports one session per transport instance, so we keep
- * a `sessionId -> { server, transport }` map and route each request
- * to its session's transport. Identity is captured on the client's
- * InitializedNotification (by then both `transport.sessionId` and
- * the server's stored `clientInfo` are set) and dropped when the
- * session ends. Tool dispatch reads identity back via
+ * Single MCP endpoint. Every agent connects to the same public URL
+ * (`POST /mcp`); the SDK's stateful Streamable HTTP transport
+ * supports one session per transport instance, so we keep a
+ * `sessionId -> { server, transport }` map and route each request to
+ * its session's transport. Identity is captured on the client's
+ * InitializedNotification (by then both `transport.sessionId` and the
+ * server's stored `clientInfo` are set) and dropped when the session
+ * ends. Tool dispatch reads identity back via
  * `extra.sessionId`, the same id the transport stamps onto the
  * session at handshake.
  */

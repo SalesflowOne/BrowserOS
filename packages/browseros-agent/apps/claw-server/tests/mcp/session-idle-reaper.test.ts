@@ -3,7 +3,7 @@
  * Copyright 2025 BrowserOS
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * Pins the idle-reaper behaviour for the v2 MCP single endpoint.
+ * Pins the idle-reaper behaviour for the single MCP endpoint.
  * Pre-fix, sessions stayed in the in-memory map forever unless the
  * client sent an explicit `DELETE /mcp`; codex and most other
  * clients do not, so `agent_session_ends` never got a row and the

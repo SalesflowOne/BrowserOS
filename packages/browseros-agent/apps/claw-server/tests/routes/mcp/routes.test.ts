@@ -3,7 +3,7 @@
  * Copyright 2025 BrowserOS
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * Walks the v2 single-MCP endpoint with the real SDK Client. Confirms
+ * Walks the single MCP endpoint with the real SDK Client. Confirms
  * that the shared transport assigns a session id, captures the
  * connecting agent's `clientInfo` into the identity service, and
  * exposes the browser-tool catalogue. No browser session is bound, so
@@ -145,7 +145,6 @@ describe('POST /mcp (single endpoint)', () => {
     const body = (await res.json()) as { error?: string; hint?: string }
     expect(body.error).toBe('unknown mcp-session-id')
     expect(body.hint).toContain('initialize')
-    // No leak: nothing was added to the identity map.
     expect(identityService.size()).toBe(0)
   })
 
