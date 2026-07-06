@@ -145,6 +145,10 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* Dark wash, kept as a non-runtime fallback. The onboarding flow is
+   light-only — nothing applies `.dark` at runtime — but the block is kept so
+   any downstream tool or embedding scope that opts into `.dark` still gets a
+   coherent palette, mirroring claw-app. */
 .dark body {
   background:
     radial-gradient(
@@ -221,7 +225,10 @@ body {
   --blue: #0e7490;
 }
 
-/* Dark theme values; the ink scale inverts, tints go from pale washes to deep washes. */
+/* Dark theme values, not applied at runtime. The onboarding flow is light-only
+   (OS-theme mirroring was removed); the block is kept as the canonical palette
+   reference for any downstream tool or embedding scope that opts in via `.dark`,
+   mirroring claw-app. The ink scale inverts and tints go from pale to deep. */
 .dark {
   color-scheme: dark;
   --background: #0b0f17;
