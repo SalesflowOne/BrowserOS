@@ -38,7 +38,7 @@ const customAclRuleSchema = z.object({
   domain: z.string().min(1),
 })
 
-const agentProfileDetailSchema = z.object({
+const storedAgentProfileBaseSchema = z.object({
   name: z.string().trim().min(1),
   harness: harnessEnum,
   loginMode: loginModeEnum,
@@ -47,9 +47,8 @@ const agentProfileDetailSchema = z.object({
   aclRuleIds: z.array(z.string()),
   customAclRules: z.array(customAclRuleSchema),
 })
-export type AgentProfileDetail = z.infer<typeof agentProfileDetailSchema>
 
-export const storedAgentProfileSchema = agentProfileDetailSchema.extend({
+export const storedAgentProfileSchema = storedAgentProfileBaseSchema.extend({
   id: z.string(),
   slug: z.string(),
   mcpUrl: z.string(),

@@ -1,7 +1,7 @@
 use crate::{
     app::AppState,
     dispatch::{
-        guards::{BrowserConnectedGuard, NavigateSchemeGuard, PageOwnershipGuard, PermissionGuard},
+        guards::{BrowserConnectedGuard, NavigateSchemeGuard, PageOwnershipGuard},
         observers::{ObserverRunner, apply_post_execution_hooks},
     },
     domain::{DispatchId, Session},
@@ -45,7 +45,6 @@ pub struct DispatchTiming {
 
 #[derive(Debug, Clone, Copy)]
 pub struct ToolHooks {
-    pub permission_verb: &'static str,
     pub accepts_page_arg: bool,
     pub filter_tabs_list: bool,
     pub capture_new_page: bool,
@@ -55,89 +54,72 @@ pub struct ToolHooks {
 #[derive(Debug, Clone, Copy)]
 struct HookSpec {
     name: &'static str,
-    permission_verb: &'static str,
     accepts_page_arg: bool,
 }
 
 const HOOKS: &[HookSpec] = &[
     HookSpec {
         name: "tabs",
-        permission_verb: "navigate",
         accepts_page_arg: true,
     },
     HookSpec {
         name: "tab_groups",
-        permission_verb: "navigate",
         accepts_page_arg: false,
     },
     HookSpec {
         name: "navigate",
-        permission_verb: "navigate",
         accepts_page_arg: true,
     },
     HookSpec {
         name: "snapshot",
-        permission_verb: "input",
         accepts_page_arg: true,
     },
     HookSpec {
         name: "diff",
-        permission_verb: "input",
         accepts_page_arg: true,
     },
     HookSpec {
         name: "act",
-        permission_verb: "input",
         accepts_page_arg: true,
     },
     HookSpec {
         name: "download",
-        permission_verb: "input",
         accepts_page_arg: true,
     },
     HookSpec {
         name: "upload",
-        permission_verb: "upload",
         accepts_page_arg: true,
     },
     HookSpec {
         name: "read",
-        permission_verb: "input",
         accepts_page_arg: true,
     },
     HookSpec {
         name: "grep",
-        permission_verb: "input",
         accepts_page_arg: true,
     },
     HookSpec {
         name: "screenshot",
-        permission_verb: "input",
         accepts_page_arg: true,
     },
     HookSpec {
         name: "pdf",
-        permission_verb: "input",
         accepts_page_arg: true,
     },
     HookSpec {
         name: "wait",
-        permission_verb: "input",
         accepts_page_arg: true,
     },
     HookSpec {
         name: "windows",
-        permission_verb: "navigate",
         accepts_page_arg: false,
     },
     HookSpec {
         name: "evaluate",
-        permission_verb: "input",
         accepts_page_arg: true,
     },
     HookSpec {
         name: "run",
-        permission_verb: "input",
         accepts_page_arg: false,
     },
 ];
@@ -151,13 +133,11 @@ impl ToolHooks {
             .copied()
             .unwrap_or(HookSpec {
                 name: "",
-                permission_verb: "input",
                 accepts_page_arg: false,
             });
         let (filter_tabs_list, capture_new_page, close_page) =
             tabs_action_flags(name, &Value::Null);
         Self {
-            permission_verb: spec.permission_verb,
             accepts_page_arg: spec.accepts_page_arg,
             filter_tabs_list,
             capture_new_page,
@@ -239,9 +219,6 @@ impl DispatchPipeline {
             return result;
         }
         if let Some(result) = PageOwnershipGuard::check(&self.state, ctx).await {
-            return result;
-        }
-        if let Some(result) = PermissionGuard::check(&self.state, ctx, &ctx.hooks).await {
             return result;
         }
         let Some(browser_session) = &ctx.browser_session else {
