@@ -431,13 +431,13 @@ mod tests {
 
     #[tokio::test]
     async fn settle_respects_budget_cap() -> Result<(), CoreError> {
-        let (session, page_id) = harness(VecDeque::new(), VecDeque::new()).await?;
-        let budget = Duration::from_millis(80);
+        let (session, page_id) = harness(VecDeque::from([1, 2, 3]), VecDeque::new()).await?;
+        let budget = Duration::from_millis(320);
         let start = Instant::now();
         let outcome = wait_for_action_settle(&session.pages, page_id, budget).await;
         assert_eq!(outcome, SettleOutcome::BudgetExpired);
         assert!(start.elapsed() >= budget);
-        assert!(start.elapsed() < Duration::from_millis(250));
+        assert!(start.elapsed() < Duration::from_millis(500));
         Ok(())
     }
 
