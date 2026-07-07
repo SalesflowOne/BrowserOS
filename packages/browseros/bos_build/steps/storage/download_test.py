@@ -215,6 +215,11 @@ class DownloadResourceConfigTest(unittest.TestCase):
                         "claw-server/prod-resources/latest/browseros-claw-server-resources-darwin-arm64.zip",
                         "resources/binaries/browseros_claw_server/darwin-arm64",
                     ),
+                    (
+                        "BrowserOS Claw Rust Server Resources - macOS ARM64",
+                        "claw-server-rust/prod-resources/latest/browseros-claw-server-rust-resources-darwin-arm64.zip",
+                        "resources/binaries/browseros_claw_server_rust/darwin-arm64",
+                    ),
                 ],
             ),
             (
@@ -230,6 +235,11 @@ class DownloadResourceConfigTest(unittest.TestCase):
                         "BrowserOS Claw Server Resources - macOS x64",
                         "claw-server/prod-resources/latest/browseros-claw-server-resources-darwin-x64.zip",
                         "resources/binaries/browseros_claw_server/darwin-x64",
+                    ),
+                    (
+                        "BrowserOS Claw Rust Server Resources - macOS x64",
+                        "claw-server-rust/prod-resources/latest/browseros-claw-server-rust-resources-darwin-x64.zip",
+                        "resources/binaries/browseros_claw_server_rust/darwin-x64",
                     ),
                 ],
             ),
@@ -247,6 +257,11 @@ class DownloadResourceConfigTest(unittest.TestCase):
                         "claw-server/prod-resources/latest/browseros-claw-server-resources-linux-arm64.zip",
                         "resources/binaries/browseros_claw_server/linux-arm64",
                     ),
+                    (
+                        "BrowserOS Claw Rust Server Resources - Linux ARM64",
+                        "claw-server-rust/prod-resources/latest/browseros-claw-server-rust-resources-linux-arm64.zip",
+                        "resources/binaries/browseros_claw_server_rust/linux-arm64",
+                    ),
                 ],
             ),
             (
@@ -263,6 +278,11 @@ class DownloadResourceConfigTest(unittest.TestCase):
                         "claw-server/prod-resources/latest/browseros-claw-server-resources-linux-x64.zip",
                         "resources/binaries/browseros_claw_server/linux-x64",
                     ),
+                    (
+                        "BrowserOS Claw Rust Server Resources - Linux x64",
+                        "claw-server-rust/prod-resources/latest/browseros-claw-server-rust-resources-linux-x64.zip",
+                        "resources/binaries/browseros_claw_server_rust/linux-x64",
+                    ),
                 ],
             ),
             (
@@ -278,6 +298,11 @@ class DownloadResourceConfigTest(unittest.TestCase):
                         "BrowserOS Claw Server Resources - Windows x64",
                         "claw-server/prod-resources/latest/browseros-claw-server-resources-windows-x64.zip",
                         "resources/binaries/browseros_claw_server/windows-x64",
+                    ),
+                    (
+                        "BrowserOS Claw Rust Server Resources - Windows x64",
+                        "claw-server-rust/prod-resources/latest/browseros-claw-server-rust-resources-windows-x64.zip",
+                        "resources/binaries/browseros_claw_server_rust/windows-x64",
                     ),
                 ],
             ),
@@ -305,6 +330,8 @@ class DownloadResourceConfigTest(unittest.TestCase):
                 "BrowserOS Server Resources - macOS x64",
                 "BrowserOS Claw Server Resources - macOS ARM64",
                 "BrowserOS Claw Server Resources - macOS x64",
+                "BrowserOS Claw Rust Server Resources - macOS ARM64",
+                "BrowserOS Claw Rust Server Resources - macOS x64",
                 "BrowserOS Claw Onboarding Resources",
             ],
             [op["name"] for op in filtered],
@@ -364,7 +391,12 @@ class DownloadResourceConfigTest(unittest.TestCase):
                     "BrowserOS Claw Server Resources - macOS ARM64",
                     "claw-server/prod-resources/latest/browseros-claw-server-resources-darwin-arm64.zip",
                     "resources/binaries/browseros_claw_server/darwin-arm64",
-                )
+                ),
+                (
+                    "BrowserOS Claw Rust Server Resources - macOS ARM64",
+                    "claw-server-rust/prod-resources/latest/browseros-claw-server-rust-resources-darwin-arm64.zip",
+                    "resources/binaries/browseros_claw_server_rust/darwin-arm64",
+                ),
             ],
             [
                 (op["name"], op["r2_key"], op["destination"])
