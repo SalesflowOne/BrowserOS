@@ -4,7 +4,8 @@ use crate::{
     pages::PageManager,
     snapshot::{
         AxNode, DiffOptions, DocumentId, RefEntry, RefMap, RenderOptions, SnapshotDiff,
-        SnapshotObservation, diff_snapshot_observations, render_snapshot,
+        SnapshotObservation, SnapshotOptions, apply_snapshot_options, diff_snapshot_observations,
+        render_snapshot,
     },
 };
 use futures_util::future::BoxFuture;
@@ -78,10 +79,18 @@ impl Observer {
     }
 
     pub async fn snapshot(&self) -> Result<SnapshotResult, CoreError> {
+        self.snapshot_with_options(SnapshotOptions::default()).await
+    }
+
+    pub async fn snapshot_with_options(
+        &self,
+        options: SnapshotOptions,
+    ) -> Result<SnapshotResult, CoreError> {
         let result = self.capture().await?;
+        let text = apply_snapshot_options(&result.text, options);
         self.commit(result.clone()).await;
         Ok(SnapshotResult {
-            text: result.text,
+            text,
             refs: result.refs,
             url: result.url,
         })
@@ -668,7 +677,7 @@ mod tests {
     use crate::{
         BrowserSession, BrowserSessionHooks, CoreError, ProtocolSession,
         connection::CdpConnection,
-        snapshot::{AxNode, AxValue, refs::MintRef},
+        snapshot::{AxNode, AxValue, SnapshotMode, SnapshotOptions, refs::MintRef},
     };
     use browseros_cdp::{CdpError, CdpEvent};
     use futures_util::future::BoxFuture;
@@ -751,6 +760,17 @@ mod tests {
             role: Some(AxValue::role("button")),
             name: Some(AxValue::string(name)),
             backend_dom_node_id: Some(backend_id),
+            ..AxNode::default()
+        }
+    }
+
+    fn ax_named(node_id: &str, role: &str, name: &str, children: &[&str]) -> AxNode {
+        AxNode {
+            node_id: node_id.to_string(),
+            role: Some(AxValue::role(role)),
+            name: (!name.is_empty()).then(|| AxValue::string(name)),
+            child_ids: (!children.is_empty())
+                .then(|| children.iter().map(|child| (*child).to_string()).collect()),
             ..AxNode::default()
         }
     }
@@ -1119,6 +1139,42 @@ mod tests {
             ]
             .join("\n")
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn observer_interactive_snapshot_commits_full_baseline_for_diff() -> Result<(), CoreError>
+    {
+        let state = harness_state(vec![
+            root_with(&["2"]),
+            ax_named("2", "main", "", &["3", "4"]),
+            ax_named("3", "paragraph", "Intro", &[]),
+            ax_button("4", "Save", 1),
+        ]);
+        let (connection, observer) = observer_harness(state).await?;
+        let snapshot = observer
+            .snapshot_with_options(SnapshotOptions {
+                mode: SnapshotMode::Interactive,
+                depth: None,
+            })
+            .await?;
+        assert_eq!(snapshot.text, "- main\n  - button \"Save\" [ref=e1]");
+
+        if let Ok(mut state) = connection.state.lock() {
+            state.nodes = vec![
+                root_with(&["2"]),
+                ax_named("2", "main", "", &["3", "4", "5"]),
+                ax_named("3", "paragraph", "Intro", &[]),
+                ax_button("4", "Save", 1),
+                ax_button("5", "Cancel", 2),
+            ];
+        }
+
+        let diff = observer.diff().await?;
+        assert_eq!(diff.added, 1);
+        assert_eq!(diff.removed, 0);
+        assert!(diff.text.contains("+   button \"Cancel\" [ref=e2]"));
+        assert!(!diff.text.contains("+   paragraph \"Intro\""));
         Ok(())
     }
 }

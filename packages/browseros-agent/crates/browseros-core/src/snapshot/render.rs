@@ -24,6 +24,19 @@ pub struct RenderResult {
     pub iframes: Vec<IframeStitch>,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum SnapshotMode {
+    #[default]
+    Full,
+    Interactive,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SnapshotOptions {
+    pub mode: SnapshotMode,
+    pub depth: Option<usize>,
+}
+
 pub struct RenderOptions<'a> {
     pub refs: &'a mut RefMap,
     pub frame_id: Option<FrameId>,
@@ -51,6 +64,19 @@ pub fn render_snapshot<'a>(nodes: &'a [AxNode], opts: &mut RenderOptions<'a>) ->
     RenderResult {
         text: ctx.lines.join("\n"),
         iframes: ctx.iframes,
+    }
+}
+
+#[must_use]
+pub fn apply_snapshot_options(text: &str, options: SnapshotOptions) -> String {
+    let text = match options.mode {
+        SnapshotMode::Full => text.to_string(),
+        SnapshotMode::Interactive => filter_interactive_lines(text),
+    };
+    if let Some(max_depth) = options.depth {
+        filter_depth_lines(&text, max_depth)
+    } else {
+        text
     }
 }
 
@@ -147,6 +173,77 @@ fn is_dropped(role: Option<&str>, name: &str, is_cursor_hit: bool) -> bool {
         return true;
     }
     (role == "generic" || role == "group") && name.is_empty() && !is_cursor_hit
+}
+
+fn filter_interactive_lines(text: &str) -> String {
+    let lines = split_rendered_lines(text);
+    if lines.is_empty() {
+        return String::new();
+    }
+
+    let mut keep = vec![false; lines.len()];
+    let mut ancestors = Vec::<usize>::new();
+    for (index, line) in lines.iter().enumerate() {
+        let depth = rendered_depth(line);
+        if ancestors.len() > depth {
+            ancestors.truncate(depth);
+        }
+
+        if index == 0 || has_ref(line) || rendered_role(line) == Some("heading") {
+            keep[index] = true;
+            for ancestor in &ancestors {
+                keep[*ancestor] = true;
+            }
+        }
+
+        if ancestors.len() == depth {
+            ancestors.push(index);
+        } else if depth < ancestors.len() {
+            ancestors[depth] = index;
+        } else {
+            ancestors.resize(depth, index);
+            ancestors.push(index);
+        }
+    }
+
+    lines
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, line)| keep[index].then_some(line))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn filter_depth_lines(text: &str, max_depth: usize) -> String {
+    split_rendered_lines(text)
+        .into_iter()
+        .filter(|line| rendered_depth(line) <= max_depth)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn split_rendered_lines(text: &str) -> Vec<&str> {
+    if text.is_empty() {
+        Vec::new()
+    } else {
+        text.split('\n').collect()
+    }
+}
+
+fn rendered_depth(line: &str) -> usize {
+    line.chars().take_while(|ch| *ch == ' ').count() / 2
+}
+
+fn rendered_role(line: &str) -> Option<&str> {
+    let body = line.trim_start().strip_prefix("- ")?;
+    let end = body
+        .find(|ch: char| ch.is_whitespace() || ch == '[' || ch == ':')
+        .unwrap_or(body.len());
+    Some(&body[..end])
+}
+
+fn has_ref(line: &str) -> bool {
+    line.contains(" [ref=e")
 }
 
 fn format_line(
@@ -273,7 +370,9 @@ fn json_quote(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{RenderOptions, render_snapshot};
+    use super::{
+        RenderOptions, SnapshotMode, SnapshotOptions, apply_snapshot_options, render_snapshot,
+    };
     use crate::snapshot::{AxNode, AxProperty, AxValue, refs::RefMap};
     use serde_json::json;
     use std::collections::HashMap;
@@ -301,6 +400,14 @@ mod tests {
             base_depth: 0,
         };
         render_snapshot(nodes, &mut opts).text
+    }
+
+    fn render_with_snapshot_options(
+        nodes: &[AxNode],
+        refs: &mut RefMap,
+        options: SnapshotOptions,
+    ) -> String {
+        apply_snapshot_options(&render(nodes, refs), options)
     }
 
     #[test]
@@ -542,5 +649,162 @@ mod tests {
             render_snapshot(&nodes, &mut opts).text,
             "- generic [ref=e1] [cursor=pointer]"
         );
+    }
+
+    #[test]
+    fn interactive_mode_keeps_refs_headings_first_line_and_ancestors() {
+        let mut nodes = vec![
+            ax("1", "RootWebArea", &["2"]),
+            ax("2", "main", &["3", "4", "5"]),
+            ax("3", "paragraph", &[]),
+            ax("4", "section", &["6"]),
+            ax("5", "heading", &[]),
+            ax("6", "button", &[]),
+        ];
+        nodes[1].name = Some(name("App"));
+        nodes[2].name = Some(name("Intro copy"));
+        nodes[3].name = Some(name("Actions"));
+        nodes[4].name = Some(name("Results"));
+        nodes[5].name = Some(name("Save"));
+        nodes[5].backend_dom_node_id = Some(10);
+
+        let text = render_with_snapshot_options(
+            &nodes,
+            &mut RefMap::new(),
+            SnapshotOptions {
+                mode: SnapshotMode::Interactive,
+                depth: None,
+            },
+        );
+
+        assert_eq!(
+            text,
+            [
+                "- main \"App\"",
+                "  - section \"Actions\"",
+                "    - button \"Save\" [ref=e1]",
+                "  - heading \"Results\"",
+            ]
+            .join("\n")
+        );
+    }
+
+    #[test]
+    fn depth_cap_drops_lines_nested_deeper_than_limit() {
+        let mut nodes = vec![
+            ax("1", "RootWebArea", &["2"]),
+            ax("2", "main", &["3"]),
+            ax("3", "section", &["4"]),
+            ax("4", "button", &[]),
+        ];
+        nodes[3].name = Some(name("Deep"));
+        nodes[3].backend_dom_node_id = Some(10);
+
+        let text = render_with_snapshot_options(
+            &nodes,
+            &mut RefMap::new(),
+            SnapshotOptions {
+                mode: SnapshotMode::Full,
+                depth: Some(1),
+            },
+        );
+
+        assert_eq!(text, ["- main", "  - section"].join("\n"));
+    }
+
+    #[test]
+    fn interactive_filter_runs_before_depth_cap() {
+        let mut nodes = vec![
+            ax("1", "RootWebArea", &["2"]),
+            ax("2", "main", &["3", "5"]),
+            ax("3", "section", &["4"]),
+            ax("4", "button", &[]),
+            ax("5", "paragraph", &[]),
+        ];
+        nodes[3].name = Some(name("Deep"));
+        nodes[3].backend_dom_node_id = Some(10);
+        nodes[4].name = Some(name("Static"));
+
+        let text = render_with_snapshot_options(
+            &nodes,
+            &mut RefMap::new(),
+            SnapshotOptions {
+                mode: SnapshotMode::Interactive,
+                depth: Some(1),
+            },
+        );
+
+        assert_eq!(text, ["- main", "  - section"].join("\n"));
+    }
+
+    #[test]
+    fn refs_are_identical_across_full_and_interactive_modes() {
+        let mut nodes = vec![
+            ax("1", "RootWebArea", &["2"]),
+            ax("2", "main", &["3", "4", "5"]),
+            ax("3", "paragraph", &[]),
+            ax("4", "button", &[]),
+            ax("5", "link", &[]),
+        ];
+        nodes[2].name = Some(name("Static"));
+        nodes[3].name = Some(name("Save"));
+        nodes[3].backend_dom_node_id = Some(10);
+        nodes[4].name = Some(name("Home"));
+        nodes[4].backend_dom_node_id = Some(11);
+
+        let mut full_refs = RefMap::new();
+        let full = render_with_snapshot_options(
+            &nodes,
+            &mut full_refs,
+            SnapshotOptions {
+                mode: SnapshotMode::Full,
+                depth: None,
+            },
+        );
+        let mut interactive_refs = RefMap::new();
+        let interactive = render_with_snapshot_options(
+            &nodes,
+            &mut interactive_refs,
+            SnapshotOptions {
+                mode: SnapshotMode::Interactive,
+                depth: None,
+            },
+        );
+
+        assert_eq!(
+            full_refs
+                .entries_in_order()
+                .into_iter()
+                .map(|entry| (entry.ref_id.as_str().to_string(), entry.backend_node_id))
+                .collect::<Vec<_>>(),
+            interactive_refs
+                .entries_in_order()
+                .into_iter()
+                .map(|entry| (entry.ref_id.as_str().to_string(), entry.backend_node_id))
+                .collect::<Vec<_>>()
+        );
+        assert!(full.contains("paragraph \"Static\""));
+        assert!(!interactive.contains("paragraph \"Static\""));
+        assert!(interactive.contains("button \"Save\" [ref=e1]"));
+        assert!(interactive.contains("link \"Home\" [ref=e2]"));
+    }
+
+    #[test]
+    fn default_snapshot_options_preserve_full_output_byte_for_byte() {
+        let mut nodes = vec![
+            ax("1", "RootWebArea", &["2"]),
+            ax("2", "main", &["3", "4"]),
+            ax("3", "paragraph", &[]),
+            ax("4", "button", &[]),
+        ];
+        nodes[2].name = Some(name("Static"));
+        nodes[3].name = Some(name("Save"));
+        nodes[3].backend_dom_node_id = Some(10);
+
+        let mut refs = RefMap::new();
+        let full = render(&nodes, &mut refs);
+        let with_defaults = apply_snapshot_options(&full, SnapshotOptions::default());
+
+        assert_eq!(with_defaults, full);
     }
 }

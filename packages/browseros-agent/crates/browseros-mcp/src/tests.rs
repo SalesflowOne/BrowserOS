@@ -4,11 +4,12 @@ use crate::{
     output_file::create_browser_output_file_access,
     response::ToolResponse,
     service::{BROWSER_MCP_INSTRUCTIONS, BrowserMcpService, BrowserMcpServiceOptions},
-    tools::{grep, wait},
+    tools::{grep, snapshot, wait},
 };
 use browseros_cdp::{CdpError, CdpEvent};
 use browseros_core::{
-    BrowserSession, BrowserSessionHooks, CdpConnection, SessionId, snapshot::SnapshotDiff,
+    BrowserSession, BrowserSessionHooks, CdpConnection, SessionId,
+    snapshot::{AxNode, AxValue, SnapshotDiff},
 };
 use futures_util::future::BoxFuture;
 use rmcp::handler::server::ServerHandler;
@@ -77,13 +78,142 @@ fn fake_session() -> Arc<BrowserSession> {
     )
 }
 
-fn fake_ctx() -> ToolCtx {
+fn ctx_for_session(session: Arc<BrowserSession>) -> ToolCtx {
     ToolCtx::new(BrowserToolOptions {
-        session: fake_session(),
+        session,
         defaults: BrowserToolDefaults::default(),
         cancel: CancellationToken::new(),
         output_files: create_browser_output_file_access(),
     })
+}
+
+fn fake_ctx() -> ToolCtx {
+    ctx_for_session(fake_session())
+}
+
+struct SnapshotConnection {
+    sender: broadcast::Sender<CdpEvent>,
+}
+
+impl SnapshotConnection {
+    fn new() -> Self {
+        let (sender, _receiver) = broadcast::channel(8);
+        Self { sender }
+    }
+}
+
+impl CdpConnection for SnapshotConnection {
+    fn send<'a>(
+        &'a self,
+        method: &'a str,
+        params: Value,
+        _session: Option<&'a SessionId>,
+    ) -> BoxFuture<'a, Result<Value, CdpError>> {
+        Box::pin(async move {
+            match method {
+                "Browser.getTabs" => Ok(json!({
+                    "tabs": [{
+                        "tabId": 9,
+                        "targetId": "target-1",
+                        "url": "https://example.com/current",
+                        "title": "Current",
+                        "isActive": true,
+                        "isLoading": false,
+                        "loadProgress": 1,
+                        "isPinned": false,
+                        "isHidden": false,
+                        "windowId": 1
+                    }]
+                })),
+                "Target.attachToTarget" => Ok(json!({ "sessionId": "session-1" })),
+                "Page.enable"
+                | "DOM.enable"
+                | "Runtime.enable"
+                | "Accessibility.enable"
+                | "Runtime.runIfWaitingForDebugger"
+                | "Target.setAutoAttach" => Ok(json!({})),
+                "Page.getFrameTree" => Ok(json!({
+                    "frameTree": {
+                        "frame": {
+                            "id": "main",
+                            "loaderId": "loader-1",
+                            "url": "https://example.com/current"
+                        }
+                    }
+                })),
+                "Accessibility.getFullAXTree" => {
+                    assert_eq!(params, json!({}));
+                    Ok(json!({ "nodes": snapshot_nodes() }))
+                }
+                "Runtime.evaluate" => Ok(json!({ "result": { "value": [] } })),
+                _ => Err(CdpError::Protocol {
+                    code: -1,
+                    message: format!("unexpected snapshot CDP call: {method}"),
+                }),
+            }
+        })
+    }
+
+    fn send_raw_json<'a>(
+        &'a self,
+        method: &'a str,
+        _params_json: &'a str,
+        _session: Option<&'a SessionId>,
+    ) -> BoxFuture<'a, Result<String, CdpError>> {
+        Box::pin(async move {
+            Err(CdpError::Protocol {
+                code: -1,
+                message: format!("unexpected snapshot CDP raw call: {method}"),
+            })
+        })
+    }
+
+    fn events(&self) -> broadcast::Receiver<CdpEvent> {
+        self.sender.subscribe()
+    }
+
+    fn is_connected(&self) -> bool {
+        true
+    }
+
+    fn connection_epoch(&self) -> u64 {
+        1
+    }
+}
+
+fn snapshot_nodes() -> Vec<AxNode> {
+    vec![
+        ax("1", "RootWebArea", &["2"]),
+        ax("2", "main", &["3", "4", "5"]),
+        named_ax("3", "paragraph", "Intro", &[]),
+        named_ax("4", "section", "Actions", &["6"]),
+        named_ax("5", "heading", "Title", &[]),
+        button_ax("6", "Save", 10),
+    ]
+}
+
+fn ax(node_id: &str, role: &str, children: &[&str]) -> AxNode {
+    AxNode {
+        node_id: node_id.to_string(),
+        role: Some(AxValue::role(role)),
+        child_ids: (!children.is_empty())
+            .then(|| children.iter().map(|child| (*child).to_string()).collect()),
+        ..AxNode::default()
+    }
+}
+
+fn named_ax(node_id: &str, role: &str, name: &str, children: &[&str]) -> AxNode {
+    AxNode {
+        name: Some(AxValue::string(name)),
+        ..ax(node_id, role, children)
+    }
+}
+
+fn button_ax(node_id: &str, name: &str, backend_id: i64) -> AxNode {
+    AxNode {
+        backend_dom_node_id: Some(backend_id),
+        ..named_ax(node_id, "button", name, &[])
+    }
 }
 
 #[test]
@@ -277,6 +407,42 @@ async fn snapshot_formatter_wraps_small_page_content() {
         formatted.structured.get("writtenToFile"),
         Some(&json!(false))
     );
+}
+
+#[tokio::test]
+async fn snapshot_tool_plumbs_mode_depth_and_structured_fields() {
+    let session = BrowserSession::new(
+        Arc::new(SnapshotConnection::new()),
+        BrowserSessionHooks::default(),
+    );
+    let ctx = ctx_for_session(session);
+    let result = execute_tool(
+        &snapshot::definition(),
+        json!({ "page": 1, "mode": "interactive", "depth": 1.9 }),
+        &ctx,
+    )
+    .await
+    .unwrap_or_else(|err| panic!("snapshot should execute: {err}"));
+
+    let text = result
+        .content
+        .first()
+        .and_then(|content| content.as_text())
+        .map(|content| content.text.to_string())
+        .unwrap_or_else(|| panic!("snapshot should return text"));
+    assert!(text.contains("- main"));
+    assert!(text.contains("  - section \"Actions\""));
+    assert!(text.contains("  - heading \"Title\""));
+    assert!(!text.contains("button \"Save\""));
+    assert!(!text.contains("paragraph \"Intro\""));
+
+    let structured = result
+        .structured_content
+        .unwrap_or_else(|| panic!("snapshot should return structured content"));
+    assert_eq!(structured.get("page"), Some(&json!(1)));
+    assert_eq!(structured.get("mode"), Some(&json!("interactive")));
+    assert_eq!(structured.get("depth"), Some(&json!(1)));
+    assert_eq!(structured.get("writtenToFile"), Some(&json!(false)));
 }
 
 #[tokio::test]
