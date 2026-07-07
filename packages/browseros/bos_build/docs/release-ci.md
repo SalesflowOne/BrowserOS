@@ -119,12 +119,8 @@ release secrets from the operator's local `.env.production` into repo-level
 GitHub secrets:
 
 ```bash
-tools/release_secrets/sync.py \
-  --env-file /Users/shadowfax/code/browseros-release/.env.production \
-  --dry-run
-tools/release_secrets/sync.py \
-  --env-file /Users/shadowfax/code/browseros-release/.env.production \
-  --apply
+tools/release_secrets/sync.py --env-file .env.production --dry-run
+tools/release_secrets/sync.py --env-file .env.production --apply
 tools/release_secrets/sync.py --check
 ```
 

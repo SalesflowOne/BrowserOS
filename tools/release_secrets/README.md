@@ -8,16 +8,15 @@ dotenv file, and it never prints secret values. Apply mode sends values to
 `gh secret set` over stdin.
 
 ```bash
-tools/release_secrets/sync.py \
-  --env-file /Users/shadowfax/code/browseros-release/.env.production \
-  --dry-run
+tools/release_secrets/sync.py --env-file .env.production --dry-run
 
-tools/release_secrets/sync.py \
-  --env-file /Users/shadowfax/code/browseros-release/.env.production \
-  --apply
+tools/release_secrets/sync.py --env-file .env.production --apply
 
 tools/release_secrets/sync.py --check
 ```
+
+When syncing from an operator checkout outside this repo, pass that file with
+`--env-file /path/to/.env.production`.
 
 `--check` scans the release workflow secret references and compares names
 against `gh secret list`. Known non-dotenv names such as `GITHUB_TOKEN`,
