@@ -116,6 +116,10 @@ ALLOWLIST: tuple[SecretSpec, ...] = (
         ("release-full.yml", "release-server.yml"),
     ),  # BrowserOS server inline Sentry DSN.
     SecretSpec(
+        "AGENT_RUNNER_JWT_SECRET",
+        ("release-full.yml", "release-server.yml"),
+    ),  # Optional BrowserOS server remote-agent JWT signing secret.
+    SecretSpec(
         "ESIGNER_USERNAME",
         ("build-browseros.yml", "release-windows.yml", "release-full.yml"),
     ),  # Windows signing preflight and CodeSignTool auth.
