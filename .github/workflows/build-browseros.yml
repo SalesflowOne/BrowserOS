@@ -276,7 +276,8 @@ jobs:
           write_env() {
             local name="$1"
             local value="${!name:-}"
-            local delimiter="${name}_EOF"
+            local delimiter
+            delimiter="${name}_$(openssl rand -hex 8)"
             {
               echo "$name<<$delimiter"
               printf '%s\n' "$value"
