@@ -189,22 +189,18 @@ jobs:
           fetch-depth: 0
           ref: ${{ needs.release.outputs.release_sha }}
 
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v8.2.0
+
       - name: Setup Python
         shell: bash
         run: |
           set -euo pipefail
-
           if [ "$RUNNER_OS" = "Windows" ]; then
-            python -m venv .venv-bos-build
-            echo "PYTHON_BIN=.venv-bos-build/Scripts/python.exe" >> "$GITHUB_ENV"
+            echo "PYTHON_BIN=python" >> "$GITHUB_ENV"
           else
-            python3 -m venv .venv-bos-build
-            echo "PYTHON_BIN=.venv-bos-build/bin/python" >> "$GITHUB_ENV"
+            echo "PYTHON_BIN=python3" >> "$GITHUB_ENV"
           fi
-
-      - name: Install Python validation dependencies
-        shell: bash
-        run: "$PYTHON_BIN -m pip install ./packages/browseros"
 
       - name: Setup Rust
         shell: bash
@@ -343,7 +339,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          PYTHONPATH="$GITHUB_WORKSPACE/packages/browseros" "$PYTHON_BIN" <<'PY'
+          uv run --project packages/browseros python <<'PY'
           import os
           import tempfile
           from pathlib import Path

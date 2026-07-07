@@ -69,13 +69,11 @@ describe('release-claw-server-rust workflow', () => {
   it('uses matching artifact actions without unused Python dependencies', () => {
     expect(workflow).toContain('uses: actions/upload-artifact@v7')
     expect(workflow).toContain('uses: actions/download-artifact@v7')
-    expect(workflow).toContain('python3 -m venv .venv-bos-build')
-    expect(workflow).toContain('python -m venv .venv-bos-build')
-    expect(workflow).toContain('PYTHON_BIN=.venv-bos-build/bin/python')
-    expect(workflow).toContain('PYTHON_BIN=.venv-bos-build/Scripts/python.exe')
-    expect(workflow).toContain(
-      '"$PYTHON_BIN -m pip install ./packages/browseros"',
-    )
+    expect(workflow).toContain('uses: astral-sh/setup-uv@v8.2.0')
+    expect(workflow).toContain('uv run --project packages/browseros python')
+    expect(workflow).not.toContain('Install Python validation dependencies')
+    expect(workflow).not.toContain('pip install ./packages/browseros')
+    expect(workflow).not.toContain('.venv-bos-build')
     expect(workflow).not.toContain('pyyaml')
   })
 
