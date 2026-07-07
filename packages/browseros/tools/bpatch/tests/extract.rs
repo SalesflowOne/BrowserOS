@@ -118,7 +118,7 @@ fn feature_routing_requires_explicit_policy_then_named_feature_appends_yaml() ->
     assert_eq!(needs.unmatched.len(), 3);
     assert_eq!(needs.suggestion.as_deref(), Some("wallet"));
     let json = serde_json::from_str::<Value>(&extract::render_json(&needs)?)?;
-    assert_eq!(json["result"], "needs_feature");
+    assert_eq!(json["result"], "needs-feature");
     assert_eq!(json["suggestion"], "wallet");
     assert_eq!(json["exit"], 3);
     assert_eq!(json["unmatched"].as_array().expect("unmatched").len(), 3);

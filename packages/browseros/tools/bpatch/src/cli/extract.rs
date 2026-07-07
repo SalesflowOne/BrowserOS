@@ -62,10 +62,12 @@ pub struct ExtractReport {
 
 /// Extract report result discriminator.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
 pub enum ExtractReportResult {
+    #[serde(rename = "extracted")]
     Extracted,
+    #[serde(rename = "needs-feature")]
     NeedsFeature,
+    #[serde(rename = "repinned")]
     Repinned,
 }
 
