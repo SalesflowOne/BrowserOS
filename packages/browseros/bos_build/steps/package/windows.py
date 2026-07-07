@@ -59,9 +59,15 @@ class WindowsPackageModule(Step):
 
         build_output_dir = join_paths(context.chromium_src, context.out_dir)
         mini_installer_path = build_output_dir / "mini_installer.exe"
+        winsparkle_path = build_output_dir / "WinSparkle.dll"
 
         if not mini_installer_path.exists():
             raise ValidationError(f"mini_installer.exe not found: {mini_installer_path}")
+        if not winsparkle_path.exists():
+            raise ValidationError(
+                f"WinSparkle.dll not found: {winsparkle_path}. "
+                "WinSparkle auto-update won't ship without it."
+            )
 
     def execute(self, context: Context) -> None:
         log_info("\n📦 Creating Windows packages...")

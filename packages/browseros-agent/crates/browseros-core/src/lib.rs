@@ -8,6 +8,7 @@ pub mod navigation;
 pub mod observer;
 pub mod pages;
 pub mod screenshot;
+pub mod settle;
 pub mod snapshot;
 pub mod timeouts;
 pub mod types;
@@ -15,7 +16,7 @@ pub mod windows;
 
 pub use browser::Browser;
 pub use connection::{CdpConnection, ProtocolSession};
-pub use error::CoreError;
+pub use error::{CoreError, CoveredElementTarget};
 pub use session::{BrowserSession, BrowserSessionHooks};
 pub use types::{FrameId, PageId, Ref, SessionId, TabId, TargetId, WindowId};
 

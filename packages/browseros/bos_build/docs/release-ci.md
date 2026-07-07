@@ -61,8 +61,9 @@ release-full.yml
     - release-server.yml for browseros
     - release-claw-server.yml for browserclaw
     - release-claw-server-rust.yml exists as a separate manual/reusable lane
-      for BrowserClaw Rust server resources, but is not called by the full
-      release until the Rust server becomes the active embedded server
+      for BrowserClaw Rust server resources. BrowserClaw browser builds can
+      consume its latest resources via the bos_build claw-server variant flag,
+      but the full release server-resource orchestration stays separate
   browser builds
     - release-linux.yml -> build-browseros.yml
     - release-windows.yml -> build-browseros.yml
@@ -107,10 +108,19 @@ The Rust Claw server lane publishes to a distinct CDN/R2 prefix:
 that workflow has populated the matching R2 objects; the bos_build download
 step fails the whole Chromium build when a configured key is missing.
 
-The reusable nesting depth is `release-browseros.yml` or
-`release-browserclaw.yml` -> `release-linux.yml` or `release-windows.yml` ->
-`build-browseros.yml`, which stays below GitHub's limit of four workflow
-levels. `release-full.yml` has the same depth.
+BrowserClaw browser builds select the embedded claw-server variant with
+`packages/browseros/bos_build/config/build_flags.yaml`:
+`use_claw_server_rust: true` embeds the Rust resources from
+`claw-server-rust/prod-resources/latest/`, and `false` rolls BrowserClaw browser
+builds back to the TypeScript/Bun resources from `claw-server/prod-resources/latest/`.
+The browser build downloads only the selected BrowserClaw variant. BrowserClaw
+server OTA feeds (`appcast-claw-server*.xml`) remain pinned to the TypeScript
+server bundle until a separate feed migration changes them.
+
+The reusable nesting depth is `release-browseros.yml`,
+`release-browserclaw.yml`, or `release-full.yml` -> `release-linux.yml` or
+`release-windows.yml` -> `build-browseros.yml`, which stays below GitHub's
+limit of four workflow levels.
 
 The `bundle_local_extensions` profile switch defaults off for release
 reproducibility. Existing CI profiles keep it off; a self-hosted macOS nightly
