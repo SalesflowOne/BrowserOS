@@ -12,7 +12,10 @@ import {
   type BrowserOSImportStatus,
   type BrowserOSOnboardingState,
 } from './browseros-onboarding-api'
-import { createBrowserOSOnboardingBridge } from './browseros-onboarding-bridge'
+import {
+  type BrowserOSOnboardingBridge,
+  createBrowserOSOnboardingBridge,
+} from './browseros-onboarding-bridge'
 import { OnboardingShell } from './components/OnboardingShell'
 import {
   selectedSourceById,
@@ -54,6 +57,12 @@ export function importPhaseFor(
 /** Leaves standalone onboarding for BrowserOS's Chromium new-tab page. */
 export function openBrowserOsNewTab() {
   window.location.assign(BROWSEROS_NEW_TAB_URL)
+}
+
+/** Completes onboarding and leaves standalone mock onboarding when needed. */
+export function finishBrowserOSOnboarding(bridge: BrowserOSOnboardingBridge) {
+  bridge.complete()
+  if (bridge.isMock) openBrowserOsNewTab()
 }
 
 /** Runs the standalone four-step BrowserClaw onboarding flow. */
@@ -126,8 +135,7 @@ export function OnboardingV2() {
   }
 
   function finishOnboarding() {
-    bridge.complete()
-    openBrowserOsNewTab()
+    finishBrowserOSOnboarding(bridge)
   }
 
   return (
