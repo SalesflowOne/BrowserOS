@@ -2,7 +2,9 @@ use crate::framework::{
     BrowserToolDefaults, ToolCtx, ToolError, ToolExecResult, ToolResult, page_json, parse_args,
     text_result,
 };
-use browseros_core::{PageId, Ref, SessionId, input::ScrollDirection, pages::NewPageOptions};
+use browseros_core::{
+    PageId, Ref, SessionId, WindowId, input::ScrollDirection, pages::NewPageOptions,
+};
 use futures_util::future::BoxFuture;
 use rquickjs::{
     Array, AsyncContext, AsyncRuntime, CatchResultExt, CaughtError, Ctx, Exception, FromJs,
@@ -88,7 +90,7 @@ const BOOTSTRAP_JS: &str = r#"
   const browser = {
     pages: {
       list: () => call('pages.list', []),
-      newPage: (url) => call('pages.newPage', [url]),
+      newPage: (url, opts) => call('pages.newPage', [url, opts]),
       close: (pageId) => call('pages.close', [pageId]),
       getInfo: (pageId) => call('pages.getInfo', [pageId]),
     },
@@ -506,15 +508,21 @@ impl BrowserBridge {
             }
             "pages.newPage" => {
                 let url = string_arg(&args, 0, "url")?;
+                let opts = optional_object_arg(&args, 1)?;
+                let window_id = optional_i64_field(opts, "windowId")?
+                    .map(WindowId)
+                    .or_else(|| self.defaults.default_window_id.clone());
+                let tab_group_id = optional_string_field(opts, "tabGroupId")?
+                    .or_else(|| self.defaults.default_tab_group_id.clone());
                 let page_id = self
                     .control
                     .race(self.session.pages.new_page(
                         &url,
                         NewPageOptions {
-                            background: None,
-                            hidden: None,
-                            window_id: self.defaults.default_window_id.clone(),
-                            tab_group_id: self.defaults.default_tab_group_id.clone(),
+                            background: optional_bool_field(opts, "background")?,
+                            hidden: optional_bool_field(opts, "hidden")?,
+                            window_id,
+                            tab_group_id,
                         },
                     ))
                     .await?;
@@ -717,6 +725,53 @@ fn optional_json_arg(args: &[Value], index: usize) -> Option<Value> {
     match args.get(index) {
         None | Some(Value::Null) => None,
         Some(value) => Some(value.clone()),
+    }
+}
+
+fn optional_object_arg(
+    args: &[Value],
+    index: usize,
+) -> Result<Option<&Map<String, Value>>, String> {
+    match args.get(index) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Object(value)) => Ok(Some(value)),
+        Some(_) => Err(format!("argument {index} must be an object")),
+    }
+}
+
+fn optional_bool_field(
+    object: Option<&Map<String, Value>>,
+    name: &str,
+) -> Result<Option<bool>, String> {
+    match object.and_then(|object| object.get(name)) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Bool(value)) => Ok(Some(*value)),
+        Some(_) => Err(format!("{name} must be a boolean")),
+    }
+}
+
+fn optional_i64_field(
+    object: Option<&Map<String, Value>>,
+    name: &str,
+) -> Result<Option<i64>, String> {
+    match object.and_then(|object| object.get(name)) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Number(value)) => value
+            .as_i64()
+            .map(Some)
+            .ok_or_else(|| format!("{name} must be an integer")),
+        Some(_) => Err(format!("{name} must be an integer")),
+    }
+}
+
+fn optional_string_field(
+    object: Option<&Map<String, Value>>,
+    name: &str,
+) -> Result<Option<String>, String> {
+    match object.and_then(|object| object.get(name)) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(value)) => Ok(Some(value.clone())),
+        Some(_) => Err(format!("{name} must be a string")),
     }
 }
 
@@ -946,6 +1001,7 @@ mod tests {
     struct RunFakeState {
         create_tab_params: Vec<Value>,
         add_group_params: Vec<Value>,
+        get_windows_calls: usize,
     }
 
     impl RunFakeConnection {
@@ -970,6 +1026,13 @@ mod tests {
                 .map(|state| state.add_group_params.clone())
                 .unwrap_or_default()
         }
+
+        fn get_windows_calls(&self) -> usize {
+            self.state
+                .lock()
+                .map(|state| state.get_windows_calls)
+                .unwrap_or_default()
+        }
     }
 
     impl CdpConnection for RunFakeConnection {
@@ -985,6 +1048,14 @@ mod tests {
                     "Browser.getTabs" => Ok(json!({
                         "tabs": [fake_tab_json(7, "target-7", "https://example.com", "Example", 1, 0)]
                     })),
+                    "Browser.getWindows" => {
+                        if let Ok(mut state) = state.lock() {
+                            state.get_windows_calls += 1;
+                        }
+                        Ok(json!({
+                            "windows": [fake_window_json(88, false)]
+                        }))
+                    }
                     "Browser.hang" => {
                         futures_util::future::pending::<Result<Value, CdpError>>().await
                     }
@@ -1424,6 +1495,70 @@ return { pageId: page.pageId, tabId: page.tabId, url: page.url, title: page.titl
     }
 
     #[tokio::test]
+    async fn run_pages_new_page_forwards_options_object() -> anyhow::Result<()> {
+        let connection = Arc::new(RunFakeConnection::new());
+        let ctx = test_ctx_for(
+            connection.clone(),
+            BrowserToolDefaults {
+                default_window_id: Some(WindowId(42)),
+                default_tab_group_id: Some("default-group".to_string()),
+            },
+        );
+        let result = run_tool_with_ctx(
+            r#"
+return await browser.pages.newPage('https://new.example', {
+  hidden: true,
+  background: true,
+  windowId: 88,
+  tabGroupId: 'group-opts',
+});
+"#,
+            None,
+            &ctx,
+        )
+        .await?;
+        assert!(!result.is_error);
+        assert_eq!(
+            result.structured_content,
+            Some(json!({
+                "ok": true,
+                "value": 1,
+                "logs": []
+            }))
+        );
+
+        let create_params = connection.create_tab_params();
+        assert_eq!(connection.get_windows_calls(), 1);
+        assert_eq!(create_params.len(), 1);
+        assert_eq!(
+            create_params.first().and_then(|params| params.get("url")),
+            Some(&json!("https://new.example"))
+        );
+        assert_eq!(
+            create_params
+                .first()
+                .and_then(|params| params.get("background")),
+            Some(&json!(true))
+        );
+        assert_eq!(
+            create_params
+                .first()
+                .and_then(|params| params.get("windowId")),
+            Some(&json!(88))
+        );
+
+        let group_params = connection.add_group_params();
+        assert_eq!(group_params.len(), 1);
+        assert_eq!(
+            group_params
+                .first()
+                .and_then(|params| params.get("groupId")),
+            Some(&json!("group-opts"))
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn run_exercises_remaining_browser_namespaces() -> anyhow::Result<()> {
         let result = run_tool(
             r#"
@@ -1527,6 +1662,17 @@ return seen;
             "isHidden": false,
             "windowId": window_id,
             "index": index
+        })
+    }
+
+    fn fake_window_json(window_id: i64, is_visible: bool) -> Value {
+        json!({
+            "windowId": window_id,
+            "windowType": "normal",
+            "bounds": {},
+            "isActive": !is_visible,
+            "isVisible": is_visible,
+            "tabCount": 0
         })
     }
 }
