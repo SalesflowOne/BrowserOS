@@ -192,6 +192,7 @@ copy_operations:
   - name: "BrowserOS Claw Server Resources - macOS ARM64"
     source: "resources/binaries/browseros_claw_server/darwin-arm64/resources"
     destination: "chrome/browser/browseros/claw_server/resources"
+    selected_clear_destination: true
     type: "directory"
     claw_server_variant: "typescript"
     os: ["macos"]
@@ -200,6 +201,7 @@ copy_operations:
   - name: "BrowserOS Claw Server Resources - macOS x64"
     source: "resources/binaries/browseros_claw_server/darwin-x64/resources"
     destination: "chrome/browser/browseros/claw_server/resources"
+    selected_clear_destination: true
     type: "directory"
     claw_server_variant: "typescript"
     os: ["macos"]
@@ -208,6 +210,7 @@ copy_operations:
   - name: "BrowserOS Claw Server Resources - Linux ARM64"
     source: "resources/binaries/browseros_claw_server/linux-arm64/resources"
     destination: "chrome/browser/browseros/claw_server/resources"
+    selected_clear_destination: true
     type: "directory"
     claw_server_variant: "typescript"
     os: ["linux"]
@@ -216,6 +219,7 @@ copy_operations:
   - name: "BrowserOS Claw Server Resources - Linux x64"
     source: "resources/binaries/browseros_claw_server/linux-x64/resources"
     destination: "chrome/browser/browseros/claw_server/resources"
+    selected_clear_destination: true
     type: "directory"
     claw_server_variant: "typescript"
     os: ["linux"]
@@ -224,6 +228,7 @@ copy_operations:
   - name: "BrowserOS Claw Server Resources - Windows x64"
     source: "resources/binaries/browseros_claw_server/windows-x64/resources"
     destination: "chrome/browser/browseros/claw_server/resources"
+    selected_clear_destination: true
     type: "directory"
     claw_server_variant: "typescript"
     os: ["windows"]

@@ -445,6 +445,18 @@ class CopyResourcesTest(unittest.TestCase):
         (claw_rust_source / "bin" / "browseros-claw-server-rs").write_text(
             "claw-rust"
         )
+        stale_rust_file = (
+            self.chromium.src
+            / "chrome"
+            / "browser"
+            / "browseros"
+            / "claw_server"
+            / "resources"
+            / "bin"
+            / "browseros-claw-server-rs"
+        )
+        stale_rust_file.parent.mkdir(parents=True)
+        stale_rust_file.write_text("stale-rust")
 
         with patch(
             "bos_build.steps.resources.resources.get_platform",
@@ -482,6 +494,7 @@ class CopyResourcesTest(unittest.TestCase):
         )
         self.assertEqual(claw_dest.read_text(), "claw")
         self.assertFalse(claw_rust_dest.exists())
+        self.assertFalse(stale_rust_file.exists())
 
     def test_real_config_copies_claw_onboard_resources_for_both_products(self):
         # The downloaded onboarding dist must land in the grit resources dir

@@ -128,12 +128,12 @@ def copy_resources_impl(ctx: Context, commit_each: bool = False) -> bool:
 
         try:
             copied = False
+            if clear_destination:
+                clear_path(dst_base)
             if op_type == "directory":
                 # Copy entire directory
                 if src_path.exists() and src_path.is_dir():
                     dst_path = dst_base
-                    if clear_destination:
-                        clear_path(dst_path)
                     dst_path.mkdir(parents=True, exist_ok=True)
                     shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
                     copied = True
