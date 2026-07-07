@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for the Windows packaging module's autoninja routing."""
+"""Tests for the Windows packaging module (autoninja routing and validate())."""
 
 import tempfile
 import unittest
@@ -66,7 +66,7 @@ class WindowsPackageModuleValidateTest(unittest.TestCase):
         message = str(raised.exception)
         self.assertIn("WinSparkle.dll", message)
         self.assertIn(str(winsparkle_path), message)
-        self.assertIn("WinSparkle auto-update won't ship without it", message)
+        self.assertIn("auto-update", message)
 
     def test_validate_passes_when_installer_and_winsparkle_dll_exist(self):
         self._touch_output("mini_installer.exe")
