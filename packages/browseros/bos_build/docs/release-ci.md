@@ -300,7 +300,8 @@ Appcast rendering is best-effort because the CLI renders the product's full
 browser feed set and fails wholesale when a selected platform has no matching
 feed artifact or a macOS artifact is missing Sparkle signature metadata. Those
 failures are reported as warnings in the Actions summary without failing the
-run; any feed files that did stage are still uploaded.
+run. Files from a failed feed command are discarded before artifact upload, so
+the artifact contains only feed sets whose dry-run command completed.
 
 ## Manual Promote To Live
 

@@ -546,6 +546,17 @@ jobs:
             fi
           fi
 
+          if [ "$appcast_rc" -ne 0 ]; then
+            for file in "${appcast_targets[@]}"; do
+              rm -f "$appcast_dir/$file"
+            done
+          fi
+          if [ "$extensions_rc" -ne 0 ]; then
+            for file in "${extension_targets[@]}"; do
+              rm -f "$extensions_dir/$file"
+            done
+          fi
+
           staged_files=()
           copy_if_exists() {
             local src="$1"
@@ -557,12 +568,16 @@ jobs:
             fi
           }
 
-          for file in "${appcast_targets[@]}"; do
-            copy_if_exists "$appcast_dir/$file" "packages/browseros/$appcast_dir/$file"
-          done
-          for file in "${extension_targets[@]}"; do
-            copy_if_exists "$extensions_dir/$file" "updates/extensions/$file"
-          done
+          if [ "$appcast_rc" -eq 0 ]; then
+            for file in "${appcast_targets[@]}"; do
+              copy_if_exists "$appcast_dir/$file" "packages/browseros/$appcast_dir/$file"
+            done
+          fi
+          if [ "$extensions_rc" -eq 0 ]; then
+            for file in "${extension_targets[@]}"; do
+              copy_if_exists "$extensions_dir/$file" "updates/extensions/$file"
+            done
+          fi
 
           {
             echo "has_files=$([ "${#staged_files[@]}" -gt 0 ] && echo true || echo false)"
@@ -614,9 +629,17 @@ jobs:
             echo '```bash'
             echo "cd packages/browseros"
             echo "uv run browseros release publish --version $VERSION --product $PRODUCT"
-            echo "uv run browseros release appcast --version $VERSION --product $PRODUCT --publish"
+            if [ "$appcast_rc" -eq 0 ]; then
+              echo "uv run browseros release appcast --version $VERSION --product $PRODUCT --publish"
+            else
+              echo "# Appcast publish blocked: resolve the staging warning and rerun the preview before publishing."
+            fi
             if [ "$INPUT_EXTENSIONS" != "skip" ]; then
-              echo "uv run browseros release extensions --channel $INPUT_EXTENSIONS --set $EXTENSION_NAME=$EXTENSIONS_VERSION --publish"
+              if [ "$extensions_rc" -eq 0 ]; then
+                echo "uv run browseros release extensions --channel $INPUT_EXTENSIONS --set $EXTENSION_NAME=$EXTENSIONS_VERSION --publish"
+              else
+                echo "# Extension manifest publish blocked: resolve the staging warning and rerun the preview before publishing."
+              fi
             fi
             echo '```'
             echo
