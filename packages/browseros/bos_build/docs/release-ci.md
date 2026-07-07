@@ -40,6 +40,7 @@ macOS builder.
 | `.github/workflows/release-server.yml` | Builds BrowserOS server resource zips for every browser target, uploads versioned R2 resource keys, attaches server release assets, and reflects the server package version. | Manual and `agent-server/v*` tags | Yes, when `include_servers=true` and `products` includes `browseros` |
 | `.github/workflows/release-claw-server.yml` | Builds BrowserClaw server and onboard resource zips, uploads versioned R2 keys, attaches server release assets, and reflects Claw package versions. | Manual and `claw-server/v*` tags | Yes, when `include_servers=true` and `products` includes `browserclaw` |
 | `.github/workflows/release-claw-server-rust.yml` | Builds BrowserClaw Rust server resource zips for every browser target, uploads versioned R2 keys under `claw-server-rust/prod-resources`, and attaches Rust server release assets. | Manual, reusable, and `claw-server-rust/v*` tags | No; intentionally separate until BrowserClaw migrates from the TypeScript server |
+| `.github/workflows/release-extensions.yml` | Builds, signs, uploads, and optionally republishes extension CRX manifests for `agent`, `controller`, `bugreporter`, and `browserclaw`. | Manual and reusable | No; per-product orchestrators can call it with `secrets: inherit` |
 | `.github/workflows/release-linux.yml` | Builds Linux x64 browser artifacts on WarpBuild, one matrix entry per selected product. | Manual | Yes |
 | `.github/workflows/release-windows.yml` | Builds Windows x64 browser artifacts on WarpBuild and optionally signs them. | Manual | Yes |
 | `.github/workflows/release-macos.yml` | Builds signed macOS artifacts on the dedicated self-hosted builder. | Manual | Yes |
@@ -64,6 +65,11 @@ step fails the whole Chromium build when a configured key is missing.
 The reusable nesting depth is `release-full.yml -> release-linux.yml or
 release-windows.yml -> build-browseros.yml`, which stays below GitHub's limit
 of four workflow levels.
+
+The `bundle_local_extensions` profile switch defaults off for release
+reproducibility. `profiles/nightly-ci.yaml` sets it true so nightlies build and
+pack in-repo agent/browserclaw CRXs from the checked-out tree while external
+required extensions still come from the bundled CDN manifest.
 
 ## Full Release Inputs
 

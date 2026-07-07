@@ -44,6 +44,20 @@ class FindChromeBinaryTest(unittest.TestCase):
                     None, is_valid=lambda p: False, platform_name="Darwin"
                 )
 
+    def test_windows_candidate_supported(self):
+        import os
+
+        with patch.dict("os.environ", {}, clear=False):
+            os.environ.pop("CHROME_BINARY", None)
+            found = find_chrome_binary(
+                None,
+                is_valid=lambda p: p.endswith(r"Google\Chrome\Application\chrome.exe"),
+                platform_name="Windows",
+            )
+        self.assertEqual(
+            found, r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+        )
+
     def test_invalid_explicit_binary_raises(self):
         with self.assertRaisesRegex(RuntimeError, "/broken/path"):
             find_chrome_binary(

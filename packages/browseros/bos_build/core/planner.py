@@ -34,6 +34,7 @@ class Switches:
     download: Optional[bool] = None
     sign: Optional[bool] = None
     upload: Optional[bool] = None
+    bundle_local_extensions: bool = False
     skip: Tuple[str, ...] = ()
 
     def resolved(self) -> "Switches":
@@ -336,7 +337,16 @@ class Profile:
 
 
 # Planner-owned keys: meaningless once modules: enumerates the pipeline.
-_PLANNER_KEYS = ("preset", "clean", "provision", "download", "sign", "upload", "skip")
+_PLANNER_KEYS = (
+    "preset",
+    "clean",
+    "provision",
+    "download",
+    "sign",
+    "upload",
+    "bundle_local_extensions",
+    "skip",
+)
 
 
 def load_profile(path: Path) -> Profile:
@@ -381,6 +391,7 @@ def load_profile(path: Path) -> Profile:
             download=data.get("download"),
             sign=data.get("sign"),
             upload=data.get("upload"),
+            bundle_local_extensions=data.get("bundle_local_extensions", False),
             skip=_as_tuple(data.get("skip")),
         )
     )

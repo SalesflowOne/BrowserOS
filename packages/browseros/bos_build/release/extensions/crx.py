@@ -22,15 +22,18 @@ _LINUX_CANDIDATES = (
     "chromium-browser",
     "chromium",
 )
+_WINDOWS_CANDIDATES = (
+    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    "chrome",
+)
 
 
 def _is_valid_binary(path: str) -> bool:
     p = Path(path)
     if p.exists() and p.is_file():
         return os.access(p, os.X_OK)
-    return (
-        subprocess.run(["which", path], capture_output=True).returncode == 0
-    )
+    return subprocess.run(["which", path], capture_output=True).returncode == 0
 
 
 def find_chrome_binary(
@@ -58,6 +61,8 @@ def find_chrome_binary(
         candidates = _DARWIN_CANDIDATES
     elif system == "Linux":
         candidates = _LINUX_CANDIDATES
+    elif system == "Windows":
+        candidates = _WINDOWS_CANDIDATES
     else:
         raise RuntimeError(f"Unsupported platform for CRX packing: {system}")
 
@@ -105,9 +110,7 @@ def pack_crx(
 
     log_info(f"Packing CRX from {dist_dir} with {chrome_binary}")
 
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".pem", delete=False
-    ) as key_file:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".pem", delete=False) as key_file:
         key_file.write(signing_key_contents)
         key_path = Path(key_file.name)
 
@@ -115,21 +118,17 @@ def pack_crx(
         result = run(pack_extension_command(chrome_binary, dist_dir, key_path))
         if result.returncode != 0:
             raise RuntimeError(
-                f"chrome --pack-extension failed ({result.returncode}): "
-                f"{result.stderr}"
+                f"chrome --pack-extension failed ({result.returncode}): {result.stderr}"
             )
 
         generated = Path(f"{dist_dir}.crx")
         if not generated.exists():
-            raise RuntimeError(
-                f"Expected crx not found after packing: {generated}"
-            )
+            raise RuntimeError(f"Expected crx not found after packing: {generated}")
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         generated.replace(output_path)
         log_success(
-            f"CRX created: {output_path} "
-            f"({output_path.stat().st_size / 1024:.1f} KB)"
+            f"CRX created: {output_path} ({output_path.stat().st_size / 1024:.1f} KB)"
         )
         return output_path
     finally:
