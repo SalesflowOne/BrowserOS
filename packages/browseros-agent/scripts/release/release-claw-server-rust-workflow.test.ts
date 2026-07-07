@@ -66,6 +66,12 @@ describe('release-claw-server-rust workflow', () => {
     expect(workflow).toContain('resources/bin/browseros-claw-server-rs')
   })
 
+  it('uses matching artifact actions without unused Python dependencies', () => {
+    expect(workflow).toContain('uses: actions/upload-artifact@v7')
+    expect(workflow).toContain('uses: actions/download-artifact@v7')
+    expect(workflow).not.toContain('pyyaml')
+  })
+
   it('publishes versioned and latest zips to the Rust R2 prefix', () => {
     expect(workflow).toContain('claw-server-rust/prod-resources')
     expect(workflow).toContain(

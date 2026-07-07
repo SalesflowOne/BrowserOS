@@ -199,10 +199,6 @@ jobs:
             echo "PYTHON_BIN=python3" >> "$GITHUB_ENV"
           fi
 
-      - name: Install Python validation dependencies
-        shell: bash
-        run: "$PYTHON_BIN -m pip install --user pyyaml"
-
       - name: Setup Rust
         shell: bash
         run: |
@@ -394,7 +390,7 @@ jobs:
       AWS_PAGER: ""
 
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           pattern: claw-server-rust-*
           path: dist/claw-server-rust
