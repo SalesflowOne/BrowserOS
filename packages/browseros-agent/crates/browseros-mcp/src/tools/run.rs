@@ -1,5 +1,6 @@
 use crate::framework::{
-    ToolCtx, ToolError, ToolExecResult, ToolResult, page_json, parse_args, text_result,
+    BrowserToolDefaults, ToolCtx, ToolError, ToolExecResult, ToolResult, page_json, parse_args,
+    text_result,
 };
 use browseros_core::{PageId, Ref, SessionId, input::ScrollDirection, pages::NewPageOptions};
 use futures_util::future::BoxFuture;
@@ -19,6 +20,13 @@ use std::{
 use tokio::time::{Instant, sleep_until};
 
 const DEFAULT_TIMEOUT_MS: f64 = 30_000.0;
+const MAX_TIMEOUT_MS: u64 = 30_000;
+const MIN_TIMEOUT_MS: u64 = 1;
+const RUN_MEMORY_LIMIT_BYTES: usize = 64 * 1024 * 1024;
+const RUN_STACK_SIZE_BYTES: usize = 512 * 1024;
+const MAX_LOG_ENTRIES: usize = 1_000;
+const MAX_LOG_BYTES: usize = 1_000_000;
+const MAX_RETURN_VALUE_BYTES: usize = 2_000_000;
 
 const DESCRIPTION: &str = r#"Run JavaScript against the `browser` SDK in the server runtime for multi-step flows and data extraction that would otherwise take many tool calls. `console.log` is captured; `return` a value to read it back; exceptions come back as a result, not a thrown error.
 
@@ -225,6 +233,7 @@ impl RunControl {
 #[derive(Clone)]
 struct BrowserBridge {
     session: Arc<browseros_core::BrowserSession>,
+    defaults: BrowserToolDefaults,
     control: RunControl,
 }
 
@@ -246,6 +255,20 @@ struct RunOutcome {
     return_text: Option<String>,
     logs: Vec<String>,
     error: Option<String>,
+}
+
+#[derive(Default)]
+struct CapturedLogs {
+    entries: Vec<String>,
+    bytes: usize,
+    limit_message: Option<String>,
+}
+
+type SharedLogs = Arc<Mutex<CapturedLogs>>;
+
+enum JsonValueError<'js> {
+    Js(CaughtError<'js>),
+    Limit(String),
 }
 
 impl RunOutcome {
@@ -294,10 +317,11 @@ impl RunOutcome {
 
 async fn execute_run(args: RunArgs, ctx: &ToolCtx) -> Result<RunOutcome, RunError> {
     ctx.throw_if_cancelled().map_err(|_| RunError::Cancelled)?;
-    let logs = Arc::new(Mutex::new(Vec::<String>::new()));
-    let duration = timeout_duration(args.timeout);
+    let logs = Arc::new(Mutex::new(CapturedLogs::default()));
+    let timeout_ms = normalized_timeout_ms(args.timeout);
+    let duration = Duration::from_millis(timeout_ms);
     let deadline = Instant::now() + duration;
-    let timeout_message: Arc<str> = Arc::from(format!("run exceeded {}ms", args.timeout));
+    let timeout_message: Arc<str> = Arc::from(format!("run exceeded {timeout_ms}ms"));
     let control = RunControl {
         cancel: ctx.cancel.clone(),
         deadline,
@@ -306,6 +330,7 @@ async fn execute_run(args: RunArgs, ctx: &ToolCtx) -> Result<RunOutcome, RunErro
     let run = execute_quickjs(
         args.code,
         ctx.session.clone(),
+        ctx.defaults.clone(),
         logs.clone(),
         control.clone(),
         duration,
@@ -320,11 +345,14 @@ async fn execute_run(args: RunArgs, ctx: &ToolCtx) -> Result<RunOutcome, RunErro
 async fn execute_quickjs(
     code: String,
     session: Arc<browseros_core::BrowserSession>,
-    logs: Arc<Mutex<Vec<String>>>,
+    defaults: BrowserToolDefaults,
+    logs: SharedLogs,
     control: RunControl,
     duration: Duration,
 ) -> Result<RunOutcome, RunError> {
     let runtime = AsyncRuntime::new().map_err(engine_error)?;
+    runtime.set_memory_limit(RUN_MEMORY_LIMIT_BYTES).await;
+    runtime.set_max_stack_size(RUN_STACK_SIZE_BYTES).await;
     let interrupt_control = control.clone();
     let interrupt_deadline = std::time::Instant::now() + duration;
     runtime
@@ -335,7 +363,7 @@ async fn execute_quickjs(
     let context = AsyncContext::full(&runtime).await.map_err(engine_error)?;
     let result = context
         .async_with(async |ctx| {
-            install_globals(&ctx, session, logs.clone(), control.clone())?;
+            install_globals(&ctx, session, defaults, logs.clone(), control.clone())?;
             ctx.eval::<(), _>(BOOTSTRAP_JS).catch(&ctx).map_err(|err| {
                 RunError::Engine(format!(
                     "failed to initialize run runtime: {}",
@@ -382,15 +410,19 @@ async fn execute_quickjs(
             };
 
             match promise.into_future::<JsValue<'_>>().await.catch(&ctx) {
-                Ok(value) => {
-                    let (value, return_text) = json_safe_value(&ctx, value)
-                        .map_err(|err| RunError::Engine(js_error_message(&ctx, err)))?;
-                    Ok(RunOutcome::success(
+                Ok(value) => match json_safe_value(&ctx, value) {
+                    Ok((value, return_text)) => Ok(RunOutcome::success(
                         value,
                         return_text,
                         logs_snapshot(&logs),
-                    ))
-                }
+                    )),
+                    Err(JsonValueError::Limit(message)) => {
+                        Ok(RunOutcome::failure(message, logs_snapshot(&logs)))
+                    }
+                    Err(JsonValueError::Js(err)) => {
+                        Err(RunError::Engine(js_error_message(&ctx, err)))
+                    }
+                },
                 Err(err) => {
                     if control.is_cancelled() {
                         Err(RunError::Cancelled)
@@ -416,10 +448,15 @@ async fn execute_quickjs(
 fn install_globals<'js>(
     ctx: &Ctx<'js>,
     session: Arc<browseros_core::BrowserSession>,
-    logs: Arc<Mutex<Vec<String>>>,
+    defaults: BrowserToolDefaults,
+    logs: SharedLogs,
     control: RunControl,
 ) -> Result<(), RunError> {
-    let bridge = BrowserBridge { session, control };
+    let bridge = BrowserBridge {
+        session,
+        defaults,
+        control,
+    };
     let call_bridge = {
         let bridge = bridge.clone();
         move |ctx: Ctx<'js>, method: String, args_json: String| {
@@ -433,8 +470,8 @@ fn install_globals<'js>(
             }
         }
     };
-    let push_log = move |line: String| {
-        push_log(&logs, line);
+    let push_log = move |ctx: Ctx<'js>, line: String| {
+        push_log(&logs, line).map_err(|message| Exception::throw_message(&ctx, &message))
     };
     let globals = ctx.globals();
     globals
@@ -467,8 +504,8 @@ impl BrowserBridge {
                         NewPageOptions {
                             background: None,
                             hidden: None,
-                            window_id: None,
-                            tab_group_id: None,
+                            window_id: self.defaults.default_window_id.clone(),
+                            tab_group_id: self.defaults.default_tab_group_id.clone(),
                         },
                     ))
                     .await?;
@@ -483,16 +520,11 @@ impl BrowserBridge {
                 let page_id = page_arg(&args, 0)?;
                 let info = self
                     .control
-                    .race(async {
-                        Ok(self
-                            .session
-                            .pages
-                            .get_info(page_id)
-                            .await
-                            .map(|page| page_json(&page)))
-                    })
+                    .race(self.session.pages.refresh(page_id))
                     .await?;
-                Ok(BrowserCallValue::Json(info.unwrap_or(Value::Null)))
+                Ok(BrowserCallValue::Json(
+                    info.map(|page| page_json(&page)).unwrap_or(Value::Null),
+                ))
             }
             "observe.snapshot" => {
                 let page_id = page_arg(&args, 0)?;
@@ -757,20 +789,39 @@ fn json_to_js<'js>(ctx: &Ctx<'js>, value: Value) -> rquickjs::Result<JsValue<'js
 fn json_safe_value<'js>(
     ctx: &Ctx<'js>,
     value: JsValue<'js>,
-) -> rquickjs::CaughtResult<'js, (Option<Value>, Option<String>)> {
-    let encode: Function<'_> = ctx.globals().get("__browserosJsonSafeString").catch(ctx)?;
-    let encoded: Option<String> = encode.call((value.clone(),)).catch(ctx)?;
+) -> Result<(Option<Value>, Option<String>), JsonValueError<'js>> {
+    let encode: Function<'_> = ctx
+        .globals()
+        .get("__browserosJsonSafeString")
+        .catch(ctx)
+        .map_err(JsonValueError::Js)?;
+    let encoded: Option<String> = encode
+        .call((value.clone(),))
+        .catch(ctx)
+        .map_err(JsonValueError::Js)?;
     let Some(encoded) = encoded else {
         return Ok((None, None));
     };
-    let display: Function<'_> = ctx.globals().get("__browserosSafeStringify").catch(ctx)?;
-    let return_text: String = display.call((value,)).catch(ctx)?;
+    if encoded.len() > MAX_RETURN_VALUE_BYTES {
+        return Err(JsonValueError::Limit(format!(
+            "run return value exceeded {MAX_RETURN_VALUE_BYTES} byte limit"
+        )));
+    }
+    let display: Function<'_> = ctx
+        .globals()
+        .get("__browserosSafeStringify")
+        .catch(ctx)
+        .map_err(JsonValueError::Js)?;
+    let return_text: String = display
+        .call((value,))
+        .catch(ctx)
+        .map_err(JsonValueError::Js)?;
     let value = serde_json::from_str(&encoded).map_err(|err| {
-        CaughtError::Error(rquickjs::Error::new_from_js_message(
+        JsonValueError::Js(CaughtError::Error(rquickjs::Error::new_from_js_message(
             "string",
             "JSON",
             err.to_string(),
-        ))
+        )))
     })?;
     Ok((Some(value), Some(return_text)))
 }
@@ -824,24 +875,39 @@ fn format_outcome(outcome: &RunOutcome) -> String {
     sections.join("\n")
 }
 
-fn timeout_duration(timeout_ms: f64) -> Duration {
+fn normalized_timeout_ms(timeout_ms: f64) -> u64 {
     if !timeout_ms.is_finite() || timeout_ms <= 0.0 {
-        Duration::from_millis(1)
+        MIN_TIMEOUT_MS
     } else {
-        Duration::from_secs_f64(timeout_ms / 1000.0)
+        timeout_ms.ceil().min(MAX_TIMEOUT_MS as f64) as u64
     }
 }
 
-fn logs_snapshot(logs: &Arc<Mutex<Vec<String>>>) -> Vec<String> {
+fn logs_snapshot(logs: &SharedLogs) -> Vec<String> {
     logs.lock()
-        .map(|logs| logs.clone())
+        .map(|logs| logs.entries.clone())
         .unwrap_or_else(|_| Vec::new())
 }
 
-fn push_log(logs: &Arc<Mutex<Vec<String>>>, line: String) {
-    if let Ok(mut logs) = logs.lock() {
-        logs.push(line);
+fn push_log(logs: &SharedLogs, line: String) -> Result<(), String> {
+    let mut logs = logs
+        .lock()
+        .map_err(|_| "run log capture unavailable".to_string())?;
+    if let Some(message) = &logs.limit_message {
+        return Err(message.clone());
     }
+    if logs.entries.len() >= MAX_LOG_ENTRIES
+        || logs.bytes.saturating_add(line.len()) > MAX_LOG_BYTES
+    {
+        let message = format!(
+            "run console output exceeded limit (max {MAX_LOG_ENTRIES} entries, {MAX_LOG_BYTES} bytes)"
+        );
+        logs.limit_message = Some(message.clone());
+        return Err(message);
+    }
+    logs.bytes = logs.bytes.saturating_add(line.len());
+    logs.entries.push(line);
+    Ok(())
 }
 
 fn engine_error(error: rquickjs::Error) -> RunError {
@@ -856,7 +922,7 @@ mod tests {
         output_file::create_browser_output_file_access,
     };
     use browseros_cdp::{CdpError, CdpEvent};
-    use browseros_core::{BrowserSession, BrowserSessionHooks, CdpConnection};
+    use browseros_core::{BrowserSession, BrowserSessionHooks, CdpConnection, WindowId};
     use futures_util::future::BoxFuture;
     use serde_json::json;
     use tokio::sync::broadcast;
@@ -864,12 +930,36 @@ mod tests {
 
     struct RunFakeConnection {
         sender: broadcast::Sender<CdpEvent>,
+        state: Arc<Mutex<RunFakeState>>,
+    }
+
+    #[derive(Default)]
+    struct RunFakeState {
+        create_tab_params: Vec<Value>,
+        add_group_params: Vec<Value>,
     }
 
     impl RunFakeConnection {
         fn new() -> Self {
             let (sender, _receiver) = broadcast::channel(8);
-            Self { sender }
+            Self {
+                sender,
+                state: Arc::new(Mutex::new(RunFakeState::default())),
+            }
+        }
+
+        fn create_tab_params(&self) -> Vec<Value> {
+            self.state
+                .lock()
+                .map(|state| state.create_tab_params.clone())
+                .unwrap_or_default()
+        }
+
+        fn add_group_params(&self) -> Vec<Value> {
+            self.state
+                .lock()
+                .map(|state| state.add_group_params.clone())
+                .unwrap_or_default()
         }
     }
 
@@ -877,26 +967,60 @@ mod tests {
         fn send<'a>(
             &'a self,
             method: &'a str,
-            _params: Value,
+            params: Value,
             _session: Option<&'a SessionId>,
         ) -> BoxFuture<'a, Result<Value, CdpError>> {
+            let state = self.state.clone();
             Box::pin(async move {
                 match method {
                     "Browser.getTabs" => Ok(json!({
-                        "tabs": [{
-                            "tabId": 7,
-                            "targetId": "target-7",
-                            "url": "https://example.com",
-                            "title": "Example",
-                            "isActive": true,
-                            "isLoading": false,
-                            "loadProgress": 1.0,
-                            "isPinned": false,
-                            "isHidden": false,
-                            "windowId": 1,
-                            "index": 0
-                        }]
+                        "tabs": [fake_tab_json(7, "target-7", "https://example.com", "Example", 1, 0)]
                     })),
+                    "Browser.createTab" => {
+                        if let Ok(mut state) = state.lock() {
+                            state.create_tab_params.push(params.clone());
+                        }
+                        Ok(json!({
+                            "tab": fake_tab_json(
+                                9,
+                                "target-9",
+                                params.get("url").and_then(Value::as_str).unwrap_or("about:blank"),
+                                "Created",
+                                params.get("windowId").and_then(Value::as_i64).unwrap_or(1),
+                                1
+                            )
+                        }))
+                    }
+                    "Browser.getTabInfo" => {
+                        let tab_id = params.get("tabId").and_then(Value::as_i64).unwrap_or(7);
+                        let tab = if tab_id == 9 {
+                            fake_tab_json(9, "target-9", "https://new.example", "Created", 42, 1)
+                        } else {
+                            fake_tab_json(7, "target-7", "https://example.com", "Example", 1, 0)
+                        };
+                        Ok(json!({ "tab": tab }))
+                    }
+                    "Browser.addTabsToGroup" => {
+                        if let Ok(mut state) = state.lock() {
+                            state.add_group_params.push(params.clone());
+                        }
+                        Ok(json!({
+                            "group": {
+                                "groupId": params
+                                    .get("groupId")
+                                    .and_then(Value::as_str)
+                                    .unwrap_or("group-1"),
+                                "windowId": 42,
+                                "title": "group",
+                                "color": "blue",
+                                "collapsed": false,
+                                "tabIds": params
+                                    .get("tabIds")
+                                    .cloned()
+                                    .unwrap_or_else(|| json!([]))
+                            }
+                        }))
+                    }
                     _ => Err(CdpError::Protocol {
                         code: -1,
                         message: format!("unexpected fake CDP call: {method}"),
@@ -933,24 +1057,37 @@ mod tests {
     }
 
     fn test_ctx() -> ToolCtx {
+        test_ctx_for(
+            Arc::new(RunFakeConnection::new()),
+            BrowserToolDefaults::default(),
+        )
+    }
+
+    fn test_ctx_for(connection: Arc<RunFakeConnection>, defaults: BrowserToolDefaults) -> ToolCtx {
         ToolCtx::new(BrowserToolOptions {
-            session: BrowserSession::new(
-                Arc::new(RunFakeConnection::new()),
-                BrowserSessionHooks::default(),
-            ),
-            defaults: BrowserToolDefaults::default(),
+            session: BrowserSession::new(connection, BrowserSessionHooks::default()),
+            defaults,
             cancel: CancellationToken::new(),
             output_files: create_browser_output_file_access(),
         })
     }
 
     async fn run_tool(code: &str, timeout: Option<f64>) -> anyhow::Result<ToolResult> {
+        let ctx = test_ctx();
+        run_tool_with_ctx(code, timeout, &ctx).await
+    }
+
+    async fn run_tool_with_ctx(
+        code: &str,
+        timeout: Option<f64>,
+        ctx: &ToolCtx,
+    ) -> anyhow::Result<ToolResult> {
         let mut args = json!({ "code": code });
         if let (Value::Object(object), Some(timeout)) = (&mut args, timeout) {
             object.insert("timeout".to_string(), json!(timeout));
         }
         let def = definition();
-        execute_tool(&def, args, &test_ctx())
+        execute_tool(&def, args, ctx)
             .await
             .map_err(|err| anyhow::anyhow!(err.to_string()))
     }
@@ -1049,6 +1186,61 @@ while (true) {}
     }
 
     #[tokio::test]
+    async fn run_clamps_pathological_timeout_values() -> anyhow::Result<()> {
+        let result = run_tool("return 'ok'", Some(f64::MAX)).await?;
+        assert!(!result.is_error);
+        assert_eq!(
+            result.structured_content,
+            Some(json!({
+                "ok": true,
+                "value": "ok",
+                "logs": []
+            }))
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn run_rejects_excessive_console_output_as_structured_error() -> anyhow::Result<()> {
+        let result = run_tool(
+            &format!("console.log('x'.repeat({}));", MAX_LOG_BYTES + 1),
+            None,
+        )
+        .await?;
+        assert!(result.is_error);
+        assert_eq!(
+            result.structured_content,
+            Some(json!({
+                "ok": false,
+                "logs": [],
+                "error": format!(
+                    "run console output exceeded limit (max {MAX_LOG_ENTRIES} entries, {MAX_LOG_BYTES} bytes)"
+                )
+            }))
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn run_rejects_excessive_return_output_as_structured_error() -> anyhow::Result<()> {
+        let result = run_tool(
+            &format!("return 'x'.repeat({});", MAX_RETURN_VALUE_BYTES + 1),
+            None,
+        )
+        .await?;
+        assert!(result.is_error);
+        assert_eq!(
+            result.structured_content,
+            Some(json!({
+                "ok": false,
+                "logs": [],
+                "error": format!("run return value exceeded {MAX_RETURN_VALUE_BYTES} byte limit")
+            }))
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn run_proxies_browser_pages_list() -> anyhow::Result<()> {
         let result = run_tool(
             r#"
@@ -1080,6 +1272,109 @@ return pages.map((page) => ({
         Ok(())
     }
 
+    #[tokio::test]
+    async fn run_proxies_browser_pages_get_info_with_refresh() -> anyhow::Result<()> {
+        let result = run_tool(
+            r#"
+const page = await browser.pages.getInfo(1);
+return { pageId: page.pageId, tabId: page.tabId, url: page.url, title: page.title };
+"#,
+            None,
+        )
+        .await?;
+        assert!(!result.is_error);
+        assert_eq!(
+            result.structured_content,
+            Some(json!({
+                "ok": true,
+                "value": {
+                    "pageId": 1,
+                    "tabId": 7,
+                    "url": "https://example.com",
+                    "title": "Example"
+                },
+                "logs": []
+            }))
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn run_pages_new_page_forwards_default_placement() -> anyhow::Result<()> {
+        let connection = Arc::new(RunFakeConnection::new());
+        let ctx = test_ctx_for(
+            connection.clone(),
+            BrowserToolDefaults {
+                default_window_id: Some(WindowId(42)),
+                default_tab_group_id: Some("group-1".to_string()),
+            },
+        );
+        let result = run_tool_with_ctx(
+            "return await browser.pages.newPage('https://new.example')",
+            None,
+            &ctx,
+        )
+        .await?;
+        assert!(!result.is_error);
+        assert_eq!(
+            result.structured_content,
+            Some(json!({
+                "ok": true,
+                "value": 1,
+                "logs": []
+            }))
+        );
+
+        let create_params = connection.create_tab_params();
+        assert_eq!(create_params.len(), 1);
+        assert_eq!(
+            create_params.first().and_then(|params| params.get("url")),
+            Some(&json!("https://new.example"))
+        );
+        assert_eq!(
+            create_params
+                .first()
+                .and_then(|params| params.get("windowId")),
+            Some(&json!(42))
+        );
+
+        let group_params = connection.add_group_params();
+        assert_eq!(group_params.len(), 1);
+        assert_eq!(
+            group_params
+                .first()
+                .and_then(|params| params.get("groupId")),
+            Some(&json!("group-1"))
+        );
+        assert_eq!(
+            group_params.first().and_then(|params| params.get("tabIds")),
+            Some(&json!([9]))
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn run_browser_api_failure_rejects_into_structured_error() -> anyhow::Result<()> {
+        let result = run_tool("await browser.cdp('Browser.nope')", None).await?;
+        assert!(result.is_error);
+        let structured = result
+            .structured_content
+            .as_ref()
+            .and_then(Value::as_object)
+            .ok_or_else(|| anyhow::anyhow!("missing structured object"))?;
+        assert_eq!(structured.get("ok"), Some(&json!(false)));
+        assert_eq!(structured.get("logs"), Some(&json!([])));
+        let error = structured
+            .get("error")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow::anyhow!("missing structured error"))?;
+        assert!(
+            error.contains("unexpected fake CDP call: Browser.nope"),
+            "unexpected error: {error}"
+        );
+        Ok(())
+    }
+
     fn result_text(result: &ToolResult) -> anyhow::Result<&str> {
         result
             .content
@@ -1087,5 +1382,28 @@ return pages.map((page) => ({
             .and_then(|content| content.as_text())
             .map(|content| content.text.as_str())
             .ok_or_else(|| anyhow::anyhow!("missing text result"))
+    }
+
+    fn fake_tab_json(
+        tab_id: i64,
+        target_id: &str,
+        url: &str,
+        title: &str,
+        window_id: i64,
+        index: i64,
+    ) -> Value {
+        json!({
+            "tabId": tab_id,
+            "targetId": target_id,
+            "url": url,
+            "title": title,
+            "isActive": true,
+            "isLoading": false,
+            "loadProgress": 1.0,
+            "isPinned": false,
+            "isHidden": false,
+            "windowId": window_id,
+            "index": index
+        })
     }
 }
