@@ -9,9 +9,10 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version, e.g. 0.1.0"
-        required: true
+        description: "Release version; defaults to apps/claw-server-rust/Cargo.toml at ref"
+        required: false
         type: string
+        default: ""
       ref:
         description: "Git ref to release; defaults to the repository default branch"
         required: false

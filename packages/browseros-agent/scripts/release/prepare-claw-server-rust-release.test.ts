@@ -168,6 +168,30 @@ describe('prepare-claw-server-rust-release', () => {
     }
   })
 
+  it('derives a workflow_dispatch release version from Cargo.toml when omitted', async () => {
+    const { dir, bareDir } = await initFixture('0.1.0')
+    try {
+      const releaseSha = await revParse(dir, 'HEAD')
+
+      const result = await prepare(dir, {
+        eventName: 'workflow_dispatch',
+      })
+
+      expect(result.code, result.stderr || result.stdout).toBe(0)
+      expect(parseOutput(result.stdout)).toMatchObject({
+        version: '0.1.0',
+        tag: 'claw-server-rust/v0.1.0',
+        release_sha: releaseSha,
+      })
+      expect(await revParse(bareDir, 'claw-server-rust/v0.1.0^{commit}')).toBe(
+        releaseSha,
+      )
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+      rmSync(bareDir, { recursive: true, force: true })
+    }
+  })
+
   it('resolves pushed Rust tags and previous tags', async () => {
     const { dir, bareDir } = await initFixture('0.1.0')
     try {

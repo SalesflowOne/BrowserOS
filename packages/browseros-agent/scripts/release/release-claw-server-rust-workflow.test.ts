@@ -17,6 +17,10 @@ describe('release-claw-server-rust workflow', () => {
     expect(workflow).toContain('workflow_call:')
     expect(workflow).toContain('ref:')
     expect(workflow).toContain(
+      'Release version; defaults to apps/claw-server-rust/Cargo.toml at ref',
+    )
+    expect(workflow).toContain('required: false')
+    expect(workflow).toContain(
       'packages/browseros-agent/scripts/release/prepare-claw-server-rust-release.sh',
     )
   })
