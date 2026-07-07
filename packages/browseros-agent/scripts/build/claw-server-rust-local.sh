@@ -61,7 +61,8 @@ else
 fi
 
 binary_name="browseros-claw-server-rs"
-binary_path="$agent_root/target/release/$binary_name"
+cargo_target_dir="${CARGO_TARGET_DIR:-$agent_root/target}"
+binary_path="$cargo_target_dir/release/$binary_name"
 destination="$browseros_root/resources/binaries/browseros_claw_server_rust/$target"
 
 echo "Building Rust BrowserClaw server for $target..."

@@ -148,7 +148,7 @@ jobs:
           bun scripts/build/claw-onboard.ts --ci
 
           use_rust="$(
-            BROWSEROS_ROOT="$browseros_root" python3 - <<'PY'
+            BROWSEROS_ROOT="$browseros_root" uv --quiet run --project "$browseros_root" python - <<'PY'
           import yaml
           import os
           from pathlib import Path
