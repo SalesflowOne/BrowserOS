@@ -13,22 +13,7 @@ export interface CockpitData {
   isPending: boolean
 }
 
-/**
- * Single data aggregation hook for the homepage. Per the project
- * convention, the screen calls this and nothing else. PR 3 rolls up
- * the running grid by agent so each card represents one logical run
- * across however many tabs it touches. The recent-activity section
- * stays tab-level by design: "Cowork did read on Stripe 12m ago" is
- * more informative than "Cowork did 14 things". Approvals and
- * handoffs remain on their mocked hooks until later PRs supply them.
- *
- * Sticky focus is applied across polls so the card surface does not
- * flicker when one agent fires a parallel burst of tool calls across
- * several tabs. The hook holds the last poll's per-agent focus in a
- * useRef and passes it back into the rollup as a hint; the rollup
- * keeps that target as focus while it remains in the agent's active
- * set, and re-elects to the freshest tab otherwise.
- */
+/** Aggregates active-tab rollups and recent activity for the homepage. */
 export function useCockpitData(): CockpitData {
   const tabs = useTabsActivity()
 

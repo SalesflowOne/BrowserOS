@@ -73,7 +73,7 @@ class ServerOTAModule(Step):
 
     def artifact_key(self, target: str) -> str:
         """R2 source key of the unsigned server resources zip for a target."""
-        return f"artifacts/server/latest/{self.bundle.id}-resources-{target}.zip"
+        return self.bundle.unsigned_artifact_key(target)
 
     def zip_filename(self, platform_name: str) -> str:
         """Sparkle payload zip name (also the enclosure URL basename)."""

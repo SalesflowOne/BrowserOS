@@ -43,7 +43,7 @@ mock.module('@/lib/llm-providers/storage', () => ({
 mock.module('@/lib/browseros/helpers', () => ({
   getAgentServerUrl: async () => 'http://127.0.0.1:9105',
   getMcpServerUrl: async () => 'http://127.0.0.1:9106/mcp',
-  getHealthCheckUrl: async () => 'http://127.0.0.1:9106/health',
+  getHealthCheckUrl: async () => 'http://127.0.0.1:9106/system/health',
   getProxyPort: async () => 9106,
 }))
 

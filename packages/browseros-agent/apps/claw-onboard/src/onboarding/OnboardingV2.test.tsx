@@ -6,7 +6,7 @@ import {
   finishBrowserOSOnboarding,
   importPhaseFor,
   OnboardingV2,
-  openBrowserOsNewTab,
+  openBrowserOsMcpPage,
 } from './OnboardingV2'
 
 const originalWindow = globalThis.window
@@ -88,7 +88,7 @@ describe('OnboardingV2 shell', () => {
 
   it('renders the visual rail with the v2 quote and three feature blocks', () => {
     const html = renderApp()
-    expect(html).toContain('BrowserOS')
+    expect(html).toContain('BrowserClaw')
     expect(html).toContain('Let the agent you already run')
     expect(html).toContain('Fast &amp; token-cheap')
     expect(html).toContain('Logged in as you')
@@ -99,25 +99,25 @@ describe('OnboardingV2 shell', () => {
     const html = renderApp()
     expect(html).toContain('<main')
     expect(html).not.toContain('role="dialog"')
-    expect(html).not.toContain('Welcome to BrowserOS')
+    expect(html).not.toContain('Welcome to BrowserClaw')
     expect(html).not.toContain('#FF5F57')
   })
 
-  it('renders four step dots', () => {
+  it('renders three step dots', () => {
     const html = renderApp()
     const matches = html.match(/data-step-dot="true"/g) ?? []
     expect(html).toContain('aria-label="Onboarding progress"')
-    expect(matches.length).toBe(4)
+    expect(matches.length).toBe(3)
   })
 
-  it('opens BrowserOS new tab when onboarding completes', () => {
+  it('opens BrowserClaw MCP page when onboarding completes', () => {
     const getAssignedUrl = installAssignableWindow(
       '?apiUrl=http%3A%2F%2F127.0.0.1%3A9234',
     )
 
-    openBrowserOsNewTab()
+    openBrowserOsMcpPage()
 
-    expect(getAssignedUrl()).toBe('chrome://newtab')
+    expect(getAssignedUrl()).toBe('chrome://newtab/#/mcp')
   })
 
   it('does not navigate after completing through the real Chromium bridge', () => {
@@ -137,12 +137,12 @@ describe('OnboardingV2 shell', () => {
     finishBrowserOSOnboarding(bridge)
 
     expect(getCompleteCount()).toBe(1)
-    expect(getAssignedUrl()).toBe('chrome://newtab')
+    expect(getAssignedUrl()).toBe('chrome://newtab/#/mcp')
   })
 
   it('does not treat failed or completed Chromium states as import success', () => {
-    expect(importPhaseFor('failed', true)).toBe('failed')
-    expect(importPhaseFor('completed', true)).toBe('picker')
-    expect(importPhaseFor('completed', false)).toBe('pre-quit')
+    expect(importPhaseFor('failed')).toBe('failed')
+    expect(importPhaseFor('completed')).toBe('picker')
+    expect(importPhaseFor('idle')).toBe('picker')
   })
 })

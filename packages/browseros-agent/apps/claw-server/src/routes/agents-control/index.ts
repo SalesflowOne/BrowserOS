@@ -4,13 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
  * Powers the homepage's Stop button. Aborts every in-flight tool
- * dispatch across all of this agent's live MCP sessions and returns
- * the count so the UI can surface it. The session itself stays
- * open; the agent's harness sees the cancelled dispatch as an
- * isError tool result and is free to fire its next call.
+ * dispatch for the selected agent record and returns the count so
+ * the UI can surface it. The session itself stays open; the agent's
+ * harness sees the cancelled dispatch as an isError tool result and
+ * is free to fire its next call.
  */
 
 import { Hono } from 'hono'
+import { logger } from '../../lib/logger'
 import {
   CANCELLATION_REASON,
   dispatchCancellation,
@@ -34,6 +35,12 @@ export const agentsControlRoute = new Hono().post(
         404,
       )
     }
+    // The operator's Stop button: pairs with the cancelled-dispatch
+    // audit rows so a mid-run abort is attributable in the log.
+    logger.info('cancelled in-flight dispatches for agent', {
+      agentId,
+      cancelled,
+    })
     return c.json({ ok: true, cancelled }, 200)
   },
 )

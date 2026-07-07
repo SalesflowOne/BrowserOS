@@ -17,6 +17,11 @@ export type { ClientIdentity, IdentityService } from './identity'
 export {
   agentIdentityFromClient,
   createIdentityService,
-  fallbackSlugForSession,
-  slugifyClientName,
 } from './identity'
+export {
+  buildSessionGroupTitle,
+  buildSessionNamePrompt,
+  clientPrefixFromSlug,
+  normalizeSmallName,
+  sessionNameRequestedSchema,
+} from './naming'

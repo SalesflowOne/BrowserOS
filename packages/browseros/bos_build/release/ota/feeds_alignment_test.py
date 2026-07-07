@@ -59,7 +59,7 @@ class BundleDerivationTest(unittest.TestCase):
 
         self.assertEqual(
             module.artifact_key("darwin-arm64"),
-            "artifacts/server/latest/browserclaw-server-resources-darwin-arm64.zip",
+            "claw-server/prod-resources/latest/browseros-claw-server-resources-darwin-arm64.zip",
         )
         self.assertEqual(
             module.zip_filename("darwin_arm64"),

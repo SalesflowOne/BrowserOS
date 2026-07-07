@@ -44,7 +44,6 @@ export interface ReplayData {
   /** Stat strip displayed in the header. Strings are presentation. */
   tokens: string
   steps: string
-  approvals: string
   /** Total seconds the session covers, from start to last dispatch. */
   totalSeconds: number
   frames: ReplayFrame[]
@@ -129,7 +128,6 @@ function buildReplayData(
     duration: formatDuration(totalMs),
     tokens: '-',
     steps: String(task.dispatchCount),
-    approvals: String(countApprovals(task.dispatches)),
     totalSeconds: totalMs / 1000,
     frames,
     tabPageIds: eventTabs.tabPageIds,
@@ -194,19 +192,6 @@ function buildCaption(
   if (verb === 'navigate' && row.url) return `Navigate to ${row.url}`
   if (row.title) return `${row.toolName}: ${row.title}`
   return row.toolName
-}
-
-function countApprovals(rows: ToolDispatchRow[]): number {
-  // The PR #1392 audit row metadata can carry a cancellationKind;
-  // we treat the absence of error metadata as auto-approved and
-  // report 0 here until the approval gate (Phase 6) lands a real
-  // count. Stat is presentational; not load-bearing.
-  let n = 0
-  for (const r of rows) {
-    const meta = r.resultMeta ? safeParse(r.resultMeta) : null
-    if (meta?.approvalRequired === true) n++
-  }
-  return n
 }
 
 function safeParse(json: string): Record<string, unknown> | null {
