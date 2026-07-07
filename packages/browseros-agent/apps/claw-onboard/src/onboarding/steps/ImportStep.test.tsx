@@ -5,7 +5,11 @@ import { MemoryRouter } from 'react-router'
 import { Form } from '@/components/ui/form'
 import type { BrowserOSOnboardingState } from '../browseros-onboarding-api'
 import { BROWSEROS_ONBOARDING_API_VERSION } from '../browseros-onboarding-api'
-import { MOCK_BROWSEROS_IMPORT_SOURCES } from '../onboarding-v2.helpers'
+import {
+  importItemLabel,
+  MOCK_BROWSEROS_IMPORT_SOURCES,
+  selectableItemsForSource,
+} from '../onboarding-v2.helpers'
 import {
   type OnboardingFormValues,
   onboardingFormDefaults,
@@ -28,13 +32,15 @@ function readyState(
 function Harness({
   phase,
   state = readyState(),
+  formValues = {},
 }: {
   phase: ImportPhase
   state?: BrowserOSOnboardingState
+  formValues?: Partial<OnboardingFormValues>
 }) {
   const form = useForm<OnboardingFormValues>({
     resolver: onboardingFormResolver,
-    defaultValues: onboardingFormDefaults,
+    defaultValues: { ...onboardingFormDefaults, ...formValues },
   })
   return (
     <Form {...form}>
@@ -42,7 +48,6 @@ function Harness({
         phase={phase}
         state={state}
         form={form}
-        onQuitChrome={() => undefined}
         onImport={() => undefined}
         onRefresh={() => undefined}
         onContinue={() => undefined}
@@ -54,30 +59,70 @@ function Harness({
 function render(
   phase: ImportPhase,
   state: BrowserOSOnboardingState = readyState(),
+  formValues: Partial<OnboardingFormValues> = {},
 ): string {
   return renderToStaticMarkup(
     <MemoryRouter>
-      <Harness phase={phase} state={state} />
+      <Harness phase={phase} state={state} formValues={formValues} />
     </MemoryRouter>,
   )
 }
 
-describe('ImportStep', () => {
-  it('renders the Chrome-is-open notice in pre-quit phase', () => {
-    const html = render('pre-quit')
-    expect(html).toContain('Chrome is open')
-    expect(html).toContain('Quit Chrome for me')
-  })
+function checklistRowFor(html: string, label: string): string {
+  const checklistStart = html.indexOf('What to import')
+  const labelIndex = html.indexOf(`>${label}</span>`, checklistStart)
+  if (checklistStart === -1 || labelIndex === -1) return ''
+  const rowStart = html.lastIndexOf('<label', labelIndex)
+  const rowEnd = html.indexOf('</label>', labelIndex)
+  return html.slice(rowStart, rowEnd + '</label>'.length)
+}
 
+describe('ImportStep', () => {
   it('renders the picker, the Keychain notice, and an Import button in picker phase', () => {
     const html = render('picker')
     expect(html).toContain('Choose a browser profile to import')
     expect(html).toContain('Google Chrome - Work')
     expect(html).toContain('Google Chrome - Personal')
     expect(html).toContain('Microsoft Edge - Default')
+    expect(html).toContain('What to import')
+    for (const item of MOCK_BROWSEROS_IMPORT_SOURCES[0].supportedItems) {
+      expect(checklistRowFor(html, importItemLabel(item))).toContain(
+        'aria-checked="true"',
+      )
+    }
+    expect(html).toContain('7 of 7 selected')
     expect(html).toContain('macOS will ask permission')
     expect(html).toContain('Import 7 items from Work')
+    expect(html).not.toContain('Chrome is open')
+    expect(html).not.toContain('Quit Chrome for me')
     expect(html).not.toContain('disabled=""')
+  })
+
+  it('checks recommended items and leaves non-recommended supported items unchecked', () => {
+    const source = MOCK_BROWSEROS_IMPORT_SOURCES[1]
+    const html = render('picker', readyState(), {
+      selectedSourceId: source.id,
+      selectedItems: selectableItemsForSource(source),
+    })
+
+    expect(html).toContain('4 of 5 selected')
+    expect(html).toContain('Import 4 items from Personal')
+    for (const item of source.recommendedItems) {
+      const row = checklistRowFor(html, importItemLabel(item))
+      expect(row).toContain('data-checked=""')
+      expect(row).toContain('aria-checked="true"')
+    }
+    const autofillRow = checklistRowFor(html, 'Autofill')
+    expect(autofillRow).toContain('data-unchecked=""')
+    expect(autofillRow).toContain('aria-checked="false"')
+  })
+
+  it('disables import until at least one supported item is selected', () => {
+    const html = render('picker', readyState(), { selectedItems: [] })
+
+    expect(html).toContain('0 of 7 selected')
+    expect(html).toContain('Select items to import')
+    expect(html).toContain('disabled=""')
   })
 
   it('disables import while Chromium is detecting sources', () => {
@@ -100,7 +145,35 @@ describe('ImportStep', () => {
       }),
     )
     expect(html).toContain('No supported import items')
+    expect(html).not.toContain('What to import')
     expect(html).toContain('disabled=""')
+  })
+
+  it('uses the singular source tile item count for one supported item', () => {
+    const html = render(
+      'picker',
+      readyState({
+        sources: [
+          {
+            ...MOCK_BROWSEROS_IMPORT_SOURCES[0],
+            supportedItems: ['history'],
+            recommendedItems: ['history'],
+          },
+        ],
+      }),
+    )
+
+    expect(html).toContain('1 item')
+    expect(html).not.toContain('1 items')
+  })
+
+  it('uses the singular item label when one item is selected', () => {
+    const html = render('picker', readyState(), {
+      selectedItems: ['history'],
+    })
+
+    expect(html).toContain('1 of 7 selected')
+    expect(html).toContain('Import 1 item from Work')
   })
 
   it('renders the importing progress card during importing phase', () => {
@@ -137,7 +210,7 @@ describe('ImportStep', () => {
     expect(html).not.toContain('Choose a browser profile to import')
   })
 
-  it('renders the success card and Connect-to-Claude CTA in imported phase', () => {
+  it('renders the success card and continue CTA in imported phase', () => {
     const html = render(
       'imported',
       readyState({
@@ -150,7 +223,7 @@ describe('ImportStep', () => {
     )
     expect(html).toContain('Imported 7 items from Work')
     expect(html).toContain('History, Bookmarks')
-    expect(html).toContain('Connect to Claude')
+    expect(html).toContain('Continue')
   })
 
   it('does not fabricate a success summary when progress is missing', () => {

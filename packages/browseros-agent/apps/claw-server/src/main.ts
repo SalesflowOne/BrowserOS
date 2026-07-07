@@ -23,11 +23,12 @@ import { loadClawConfig } from './config'
 import { applyClawConfig, env } from './env'
 import { bootstrapBrowserosBrowser } from './lib/browser-bootstrap'
 import { setBrowserSession } from './lib/browser-session'
-import { getClawServerDir } from './lib/browseros-dir'
+import { getClawServerDir } from './lib/browserclaw-dir'
 import { logger } from './lib/logger'
 import { migrateMcpUrls } from './lib/migrate-mcp-urls'
 import { setLocalServerUrl } from './local-server-url'
-import server from './server'
+import { createServer } from './server'
+import { healClaudeCodeBrowserOsHttpTransportTags } from './services/claude-code-heal'
 import { startScreencastPoller } from './services/screencast-poller'
 import { publicMcpUrl } from './shared/mcp-url'
 
@@ -40,10 +41,12 @@ async function start(): Promise<void> {
   }
   applyClawConfig(config.value)
 
+  let shutdown = (): void => process.exit(0)
+  const app = createServer({ onShutdown: () => shutdown() })
   const httpServer = Bun.serve({
     hostname: '127.0.0.1',
     port: env.serverPort,
-    fetch: server.fetch,
+    fetch: app.fetch,
   })
   // File sink attaches only after the port bind succeeds: the bind is
   // the de-facto singleton lock, so a second accidental launch dies on
@@ -52,6 +55,13 @@ async function start(): Promise<void> {
   const url = `http://${httpServer.hostname}:${httpServer.port}`
   setLocalServerUrl(url)
   logger.info('claw-server listening', { url })
+
+  const healedClaudeCodeTags = await healClaudeCodeBrowserOsHttpTransportTags()
+  if (healedClaudeCodeTags > 0) {
+    logger.info('healed Claude Code BrowserOS MCP transport tags', {
+      healed: healedClaudeCodeTags,
+    })
+  }
 
   // Attach to the BrowserOS Chromium so MCP `tools/call` dispatches
   // hit a real browser. The bootstrap soft-fails when BrowserOS is
@@ -89,6 +99,7 @@ async function start(): Promise<void> {
       setTimeout(() => process.exit(1), 5_000).unref()
       bootstrap.disconnect().finally(() => process.exit(0))
     }
+    shutdown = cleanup
     process.once('SIGINT', cleanup)
     process.once('SIGTERM', cleanup)
   }

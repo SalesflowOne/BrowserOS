@@ -170,10 +170,12 @@ class CiGoldenTest(unittest.TestCase):
         )
 
     def test_windows_ci_swaps_sign_for_mini_installer(self):
-        # release.windows.ci.yaml — no winsparkle_setup, no sparkle_sign
+        # release.windows.ci.yaml — no sparkle_sign; winsparkle_setup stays
+        # (the release GN config links WinSparkle.dll even unsigned)
         self.assertEqual(
             plan(CI, "x64", "windows"),
             [
+                "winsparkle_setup",
                 "download_resources",
                 "resources",
                 "bundled_extensions",

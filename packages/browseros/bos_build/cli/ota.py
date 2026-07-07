@@ -49,7 +49,7 @@ def create_ota_context() -> Context:
 def execute_module(ctx: Context, module) -> None:
     """Run a single OTA step through the shared runner"""
     try:
-        run_steps(ctx, [module], name="ota", subscribers=(slack_subscriber,))
+        run_steps(ctx, [module], name="ota", subscribers=(slack_subscriber(ctx),))
     except StepExecutionError as e:
         log_error(str(e))
         raise typer.Exit(1)
@@ -92,7 +92,7 @@ def server_release(
         "browseros", "--product", help="Product whose server bundle to release"
     ),
 ):
-    """Release BrowserOS Server OTA update
+    """Publish BrowserOS server OTA update
 
     Downloads server binaries from R2 (artifacts/server/latest/),
     signs them, creates Sparkle update packages, and uploads to R2.

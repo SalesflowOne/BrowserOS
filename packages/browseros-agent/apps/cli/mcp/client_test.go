@@ -9,11 +9,11 @@ import (
 	"time"
 )
 
-func TestHealthUsesBrowserOSHealthEndpoint(t *testing.T) {
+func TestHealthUsesCanonicalSystemHealthEndpoint(t *testing.T) {
 	var paths []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		paths = append(paths, r.URL.Path)
-		if r.URL.Path != "/health" {
+		if r.URL.Path != "/system/health" {
 			http.NotFound(w, r)
 			return
 		}
@@ -28,17 +28,17 @@ func TestHealthUsesBrowserOSHealthEndpoint(t *testing.T) {
 	if data["status"] != "ok" {
 		t.Fatalf("Health() status = %v, want ok", data["status"])
 	}
-	assertPaths(t, paths, []string{"/health"})
+	assertPaths(t, paths, []string{"/system/health"})
 }
 
-func TestHealthFallsBackToClawSystemHealthEndpoint(t *testing.T) {
+func TestHealthFallsBackToLegacyRootHealthEndpoint(t *testing.T) {
 	var paths []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		paths = append(paths, r.URL.Path)
 		switch r.URL.Path {
-		case "/health":
-			http.NotFound(w, r)
 		case "/system/health":
+			http.NotFound(w, r)
+		case "/health":
 			fmt.Fprint(w, `{"status":"ok"}`)
 		default:
 			http.NotFound(w, r)
@@ -53,14 +53,14 @@ func TestHealthFallsBackToClawSystemHealthEndpoint(t *testing.T) {
 	if data["status"] != "ok" {
 		t.Fatalf("Health() status = %v, want ok", data["status"])
 	}
-	assertPaths(t, paths, []string{"/health", "/system/health"})
+	assertPaths(t, paths, []string{"/system/health", "/health"})
 }
 
-func TestHealthDoesNotFallbackOnBrowserOSHealthFailure(t *testing.T) {
+func TestHealthDoesNotFallbackOnCanonicalHealthFailure(t *testing.T) {
 	var paths []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		paths = append(paths, r.URL.Path)
-		if r.URL.Path == "/health" {
+		if r.URL.Path == "/system/health" {
 			http.Error(w, "boom", http.StatusInternalServerError)
 			return
 		}
@@ -75,7 +75,7 @@ func TestHealthDoesNotFallbackOnBrowserOSHealthFailure(t *testing.T) {
 	if !strings.Contains(err.Error(), "HTTP 500") {
 		t.Fatalf("Health() error = %q, want HTTP 500", err)
 	}
-	assertPaths(t, paths, []string{"/health"})
+	assertPaths(t, paths, []string{"/system/health"})
 }
 
 func assertPaths(t *testing.T, got, want []string) {

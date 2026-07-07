@@ -70,7 +70,7 @@ index 0000000000000..ceb1c631d1e98
 +inline constexpr BrowserOSExtensionInfo kBrowserOSExtensions[] = {
 +    {kAgentExtensionId, false, false, BrowserOSExtensionProduct::kBrowserOS},
 +    {kBugReporterExtensionId, true, false, BrowserOSExtensionProduct::kAll},
-+    {kBrowserClawExtensionId, true, false,
++    {kBrowserClawExtensionId, false, false,
 +     BrowserOSExtensionProduct::kBrowserClaw},
 +};
 +

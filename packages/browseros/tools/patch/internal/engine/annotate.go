@@ -15,10 +15,16 @@ import (
 type AnnotateOptions struct {
 	Workspace workspace.Entry
 	Repo      *repo.Info
+	// Include limits annotation to these checkout paths. Nil means all
+	// eligible working-tree changes.
+	Include []string
 	// Exclude lists checkout paths deliberately left uncommitted — skipped
 	// conflicts whose files may hold partially applied hunks.
-	Exclude  []string
-	Progress Progress
+	Exclude []string
+	// CommitBody is appended to every feature commit. Refresh uses this to
+	// keep the browseros branch carrying its materialized Patches-Rev trailer.
+	CommitBody string
+	Progress   Progress
 }
 
 type AnnotateResult struct {
@@ -29,8 +35,8 @@ type AnnotateResult struct {
 	FeaturesSkipped int                        `json:"features_skipped"`
 	Committed       []AnnotateCommittedFeature `json:"committed"`
 	Skipped         []AnnotateSkippedFeature   `json:"skipped"`
-	// Unclaimed lists changed files no feature owns; they stay uncommitted
-	// so the checkout remains dirty until features.yaml claims them.
+	// Unclaimed lists changed files no feature or managed-output mechanism
+	// owns; they stay uncommitted until the pipeline claims them.
 	Unclaimed []string `json:"unclaimed,omitempty"`
 }
 
@@ -76,12 +82,18 @@ func Annotate(ctx context.Context, opts AnnotateOptions) (*AnnotateResult, error
 	}
 	// One status snapshot serves the whole run; a full scan is seconds on a
 	// Chromium checkout. Each feature consumes the entries it matched —
-	// commitFeatureFiles settles them (committed, or staged clean) — so what
-	// remains at the end is exactly the unclaimed leftovers.
-	changes, err := annotateChanges(ctx, opts.Workspace.Path, ignore, opts.Exclude)
+	// commitFeatureFiles settles them (committed, or staged clean). Managed
+	// build outputs are filtered before feature partitioning, so what remains
+	// at the end is exactly the unclaimed leftovers.
+	changes, err := annotateChanges(ctx, opts.Workspace.Path, ignore, opts.Include, opts.Exclude)
 	if err != nil {
 		return nil, err
 	}
+	managedOutputs, err := loadManagedOutputPatterns(opts.Repo.Root)
+	if err != nil {
+		return nil, err
+	}
+	changes = filterManagedOutputChanges(changes, managedOutputs)
 	for _, feature := range features {
 		result.Processed++
 		reportProgress(opts.Progress, "Annotating feature %s", feature.Name)
@@ -105,7 +117,7 @@ func Annotate(ctx context.Context, opts AnnotateOptions) (*AnnotateResult, error
 			result.FeaturesSkipped++
 			continue
 		}
-		commit, committedFiles, committed, err := commitFeatureFiles(ctx, opts.Workspace.Path, feature.Description, files.stage, files.commit)
+		commit, committedFiles, committed, err := commitFeatureFiles(ctx, opts.Workspace.Path, feature.Description, opts.CommitBody, files.stage, files.commit)
 		if err != nil {
 			return nil, fmt.Errorf("commit feature %s: %w", feature.Name, err)
 		}
@@ -129,6 +141,33 @@ func Annotate(ctx context.Context, opts AnnotateOptions) (*AnnotateResult, error
 	}
 	result.Unclaimed = uniqueReportPaths(changes)
 	return result, nil
+}
+
+func filterManagedOutputChanges(changes []git.FileChange, managedOutputs []string) []git.FileChange {
+	if len(managedOutputs) == 0 {
+		return changes
+	}
+	kept := changes[:0]
+	for _, change := range changes {
+		if annotateChangeIsManagedOutput(change, managedOutputs) {
+			continue
+		}
+		kept = append(kept, change)
+	}
+	return kept
+}
+
+func annotateChangeIsManagedOutput(change git.FileChange, managedOutputs []string) bool {
+	paths := changeReportPaths(change)
+	if len(paths) == 0 {
+		return false
+	}
+	for _, rel := range paths {
+		if !patch.PathMatches(rel, managedOutputs) {
+			return false
+		}
+	}
+	return true
 }
 
 func mappingValue(node *yaml.Node, key string) *yaml.Node {
@@ -179,8 +218,8 @@ func stringSequence(node *yaml.Node, key string) []string {
 // Untracked junk (reject files, logs, .browseros-patchignore patterns) is
 // filtered like extract does; tracked modifications always pass through
 // unless explicitly excluded.
-func annotateChanges(ctx context.Context, workspacePath string, ignore *patch.IgnoreSet, exclude []string) ([]git.FileChange, error) {
-	changes, err := git.StatusPorcelain(ctx, workspacePath, nil)
+func annotateChanges(ctx context.Context, workspacePath string, ignore *patch.IgnoreSet, include []string, exclude []string) ([]git.FileChange, error) {
+	changes, err := git.StatusPorcelain(ctx, workspacePath, include)
 	if err != nil {
 		return nil, err
 	}
@@ -304,7 +343,7 @@ func appendUniquePath(paths *[]string, seen map[string]bool, rel string) {
 }
 
 // commitFeatureFiles normalizes selected paths into the index and commits only real HEAD deltas.
-func commitFeatureFiles(ctx context.Context, workspacePath string, message string, stagePaths []string, commitPaths []string) (string, []string, bool, error) {
+func commitFeatureFiles(ctx context.Context, workspacePath string, message string, body string, stagePaths []string, commitPaths []string) (string, []string, bool, error) {
 	if err := git.AddAllPaths(ctx, workspacePath, stagePaths); err != nil {
 		return "", nil, false, err
 	}
@@ -315,7 +354,7 @@ func commitFeatureFiles(ctx context.Context, workspacePath string, message strin
 	if !dirty {
 		return "", nil, false, nil
 	}
-	commit, err := git.CommitPaths(ctx, workspacePath, message, commitPaths)
+	commit, err := git.CommitPathsWithBody(ctx, workspacePath, message, body, commitPaths)
 	if err != nil {
 		return "", nil, false, err
 	}

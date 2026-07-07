@@ -3,7 +3,6 @@
 
 import os
 import re
-import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
@@ -11,6 +10,7 @@ from typing import Callable, List, Optional, Tuple
 import typer
 
 from ..core.context import Context
+from ..core.checkout_lock import CheckoutLockError, ChromiumCheckoutLock
 from ..lib.paths import get_package_root
 from ..core.pipeline import validate_pipeline, show_available_modules
 from ..core.planner import (
@@ -24,12 +24,7 @@ from ..core.planner import (
     slice_runs_from,
 )
 from ..core.resolver import resolve_config, resolve_pipeline
-from ..lib.notify import (
-    notify_pipeline_end,
-    notify_pipeline_error,
-    set_build_context,
-    slack_subscriber,
-)
+from ..lib.notify import slack_subscriber
 from ..core.runner import StepExecutionError, run as run_pipeline
 from ..core.step import (
     all_steps,
@@ -41,7 +36,6 @@ from ..lib.utils import (
     log_error,
     log_info,
     log_warning,
-    IS_MACOS,
     IS_WINDOWS,
 )
 
@@ -53,7 +47,6 @@ EXECUTION_ORDER = [
     (phase, phase_steps(phase))
     for phase in ("setup", "prep", "build", "sign", "package", "upload")
 ]
-
 
 
 def main(
@@ -168,6 +161,12 @@ def main(
         "--chromium-src",
         "-S",
         help="Path to Chromium source directory",
+    ),
+    lock_wait: bool = typer.Option(
+        False,
+        "--lock-wait",
+        help="Wait for another BrowserOS build using the same Chromium checkout "
+        "instead of failing fast",
     ),
     gn_arg: Optional[List[str]] = typer.Option(
         None,
@@ -334,6 +333,54 @@ def main(
             raise typer.Exit(1)
         runs = [(ctx, pipeline) for ctx in arch_ctxs]
 
+    try:
+        _execute_runs_with_checkout_lock(
+            runs,
+            lock_wait=lock_wait,
+            has_flags=has_flags,
+            prep=prep,
+            root_dir=root_dir,
+        )
+    except CheckoutLockError as e:
+        log_error(str(e))
+        raise typer.Exit(1)
+
+
+def _execute_runs_with_checkout_lock(
+    runs: List[Tuple[Context, List[str]]],
+    *,
+    lock_wait: bool,
+    has_flags: bool,
+    prep: bool,
+    root_dir: Path,
+) -> None:
+    if not runs:
+        raise typer.Exit(1)
+
+    summary_ctx = runs[0][0]
+    log_info(f"🔒 Acquiring Chromium checkout lock: {summary_ctx.chromium_src}")
+    with ChromiumCheckoutLock(
+        summary_ctx.chromium_src,
+        product=summary_ctx.product.id,
+        wait=lock_wait,
+    ) as checkout_lock:
+        log_info(f"🔒 Chromium checkout lock acquired: {checkout_lock.lock_path}")
+
+        _execute_runs(
+            runs,
+            has_flags=has_flags,
+            prep=prep,
+            root_dir=root_dir,
+        )
+
+
+def _execute_runs(
+    runs: List[Tuple[Context, List[str]]],
+    *,
+    has_flags: bool,
+    prep: bool,
+    root_dir: Path,
+) -> None:
     if has_flags:
         log_info("\n📋 Execution Plan (auto-ordered):")
         log_info("-" * 70)
@@ -387,58 +434,34 @@ def main(
     if len(runs) > 1:
         # Runs may be heterogeneous (universal), so show each run's steps
         for run_ctx, run_steps in runs:
-            log_info(
-                f"📍 Pipeline[{run_ctx.architecture}]: {' → '.join(run_steps)}"
-            )
+            log_info(f"📍 Pipeline[{run_ctx.architecture}]: {' → '.join(run_steps)}")
     else:
         log_info(f"📍 Pipeline: {' → '.join(runs[0][1])}")
     log_info("=" * 70)
 
-    os_name = "macOS" if IS_MACOS() else "Windows" if IS_WINDOWS() else "Linux"
-
     # Execute once per architecture. Steps see a normal single-arch ctx;
-    # only this loop knows about multi-arch. For multi-arch invocations
-    # one extra whole-run terminal notification fires in the finally, so
-    # an interrupted second arch still reports.
+    # only this loop knows about multi-arch.
     multi_arch = len(runs) > 1
-    overall_status = "failed"
-    overall_error: Optional[str] = None
-    overall_start = time.time()
-    try:
-        for i, (arch_ctx, run_steps) in enumerate(runs, start=1):
-            if multi_arch:
-                log_info("\n" + "#" * 70)
-                log_info(f"# Architecture {i}/{len(runs)}: {arch_ctx.architecture}")
-                log_info(f"# Output: {arch_ctx.out_dir}")
-                log_info("#" * 70)
-
-            set_build_context(os_name, arch_ctx.architecture)
-            run_name = f"build[{arch_ctx.architecture}]" if multi_arch else "build"
-            try:
-                run_pipeline(
-                    arch_ctx,
-                    run_steps,
-                    name=run_name,
-                    subscribers=(slack_subscriber,),
-                    available=AVAILABLE_MODULES,
-                )
-            except StepExecutionError as e:
-                overall_error = str(e)
-                raise typer.Exit(1)
-            except KeyboardInterrupt:
-                overall_status = "interrupted"
-                overall_error = "Interrupted by user"
-                raise typer.Exit(130)
-        overall_status = "success"
-    finally:
+    for i, (arch_ctx, run_steps) in enumerate(runs, start=1):
         if multi_arch:
-            duration = time.time() - overall_start
-            if overall_status == "success":
-                notify_pipeline_end("build (all architectures)", duration)
-            else:
-                notify_pipeline_error(
-                    "build (all architectures)", overall_error or overall_status
-                )
+            log_info("\n" + "#" * 70)
+            log_info(f"# Architecture {i}/{len(runs)}: {arch_ctx.architecture}")
+            log_info(f"# Output: {arch_ctx.out_dir}")
+            log_info("#" * 70)
+
+        try:
+            run_pipeline(
+                arch_ctx,
+                run_steps,
+                name="build",
+                subscribers=(slack_subscriber(arch_ctx),),
+                available=AVAILABLE_MODULES,
+            )
+        except StepExecutionError as e:
+            log_error(str(e))
+            raise typer.Exit(1)
+        except KeyboardInterrupt:
+            raise typer.Exit(130)
 
 
 def _display_only_runs() -> List[Tuple[Context, List[str]]]:
@@ -559,8 +582,7 @@ def _resolve_preset(
                 for run_arch, steps in arch_plans:
                     if not steps:
                         raise ValueError(
-                            f"plan for {run_arch} is empty after skip — "
-                            "nothing to run"
+                            f"plan for {run_arch} is empty after skip — nothing to run"
                         )
                 # Shallow provisioning creates the checkout itself, so the
                 # src dir may not exist yet on a fresh runner.
@@ -743,9 +765,7 @@ def _resolve_profile_path(profile: Path) -> Path:
     candidate = get_package_root() / "bos_build" / "profiles" / f"{profile.name}.yaml"
     if candidate.exists():
         return candidate
-    raise ValueError(
-        f"Profile not found: {profile} (also tried {candidate})"
-    )
+    raise ValueError(f"Profile not found: {profile} (also tried {candidate})")
 
 
 def _resolve_chromium_src(

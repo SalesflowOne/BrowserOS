@@ -18,7 +18,7 @@ interface PlaybackTransportProps {
 /**
  * Play / pause + scrubber + speed picker. Non-action frames render as
  * coloured bookmarks on the scrubber so the user can jump straight to
- * an approval, block, or done moment.
+ * a block or done moment.
  */
 export function PlaybackTransport({
   playback,

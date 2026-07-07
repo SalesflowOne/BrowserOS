@@ -31,6 +31,8 @@ features:
   branding:
     description: "chore: browseros branding and identity"
     files:
+      # Generated branding outputs are owned by bos_build overlays/resources;
+      # list paths here only when a chromium_patches patch exists on disk.
       # Version info
       - base/version_info/BUILD.gn
       - base/version_info/version_info.h
@@ -52,6 +54,7 @@ features:
       # Custom vector icons
       - components/vector_icons/BUILD.gn
       - components/vector_icons/chat_orange.icon
+      - chrome/app/theme/
 
   browserclaw-product-dir:
     description: "feat: per-product user-data dir via browseros_product buildflag"
@@ -246,9 +249,6 @@ features:
       - chrome/browser/browseros/onboarding/browseros_onboarding_api.ts
       - chrome/browser/browseros/onboarding/browseros_onboarding_prefs.cc
       - chrome/browser/browseros/onboarding/browseros_onboarding_prefs.h
-      - chrome/browser/browseros/onboarding/resources/app.css
-      - chrome/browser/browseros/onboarding/resources/app.js
-      - chrome/browser/browseros/onboarding/resources/index.html
       - chrome/browser/ui/startup/startup_browser_creator.cc
       - chrome/browser/ui/views/profiles/first_run_flow_controller.cc
       - chrome/browser/ui/views/profiles/first_run_flow_controller.h

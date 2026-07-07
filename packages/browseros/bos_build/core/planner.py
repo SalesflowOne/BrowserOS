@@ -181,7 +181,11 @@ def _plan_release(switches: Switches, platform: str) -> List[str]:
     steps.extend(_provision_steps(switches))
     if platform == "macos":
         steps.append("sparkle_setup")
-    if platform == "windows" and switches.sign:
+    if platform == "windows":
+        # The release GN config always links WinSparkle.dll — the compile
+        # needs the vendored library whether or not the build is signed
+        # (ninja: 'third_party/winsparkle/x64/Release/WinSparkle.dll'
+        # missing and no known rule to make it).
         steps.append("winsparkle_setup")
 
     if switches.download:

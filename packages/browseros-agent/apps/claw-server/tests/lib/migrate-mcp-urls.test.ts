@@ -10,36 +10,15 @@ import { join } from 'node:path'
 import { setMcpManagerForTesting } from '../../src/lib/mcp-manager'
 import { migrateMcpUrls } from '../../src/lib/migrate-mcp-urls'
 import { readJson, writeJson } from '../../src/lib/storage'
-import type { NewAgentValues } from '../../src/routes/agents/schemas'
 import { storedAgentProfileSchema } from '../../src/routes/agents/schemas'
-import * as agents from '../../src/routes/agents/service'
+import { writeAgentProfile } from '../_helpers/agent-profile'
 import { createStubMcpManager } from '../_helpers/stub-mcp-manager'
-import { withTempBrowserosDir } from '../_helpers/temp-browseros-dir'
-
-function makeInput(overrides: Partial<NewAgentValues> = {}): NewAgentValues {
-  return {
-    name: 'Original',
-    harness: 'Claude Desktop',
-    loginMode: 'profile',
-    selectedSites: [],
-    approvals: {
-      submit: 'Ask',
-      payment: 'Block',
-      delete: 'Ask',
-      upload: 'Ask',
-      navigate: 'Auto',
-      input: 'Auto',
-    },
-    aclRuleIds: [],
-    customAclRules: [],
-    ...overrides,
-  }
-}
+import { withTempBrowserClawDir } from '../_helpers/temp-browserclaw-dir'
 
 describe('migrateMcpUrls', () => {
   test('rewrites mcpUrl when the recomputed URL differs from the stored one', async () => {
-    await withTempBrowserosDir(async () => {
-      const created = await agents.create(makeInput({ name: 'Cowork' }))
+    await withTempBrowserClawDir(async () => {
+      const created = await writeAgentProfile({ name: 'Cowork' })
       const oldEmbeddedUrl = `http://127.0.0.1:9100/cockpit/mcp/${created.slug}`
       const storedBefore = await readJson(
         `agents/${created.id}.json`,
@@ -65,8 +44,8 @@ describe('migrateMcpUrls', () => {
   })
 
   test('still handles arbitrary runtime URL changes', async () => {
-    await withTempBrowserosDir(async () => {
-      const created = await agents.create(makeInput({ name: 'Other Port' }))
+    await withTempBrowserClawDir(async () => {
+      const created = await writeAgentProfile({ name: 'Other Port' })
       const result = await migrateMcpUrls('http://127.0.0.1:9100/mcp')
       expect(result.migrated).toBe(1)
       expect(result.skipped).toBe(0)
@@ -81,8 +60,8 @@ describe('migrateMcpUrls', () => {
   })
 
   test('skips a profile whose stored URL already matches the new shape', async () => {
-    await withTempBrowserosDir(async () => {
-      const created = await agents.create(makeInput({ name: 'Stable' }))
+    await withTempBrowserClawDir(async () => {
+      const created = await writeAgentProfile({ name: 'Stable' })
       const result = await migrateMcpUrls(created.mcpUrl)
       expect(result.migrated).toBe(0)
       expect(result.skipped).toBe(1)
@@ -91,11 +70,10 @@ describe('migrateMcpUrls', () => {
   })
 
   test('re-installs the harness entry per migrated row', async () => {
-    await withTempBrowserosDir(async () => {
+    await withTempBrowserClawDir(async () => {
       const stub = createStubMcpManager()
       setMcpManagerForTesting(stub)
-      const created = await agents.create(makeInput({ name: 'Reinstall' }))
-      stub.reset()
+      const created = await writeAgentProfile({ name: 'Reinstall' })
       await migrateMcpUrls('http://127.0.0.1:9100/mcp')
       const methods = stub.calls.map((c) => c.method)
       // Migration: uninstall (old entry) then install (new URL).
@@ -119,8 +97,8 @@ describe('migrateMcpUrls', () => {
   })
 
   test('does not advance the stored mcpUrl when harness reinstall fails', async () => {
-    await withTempBrowserosDir(async () => {
-      const created = await agents.create(makeInput({ name: 'Retry Install' }))
+    await withTempBrowserClawDir(async () => {
+      const created = await writeAgentProfile({ name: 'Retry Install' })
       const oldUrl = 'http://127.0.0.1:9100/mcp'
       const nextUrl = 'http://127.0.0.1:9200/mcp'
       const storedBefore = await readJson(
@@ -162,10 +140,10 @@ describe('migrateMcpUrls', () => {
   })
 
   test('a corrupt profile file is logged + skipped without aborting the sweep', async () => {
-    await withTempBrowserosDir(async (dir) => {
-      const ok = await agents.create(makeInput({ name: 'Healthy' }))
+    await withTempBrowserClawDir(async (dir) => {
+      const ok = await writeAgentProfile({ name: 'Healthy' })
       await writeFile(
-        join(dir, 'claw-server/agents', 'broken.json'),
+        join(dir, 'agents', 'broken.json'),
         '{ this is not valid json',
         'utf8',
       )
@@ -182,7 +160,7 @@ describe('migrateMcpUrls', () => {
   })
 
   test('an empty agents directory returns zero counts and does not throw', async () => {
-    await withTempBrowserosDir(async () => {
+    await withTempBrowserClawDir(async () => {
       const result = await migrateMcpUrls('http://127.0.0.1:9100/mcp')
       expect(result).toEqual({ migrated: 0, skipped: 0, failed: 0 })
     })
