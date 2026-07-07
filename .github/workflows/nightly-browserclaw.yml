@@ -1,24 +1,11 @@
-name: "Nightly: macOS Browser (signed, self-hosted)"
+name: "Nightly: BrowserClaw macOS (signed)"
 
 on:
   schedule:
-    # About 9 PM US Pacific during daylight saving time. GitHub cron is UTC.
-    - cron: "0 4 * * *"
+    # Runs after BrowserOS; the shared macos-build concurrency group serializes.
+    - cron: "30 6 * * *"
   workflow_dispatch:
     inputs:
-      bump:
-        description: Version bump level
-        type: choice
-        default: offset+build
-        options:
-          - offset-only
-          - offset+build
-          - offset+patch
-          - none
-      commit_version:
-        description: Commit and push the version bump to the built branch
-        type: boolean
-        default: false
       upload_to_r2:
         description: Publish build to R2/CDN after packaging
         type: boolean
@@ -36,8 +23,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       target_ref: ${{ steps.workflow_inputs.outputs.target_ref }}
-      bump_mode: ${{ steps.workflow_inputs.outputs.bump_mode }}
-      commit_version: ${{ steps.workflow_inputs.outputs.commit_version }}
       upload_to_r2: ${{ steps.workflow_inputs.outputs.upload_to_r2 }}
     steps:
       - name: Resolve workflow inputs
@@ -46,8 +31,6 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           NIGHTLY_REF: ${{ vars.BROWSEROS_NIGHTLY_REF }}
-          DISPATCH_BUMP: ${{ inputs.bump }}
-          DISPATCH_COMMIT_VERSION: ${{ inputs.commit_version }}
           DISPATCH_UPLOAD_TO_R2: ${{ inputs.upload_to_r2 }}
           DISPATCH_REF: ${{ github.ref_name }}
         run: |
@@ -55,20 +38,14 @@ jobs:
 
           if [ "$EVENT_NAME" = "schedule" ]; then
             target_ref="${NIGHTLY_REF:-$DEFAULT_BRANCH}"
-            bump_mode="offset+build"
-            commit_version="true"
             upload_to_r2="true"
           else
             target_ref="$DISPATCH_REF"
-            bump_mode="${DISPATCH_BUMP:-offset+build}"
-            commit_version="${DISPATCH_COMMIT_VERSION:-false}"
             upload_to_r2="${DISPATCH_UPLOAD_TO_R2:-true}"
           fi
 
           {
             echo "target_ref=$target_ref"
-            echo "bump_mode=$bump_mode"
-            echo "commit_version=$commit_version"
             echo "upload_to_r2=$upload_to_r2"
           } >> "$GITHUB_OUTPUT"
 
@@ -87,8 +64,6 @@ jobs:
         id: build_inputs
         env:
           TARGET_REF: ${{ needs.resolve_inputs.outputs.target_ref }}
-          BUMP_MODE: ${{ needs.resolve_inputs.outputs.bump_mode }}
-          COMMIT_VERSION: ${{ needs.resolve_inputs.outputs.commit_version }}
           UPLOAD_TO_R2: ${{ needs.resolve_inputs.outputs.upload_to_r2 }}
         run: |
           set -euo pipefail
@@ -119,8 +94,6 @@ jobs:
             echo "browseros_repo=$repo"
             echo "chromium_src=$chromium_src"
             echo "target_ref=$TARGET_REF"
-            echo "bump_mode=$BUMP_MODE"
-            echo "commit_version=$COMMIT_VERSION"
             echo "upload_to_r2=$UPLOAD_TO_R2"
           } >> "$GITHUB_OUTPUT"
 
@@ -145,117 +118,23 @@ jobs:
             git reset --hard "$TARGET_REF"
           fi
 
-      - name: Bump version
-        id: bump
+      - name: Read version
+        id: version
         env:
           BROWSEROS_REPO: ${{ steps.build_inputs.outputs.browseros_repo }}
-          BUMP_MODE: ${{ steps.build_inputs.outputs.bump_mode }}
         run: |
           set -euo pipefail
           cd "$BROWSEROS_REPO/packages/browseros"
-          version="$(uv run python bos_build/scripts/bump_version.py --mode "$BUMP_MODE")"
+          version="$(uv run python bos_build/scripts/bump_version.py --mode none)"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Built version: $version"
-
-      - name: Commit version bump via pull request
-        if: ${{ steps.build_inputs.outputs.commit_version == 'true' }}
-        env:
-          BROWSEROS_REPO: ${{ steps.build_inputs.outputs.browseros_repo }}
-          TARGET_REF: ${{ steps.build_inputs.outputs.target_ref }}
-          VERSION: ${{ steps.bump.outputs.version }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          set -euo pipefail
-          cd "$BROWSEROS_REPO"
-          version_files=(
-            packages/browseros/resources/BROWSEROS_VERSION
-            packages/browseros/bos_build/config/BROWSEROS_BUILD_OFFSET
-          )
-          git add "${version_files[@]}"
-          if git diff --cached --quiet; then
-            echo "No version changes to commit."
-            exit 0
-          fi
-          git -c user.name="BrowserOS CI" -c user.email="ci@browseros.com" \
-            commit -m "chore(release): build v$VERSION [skip ci]"
-
-          safe_target_ref="${TARGET_REF//[^A-Za-z0-9._-]/-}"
-          branch="bot/nightly-macos-version-${safe_target_ref}-v${VERSION}"
-          expected_sha="$(git ls-remote --heads origin "$branch" | awk '{print $1}')"
-          if [ -n "$expected_sha" ]; then
-            git push --force-with-lease="refs/heads/$branch:$expected_sha" \
-              origin "HEAD:refs/heads/$branch"
-          else
-            git push origin "HEAD:refs/heads/$branch"
-          fi
-
-          pr_url="$(gh pr list \
-            --repo "$GITHUB_REPOSITORY" \
-            --base "$TARGET_REF" \
-            --head "$branch" \
-            --state open \
-            --json url \
-            --jq '.[0].url // ""')"
-          if [ -z "$pr_url" ]; then
-            pr_body="$(mktemp)"
-            trap 'rm -f "$pr_body"' EXIT
-            cat > "$pr_body" <<EOF
-          Automated nightly macOS version bump for v$VERSION.
-
-          Source run: $RUN_URL
-          Target ref: $TARGET_REF
-          EOF
-            pr_url="$(gh pr create \
-              --repo "$GITHUB_REPOSITORY" \
-              --base "$TARGET_REF" \
-              --head "$branch" \
-              --title "chore(release): build v$VERSION" \
-              --body-file "$pr_body")"
-          fi
-
-          echo "Version bump PR: $pr_url"
-          if gh pr merge "$pr_url" \
-            --repo "$GITHUB_REPOSITORY" \
-            --squash \
-            --delete-branch \
-            --subject "chore(release): build v$VERSION [skip ci]" \
-            --body "Automated nightly macOS version bump."; then
-            exit 0
-          fi
-
-          merge_state="$(gh pr view "$pr_url" \
-            --repo "$GITHUB_REPOSITORY" \
-            --json mergeStateStatus \
-            --jq '.mergeStateStatus // "UNKNOWN"' || echo "UNKNOWN")"
-          failed_checks="$(gh pr view "$pr_url" \
-            --repo "$GITHUB_REPOSITORY" \
-            --json statusCheckRollup \
-            --jq '[.statusCheckRollup[]? | select((.__typename == "CheckRun" and ((.conclusion // "") == "FAILURE" or (.conclusion // "") == "CANCELLED" or (.conclusion // "") == "TIMED_OUT" or (.conclusion // "") == "ACTION_REQUIRED")) or (.__typename == "StatusContext" and ((.state // "") == "FAILURE" or (.state // "") == "ERROR")))] | length' || echo "0")"
-          if [ "$merge_state" = "DIRTY" ] || [ "$failed_checks" -gt 0 ]; then
-            echo "::warning::Leaving version bump PR open (mergeStateStatus=$merge_state, failedChecks=$failed_checks): $pr_url"
-            exit 0
-          fi
-
-          if gh pr merge "$pr_url" \
-            --repo "$GITHUB_REPOSITORY" \
-            --auto \
-            --squash \
-            --delete-branch \
-            --subject "chore(release): build v$VERSION [skip ci]" \
-            --body "Automated nightly macOS version bump."; then
-            echo "Enabled auto-merge for version bump PR: $pr_url"
-          else
-            echo "::warning::Could not merge or enable auto-merge for version bump PR; leaving it open: $pr_url"
-          fi
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.6"
 
-      - name: Stage server resources for packaging
+      - name: Stage BrowserClaw nightly resources
         env:
           BROWSEROS_REPO: ${{ steps.build_inputs.outputs.browseros_repo }}
         run: |
@@ -266,11 +145,38 @@ jobs:
           cd "$agent_root"
           bun ci
           bun scripts/build/server.ts --target=darwin-arm64 --ci
-          bun scripts/build/claw-server.ts --target=darwin-arm64 --ci
           bun scripts/build/claw-onboard.ts --ci
 
+          use_rust="$(
+            BROWSEROS_ROOT="$browseros_root" python3 - <<'PY'
+          import yaml
+          import os
+          from pathlib import Path
+
+          config = yaml.safe_load(
+              (
+                  Path(os.environ["BROWSEROS_ROOT"])
+                  / "bos_build/config/build_flags.yaml"
+              ).read_text()
+          )
+          value = config.get("use_claw_server_rust")
+          if not isinstance(value, bool):
+              raise SystemExit("use_claw_server_rust must be a boolean")
+          print("true" if value else "false")
+          PY
+          )"
+
+          if [ "$use_rust" = "true" ]; then
+            "$agent_root/scripts/build/claw-server-rust-local.sh" \
+              --target darwin-arm64 \
+              --agent-root "$agent_root" \
+              --browseros-root "$browseros_root"
+          else
+            bun scripts/build/claw-server.ts --target=darwin-arm64 --ci
+          fi
+
           cd "$browseros_root"
-          AGENT_ROOT="$agent_root" BROWSEROS_ROOT="$browseros_root" uv run python - <<'PY'
+          AGENT_ROOT="$agent_root" BROWSEROS_ROOT="$browseros_root" USE_RUST="$use_rust" uv run python - <<'PY'
           import os
           import shutil
           from pathlib import Path
@@ -285,14 +191,19 @@ jobs:
                   browseros_root / "resources/binaries/browseros_server/darwin-arm64",
               ),
               (
-                  agent_root / "dist/prod/claw-server/browseros-claw-server-resources-darwin-arm64.zip",
-                  browseros_root / "resources/binaries/browseros_claw_server/darwin-arm64",
-              ),
-              (
                   agent_root / "dist/prod/claw-onboard/browseros-claw-onboard-resources.zip",
                   browseros_root / "resources/binaries/browseros_claw_onboard",
               ),
           ]
+          if os.environ["USE_RUST"] != "true":
+              artifacts.append(
+                  (
+                      agent_root
+                      / "dist/prod/claw-server/browseros-claw-server-resources-darwin-arm64.zip",
+                      browseros_root
+                      / "resources/binaries/browseros_claw_server/darwin-arm64",
+                  )
+              )
 
           for archive, destination in artifacts:
               if not archive.is_file():
@@ -303,7 +214,7 @@ jobs:
               print(f"Staged {len(extracted)} file(s) from {archive.name}")
           PY
 
-      - name: Build BrowserOS (macOS arm64)
+      - name: Build BrowserClaw (macOS arm64)
         env:
           BROWSEROS_REPO: ${{ steps.build_inputs.outputs.browseros_repo }}
           CHROMIUM_SRC: ${{ steps.build_inputs.outputs.chromium_src }}
@@ -311,22 +222,59 @@ jobs:
         run: |
           set -euo pipefail
           cd "$BROWSEROS_REPO/packages/browseros"
-          # Server resources are staged locally by the previous step, so
-          # the R2 download is off; upload toggles with the run input.
-          flags=(--preset release --arch arm64 --no-download)
+          flags=(--profile nightly-macos --product browserclaw --arch arm64)
           if [ "$UPLOAD_TO_R2" != "true" ]; then
             flags+=(--no-upload)
           fi
           uv run browseros build "${flags[@]}" --chromium-src "$CHROMIUM_SRC"
 
       - name: Upload DMG artifact
-        if: ${{ always() && steps.bump.outputs.version != '' }}
+        if: ${{ always() && steps.version.outputs.version != '' }}
         uses: actions/upload-artifact@v7
         with:
-          name: BrowserOS_v${{ steps.bump.outputs.version }}_arm64
-          path: ${{ steps.build_inputs.outputs.browseros_repo }}/packages/browseros/releases/${{ steps.bump.outputs.version }}/*.dmg
+          name: BrowserClaw_v${{ steps.version.outputs.version }}_arm64
+          path: ${{ steps.build_inputs.outputs.browseros_repo }}/packages/browseros/releases/${{ steps.version.outputs.version }}/BrowserClaw_*.dmg
           retention-days: 14
           if-no-files-found: warn
+
+      - name: Update rolling BrowserClaw nightly prerelease
+        env:
+          BROWSEROS_REPO: ${{ steps.build_inputs.outputs.browseros_repo }}
+          TARGET_REF: ${{ steps.build_inputs.outputs.target_ref }}
+          VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=("$BROWSEROS_REPO"/packages/browseros/releases/"$VERSION"/BrowserClaw_*.dmg)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::No BrowserClaw DMG found to publish"
+            exit 1
+          fi
+          printf 'Publishing:\n%s\n' "${files[@]}"
+
+          built_sha="$(git -C "$BROWSEROS_REPO" rev-parse HEAD)"
+          notes_file="$(mktemp)"
+          cat > "$notes_file" <<EOF
+          Automated signed BrowserClaw macOS arm64 nightly for v$VERSION.
+
+          Source ref: \`$TARGET_REF\`
+          Build commit: \`$built_sha\`
+          EOF
+
+          gh release delete nightly-browserclaw \
+            --repo "$GITHUB_REPOSITORY" \
+            --cleanup-tag \
+            --yes || true
+          gh release create nightly-browserclaw \
+            --repo "$GITHUB_REPOSITORY" \
+            --prerelease \
+            --latest=false \
+            --target "$built_sha" \
+            --title "BrowserClaw Nightly (signed macOS arm64) $(date -u +%Y-%m-%d)" \
+            --notes-file "$notes_file" \
+            "${files[@]}"
 
       - name: Slack failure ping
         if: ${{ failure() }}
@@ -353,7 +301,7 @@ jobs:
           if [ -z "$hook" ]; then
             exit 0
           fi
-          python3 - <<'PY' > /tmp/browseros-nightly-slack-payload.json
+          python3 - <<'PY' > /tmp/browserclaw-nightly-slack-payload.json
           import json
           import os
 
@@ -361,7 +309,7 @@ jobs:
               json.dumps(
                   {
                       "text": (
-                          ":x: Nightly macOS build failed on "
+                          ":x: BrowserClaw nightly macOS build failed on "
                           f"`{os.environ['TARGET_REF']}` - {os.environ['RUN_URL']}"
                       )
                   }
@@ -369,4 +317,4 @@ jobs:
           )
           PY
           curl -fsS -X POST -H "Content-type: application/json" \
-            --data @/tmp/browseros-nightly-slack-payload.json "$hook" || true
+            --data @/tmp/browserclaw-nightly-slack-payload.json "$hook" || true
