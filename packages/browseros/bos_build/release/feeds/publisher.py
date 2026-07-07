@@ -162,9 +162,11 @@ class FeedPublisher:
             self._print_content_and_diff(spec, content, live)
 
         if not publish:
+            staging = self._write_staging(spec, content)
             if verbose:
                 log_info(
-                    f"DRY RUN — {spec.key} not written (pass --publish to write)"
+                    f"DRY RUN — {spec.key} not written (pass --publish to write); "
+                    f"staged: {staging}"
                 )
             return True
 
@@ -181,12 +183,15 @@ class FeedPublisher:
             ContentType=content_type,
         )
 
+        staging = self._write_staging(spec, content)
+        log_success(f"Published {spec.url} (staging: {staging})")
+        return True
+
+    def _write_staging(self, spec: FeedSpec, content: str) -> Path:
         staging = self.staging_path(spec)
         staging.parent.mkdir(parents=True, exist_ok=True)
         staging.write_text(content)
-
-        log_success(f"Published {spec.url} (staging: {staging})")
-        return True
+        return staging
 
     def _check_well_formed(self, spec: FeedSpec, content: str) -> bool:
         try:
