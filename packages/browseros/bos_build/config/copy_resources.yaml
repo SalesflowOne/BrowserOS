@@ -219,6 +219,42 @@ copy_operations:
     os: ["windows"]
     arch: ["x64"]
 
+  # BrowserOS Claw Rust Server resources - Platform & Architecture specific
+  - name: "BrowserOS Claw Rust Server Resources - macOS ARM64"
+    source: "resources/binaries/browseros_claw_server_rust/darwin-arm64/resources"
+    destination: "chrome/browser/browseros/claw_server_rust/resources"
+    type: "directory"
+    os: ["macos"]
+    arch: ["arm64"]
+
+  - name: "BrowserOS Claw Rust Server Resources - macOS x64"
+    source: "resources/binaries/browseros_claw_server_rust/darwin-x64/resources"
+    destination: "chrome/browser/browseros/claw_server_rust/resources"
+    type: "directory"
+    os: ["macos"]
+    arch: ["x64"]
+
+  - name: "BrowserOS Claw Rust Server Resources - Linux ARM64"
+    source: "resources/binaries/browseros_claw_server_rust/linux-arm64/resources"
+    destination: "chrome/browser/browseros/claw_server_rust/resources"
+    type: "directory"
+    os: ["linux"]
+    arch: ["arm64"]
+
+  - name: "BrowserOS Claw Rust Server Resources - Linux x64"
+    source: "resources/binaries/browseros_claw_server_rust/linux-x64/resources"
+    destination: "chrome/browser/browseros/claw_server_rust/resources"
+    type: "directory"
+    os: ["linux"]
+    arch: ["x64"]
+
+  - name: "BrowserOS Claw Rust Server Resources - Windows x64"
+    source: "resources/binaries/browseros_claw_server_rust/windows-x64/resources"
+    destination: "chrome/browser/browseros/claw_server_rust/resources"
+    type: "directory"
+    os: ["windows"]
+    arch: ["x64"]
+
   # BrowserOS Claw onboarding static resources - platform-independent dist
   # downloaded from R2, feeds the onboarding grit pak built for every product
   - name: "BrowserOS Claw Onboarding Resources"

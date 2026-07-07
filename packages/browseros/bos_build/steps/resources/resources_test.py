@@ -259,10 +259,20 @@ class CopyResourcesTest(unittest.TestCase):
             / "darwin-arm64"
             / "resources"
         )
+        claw_rust_source = (
+            self.root.root
+            / "resources"
+            / "binaries"
+            / "browseros_claw_server_rust"
+            / "darwin-arm64"
+            / "resources"
+        )
         (browseros_source / "bin").mkdir(parents=True)
         (browseros_source / "bin" / "browseros_server").write_text("browseros")
         (claw_source / "bin").mkdir(parents=True)
         (claw_source / "bin" / "browseros-claw-server").write_text("claw")
+        (claw_rust_source / "bin").mkdir(parents=True)
+        (claw_rust_source / "bin" / "browseros-claw-server-rs").write_text("claw-rust")
 
         with patch("bos_build.steps.resources.resources.get_platform", return_value="macos"):
             ctx = make_context(
@@ -293,8 +303,19 @@ class CopyResourcesTest(unittest.TestCase):
             / "bin"
             / "browseros-claw-server"
         )
+        claw_rust_dest = (
+            self.chromium.src
+            / "chrome"
+            / "browser"
+            / "browseros"
+            / "claw_server_rust"
+            / "resources"
+            / "bin"
+            / "browseros-claw-server-rs"
+        )
         self.assertEqual(browseros_dest.read_text(), "browseros")
         self.assertEqual(claw_dest.read_text(), "claw")
+        self.assertEqual(claw_rust_dest.read_text(), "claw-rust")
 
     def test_real_config_copies_server_resources_for_browserclaw_product(self):
         self.root.write_copy_config(self._real_copy_config())
@@ -314,10 +335,20 @@ class CopyResourcesTest(unittest.TestCase):
             / "darwin-arm64"
             / "resources"
         )
+        claw_rust_source = (
+            self.root.root
+            / "resources"
+            / "binaries"
+            / "browseros_claw_server_rust"
+            / "darwin-arm64"
+            / "resources"
+        )
         (browseros_source / "bin").mkdir(parents=True)
         (browseros_source / "bin" / "browseros_server").write_text("browseros")
         (claw_source / "bin").mkdir(parents=True)
         (claw_source / "bin" / "browseros-claw-server").write_text("claw")
+        (claw_rust_source / "bin").mkdir(parents=True)
+        (claw_rust_source / "bin" / "browseros-claw-server-rs").write_text("claw-rust")
 
         with patch("bos_build.steps.resources.resources.get_platform", return_value="macos"):
             ctx = make_context(
@@ -349,8 +380,19 @@ class CopyResourcesTest(unittest.TestCase):
             / "bin"
             / "browseros-claw-server"
         )
+        claw_rust_dest = (
+            self.chromium.src
+            / "chrome"
+            / "browser"
+            / "browseros"
+            / "claw_server_rust"
+            / "resources"
+            / "bin"
+            / "browseros-claw-server-rs"
+        )
         self.assertEqual(browseros_dest.read_text(), "browseros")
         self.assertEqual(claw_dest.read_text(), "claw")
+        self.assertEqual(claw_rust_dest.read_text(), "claw-rust")
 
     def test_real_config_copies_claw_onboard_resources_for_both_products(self):
         # The downloaded onboarding dist must land in the grit resources dir

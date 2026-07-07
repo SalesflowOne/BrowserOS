@@ -24,6 +24,7 @@
 # R2 Path Structure:
 #   artifacts/server/latest/browseros-server-resources-{target}.zip
 #   claw-server/prod-resources/latest/browseros-claw-server-resources-{target}.zip
+#   claw-server-rust/prod-resources/latest/browseros-claw-server-rust-resources-{target}.zip
 #   claw-onboard/prod-resources/latest/browseros-claw-onboard-resources.zip
 #
 # Example:
@@ -103,6 +104,42 @@ download_operations:
   - name: "BrowserOS Claw Server Resources - Windows x64"
     r2_key: "claw-server/prod-resources/latest/browseros-claw-server-resources-windows-x64.zip"
     destination: "resources/binaries/browseros_claw_server/windows-x64"
+    download_type: "artifact_zip"
+    os: ["windows"]
+    arch: ["x64"]
+
+  # BrowserOS Claw Rust Server resource bundles - Platform & Architecture specific
+  - name: "BrowserOS Claw Rust Server Resources - macOS ARM64"
+    r2_key: "claw-server-rust/prod-resources/latest/browseros-claw-server-rust-resources-darwin-arm64.zip"
+    destination: "resources/binaries/browseros_claw_server_rust/darwin-arm64"
+    download_type: "artifact_zip"
+    os: ["macos"]
+    arch: ["arm64"]
+
+  - name: "BrowserOS Claw Rust Server Resources - macOS x64"
+    r2_key: "claw-server-rust/prod-resources/latest/browseros-claw-server-rust-resources-darwin-x64.zip"
+    destination: "resources/binaries/browseros_claw_server_rust/darwin-x64"
+    download_type: "artifact_zip"
+    os: ["macos"]
+    arch: ["x64"]
+
+  - name: "BrowserOS Claw Rust Server Resources - Linux ARM64"
+    r2_key: "claw-server-rust/prod-resources/latest/browseros-claw-server-rust-resources-linux-arm64.zip"
+    destination: "resources/binaries/browseros_claw_server_rust/linux-arm64"
+    download_type: "artifact_zip"
+    os: ["linux"]
+    arch: ["arm64"]
+
+  - name: "BrowserOS Claw Rust Server Resources - Linux x64"
+    r2_key: "claw-server-rust/prod-resources/latest/browseros-claw-server-rust-resources-linux-x64.zip"
+    destination: "resources/binaries/browseros_claw_server_rust/linux-x64"
+    download_type: "artifact_zip"
+    os: ["linux"]
+    arch: ["x64"]
+
+  - name: "BrowserOS Claw Rust Server Resources - Windows x64"
+    r2_key: "claw-server-rust/prod-resources/latest/browseros-claw-server-rust-resources-windows-x64.zip"
+    destination: "resources/binaries/browseros_claw_server_rust/windows-x64"
     download_type: "artifact_zip"
     os: ["windows"]
     arch: ["x64"]
