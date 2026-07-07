@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -66,6 +68,23 @@ impl FixtureRepo {
     pub fn commit(&self, message: &str) -> Result<String> {
         self.git.run(&["add", "-A"])?;
         self.git.run(&["commit", "-m", message])?;
+        self.git.run_str(&["rev-parse", "HEAD"])
+    }
+
+    /// Commits all current changes with an explicit trailer block.
+    pub fn commit_with_trailers(&self, subject: &str, trailers: &[(&str, &str)]) -> Result<String> {
+        self.git.run(&["add", "-A"])?;
+        let mut message = String::new();
+        message.push_str(subject);
+        message.push_str("\n\n");
+        for (key, value) in trailers {
+            message.push_str(key);
+            message.push_str(": ");
+            message.push_str(value);
+            message.push('\n');
+        }
+        self.git
+            .run_with_stdin(&["commit", "-F", "-"], message.as_bytes())?;
         self.git.run_str(&["rev-parse", "HEAD"])
     }
 

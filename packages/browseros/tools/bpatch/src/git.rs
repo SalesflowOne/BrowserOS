@@ -65,6 +65,9 @@ pub enum GitError {
     /// `diff-tree -z` returned output that did not match git's record format.
     #[error("git diff-tree returned malformed -z output: {0}")]
     MalformedDiffTree(String),
+    /// A read-side git command returned output that could not be parsed.
+    #[error("git returned malformed output: {0}")]
+    MalformedGitOutput(String),
     /// Filesystem operation failed while setting up git plumbing.
     #[error(transparent)]
     Io(#[from] std::io::Error),
@@ -188,10 +191,82 @@ impl GitAdapter {
         Ok(self.git.run_str(&["rev-parse", rev])?)
     }
 
+    /// Resolves HEAD to its object id.
+    pub fn head_rev(&self) -> GitResult<String> {
+        self.rev_parse("HEAD")
+    }
+
+    /// Resolves a revision to git's short object id.
+    pub fn short_rev(&self, rev: &str) -> GitResult<String> {
+        Ok(self.git.run_str(&["rev-parse", "--short", rev])?)
+    }
+
     /// Resolves a commit or tree-ish to its tree id.
     pub fn tree_id(&self, treeish: &str) -> GitResult<String> {
         let rev = format!("{treeish}^{{tree}}");
         Ok(self.git.run_str(&["rev-parse", &rev])?)
+    }
+
+    /// Returns a commit's subject line.
+    pub fn commit_subject(&self, rev: &str) -> GitResult<String> {
+        Ok(self.git.run_str(&["log", "-1", "--format=%s", rev])?)
+    }
+
+    /// Returns a file from a tree-ish, or `None` when the path is absent.
+    pub fn show_file(&self, treeish: &str, path: &str) -> GitResult<Option<Vec<u8>>> {
+        let spec = format!("{treeish}:{path}");
+        let out = self.git.output(&["show", &spec])?;
+        if out.status.success() {
+            Ok(Some(out.stdout))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Lists first-parent commits for a range, bounded when `max_count` is set.
+    pub fn first_parent_commits(
+        &self,
+        range: Option<&str>,
+        max_count: Option<usize>,
+    ) -> GitResult<Vec<String>> {
+        let mut args = vec![
+            "log".to_string(),
+            "--first-parent".to_string(),
+            "--format=%H".to_string(),
+        ];
+        if let Some(max_count) = max_count {
+            args.push(format!("--max-count={max_count}"));
+        }
+        if let Some(range) = range {
+            args.push(range.to_string());
+        }
+        let refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+        Ok(self
+            .git
+            .run_str(&refs)?
+            .lines()
+            .filter(|line| !line.is_empty())
+            .map(ToOwned::to_owned)
+            .collect())
+    }
+
+    /// Counts revisions in a rev-list range.
+    pub fn rev_list_count(&self, range: &str) -> GitResult<usize> {
+        self.git
+            .run_str(&["rev-list", "--count", range])?
+            .parse()
+            .map_err(|_| GitError::MalformedGitOutput(format!("invalid rev-list count {range}")))
+    }
+
+    /// Refreshes the index stat cache before worktree drift checks.
+    pub fn refresh_index(&self) -> GitResult<()> {
+        self.git.run(&["update-index", "-q", "--refresh"])?;
+        Ok(())
+    }
+
+    /// Returns `git status --porcelain -z` for exact uncommitted paths.
+    pub fn status_porcelain_z(&self) -> GitResult<Vec<u8>> {
+        Ok(self.git.run(&["status", "--porcelain", "-z"])?)
     }
 
     /// Builds a tree by applying patches to a base in a temporary index.
