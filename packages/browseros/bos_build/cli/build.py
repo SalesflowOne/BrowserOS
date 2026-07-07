@@ -568,7 +568,8 @@ def _resolve_preset(
             f"platform={get_platform()}",
             f"Switches: clean={switches.clean} provision={switches.provision} "
             f"download={switches.download} sign={switches.sign} "
-            f"upload={switches.upload}",
+            f"upload={switches.upload} "
+            f"bundle_local_extensions={switches.bundle_local_extensions}",
         ]
         if switches.skip:
             header.append(f"Skip: {', '.join(switches.skip)}")
@@ -596,7 +597,8 @@ def _resolve_preset(
                 log_info(
                     f"✓ PRESET MODE: clean={switches.clean} "
                     f"provision={switches.provision} download={switches.download} "
-                    f"sign={switches.sign} upload={switches.upload}"
+                    f"sign={switches.sign} upload={switches.upload} "
+                    f"bundle_local_extensions={switches.bundle_local_extensions}"
                 )
                 if switches.skip:
                     log_info(f"✓ PRESET MODE: skip={','.join(switches.skip)}")
@@ -614,6 +616,7 @@ def _resolve_preset(
                             build_type=switches.build_type,
                             product=switches.product,
                             extra_gn_args=extra_gn_args,
+                            bundle_local_extensions=switches.bundle_local_extensions,
                         ),
                         steps,
                     )

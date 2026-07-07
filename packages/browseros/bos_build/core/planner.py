@@ -34,6 +34,7 @@ class Switches:
     download: Optional[bool] = None
     sign: Optional[bool] = None
     upload: Optional[bool] = None
+    bundle_local_extensions: bool = False
     skip: Tuple[str, ...] = ()
 
     def resolved(self) -> "Switches":
@@ -90,10 +91,10 @@ def plan(switches: Switches, arch: str, platform: Optional[str] = None) -> List[
 
     Encodes what the release.*.yaml matrix used to spell out per file:
     sparkle_setup is a macOS build dependency even unsigned; WinSparkle
-    setup and the post-package sparkle_sign only exist on signed Windows
-    builds; unsigned Windows builds get mini_installer instead of
-    sign_windows. Universal is not a flat pipeline — plan_runs() expands
-    it into three sequential runs.
+    setup is a Windows build dependency; post-package sparkle_sign exists
+    on signed Windows and macOS builds; unsigned Windows builds get
+    mini_installer instead of sign_windows. Universal is not a flat
+    pipeline — plan_runs() expands it into three sequential runs.
     """
     if arch == "universal":
         raise ValueError("universal is planned as multiple runs; use plan_runs()")
@@ -163,8 +164,15 @@ def _plan_universal_runs(
         ]
     )
 
-    arch_tail = ["resources", "configure", "compile", "sign_macos", "package_macos"]
-    merge_run = ["merge_universal", "sign_macos", "package_macos"]
+    arch_tail = [
+        "resources",
+        "configure",
+        "compile",
+        "sign_macos",
+        "package_macos",
+        "sparkle_sign",
+    ]
+    merge_run = ["merge_universal", "sign_macos", "package_macos", "sparkle_sign"]
     if switches.upload:
         arch_tail.append("upload")
         merge_run.append("upload")
@@ -210,7 +218,7 @@ def _plan_release(switches: Switches, platform: str) -> List[str]:
 
     steps.append(f"package_{platform}")
 
-    if platform == "windows" and switches.sign:
+    if platform in ("macos", "windows") and switches.sign:
         steps.append("sparkle_sign")
     if switches.upload:
         steps.append("upload")
@@ -336,7 +344,16 @@ class Profile:
 
 
 # Planner-owned keys: meaningless once modules: enumerates the pipeline.
-_PLANNER_KEYS = ("preset", "clean", "provision", "download", "sign", "upload", "skip")
+_PLANNER_KEYS = (
+    "preset",
+    "clean",
+    "provision",
+    "download",
+    "sign",
+    "upload",
+    "bundle_local_extensions",
+    "skip",
+)
 
 
 def load_profile(path: Path) -> Profile:
@@ -381,6 +398,7 @@ def load_profile(path: Path) -> Profile:
             download=data.get("download"),
             sign=data.get("sign"),
             upload=data.get("upload"),
+            bundle_local_extensions=data.get("bundle_local_extensions", False),
             skip=_as_tuple(data.get("skip")),
         )
     )

@@ -25,6 +25,15 @@ class GetAppPathTest(unittest.TestCase):
             "https://cdn.browseros.com/extensions/bundled-manifest.xml",
         )
 
+    def test_bundle_local_extensions_defaults_off(self):
+        ctx = Context(
+            chromium_src=Path("/nonexistent-src"),
+            architecture="arm64",
+            build_type="release",
+        )
+
+        self.assertFalse(ctx.bundle_local_extensions)
+
     def test_arch_build_ignores_stale_universal_app(self):
         # Regression: a leftover out/Default_universal app must never hijack
         # an arch-specific build's sign/package stages.
@@ -56,9 +65,7 @@ class GetAppPathTest(unittest.TestCase):
             build_type="release",
         )
 
-        expected = (
-            Path("/nonexistent-src") / ctx.out_dir / ctx.BROWSEROS_APP_NAME
-        )
+        expected = Path("/nonexistent-src") / ctx.out_dir / ctx.BROWSEROS_APP_NAME
         self.assertTrue(str(ctx.out_dir).endswith("Default_browseros_universal"))
         self.assertEqual(ctx.get_app_path(), expected)
 

@@ -41,6 +41,7 @@ macOS builder.
 | `.github/workflows/release-server.yml` | Builds BrowserOS server resource zips for every browser target, uploads versioned R2 resource keys, attaches server release assets, and reflects the server package version. | Manual and `agent-server/v*` tags | Yes, when `include_servers=true` and `products` includes `browseros` |
 | `.github/workflows/release-claw-server.yml` | Builds BrowserClaw server and onboard resource zips, uploads versioned R2 keys, attaches server release assets, and reflects Claw package versions. | Manual and `claw-server/v*` tags | Yes, when `include_servers=true` and `products` includes `browserclaw` |
 | `.github/workflows/release-claw-server-rust.yml` | Builds BrowserClaw Rust server resource zips for every browser target, uploads versioned R2 keys under `claw-server-rust/prod-resources`, and attaches Rust server release assets. | Manual, reusable, and `claw-server-rust/v*` tags | No; BrowserClaw browser builds read the latest Rust resources when the bos_build flag is enabled, but this resource lane remains explicitly dispatched |
+| `.github/workflows/release-extensions.yml` | Builds, signs, uploads, and optionally republishes extension CRX manifests for `agent`, `controller`, `bugreporter`, and `browserclaw`. | Manual and reusable | No; per-product orchestrators can call it with `secrets: inherit` |
 | `.github/workflows/release-linux.yml` | Builds Linux x64 browser artifacts on WarpBuild, one matrix entry per selected product. | Manual | Yes |
 | `.github/workflows/release-windows.yml` | Builds Windows x64 browser artifacts on WarpBuild and optionally signs them. | Manual | Yes |
 | `.github/workflows/release-macos.yml` | Builds signed macOS artifacts on the dedicated self-hosted builder. | Manual | Yes |
@@ -74,6 +75,14 @@ server bundle until a separate feed migration changes them.
 The reusable nesting depth is `release-full.yml -> release-linux.yml or
 release-windows.yml -> build-browseros.yml`, which stays below GitHub's limit
 of four workflow levels.
+
+The `bundle_local_extensions` profile switch defaults off for release
+reproducibility. Existing CI profiles keep it off; a self-hosted macOS nightly
+profile can set it true to build and pack in-repo agent/browserclaw CRXs from
+the checked-out tree while external required extensions still come from the
+bundled CDN manifest. Reusable `build-browseros.yml` callers enabling such a
+profile must also pass `bundle-local-extensions: true` so Bun and extension
+signing/build env are prepared.
 
 ## Full Release Inputs
 
@@ -124,14 +133,29 @@ gh workflow run release-macos.yml -f products=all -f arch=arm64
 Repository secret and variable names were checked when this document was
 added. Values are never needed locally to inspect this matrix.
 
+Use `tools/release_secrets/sync.py` from the repo root to sync allowlisted
+release secrets from the operator's local `.env.production` into repo-level
+GitHub secrets:
+
+```bash
+tools/release_secrets/sync.py --env-file .env.production --dry-run
+tools/release_secrets/sync.py --env-file .env.production --apply
+tools/release_secrets/sync.py --check
+```
+
+The sync is allowlist-only and keeps values off argv, logs, and temp files by
+piping each value to `gh secret set` over stdin. It deliberately excludes local
+paths and unrelated API keys from `.env.production`.
+
 | Lane | Required names | Current repo status | Notes |
 | --- | --- | --- | --- |
 | R2 browser artifacts and final draft release | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` | Present | Used by Linux/Windows browser downloads and uploads, server resource uploads, and the draft GitHub release asset step. |
-| BrowserOS server resources | R2 names plus `BROWSEROS_CONFIG_URL`, `POSTHOG_API_KEY`, `SENTRY_DSN`, `AGENT_RUNNER_JWT_SECRET` | R2 and `POSTHOG_API_KEY` present; `BROWSEROS_CONFIG_URL`, `SENTRY_DSN`, and `AGENT_RUNNER_JWT_SECRET` missing | `release-full.yml` fails in preflight before cancelling nightlies or starting paid builds if selected required names are absent. |
+| BrowserOS server resources | R2 names plus `BROWSEROS_CONFIG_URL`, `POSTHOG_API_KEY`, `SENTRY_DSN` | Present | `AGENT_RUNNER_JWT_SECRET` is optional and inlined only when present. `release-full.yml` fails in preflight before cancelling nightlies or starting paid builds if selected required names are absent. |
 | BrowserClaw server resources | R2 names | Present | `SPARKLE_PRIVATE_KEY` is optional for server OTA publishing; the orchestrator passes `publish_ota=false`. |
 | BrowserClaw Rust server resources | R2 names | Present | Uses only GitHub-hosted runners and writes `claw-server-rust/prod-resources`; no signing or OTA secrets are required. |
-| Windows signing | `ESIGNER_USERNAME`, `ESIGNER_PASSWORD`, `ESIGNER_TOTP_SECRET`, `SPARKLE_PRIVATE_KEY` | Missing | `ESIGNER_CREDENTIAL_ID` is optional. Use `sign_windows=false` only for unsigned verification, not a signed release. |
-| macOS release builder | Repository variables `BROWSEROS_REPO_PATH`, `BROWSEROS_CHROMIUM_SRC` | Present | Signing, notarization, R2, and Slack values live in the runner-local `packages/browseros/.env`; do not copy them into GitHub secrets. |
+| Windows signing | `ESIGNER_USERNAME`, `ESIGNER_PASSWORD`, `ESIGNER_TOTP_SECRET`, `SPARKLE_PRIVATE_KEY` | Present after running `tools/release_secrets/sync.py --apply` | `ESIGNER_CREDENTIAL_ID` is optional and is also synced when present. Use `sign_windows=false` only for unsigned verification, not a signed release. |
+| Extension releases | R2 names plus `GH_TOKEN`, `BROWSEROS_AGENT_V2_KEY`, `BROWSEROS_CONTROLLER_KEY`, `BUGREPORTER_KEY`, `BROWSERCLAW_KEY`, `POSTHOG_API_KEY`, `VITE_PUBLIC_SENTRY_DSN`, `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`, `VITE_PUBLIC_POSTHOG_KEY`, `VITE_PUBLIC_POSTHOG_HOST` | Extension signing, Sentry, and PostHog names are synced by `tools/release_secrets/sync.py`; `GH_TOKEN` is external | `GH_TOKEN` is for private extension repo clones and is not sourced from `.env.production`. |
+| macOS release builder | Repository variables `BROWSEROS_REPO_PATH`, `BROWSEROS_CHROMIUM_SRC` | Present | The reusable browser build also reads `MACOS_CERTIFICATE_NAME` and `PROD_MACOS_NOTARIZATION_*` from repo secrets when selected; the certificate P12, certificate password, and keychain password remain external to `.env.production`. |
 | GitHub release assets | `GITHUB_TOKEN` | Automatic | Finalize uses it through `GH_TOKEN`. |
 
 ## Runner Cost And Time

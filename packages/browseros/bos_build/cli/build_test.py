@@ -116,6 +116,13 @@ class ShowPlanPresetTest(_ProfileMixin):
         self.assertIn("x64 (", result.output)
         self.assertIn("arm64 (", result.output)
 
+    def test_bundle_local_extensions_switch_reflected(self):
+        path = self._profile("preset: release\nbundle_local_extensions: true\n")
+        with scrubbed_env():
+            result = invoke("--profile", str(path), "--show-plan")
+        self.assertEqual(result.exit_code, 0, combined(result))
+        self.assertIn("bundle_local_extensions=True", result.output)
+
     def test_profile_skip_unions_with_cli_skip(self):
         path = self._profile("preset: release\nskip: [upload]\n")
         with scrubbed_env():
@@ -417,6 +424,19 @@ class GnArgPlumbingTest(_ProfileMixin):
         self.assertTrue(runs)
         for ctx, _steps in runs:
             self.assertEqual(ctx.extra_gn_args, ("symbol_level=2",))
+
+    def test_preset_build_runs_carry_bundle_local_extensions(self):
+        profile_path = self._profile("preset: release\nbundle_local_extensions: true\n")
+        with tempfile.TemporaryDirectory() as tmp:
+            m = MockChromium(Path(tmp))
+            with scrubbed_env():
+                projection = _resolve_preset(
+                    **self._preset_kwargs(profile=profile_path, chromium_src=m.src)
+                )
+                runs = projection.build_runs()
+        self.assertTrue(runs)
+        for ctx, _steps in runs:
+            self.assertTrue(ctx.bundle_local_extensions)
 
     def test_modules_profile_build_runs_carry_extra_gn_args(self):
         profile_path = self._profile("modules: [clean]\n")

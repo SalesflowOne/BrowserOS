@@ -42,6 +42,7 @@ class ReleaseGoldenTest(unittest.TestCase):
                 "compile",
                 "sign_macos",
                 "package_macos",
+                "sparkle_sign",
                 "upload",
             ],
         )
@@ -117,6 +118,7 @@ class ReleaseGoldenTest(unittest.TestCase):
                         "compile",
                         "sign_macos",
                         "package_macos",
+                        "sparkle_sign",
                         "upload",
                     ],
                 ),
@@ -128,12 +130,19 @@ class ReleaseGoldenTest(unittest.TestCase):
                         "compile",
                         "sign_macos",
                         "package_macos",
+                        "sparkle_sign",
                         "upload",
                     ],
                 ),
                 (
                     "universal",
-                    ["merge_universal", "sign_macos", "package_macos", "upload"],
+                    [
+                        "merge_universal",
+                        "sign_macos",
+                        "package_macos",
+                        "sparkle_sign",
+                        "upload",
+                    ],
                 ),
             ],
         )
@@ -143,9 +152,10 @@ class ReleaseGoldenTest(unittest.TestCase):
             plan_runs(UNIVERSAL, "linux")
 
     def test_noupload_variant(self):
-        # release.macos.arm64.noupload.yaml == release minus upload
+        # release.macos.arm64.noupload.yaml == release minus upload;
+        # signed artifacts are still Sparkle-signed like Windows.
         steps = plan(Switches(preset="release", upload=False), "arm64", "macos")
-        self.assertEqual(steps[-1], "package_macos")
+        self.assertEqual(steps[-2:], ["package_macos", "sparkle_sign"])
         self.assertNotIn("upload", steps)
 
 
@@ -260,6 +270,13 @@ class SwitchesTest(unittest.TestCase):
         self.assertEqual(Switches(preset="release").build_type, "release")
         self.assertEqual(Switches(preset="debug").build_type, "debug")
 
+    def test_bundle_local_extensions_defaults_off(self):
+        self.assertFalse(Switches().resolved().bundle_local_extensions)
+
+    def test_bundle_local_extensions_does_not_change_step_order(self):
+        local = Switches(preset="release", bundle_local_extensions=True)
+        self.assertEqual(plan(local, "x64", "linux"), plan(RELEASE, "x64", "linux"))
+
 
 class SkipTest(unittest.TestCase):
     def test_skip_subtracts_from_composed_plan(self):
@@ -338,7 +355,7 @@ class SliceFromTest(unittest.TestCase):
     def test_slices_composed_plan_from_step(self):
         self.assertEqual(
             slice_from(plan(RELEASE, "arm64", "macos"), "sign_macos"),
-            ["sign_macos", "package_macos", "upload"],
+            ["sign_macos", "package_macos", "sparkle_sign", "upload"],
         )
 
     def test_slice_from_first_step_is_identity(self):
@@ -360,21 +377,17 @@ class SliceFromTest(unittest.TestCase):
         self.assertIn("sign_macos", message)
 
     def test_from_a_skipped_step_rejected(self):
-        steps = plan(
-            Switches(preset="release", skip=("sign_macos",)), "arm64", "macos"
-        )
+        steps = plan(Switches(preset="release", skip=("sign_macos",)), "arm64", "macos")
         with self.assertRaisesRegex(ValueError, "not in the composed plan"):
             slice_from(steps, "sign_macos")
 
 
 class SliceRunsFromTest(unittest.TestCase):
     def test_single_arch_run_sliced(self):
-        runs = plan_runs(
-            Switches(preset="release", architectures=("arm64",)), "macos"
-        )
+        runs = plan_runs(Switches(preset="release", architectures=("arm64",)), "macos")
         self.assertEqual(
             slice_runs_from(runs, "sign_macos"),
-            [("arm64", ["sign_macos", "package_macos", "upload"])],
+            [("arm64", ["sign_macos", "package_macos", "sparkle_sign", "upload"])],
         )
 
     def test_universal_merge_failure_resumes_without_recompiling(self):
@@ -384,7 +397,13 @@ class SliceRunsFromTest(unittest.TestCase):
             [
                 (
                     "universal",
-                    ["merge_universal", "sign_macos", "package_macos", "upload"],
+                    [
+                        "merge_universal",
+                        "sign_macos",
+                        "package_macos",
+                        "sparkle_sign",
+                        "upload",
+                    ],
                 )
             ],
         )
@@ -395,7 +414,15 @@ class SliceRunsFromTest(unittest.TestCase):
         self.assertEqual(runs[0][0], "arm64")
         self.assertEqual(
             runs[0][1],
-            ["resources", "configure", "compile", "sign_macos", "package_macos", "upload"],
+            [
+                "resources",
+                "configure",
+                "compile",
+                "sign_macos",
+                "package_macos",
+                "sparkle_sign",
+                "upload",
+            ],
         )
         self.assertEqual(runs[1:], full[1:])
 
@@ -418,8 +445,7 @@ class SliceRunsFromTest(unittest.TestCase):
 
 
 class RequiredEnvTest(unittest.TestCase):
-    def test_signed_macos_requires_cert_and_notarization(self):
-        # parity with release.*.macos.*.yaml required_envs
+    def test_signed_macos_requires_cert_notarization_and_sparkle_key(self):
         env = required_env(plan(RELEASE, "arm64", "macos"))
         self.assertEqual(
             env,
@@ -428,6 +454,7 @@ class RequiredEnvTest(unittest.TestCase):
                 "PROD_MACOS_NOTARIZATION_APPLE_ID",
                 "PROD_MACOS_NOTARIZATION_TEAM_ID",
                 "PROD_MACOS_NOTARIZATION_PWD",
+                "SPARKLE_PRIVATE_KEY",
             ],
         )
 
@@ -479,6 +506,10 @@ class ProfileTest(unittest.TestCase):
         self.assertEqual(prof.switches.skip, ("upload", "series_patches"))
         self.assertEqual(self._load("skip: upload\n").switches.skip, ("upload",))
 
+    def test_bundle_local_extensions_profile_key(self):
+        prof = self._load("preset: release\nbundle_local_extensions: true\n")
+        self.assertTrue(prof.switches.bundle_local_extensions)
+
     def test_flat_profile_has_no_modules(self):
         self.assertIsNone(self._load("preset: release\n").modules)
 
@@ -508,6 +539,7 @@ class ProfileTest(unittest.TestCase):
             ("download", "false"),
             ("sign", "false"),
             ("upload", "false"),
+            ("bundle_local_extensions", "true"),
             ("skip", "[upload]"),
         ):
             with self.assertRaisesRegex(ValueError, "do not combine", msg=key):
@@ -533,8 +565,6 @@ class ProfileTest(unittest.TestCase):
     def test_modules_arch_list_rejected(self):
         with self.assertRaisesRegex(ValueError, "single-arch"):
             self._load("modules: [compile]\narch: [x64, arm64]\n")
-
-
 
 
 class PreflightTest(unittest.TestCase):
@@ -605,24 +635,24 @@ class DownloadSwitchTest(unittest.TestCase):
         # to rewrite the yaml to drop download_resources
         with_dl = plan(RELEASE, "arm64", "macos")
         without = plan(Switches(preset="release", download=False), "arm64", "macos")
-        self.assertEqual(
-            [s for s in with_dl if s != "download_resources"], without
-        )
+        self.assertEqual([s for s in with_dl if s != "download_resources"], without)
 
     def test_shipped_nightly_ci_profile_matches_ci_switches(self):
-        shipped = (
-            Path(__file__).resolve().parents[1] / "profiles" / "nightly-ci.yaml"
-        )
+        shipped = Path(__file__).resolve().parents[1] / "profiles" / "nightly-ci.yaml"
         prof = load_profile(shipped)
         # Shipped profiles stay switch-based; modules: is a local-only opt-in.
         self.assertIsNone(prof.modules)
-        for platform, arch in (("macos", "arm64"), ("windows", "x64"), ("linux", "x64")):
+        self.assertFalse(prof.switches.bundle_local_extensions)
+        for platform, arch in (
+            ("macos", "arm64"),
+            ("windows", "x64"),
+            ("linux", "x64"),
+        ):
             self.assertEqual(
                 plan(prof.switches, arch, platform),
                 plan(CI, arch, platform),
                 f"profile drift on {platform}/{arch}",
             )
-
 
 
 class UniversalRunsTest(unittest.TestCase):
@@ -652,7 +682,7 @@ class UniversalRunsTest(unittest.TestCase):
         self.assertEqual([arch for arch, _ in runs], ["arm64", "x64", "universal"])
         for arch, steps in runs:
             self.assertNotIn("upload", steps, arch)
-            self.assertEqual(steps[-1], "package_macos", arch)
+            self.assertEqual(steps[-2:], ["package_macos", "sparkle_sign"], arch)
 
     def test_non_universal_runs_match_flat_plan_per_arch(self):
         sw = Switches(preset="release", architectures=("x64", "arm64"))
@@ -663,8 +693,7 @@ class UniversalRunsTest(unittest.TestCase):
 
 
 class UniversalEnvTest(unittest.TestCase):
-    def test_universal_runs_require_signing_env_upfront(self):
-        # parity with the deleted release.*.macos.universal.yaml required_envs
+    def test_universal_runs_require_signing_and_sparkle_env_upfront(self):
         for arch, steps in plan_runs(UNIVERSAL, "macos"):
             self.assertEqual(
                 required_env(steps),
@@ -673,9 +702,11 @@ class UniversalEnvTest(unittest.TestCase):
                     "PROD_MACOS_NOTARIZATION_APPLE_ID",
                     "PROD_MACOS_NOTARIZATION_TEAM_ID",
                     "PROD_MACOS_NOTARIZATION_PWD",
+                    "SPARKLE_PRIVATE_KEY",
                 ],
                 arch,
             )
+
 
 if __name__ == "__main__":
     unittest.main()

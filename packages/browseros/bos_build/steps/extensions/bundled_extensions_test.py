@@ -2,20 +2,32 @@
 """Tests for bundled extension manifest handling."""
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
+from unittest.mock import MagicMock, patch
 
 from bos_build.core.context import Context
+from bos_build.core.products import (
+    BROWSEROS_AGENT_EXTENSION_ID,
+    BROWSEROS_BUG_REPORTER_EXTENSION_ID,
+    BROWSERCLAW_EXTENSION_ID,
+)
 from bos_build.core.products import get_product_descriptor
+from bos_build.core.step import ValidationError
+from bos_build.release.extensions.specs import spec_by_name
 from bos_build.steps.extensions.bundled_extensions import (
     BundledExtensionsModule,
     ExtensionInfo,
+    LocalBundle,
+    ManifestBundle,
 )
 
 CLAW_EXTENSION_ID = "pjimfkbpehlcllblajnpfamdfjhhlgkc"
+MODULE = "bos_build.steps.extensions.bundled_extensions"
 
 
 class BundledExtensionsManifestTest(unittest.TestCase):
@@ -68,8 +80,7 @@ class BundledExtensionsManifestTest(unittest.TestCase):
                         id=CLAW_EXTENSION_ID,
                         version="0.0.1",
                         codebase=(
-                            "https://cdn.browseros.com/extensions/"
-                            "browserclaw-0.0.1.crx"
+                            "https://cdn.browseros.com/extensions/browserclaw-0.0.1.crx"
                         ),
                     )
                 ],
@@ -141,9 +152,150 @@ class BundledExtensionsManifestTest(unittest.TestCase):
             ],
         )
 
-    def _ctx(self, product: str):
+    def test_hybrid_mode_builds_in_repo_and_downloads_external_required(self) -> None:
+        plan = BundledExtensionsModule()._plan_hybrid_bundles(
+            [
+                ExtensionInfo(
+                    id=BROWSEROS_BUG_REPORTER_EXTENSION_ID,
+                    version="52.0.0.0",
+                    codebase="https://cdn.browseros.com/extensions/bugreporter.crx",
+                ),
+                # Local-buildable IDs may still appear in the manifest; local wins.
+                ExtensionInfo(
+                    id=BROWSEROS_AGENT_EXTENSION_ID,
+                    version="0.0.115.0",
+                    codebase="https://cdn.browseros.com/extensions/agent.crx",
+                ),
+                ExtensionInfo(
+                    id=BROWSERCLAW_EXTENSION_ID,
+                    version="0.0.1",
+                    codebase="https://cdn.browseros.com/extensions/browserclaw.crx",
+                ),
+            ],
+            self._ctx("browseros", bundle_local_extensions=True),
+        )
+
+        self.assertIsInstance(plan[0], ManifestBundle)
+        self.assertIsInstance(plan[1], LocalBundle)
+        self.assertIsInstance(plan[2], LocalBundle)
+        self.assertEqual(
+            cast(ManifestBundle, plan[0]).extension.id,
+            BROWSEROS_BUG_REPORTER_EXTENSION_ID,
+        )
+        self.assertEqual(cast(LocalBundle, plan[1]).spec.name, "agent")
+        self.assertEqual(cast(LocalBundle, plan[2]).spec.name, "browserclaw")
+
+    def test_hybrid_mode_fails_when_external_required_missing(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "BrowserOS bug reporter"):
+            BundledExtensionsModule()._plan_hybrid_bundles(
+                [
+                    ExtensionInfo(
+                        id=BROWSEROS_AGENT_EXTENSION_ID,
+                        version="0.0.115.0",
+                        codebase="https://cdn.browseros.com/extensions/agent.crx",
+                    ),
+                    ExtensionInfo(
+                        id=BROWSERCLAW_EXTENSION_ID,
+                        version="0.0.1",
+                        codebase="https://cdn.browseros.com/extensions/browserclaw.crx",
+                    ),
+                ],
+                self._ctx("browseros", bundle_local_extensions=True),
+            )
+
+    def test_build_local_extension_uses_spec_recipe_without_version_stamp(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_root = root / "repo" / "packages" / "browseros"
+            source_root = root / "repo" / "packages" / "browseros-agent"
+            manifest = source_root / "apps" / "app" / "package.json"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text(json.dumps({"version": "0.0.123"}))
+            output_dir = root / "chromium" / "bundled_extensions"
+            output_dir.mkdir(parents=True)
+            ctx = cast(Context, SimpleNamespace(root_dir=package_root))
+
+            patches = {
+                "resolve_source": MagicMock(return_value=source_root),
+                "write_env_file": MagicMock(),
+                "run_command": MagicMock(),
+                "pack_crx": MagicMock(),
+            }
+            with (
+                patch.dict(os.environ, {"BROWSEROS_AGENT_V2_KEY": "agent-pem"}),
+                patch(f"{MODULE}.resolve_source", patches["resolve_source"]),
+                patch(f"{MODULE}.write_env_file", patches["write_env_file"]),
+                patch(f"{MODULE}.run_command", patches["run_command"]),
+                patch(f"{MODULE}.pack_crx", patches["pack_crx"]),
+            ):
+                info = BundledExtensionsModule()._build_and_pack_local_extension(
+                    spec_by_name("agent"), ctx, output_dir, "chrome-bin"
+                )
+
+        self.assertEqual(info.id, BROWSEROS_AGENT_EXTENSION_ID)
+        self.assertEqual(info.version, "0.0.123")
+        patches["resolve_source"].assert_called_once()
+        commands = [call.args for call in patches["run_command"].call_args_list]
+        self.assertEqual(
+            commands,
+            [
+                ("bun ci", source_root),
+                ("bun run build:agent", source_root),
+            ],
+        )
+        pack_args = patches["pack_crx"].call_args.args
+        self.assertEqual(pack_args[0], source_root / "apps/app/dist/chrome-mv3")
+        self.assertEqual(pack_args[1], "agent-pem")
+        self.assertEqual(pack_args[2], "chrome-bin")
+        self.assertEqual(
+            pack_args[3],
+            output_dir / f"{BROWSEROS_AGENT_EXTENSION_ID}.crx",
+        )
+
+    def test_local_mode_preflight_requires_only_local_signing_keys(self) -> None:
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "BROWSEROS_AGENT_V2_KEY": "agent-pem",
+                    "BROWSERCLAW_KEY": "claw-pem",
+                },
+                clear=False,
+            ),
+            patch(f"{MODULE}.find_chrome_binary", return_value="chrome-bin"),
+        ):
+            BundledExtensionsModule().preflight(
+                self._ctx("browseros", bundle_local_extensions=True)
+            )
+
+    def test_local_mode_preflight_names_missing_local_signing_key(self) -> None:
+        env = {
+            k: v
+            for k, v in os.environ.items()
+            if k not in ("BROWSEROS_AGENT_V2_KEY", "BROWSERCLAW_KEY")
+        }
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch(f"{MODULE}.find_chrome_binary", return_value="chrome-bin"),
+            self.assertRaisesRegex(ValidationError, "BROWSEROS_AGENT_V2_KEY"),
+        ):
+            BundledExtensionsModule().preflight(
+                self._ctx("browseros", bundle_local_extensions=True)
+            )
+
+    def _ctx(
+        self,
+        product: str,
+        bundle_local_extensions: bool = False,
+        root_dir: Path | None = None,
+    ):
         return cast(
-            Context, SimpleNamespace(product=get_product_descriptor(product))
+            Context,
+            SimpleNamespace(
+                product=get_product_descriptor(product),
+                bundle_local_extensions=bundle_local_extensions,
+                root_dir=root_dir or Path("/repo/packages/browseros"),
+            ),
         )
 
 
