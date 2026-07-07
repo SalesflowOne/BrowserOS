@@ -187,9 +187,7 @@ fn handler<'a>(
         let outcome = match execute_run(args, ctx).await {
             Ok(outcome) => outcome,
             Err(RunError::Syntax(message)) => {
-                return Ok(Some(crate::framework::error_result(format!(
-                    "run: syntax error - {message}"
-                ))));
+                RunOutcome::failure(format!("run: syntax error - {message}"), Vec::new())
             }
             Err(RunError::Cancelled) => return Err(ToolError::Cancelled),
             Err(RunError::Engine(message)) => return Err(ToolError::message(message)),
@@ -411,11 +409,22 @@ async fn execute_quickjs(
 
             match promise.into_future::<JsValue<'_>>().await.catch(&ctx) {
                 Ok(value) => match json_safe_value(&ctx, value) {
-                    Ok((value, return_text)) => Ok(RunOutcome::success(
-                        value,
-                        return_text,
-                        logs_snapshot(&logs),
-                    )),
+                    Ok((value, return_text)) => {
+                        if control.is_cancelled() {
+                            return Err(RunError::Cancelled);
+                        }
+                        if control.timed_out() {
+                            return Ok(RunOutcome::failure(
+                                control.timeout_message.to_string(),
+                                logs_snapshot(&logs),
+                            ));
+                        }
+                        Ok(RunOutcome::success(
+                            value,
+                            return_text,
+                            logs_snapshot(&logs),
+                        ))
+                    }
                     Err(JsonValueError::Limit(message)) => {
                         Ok(RunOutcome::failure(message, logs_snapshot(&logs)))
                     }
@@ -976,6 +985,9 @@ mod tests {
                     "Browser.getTabs" => Ok(json!({
                         "tabs": [fake_tab_json(7, "target-7", "https://example.com", "Example", 1, 0)]
                     })),
+                    "Browser.hang" => {
+                        futures_util::future::pending::<Result<Value, CdpError>>().await
+                    }
                     "Browser.createTab" => {
                         if let Ok(mut state) = state.lock() {
                             state.create_tab_params.push(params.clone());
@@ -1000,6 +1012,14 @@ mod tests {
                         };
                         Ok(json!({ "tab": tab }))
                     }
+                    "Target.attachToTarget" => Ok(json!({ "sessionId": "session-target-7" })),
+                    "Page.enable"
+                    | "DOM.enable"
+                    | "Runtime.enable"
+                    | "Accessibility.enable"
+                    | "Runtime.runIfWaitingForDebugger"
+                    | "Target.setAutoAttach"
+                    | "Page.reload" => Ok(json!({})),
                     "Browser.addTabsToGroup" => {
                         if let Ok(mut state) = state.lock() {
                             state.add_group_params.push(params.clone());
@@ -1036,10 +1056,13 @@ mod tests {
             _session: Option<&'a SessionId>,
         ) -> BoxFuture<'a, Result<String, CdpError>> {
             Box::pin(async move {
-                Err(CdpError::Protocol {
-                    code: -1,
-                    message: format!("unexpected fake CDP raw call: {method}"),
-                })
+                match method {
+                    "Runtime.evaluate" => Ok(json!({ "result": { "value": 3 } }).to_string()),
+                    _ => Err(CdpError::Protocol {
+                        code: -1,
+                        message: format!("unexpected fake CDP raw call: {method}"),
+                    }),
+                }
             })
         }
 
@@ -1164,6 +1187,28 @@ throw new Error('boom');
     }
 
     #[tokio::test]
+    async fn run_reports_syntax_error_as_structured_error() -> anyhow::Result<()> {
+        let result = run_tool("return (", None).await?;
+        assert!(result.is_error);
+        let structured = result
+            .structured_content
+            .as_ref()
+            .and_then(Value::as_object)
+            .ok_or_else(|| anyhow::anyhow!("missing structured object"))?;
+        assert_eq!(structured.get("ok"), Some(&json!(false)));
+        assert_eq!(structured.get("logs"), Some(&json!([])));
+        let error = structured
+            .get("error")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow::anyhow!("missing structured error"))?;
+        assert!(
+            error.starts_with("run: syntax error - "),
+            "unexpected error: {error}"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn run_reports_timeout_with_logs_so_far() -> anyhow::Result<()> {
         let result = run_tool(
             r#"
@@ -1179,6 +1224,31 @@ while (true) {}
             Some(json!({
                 "ok": false,
                 "logs": ["before"],
+                "error": "run exceeded 10ms"
+            }))
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn run_timeout_cannot_be_caught_as_success() -> anyhow::Result<()> {
+        let result = run_tool(
+            r#"
+try {
+  await browser.cdp('Browser.hang');
+} catch (_err) {
+  return 'caught';
+}
+"#,
+            Some(10.0),
+        )
+        .await?;
+        assert!(result.is_error);
+        assert_eq!(
+            result.structured_content,
+            Some(json!({
+                "ok": false,
+                "logs": [],
                 "error": "run exceeded 10ms"
             }))
         );
@@ -1350,6 +1420,59 @@ return { pageId: page.pageId, tabId: page.tabId, url: page.url, title: page.titl
             group_params.first().and_then(|params| params.get("tabIds")),
             Some(&json!([9]))
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn run_exercises_remaining_browser_namespaces() -> anyhow::Result<()> {
+        let result = run_tool(
+            r#"
+const seen = {};
+seen.cdp = (await browser.cdp('Browser.getTabs')).tabs.length;
+seen.cdpJsonForPage = await browser.cdpJsonForPage(
+  1,
+  'Runtime.evaluate',
+  '{"expression":"1+1"}'
+);
+for (const [name, action] of Object.entries({
+  observe: () => browser.observe(999).snapshot(),
+  input: () => browser.input(999).type('x'),
+  nav: () => browser.nav(999).reload(),
+})) {
+  try {
+    await action();
+    seen[name] = 'ok';
+  } catch (err) {
+    seen[name] = String(err && err.message ? err.message : err);
+  }
+}
+return seen;
+"#,
+            None,
+        )
+        .await?;
+        assert!(!result.is_error);
+        let value = result
+            .structured_content
+            .as_ref()
+            .and_then(|structured| structured.get("value"))
+            .and_then(Value::as_object)
+            .ok_or_else(|| anyhow::anyhow!("missing structured value"))?;
+        assert_eq!(value.get("cdp"), Some(&json!(1)));
+        assert_eq!(
+            value.get("cdpJsonForPage"),
+            Some(&json!({ "result": { "value": 3 } }))
+        );
+        for namespace in ["observe", "input", "nav"] {
+            let error = value
+                .get(namespace)
+                .and_then(Value::as_str)
+                .ok_or_else(|| anyhow::anyhow!("missing {namespace} result"))?;
+            assert!(
+                error.contains("Unknown page 999"),
+                "unexpected {namespace} error: {error}"
+            );
+        }
         Ok(())
     }
 
