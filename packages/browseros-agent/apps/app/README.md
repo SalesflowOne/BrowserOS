@@ -142,16 +142,27 @@ GRAPHQL_SCHEMA_PATH=/path/to/api-repo/.../schema.graphql
 
 ## Release Flow
 
-Extension releases use annotated component tags. For the usual path, run the `Release: Agent Extension` workflow manually with the target version, for example `0.0.119`. The workflow bumps `packages/browseros-agent/apps/app/package.json`, updates the matching `bun.lock` workspace entry, commits that bump to the default branch, creates `agent-extension/vX.Y.Z`, and publishes the GitHub Release.
+BrowserOS agent extension releases are built as signed CRX artifacts and staged
+with update-feed metadata through the reusable `Release: Extensions (CRX +
+feeds)` workflow. The normal BrowserOS product release path calls that workflow
+from `release-browseros.yml` when the `extensions` input is `alpha` or `prod`
+and `extensions_version` is set.
 
-To release from an existing version commit instead, tag the merged default-branch commit manually:
+For a standalone agent extension release, dispatch the reusable workflow with
+the target version and extension name:
 
 ```bash
-git tag -a agent-extension/v0.0.100 -m "agent-extension v0.0.100"
-git push origin agent-extension/v0.0.100
+gh workflow run release-extensions.yml \
+  -f version=0.0.119 \
+  -f extension=agent \
+  -f channel=alpha \
+  -f publish_manifest=false
 ```
 
-The release workflow validates that the tag version matches `apps/app/package.json`, that the tagged commit is reachable from the default branch, and that the version is newer than existing `agent-extension-v*` and `agent-extension/v*` tags. Legacy `agent-extension-vX.Y.Z` tags remain historical; new GitHub Releases use `agent-extension/vX.Y.Z`.
+Leave `publish_manifest=false` for staging; publish the feed only after the
+staged CRX and generated manifest have been inspected. The previous GitHub
+Release zip distribution and extension component-tag trigger are historical
+only.
 
 ## Development Tooling
 
