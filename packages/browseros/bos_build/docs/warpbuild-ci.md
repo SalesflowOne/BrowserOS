@@ -1,15 +1,18 @@
-# Nightly WarpBuild Release Builds
+# WarpBuild Release CI
 
-`.github/workflows/nightly-release.yml` (`Nightly: All-Platform Browser
-(unsigned)`) builds UNSIGNED release artifacts for Linux x64, Windows x64, and
-macOS arm64 every night on WarpBuild cloud runners, uploads them to the Actions
-run, and refreshes a rolling `nightly` prerelease on GitHub. Its per-platform
-build job delegates to the reusable Chromium build workflow in
-`.github/workflows/build-browseros.yml`, so the WarpBuild checkout/cache/build
-recipe is shared with the release workflows.
-It complements the signed self-hosted macOS product nightlies in
-`nightly-browseros.yml` and `nightly-browserclaw.yml`. Those dedicated Mac Mini
-workflows are the signed daily-test path for macOS arm64.
+The release Linux and Windows browser lanes run Chromium builds on WarpBuild
+cloud runners:
+
+- `.github/workflows/release-linux.yml`
+- `.github/workflows/release-windows.yml`
+- `.github/workflows/build-browseros.yml`
+
+The per-platform workflows resolve product matrices and delegate each browser
+build to the reusable `build-browseros.yml` workflow. That reusable workflow
+owns the WarpBuild checkout, cache, sync, build, upload-artifact, and
+queue-watchdog assumptions documented here. The signed macOS release and
+nightly lanes use the repo-scoped Mac Mini runner instead; see
+`release-ci.md` and `nightly-macos-ci.md` for those paths.
 
 ## Runners
 
@@ -20,7 +23,10 @@ workflows are the signed daily-test path for macOS arm64.
 | macOS arm64 | `warp-macos-26-arm64-12x` | M4 Pro, 12 vCPU / 44 GB | 500 GB |
 
 There is no 32-core macOS tier; 12x is WarpBuild's largest Mac. The macOS
-image version must satisfy the chromium pin's SDK requirement — check
+label is kept in the runner catalog for future reusable `build-browseros.yml`
+callers, but the current signed macOS release and nightly workflows use the
+self-hosted `browseros-builder` runner. The macOS image version must satisfy
+the chromium pin's SDK requirement — check
 `build/config/mac/mac_sdk.gni` (`mac_sdk_official_version`) in the pinned
 tree when bumping `CHROMIUM_VERSION`; chromium 148 needs the macOS 26 SDK,
 and the macOS 15 image (Xcode 16.4 / SDK 15.5) fails compiling
@@ -78,16 +84,20 @@ leaves `queued`:
    an active account.
 
 Smoke test after changing either:
-`gh workflow run nightly-release.yml -f platforms=linux`, then watch the build
-job leave `queued` within ~5 minutes (`gh run watch`).
+`gh workflow run release-linux.yml -f products=browseros -f upload_to_r2=false`,
+then watch the build job leave `queued` within ~5 minutes (`gh run watch`).
+Only do this when you intentionally want to spend release runner time.
 
-## Per-night pipeline (per platform)
+## Release lane flow
 
-`nightly-release.yml` resolves the platform matrix and then calls
-`.github/workflows/build-browseros.yml` once per selected platform with
-`product=browseros`, `profile=nightly-ci`, `sign=false`, `upload=false`, and
-the historical artifact name `browseros-nightly-<platform>-<arch>`. The
-reusable workflow performs the per-platform recipe:
+`release-linux.yml` and `release-windows.yml` build one matrix entry per
+selected product (`browseros`, `browserclaw`, or `all`) and call
+`.github/workflows/build-browseros.yml` with `profile=release-ci`. Linux always
+builds unsigned artifacts. Windows follows the caller's `sign` input and can be
+used for unsigned verification with `sign=false`. Both lanes pass
+`upload_to_r2` through to the reusable workflow.
+
+The reusable workflow performs the per-platform recipe:
 
 1. `actions/checkout` + `astral-sh/setup-uv`.
 2. Restore the pinned chromium checkout from cache (see below).
@@ -100,20 +110,17 @@ reusable workflow performs the per-platform recipe:
 5. `browseros source ensure --step sync` — `gclient sync -D
    --no-history --shallow`, exactly what the git_setup module runs.
 6. Save the cache (only when the restore missed, i.e. first run per pin).
-7. `uv run browseros build --profile nightly-ci --arch <arch>
-   --chromium-src .../src`.
-8. Upload artifacts (14-day retention) using the nightly artifact name; a
-   follow-up job in `nightly-release.yml` recreates the rolling `nightly`
-   prerelease for scheduled main runs.
+7. `uv run browseros build --profile release-ci --product <product>
+   --arch <arch> --chromium-src .../src`, with signing and R2 upload flags
+   resolved from workflow inputs.
+8. Upload release build artifacts to the Actions run with 14-day retention.
 
-The `nightly-ci` profile is the release preset minus `clean`/
-`git_setup` (steps 4-5 replace them), minus `sign_*`/`upload`. It keeps
-CDN-pinned bundled extensions because WarpBuild images do not provide the
-system Chrome binary required for local CRX packing. Why not run `git_setup`
-as-is: it does `git fetch --tags`, which on the shallow CI clone would pull
-objects for all ~70k chromium tags; the script instead fetches exactly the
-pinned tag at depth 2. On Windows the new `mini_installer` module builds the
-installer that `sign_windows` would otherwise build.
+The `release-ci` profile is the release preset minus `clean`/`git_setup`
+(steps 4-5 replace them). Why not run `git_setup` as-is: it does
+`git fetch --tags`, which on the shallow CI clone would pull objects for all
+~70k chromium tags; the script instead fetches exactly the pinned tag at depth
+2. On Windows the `mini_installer` module builds the installer that the signing
+step signs when `sign=true`.
 
 ## Caching strategy
 
@@ -139,16 +146,18 @@ Expected timings (32-core linux/windows, M4 Pro mac):
 | Phase | Cold (first run / pin bump) | Warm |
 | --- | --- | --- |
 | Checkout + sync | 40-70 min | restore 3-10 min + sync 5-15 min |
-| Compile + package | 2.5-6 h (per platform) | same — out/ is rebuilt nightly |
+| Compile + package | 2.5-6 h (per platform) | same — out/ is rebuilt per run |
 | Total | ~4-7 h | ~3-6 h |
 
 The compile dominates either way; the cache removes the checkout cost and
 network flakiness. Toolchains deleted by `clean` (~2-4 GB) are re-fetched by
-hooks each night — accepted, matches the maintainer's local flow.
+hooks each run — accepted, matches the maintainer's local flow.
 
 Cost ballpark at WarpBuild list prices: linux 32x $3.84/h, windows 32x
-$7.68/h, mac 12x $9.60/h → roughly $60-120 per full nightly, plus ~$12/month
-cache storage.
+$7.68/h, mac 12x $9.60/h. A Linux+Windows release pass is roughly $35-80
+depending on duration, plus ~$12/month cache storage. The macOS catalog price
+is kept here for future WarpBuild callers; current signed macOS release and
+nightly builds run on the self-hosted Mac Mini.
 
 ### Future optimizations (not yet wired)
 
@@ -158,44 +167,31 @@ cache storage.
   snapshots expire after 15 days and need a bake/boot split; revisit once
   the cache flow is proven.
 - **Compiler cache (sccache/ccache via `cc_wrapper`)** in a CI gn flags
-  variant: nightly sources are nearly identical night-to-night, so this is
-  the lever that could cut warm builds to well under an hour.
+  variant: release rebuilds often differ only slightly, so this is the lever
+  that could cut warm builds to well under an hour.
 - **Linux arm64** via `architecture: [x64, arm64]` in the CI config once
   the x64 lane is green (sysroot bootstrap already handled by the modules).
 
-## Signing later (placeholders)
-
-The workflow leaves named-but-unused secret placeholders documented next to
-the build step. To enable signing:
-
-- **macOS**: enable signing on
-  the macOS build invocation (`--sign`), provide `MACOS_CERTIFICATE_P12` +
-  `MACOS_CERTIFICATE_PWD` (import into a temporary CI keychain in a step
-  before the build), `MACOS_CERTIFICATE_NAME`, `MACOS_KEYCHAIN_PASSWORD`,
-  `PROD_MACOS_NOTARIZATION_APPLE_ID/_TEAM_ID/_PWD`, `SPARKLE_PRIVATE_KEY`.
-- **Windows**: enable signing on
-  the Windows build invocation (`--sign`), install SSL.com CodeSignTool in a step, set
-  `CODE_SIGN_TOOL_PATH` and `ESIGNER_USERNAME/_PASSWORD/_TOTP_SECRET`
-  (+ `ESIGNER_CREDENTIAL_ID`).
-- **Linux**: unsigned by design (no sign module in the release config).
-
-## Operating it
+## Operating release lanes
 
 ```bash
-# Full run on all platforms (no prerelease update):
-gh workflow run nightly-release.yml
+# BrowserOS Linux release artifact build without R2 upload.
+gh workflow run release-linux.yml -f products=browseros -f upload_to_r2=false
 
-# One platform while iterating:
-gh workflow run nightly-release.yml -f platforms=linux
+# BrowserClaw unsigned Windows verification without R2 upload.
+gh workflow run release-windows.yml \
+  -f products=browserclaw \
+  -f sign=false \
+  -f upload_to_r2=false
 
-# Manual run that also refreshes the rolling prerelease (main only):
-gh workflow run nightly-release.yml -f publish_nightly=true
+# Both products on Linux with R2 upload.
+gh workflow run release-linux.yml -f products=all -f upload_to_r2=true
 ```
 
 The first run per platform is the cache warm-up; expect cold timings. If a
-pin bump lands, the next night is cold again for that version. To force a
-fresh checkout, bump the `v1` in the cache key (workflow) — for Windows also
-delete the old object under `ci-cache/chromium/` in R2.
+pin bump lands, the next run is cold again for that version. To force a fresh
+checkout, bump the `v1` in the cache key (workflow) — for Windows also delete
+the old object under `ci-cache/chromium/` in R2.
 
 ## Troubleshooting: jobs stuck in `queued`
 
@@ -222,17 +218,15 @@ Causes, in the order to check:
 
 Mechanics worth knowing:
 
-- GitHub discards self-hosted jobs queued for more than 24h, and the
-  workflow's `nightly-release` concurrency group
-  (`cancel-in-progress: false`) makes the next run wait (newer pending
-  runs supersede older pending ones) — one stuck night delays the next
-  by a full day (runs 27367077749 → 27407228486 did exactly this). The `queue-watchdog` job therefore steps in at the
-  20-minute mark: it cancels the run when no build job is actually
-  running (everything stuck in queue or already finished), and fails
-  loudly without cancelling while any build is in progress. In that
-  mixed case, cancel the run manually once the live builds finish — a
-  still-queued job otherwise pins the group for up to 24h with no
-  watcher left.
+- GitHub discards self-hosted jobs queued for more than 24h, and each release
+  platform workflow has a concurrency group (`release-linux` or
+  `release-windows`) with `cancel-in-progress: false`. A queued build can
+  therefore pin the platform lane for a full day. The `queue-watchdog` job
+  steps in at the 20-minute mark: it cancels the run when no build job is
+  actually running (everything stuck in queue or already finished), and fails
+  loudly without cancelling while any build is in progress. In that mixed
+  case, cancel the run manually once the live builds finish — a still-queued
+  job otherwise pins the group for up to 24h with no watcher left.
 - Fixing the root cause does not revive already-queued jobs: WarpBuild
   provisions on the `workflow_job.queued` webhook, which has already
   fired. Cancel the stuck run and re-dispatch.

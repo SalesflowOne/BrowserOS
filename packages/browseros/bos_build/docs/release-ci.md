@@ -14,7 +14,6 @@ release-browseros.yml
   preflight
     - read packages/browseros/resources/BROWSEROS_VERSION for browser artifacts
     - require extensions_version when extensions is alpha or prod
-    - optionally cancel only nightly-release.yml WarpBuild runs
     - fail early when selected lane secrets or variables are missing
   server resources, when include_servers=true
     - release-server.yml
@@ -34,6 +33,9 @@ release-browseros.yml
 
 release-browserclaw.yml
   preflight
+    - read packages/browseros/resources/BROWSEROS_VERSION for browser artifacts
+    - require extensions_version when extensions is alpha or prod
+    - fail early when selected lane secrets or variables are missing
   server resources, when include_servers=true
     - release-claw-server.yml
     - release-claw-server-rust.yml
@@ -48,34 +50,9 @@ release-browserclaw.yml
   finalize
 ```
 
-`release-full.yml` remains the both-products hammer. Use it only when one
-dispatch should intentionally coordinate both products:
-
-```text
-release-full.yml
-  preflight
-    - read packages/browseros/resources/BROWSEROS_VERSION for browser artifacts
-    - optionally cancel only nightly-release.yml WarpBuild runs
-    - fail early when selected lane secrets or variables are missing
-  server resources, when include_servers=true
-    - release-server.yml for browseros
-    - release-claw-server.yml for browserclaw
-    - release-claw-server-rust.yml exists as a separate manual/reusable lane
-      for BrowserClaw Rust server resources. BrowserClaw browser builds can
-      consume its latest resources via the bos_build claw-server variant flag,
-      but the full release server-resource orchestration stays separate
-  browser builds
-    - release-linux.yml -> build-browseros.yml
-    - release-windows.yml -> build-browseros.yml
-    - release-macos.yml
-  finalize
-    - write the Actions step summary
-    - create or refresh draft GitHub release assets when all selected lanes pass
-```
-
-The full-release workflows have no schedule and no tag trigger. A full release
-is a manual dispatch so it cannot accidentally occupy WarpBuild or the
-self-hosted macOS builder.
+The per-product full-release workflows have no schedule and no tag trigger. A
+full release is a manual dispatch so it cannot accidentally occupy WarpBuild or
+the self-hosted macOS builder.
 
 ## Component Workflows
 
@@ -83,13 +60,14 @@ self-hosted macOS builder.
 | --- | --- | --- | --- |
 | `.github/workflows/release-server.yml` | Builds BrowserOS server resource zips for every browser target, uploads versioned R2 resource keys, attaches server release assets, and reflects the server package version. | Manual and `agent-server/v*` tags | Yes, when `include_servers=true` and `products` includes `browseros` |
 | `.github/workflows/release-claw-server.yml` | Builds BrowserClaw server and onboard resource zips, uploads versioned R2 keys, attaches server release assets, and reflects Claw package versions. | Manual and `claw-server/v*` tags | Yes, when `include_servers=true` and `products` includes `browserclaw` |
-| `.github/workflows/release-claw-server-rust.yml` | Builds BrowserClaw Rust server resource zips for every browser target, uploads versioned R2 keys under `claw-server-rust/prod-resources`, and attaches Rust server release assets. | Manual, reusable, and `claw-server-rust/v*` tags | Called by `release-browserclaw.yml` when `include_servers=true`; not called by `release-full.yml` |
+| `.github/workflows/release-claw-server-rust.yml` | Builds BrowserClaw Rust server resource zips for every browser target, uploads versioned R2 keys under `claw-server-rust/prod-resources`, and attaches Rust server release assets. | Manual, reusable, and `claw-server-rust/v*` tags | Called by `release-browserclaw.yml` when `include_servers=true` |
 | `.github/workflows/release-extensions.yml` | Builds, signs, uploads, and optionally republishes extension CRX manifests for `agent`, `controller`, `bugreporter`, and `browserclaw`. | Manual and reusable | Called by per-product orchestrators with `secrets: inherit` and `publish_manifest=false` |
+| `.github/workflows/release-cli.yml` | Builds browseros-cli release binaries, uploads them to CDN, publishes npm package metadata, and creates the CLI GitHub release. | `cli/v*` tags | No orchestrator use |
 | `.github/workflows/release-linux.yml` | Builds Linux x64 browser artifacts on WarpBuild, one matrix entry per selected product. | Manual | Yes |
+| `.github/workflows/release-windows.yml` | Builds Windows x64 browser artifacts on WarpBuild, one matrix entry per selected product, with optional signing. | Manual | Yes |
 | `.github/workflows/release-macos.yml` | Builds signed macOS artifacts on the dedicated self-hosted builder and downloads published server/onboard resource bundles from R2. | Manual | Yes |
 | `.github/workflows/release-browseros.yml` | Orchestrates one BrowserOS release, including server resources, selected browser platforms, optional agent CRX upload, staged feed artifacts, and draft GitHub release assets. | Manual only | No reusable entry point |
 | `.github/workflows/release-browserclaw.yml` | Orchestrates one BrowserClaw release, including TS and Rust server resources, selected browser platforms, optional BrowserClaw CRX upload, staged feed artifacts, and draft GitHub release assets. | Manual only | No reusable entry point |
-| `.github/workflows/release-full.yml` | Orchestrates servers, selected browser platforms, and draft GitHub release asset creation. | Manual only | No reusable entry point |
 
 Browser artifacts use the BrowserOS browser version from
 `packages/browseros/resources/BROWSEROS_VERSION` (for example `0.47.2.2`).
@@ -124,10 +102,10 @@ published BrowserOS server bundle, both BrowserClaw server bundles, and the
 onboarding bundle from R2 using the runner-local `packages/browseros/.env` R2
 credentials.
 
-The reusable nesting depth is `release-browseros.yml`,
-`release-browserclaw.yml`, or `release-full.yml` -> `release-linux.yml` or
-`release-windows.yml` -> `build-browseros.yml`, which stays below GitHub's
-limit of four workflow levels.
+The reusable nesting depth is `release-browseros.yml` or
+`release-browserclaw.yml` -> `release-linux.yml` or `release-windows.yml` ->
+`build-browseros.yml`, which stays below GitHub's limit of four workflow
+levels.
 
 The `bundle_local_extensions` profile switch defaults off for release
 reproducibility. Release CI profiles keep it off and consume published extension
@@ -153,7 +131,6 @@ gh workflow run release-browseros.yml \
   -f upload_to_r2=true \
   -f extensions=alpha \
   -f extensions_version=<agent-extension-version> \
-  -f preempt_nightly=true \
   -f github_release_draft=true
 
 gh workflow run release-browserclaw.yml \
@@ -164,7 +141,6 @@ gh workflow run release-browserclaw.yml \
   -f upload_to_r2=true \
   -f extensions=alpha \
   -f extensions_version=<browserclaw-extension-version> \
-  -f preempt_nightly=true \
   -f github_release_draft=true
 ```
 
@@ -186,39 +162,6 @@ gh workflow run release-browserclaw.yml \
   -f platforms=macos \
   -f macos_arch=universal \
   -f extensions=skip
-```
-
-## Both-Products Full Release Inputs
-
-```bash
-gh workflow run release-full.yml \
-  -f products=all \
-  -f platforms=all \
-  -f include_servers=true \
-  -f sign_windows=true \
-  -f macos_arch=arm64 \
-  -f upload_to_r2=true \
-  -f preempt_nightly=true \
-  -f github_release_draft=true
-```
-
-Useful narrower runs:
-
-```bash
-# Rebuild browser artifacts against server resources already staged in R2.
-gh workflow run release-full.yml -f include_servers=false
-
-# Linux only, both products, still creates a draft release if selected lanes pass.
-gh workflow run release-full.yml -f platforms=linux -f products=all
-
-# Unsigned Windows verification when signing secrets are not available.
-gh workflow run release-full.yml -f platforms=windows -f sign_windows=false
-
-# BrowserClaw macOS universal build only.
-gh workflow run release-full.yml \
-  -f products=browserclaw \
-  -f platforms=macos \
-  -f macos_arch=universal
 ```
 
 Individual workflow examples:
@@ -254,7 +197,7 @@ paths and unrelated API keys from `.env.production`.
 | Lane | Required names | Current repo status | Notes |
 | --- | --- | --- | --- |
 | R2 browser artifacts and final draft release | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` | Present | Used by Linux/Windows browser downloads and uploads, server resource uploads, and the draft GitHub release asset step. |
-| BrowserOS server resources | R2 names plus `BROWSEROS_CONFIG_URL`, `POSTHOG_API_KEY`, `SENTRY_DSN` | Present | `AGENT_RUNNER_JWT_SECRET` is optional and inlined only when present. `release-full.yml` fails in preflight before cancelling nightlies or starting paid builds if selected required names are absent. |
+| BrowserOS server resources | R2 names plus `BROWSEROS_CONFIG_URL`, `POSTHOG_API_KEY`, `SENTRY_DSN` | Present | `AGENT_RUNNER_JWT_SECRET` is optional and inlined only when present. Per-product release preflight fails before starting paid builds if selected required names are absent. |
 | BrowserClaw server resources | R2 names | Present | `SPARKLE_PRIVATE_KEY` is optional for server OTA publishing; the orchestrator passes `publish_ota=false`. |
 | BrowserClaw Rust server resources | R2 names | Present | Uses only GitHub-hosted runners and writes `claw-server-rust/prod-resources`; no signing or OTA secrets are required. |
 | Windows signing | `ESIGNER_USERNAME`, `ESIGNER_PASSWORD`, `ESIGNER_TOTP_SECRET`, `SPARKLE_PRIVATE_KEY` | Present after running `tools/release_secrets/sync.py --apply` | `ESIGNER_CREDENTIAL_ID` is optional and is also synced when present. Use `sign_windows=false` only for unsigned verification, not a signed release. |
@@ -266,7 +209,7 @@ paths and unrelated API keys from `.env.production`.
 
 Linux and Windows release builds use WarpBuild runners. The operational details,
 cost ballparks, cache behavior, and stuck-queue troubleshooting live in
-`packages/browseros/bos_build/docs/nightly-warpbuild-ci.md`; keep that document
+`packages/browseros/bos_build/docs/warpbuild-ci.md`; keep that document
 as the source of truth for WarpBuild labels and timing expectations.
 
 Rules of thumb:
@@ -274,11 +217,6 @@ Rules of thumb:
 - Linux and Windows are paid cloud runs and can take several hours.
 - The macOS release lane runs on the user's dedicated self-hosted machine and
   can take 6 to 20 hours for all products or universal builds.
-- `preempt_nightly=true` cancels only queued or in-progress
-  `.github/workflows/nightly-release.yml` runs. It does not cancel
-  `.github/workflows/nightly-browseros.yml` or
-  `.github/workflows/nightly-browserclaw.yml`; the shared `macos-build`
-  concurrency group serializes self-hosted macOS work.
 
 ## Draft GitHub Release
 
@@ -292,9 +230,7 @@ uv run browseros release github create --version <version> --draft --product bro
 uv run browseros release github create --version <version> --draft --product browserclaw
 ```
 
-`release-full.yml` still runs both commands when `products=all`; for
-`products=browseros` or `products=browserclaw`, only that product command is
-run. If the target GitHub release already exists and is published, the workflow
+If the target GitHub release already exists and is published, the workflow
 refuses to modify it. If it is still a draft, matching product assets are
 removed first so reruns refresh the draft from current R2 artifacts.
 
@@ -350,4 +286,4 @@ uv run browseros release extensions --channel alpha --set browserclaw=<browsercl
 
 Server OTA promotion is also manual. The server release workflows can generate
 alpha OTA artifacts when their own `publish_ota` input is true, but the
-full-release orchestrators do not enable that input.
+per-product release orchestrators do not enable that input.

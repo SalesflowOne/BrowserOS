@@ -47,10 +47,6 @@ on:
         required: false
         type: string
         default: ""
-      preempt_nightly:
-        description: "Cancel queued/in-progress WarpBuild nightly-release.yml runs"
-        type: boolean
-        default: true
       github_release_draft:
         description: "Create or refresh draft GitHub release assets after successful builds"
         type: boolean
@@ -68,7 +64,6 @@ jobs:
     name: Preflight
     runs-on: ubuntu-latest
     permissions:
-      actions: write
       contents: read
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -223,33 +218,6 @@ jobs:
             printf '::error::Missing required secret/variable(s) for this release selection: %s\n' "${missing[*]}"
             exit 1
           fi
-
-      - name: Cancel WarpBuild nightly release runs
-        if: ${{ inputs.preempt_nightly }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          cancelled=0
-          for status in in_progress queued; do
-            mapfile -t run_ids < <(
-              gh run list \
-                --workflow nightly-release.yml \
-                --status "$status" \
-                --limit 100 \
-                --json databaseId \
-                --jq '.[].databaseId'
-            )
-            for run_id in "${run_ids[@]}"; do
-              echo "Cancelling nightly-release.yml run $run_id ($status)"
-              if gh run cancel "$run_id"; then
-                cancelled=$((cancelled + 1))
-              else
-                echo "::warning::Could not cancel nightly-release.yml run $run_id; it may have already completed."
-              fi
-            done
-          done
-          echo "Cancelled $cancelled nightly-release.yml run(s)."
 
   server_browseros:
     name: BrowserOS server resources
