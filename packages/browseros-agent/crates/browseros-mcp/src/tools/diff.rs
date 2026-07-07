@@ -1,6 +1,8 @@
 use crate::{
     format::diff::format_diff_result,
-    framework::{ToolCtx, ToolExecResult, ToolResult, parse_args, text_result},
+    framework::{
+        ToolCtx, ToolExecResult, ToolResult, parse_args, pending_dialog_result, text_result,
+    },
 };
 use browseros_core::PageId;
 use futures_util::future::BoxFuture;
@@ -33,6 +35,9 @@ fn handler<'a>(
 ) -> BoxFuture<'a, ToolExecResult<Option<ToolResult>>> {
     Box::pin(async move {
         let args: DiffArgs = parse_args(raw)?;
+        if let Some(result) = pending_dialog_result(ctx, PageId(args.page)) {
+            return Ok(Some(result));
+        }
         let diff = ctx.session.observe(PageId(args.page)).await.diff().await?;
         let origin = diff.after_url.as_deref().map(ToString::to_string);
         let origin = match origin {

@@ -1,6 +1,9 @@
 use crate::{
     constants::INLINE_PAGE_CONTENT_MAX_CHARS,
-    framework::{ToolCtx, ToolExecResult, ToolResult, error_result, parse_args, text_result},
+    framework::{
+        ToolCtx, ToolExecResult, ToolResult, error_result, parse_args, pending_dialog_result,
+        text_result,
+    },
     output_file::write_temp_tool_output_file,
     trust_boundary::wrap_untrusted,
 };
@@ -14,7 +17,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 const DESCRIPTION: &str = "\
-Extract page content as markdown (default), plain text, or a list of links. \
+Extract page content as markdown (default), plain text, links, or console errors. \
 For reading/scraping, not acting.";
 
 #[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
@@ -24,6 +27,7 @@ enum ReadFormat {
     Markdown,
     Text,
     Links,
+    Console,
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -79,6 +83,36 @@ fn handler<'a>(
 ) -> BoxFuture<'a, ToolExecResult<Option<ToolResult>>> {
     Box::pin(async move {
         let args: ReadArgs = parse_args(raw)?;
+        let origin = ctx
+            .session
+            .pages
+            .get_info(PageId(args.page))
+            .await
+            .map(|info| info.url)
+            .unwrap_or_else(|| "unknown".to_string());
+        if matches!(args.format, ReadFormat::Console) {
+            let entries = ctx.session.page_signals.console_entries(&PageId(args.page));
+            let text = if entries.is_empty() {
+                "(no console errors or warnings)".to_string()
+            } else {
+                entries
+                    .iter()
+                    .map(browseros_core::ConsoleEntry::line)
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            };
+            return Ok(Some(text_result(
+                wrap_untrusted(&text, &origin),
+                Some(json!({
+                    "page": args.page,
+                    "format": format_name(&args.format),
+                    "count": entries.len()
+                })),
+            )));
+        }
+        if let Some(result) = pending_dialog_result(ctx, PageId(args.page)) {
+            return Ok(Some(result));
+        }
         let page = ctx.session.pages.get_session(PageId(args.page)).await?;
         let expression = expression_for(&args)?;
         let result: EvaluateResult = page
@@ -100,13 +134,6 @@ fn handler<'a>(
             .and_then(|value| value.as_str().map(ToString::to_string))
             .or(result.result.description)
             .unwrap_or_default();
-        let origin = ctx
-            .session
-            .pages
-            .get_info(PageId(args.page))
-            .await
-            .map(|info| info.url)
-            .unwrap_or_else(|| "unknown".to_string());
         if text.len() <= INLINE_PAGE_CONTENT_MAX_CHARS {
             return Ok(Some(text_result(
                 wrap_untrusted(if text.is_empty() { "(empty)" } else { &text }, &origin),
@@ -169,6 +196,7 @@ fn expression_for(args: &ReadArgs) -> ToolExecResult<String> {
                 "[...({root}?.querySelectorAll('a[href]') ?? [])].map(function(a){{return '[' + (a.textContent||'').trim() + '](' + a.href + ')'}}).join('\\n')"
             )
         }
+        ReadFormat::Console => unreachable!("console reads are served from captured page signals"),
     })
 }
 
@@ -194,6 +222,7 @@ fn format_name(format: &ReadFormat) -> &'static str {
         ReadFormat::Markdown => "markdown",
         ReadFormat::Text => "text",
         ReadFormat::Links => "links",
+        ReadFormat::Console => "console",
     }
 }
 

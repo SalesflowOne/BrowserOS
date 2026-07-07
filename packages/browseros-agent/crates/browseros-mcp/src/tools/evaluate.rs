@@ -1,7 +1,8 @@
 use crate::{
     constants::INLINE_PAGE_CONTENT_MAX_CHARS,
     framework::{
-        ToolCtx, ToolExecResult, ToolResult, clamp_timeout, error_result, parse_args, text_result,
+        ToolCtx, ToolExecResult, ToolResult, clamp_timeout, error_result, parse_args,
+        pending_dialog_result, text_result,
     },
     output_file::write_temp_tool_output_file,
     trust_boundary::wrap_untrusted,
@@ -65,6 +66,9 @@ fn handler<'a>(
 ) -> BoxFuture<'a, ToolExecResult<Option<ToolResult>>> {
     Box::pin(async move {
         let args: EvaluateArgs = parse_args(raw)?;
+        if let Some(result) = pending_dialog_result(ctx, PageId(args.page)) {
+            return Ok(Some(result));
+        }
         let page = ctx.session.pages.get_session(PageId(args.page)).await?;
         let timeout = clamp_timeout(args.timeout, DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);
         let result: EvaluateResult = page

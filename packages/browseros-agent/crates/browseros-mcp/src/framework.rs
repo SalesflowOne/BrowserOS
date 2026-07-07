@@ -207,6 +207,7 @@ pub async fn execute_tool(
     ctx: &ToolCtx,
 ) -> ToolExecResult<ToolResult> {
     ctx.throw_if_cancelled()?;
+    let primary_page = raw_arg_page_id(def.metadata.accepts_page_arg, &raw_args).map(PageId);
     let mut response = ToolResponse::new();
     match (def.handler)(raw_args, ctx, &mut response).await {
         Ok(Some(result)) => response.append_result(result),
@@ -220,7 +221,7 @@ pub async fn execute_tool(
         Err(err) => response.error(format!("{} failed: {err}", def.name)),
     }
     ctx.throw_if_cancelled()?;
-    let mut result = response.build_for_session(ctx).await?;
+    let mut result = response.build_for_session(ctx, primary_page).await?;
     ctx.throw_if_cancelled()?;
 
     if let Some(page_id) = result_page_id(&result)
@@ -229,6 +230,26 @@ pub async fn execute_tool(
         result.metadata_tab_id = Some(tab_id.0);
     }
     Ok(result.into_tool_result())
+}
+
+#[must_use]
+pub fn pending_dialog_result(ctx: &ToolCtx, page: PageId) -> Option<ToolResult> {
+    ctx.session
+        .page_signals
+        .pending_dialog_line(&page)
+        .map(ToolResult::error)
+}
+
+#[must_use]
+pub fn raw_arg_page_id(accepts_page_arg: bool, raw_args: &Value) -> Option<u32> {
+    if !accepts_page_arg {
+        return None;
+    }
+    raw_args
+        .get("page")
+        .and_then(Value::as_u64)
+        .and_then(|value| u32::try_from(value).ok())
+        .filter(|value| *value >= 1)
 }
 
 #[must_use]

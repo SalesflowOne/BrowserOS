@@ -1,4 +1,4 @@
-use crate::framework::{ToolCtx, ToolExecResult, ToolResult, parse_args};
+use crate::framework::{ToolCtx, ToolExecResult, ToolResult, parse_args, pending_dialog_result};
 use base64::Engine;
 use browseros_core::{
     PageId,
@@ -91,6 +91,11 @@ fn handler<'a>(
     Box::pin(async move {
         let args: ScreenshotArgs = parse_args(raw)?;
         validate_args(&args)?;
+        if args.annotate.unwrap_or(false)
+            && let Some(result) = pending_dialog_result(ctx, PageId(args.page))
+        {
+            return Ok(Some(result));
+        }
         let full_page = args.full_page.unwrap_or(false);
         let mut options = ScreenshotCaptureOptions {
             format: Some(core_format(&args.format)),

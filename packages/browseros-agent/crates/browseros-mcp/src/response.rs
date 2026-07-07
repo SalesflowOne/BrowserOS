@@ -3,7 +3,7 @@ use crate::{
     format::{diff::format_diff_result, snapshot::format_snapshot_result},
     framework::{ToolCtx, ToolError, ToolExecResult, ToolResult, merge_structured},
 };
-use browseros_core::{PageId, settle::SettleOutcome};
+use browseros_core::{ConsoleEntry, PageId, settle::SettleOutcome};
 use rmcp::model::ContentBlock;
 use serde_json::{Value, json};
 
@@ -15,12 +15,19 @@ enum PostAction {
     Screenshot { page: u32 },
 }
 
+#[derive(Debug, Clone)]
+struct ConsoleSummary {
+    page: u32,
+    since: u64,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ToolResponse {
     content: Vec<ContentBlock>,
     has_error: bool,
     structured_content: Option<Value>,
     post_actions: Vec<PostAction>,
+    console_summaries: Vec<ConsoleSummary>,
 }
 
 #[derive(Debug, Clone)]
@@ -83,7 +90,15 @@ impl ToolResponse {
         self.post_actions.push(PostAction::Screenshot { page });
     }
 
-    pub async fn build_for_session(&mut self, ctx: &ToolCtx) -> ToolExecResult<BuiltToolResponse> {
+    pub fn include_console_summary(&mut self, page: u32, since: u64) {
+        self.console_summaries.push(ConsoleSummary { page, since });
+    }
+
+    pub async fn build_for_session(
+        &mut self,
+        ctx: &ToolCtx,
+        primary_page: Option<PageId>,
+    ) -> ToolExecResult<BuiltToolResponse> {
         if !self.post_actions.is_empty() {
             self.text("\n--- Additional context (auto-included) ---");
         }
@@ -118,6 +133,11 @@ impl ToolResponse {
             }
         }
 
+        for summary in self.console_summaries.clone() {
+            self.append_console_summary(ctx, summary);
+        }
+        self.prepend_page_signal_lines(ctx, primary_page);
+
         Ok(BuiltToolResponse {
             content: self.content.clone(),
             is_error: self.has_error,
@@ -133,6 +153,7 @@ impl ToolResponse {
     ) -> ToolExecResult<()> {
         match action {
             PostAction::Snapshot { page } => {
+                self.throw_if_dialog_open(ctx, page)?;
                 let observer = ctx.session.observe(browseros_core::PageId(page)).await;
                 let snapshot = observer.snapshot().await?;
                 let formatted = format_snapshot_result(&snapshot.text, &snapshot.url, ctx).await;
@@ -143,6 +164,7 @@ impl ToolResponse {
                 page,
                 include_structured,
             } => {
+                self.throw_if_dialog_open(ctx, page)?;
                 let diff = ctx
                     .session
                     .observe(browseros_core::PageId(page))
@@ -238,6 +260,15 @@ impl ToolResponse {
         let Some(page) = action.settle_page() else {
             return Ok(());
         };
+        if ctx
+            .session
+            .page_signals
+            .pending_dialog_line(&PageId(page))
+            .is_some()
+        {
+            tracing::debug!("browser MCP post-action settle skipped for page {page}: dialog open");
+            return Ok(());
+        }
         let outcome = tokio::select! {
             () = ctx.cancel.cancelled() => return Err(ToolError::Cancelled),
             outcome = browseros_core::settle::wait_for_action_settle(
@@ -256,6 +287,78 @@ impl ToolResponse {
             }
         }
         Ok(())
+    }
+
+    fn append_console_summary(&mut self, ctx: &ToolCtx, summary: ConsoleSummary) {
+        let entries = ctx
+            .session
+            .page_signals
+            .console_entries_since(&PageId(summary.page), summary.since);
+        let Some(line) = console_summary_line(summary.page, &entries) else {
+            return;
+        };
+        self.text(line);
+    }
+
+    fn prepend_page_signal_lines(&mut self, ctx: &ToolCtx, primary_page: Option<PageId>) {
+        let mut pages = Vec::new();
+        if let Some(page) = primary_page {
+            push_page_once(&mut pages, page);
+        }
+        if let Some(page) = self.structured_page_id() {
+            push_page_once(&mut pages, page);
+        }
+        for action in &self.post_actions {
+            if let Some(page) = action.page() {
+                push_page_once(&mut pages, PageId(page));
+            }
+        }
+
+        let mut lines = Vec::new();
+        for page in pages {
+            lines.extend(ctx.session.page_signals.take_alert_note_lines(&page));
+            if let Some(line) = ctx.session.page_signals.pending_dialog_line(&page) {
+                lines.push(line);
+            }
+        }
+        self.prepend_lines(lines);
+    }
+
+    fn prepend_lines(&mut self, lines: Vec<String>) {
+        if lines.is_empty() {
+            return;
+        }
+        let existing_first_text: &str = self
+            .content
+            .first()
+            .and_then(|content| content.as_text())
+            .map(|content| content.text.as_ref())
+            .unwrap_or_default();
+        let missing = lines
+            .into_iter()
+            .filter(|line| !existing_first_text.starts_with(line))
+            .collect::<Vec<_>>();
+        if missing.is_empty() {
+            return;
+        }
+        self.content
+            .insert(0, ContentBlock::text(missing.join("\n")));
+    }
+
+    fn structured_page_id(&self) -> Option<PageId> {
+        self.structured_content
+            .as_ref()
+            .and_then(|value| value.get("page"))
+            .and_then(Value::as_u64)
+            .and_then(|value| u32::try_from(value).ok())
+            .map(PageId)
+    }
+
+    fn throw_if_dialog_open(&self, ctx: &ToolCtx, page: u32) -> ToolExecResult<()> {
+        match ctx.session.page_signals.pending_dialog_line(&PageId(page)) {
+            Some(message) => Err(ToolError::message(message)),
+            None => Ok(()),
+        }
     }
 }
 
@@ -279,6 +382,15 @@ impl PostAction {
         }
     }
 
+    fn page(&self) -> Option<u32> {
+        match self {
+            Self::Snapshot { page } | Self::Diff { page, .. } | Self::Screenshot { page } => {
+                Some(*page)
+            }
+            Self::Pages => None,
+        }
+    }
+
     fn unavailable_text(&self, reason: impl AsRef<str>) -> String {
         let reason = reason.as_ref();
         match self {
@@ -288,4 +400,25 @@ impl PostAction {
             Self::Screenshot { page } => format!("[page {page} screenshot unavailable: {reason}]"),
         }
     }
+}
+
+fn push_page_once(pages: &mut Vec<PageId>, page: PageId) {
+    if !pages.contains(&page) {
+        pages.push(page);
+    }
+}
+
+fn console_summary_line(page: u32, entries: &[ConsoleEntry]) -> Option<String> {
+    let first = entries.first()?;
+    let noun = if entries.iter().all(ConsoleEntry::is_warning) {
+        "warning"
+    } else {
+        "error"
+    };
+    let suffix = if entries.len() == 1 { "" } else { "s" };
+    Some(format!(
+        "[page {page} console] {} {noun}{suffix} during action, e.g.: {}",
+        entries.len(),
+        first.summary_text()
+    ))
 }

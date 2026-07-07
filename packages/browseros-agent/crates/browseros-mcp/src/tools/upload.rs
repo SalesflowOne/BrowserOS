@@ -1,5 +1,6 @@
 use crate::framework::{
-    ToolCtx, ToolExecResult, ToolResult, error_result, parse_args, text_result,
+    ToolCtx, ToolExecResult, ToolResult, error_result, parse_args, pending_dialog_result,
+    text_result,
 };
 use browseros_core::{PageId, Ref};
 use futures_util::future::BoxFuture;
@@ -34,6 +35,9 @@ fn handler<'a>(
 ) -> BoxFuture<'a, ToolExecResult<Option<ToolResult>>> {
     Box::pin(async move {
         let args: UploadArgs = parse_args(raw)?;
+        if let Some(result) = pending_dialog_result(ctx, PageId(args.page)) {
+            return Ok(Some(result));
+        }
         let files = args
             .files
             .unwrap_or_else(|| args.file.clone().into_iter().collect::<Vec<_>>());
