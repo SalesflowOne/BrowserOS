@@ -2,8 +2,17 @@
 """Tests for release artifact upload metadata helpers."""
 
 import unittest
+import tempfile
+from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
-from bos_build.steps.storage.upload import _get_artifact_key, merge_release_metadata
+from bos_build.core.context import ArtifactRegistry
+from bos_build.steps.storage.upload import (
+    _get_artifact_key,
+    merge_release_metadata,
+    upload_release_artifacts,
+)
 
 
 class UploadMetadataTest(unittest.TestCase):
@@ -48,6 +57,50 @@ class UploadMetadataTest(unittest.TestCase):
             _get_artifact_key("BrowserOS_v1.2.3_arm64_installer.zip", "win"),
             "arm64_zip",
         )
+
+    def test_upload_attaches_macos_dmg_signature_metadata_by_filename(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch("bos_build.steps.storage.upload.BOTO3_AVAILABLE", True),
+            mock.patch("bos_build.steps.storage.upload.IS_MACOS", lambda: True),
+            mock.patch("bos_build.steps.storage.upload.IS_WINDOWS", lambda: False),
+            mock.patch(
+                "bos_build.steps.storage.upload.get_r2_client", return_value=object()
+            ),
+            mock.patch(
+                "bos_build.steps.storage.upload.upload_file_to_r2",
+                return_value=True,
+            ),
+        ):
+            dist_dir = Path(tmp)
+            dmg_name = "BrowserOS_v1.2.3_arm64.dmg"
+            (dist_dir / dmg_name).write_bytes(b"dmg")
+            ctx = SimpleNamespace(
+                env=SimpleNamespace(
+                    r2_bucket="browseros",
+                    r2_cdn_base_url="https://cdn.browseros.com",
+                    has_r2_config=lambda: True,
+                ),
+                artifact_registry=ArtifactRegistry(),
+                product=SimpleNamespace(id="browseros", display_name="BrowserOS"),
+                chromium_version="136.0.0.0",
+                browseros_chromium_version="136.0.0.0.1",
+                get_dist_dir=lambda: dist_dir,
+                get_semantic_version=lambda: "1.2.3",
+                get_sparkle_version=lambda: "10000.1.2.3",
+                get_release_path=lambda platform: f"releases/browseros/1.2.3/{platform}/",
+            )
+
+            success, release = upload_release_artifacts(
+                ctx,
+                {dmg_name: {"sparkle_signature": "SIG==", "sparkle_length": 3}},
+            )
+
+        self.assertTrue(success)
+        artifact = release["artifacts"]["arm64"]
+        self.assertEqual(artifact["filename"], dmg_name)
+        self.assertEqual(artifact["sparkle_signature"], "SIG==")
+        self.assertEqual(artifact["sparkle_length"], 3)
 
     def test_merge_release_metadata_preserves_existing_artifacts(self) -> None:
         existing = {
