@@ -133,7 +133,7 @@ pub fn render_human(report: &StatusReport) -> String {
 
     if let Some(applied) = &report.applied_store_short_rev {
         out.push_str(&format!(
-            "applied  store @ {}  -  {} {}  -  last: {}\n",
+            "applied  store @ {}  ·  {} {}  ·  last: {}\n",
             applied,
             report.feature_commits,
             feature_commits_label(report.feature_commits),
@@ -144,10 +144,10 @@ pub fn render_human(report: &StatusReport) -> String {
     }
 
     if report.drift.is_empty() {
-        out.push_str("tree     clean - no drift\n");
+        out.push_str("tree     clean — no drift\n");
     } else {
         out.push_str(&format!(
-            "tree     drifted - {} {}\n",
+            "tree     drifted — {} {}\n",
             report.drift.len(),
             files_label(report.drift.len())
         ));

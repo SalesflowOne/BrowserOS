@@ -136,13 +136,13 @@ pub fn run(ctx: &StateContext) -> Result<DiffReport> {
 pub fn render_human(report: &DiffReport) -> String {
     let mut out = String::new();
     if report.files_changed == 0 {
-        out.push_str("apply would touch 0 files - already converged\n");
+        out.push_str("apply would touch 0 files — already converged\n");
         out.push_str(&format!("rebuild scope: {}\n", report.rebuild_scope.hint));
         return out;
     }
 
     out.push_str(&format!(
-        "apply would touch {} {} - {} {}:\n",
+        "apply would touch {} {} · {} {}:\n",
         report.files_changed,
         files_label(report.files_changed),
         report.features_changed,
@@ -177,7 +177,7 @@ fn rebuild_scope(build_files_changed: usize) -> RebuildScope {
         RebuildScope {
             touches_build_files: false,
             build_files_changed,
-            hint: "no BUILD.gn / *.gni / include-fanout files touched -> small incremental"
+            hint: "no BUILD.gn / *.gni / include-fanout files touched → small incremental"
                 .to_string(),
         }
     } else {
@@ -185,9 +185,8 @@ fn rebuild_scope(build_files_changed: usize) -> RebuildScope {
             touches_build_files: true,
             build_files_changed,
             hint: format!(
-                "touches {} BUILD.gn / *.gni {} -> large rebuild likely",
-                build_files_changed,
-                files_label(build_files_changed)
+                "touches {} BUILD.gn / *.gni files → large rebuild likely",
+                build_files_changed
             ),
         }
     }

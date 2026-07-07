@@ -44,8 +44,9 @@ fn fresh_and_apply_trailer_state_resolve() -> Result<()> {
     let human = status::render_human(&report);
     assert!(human.contains("base     148.0.7204.1"));
     assert!(human.contains("applied  store @"));
+    assert!(human.contains("  ·  1 feature commit  ·  last: feat: llmchat"));
     assert!(human.contains("1 feature commit"));
-    assert!(human.contains("tree     clean - no drift"));
+    assert!(human.contains("tree     clean — no drift"));
 
     let json = serde_json::to_value(&report)?;
     assert_eq!(json["result"], "clean");
@@ -149,7 +150,12 @@ fn diff_groups_by_feature_and_reports_rebuild_scope() -> Result<()> {
     assert_eq!(no_build_report.features_changed, 1);
     assert_eq!(no_build_report.groups[0].feature, "llmchat");
     assert!(!no_build_report.rebuild_scope.touches_build_files);
-    assert!(diff::render_human(&no_build_report).contains("no BUILD.gn / *.gni"));
+    let no_build_human = diff::render_human(&no_build_report);
+    assert!(no_build_human.contains("apply would touch 2 files · 1 feature:"));
+    assert!(
+        no_build_human
+            .contains("no BUILD.gn / *.gni / include-fanout files touched → small incremental")
+    );
     let json = serde_json::to_value(&no_build_report)?;
     assert_eq!(json["result"], "changes");
     assert_eq!(json["store_rev"], no_build_store_rev);
@@ -183,7 +189,10 @@ fn diff_groups_by_feature_and_reports_rebuild_scope() -> Result<()> {
     assert_eq!(with_build_report.groups[0].feature, "bootstrap");
     assert!(with_build_report.rebuild_scope.touches_build_files);
     assert_eq!(with_build_report.rebuild_scope.build_files_changed, 2);
-    assert!(diff::render_human(&with_build_report).contains("large rebuild likely"));
+    assert!(
+        diff::render_human(&with_build_report)
+            .contains("touches 2 BUILD.gn / *.gni files → large rebuild likely")
+    );
     Ok(())
 }
 
