@@ -2,6 +2,8 @@ import unittest
 
 from tools.release_secrets.sync import (
     DotenvParseError,
+    build_check_result,
+    build_plan,
     parse_dotenv_text,
     scan_secret_refs_from_text,
     verify_dotenv_round_trip,
@@ -34,6 +36,7 @@ class DotenvParserTest(unittest.TestCase):
         parsed = parse_dotenv_text(
             'DOUBLE="line\\nquote \\" ok \\\\ done"\n'
             "SINGLE='raw\\nvalue'\n"
+            "SINGLE_ESCAPED='can\\'t \\\\ stop'\n"
             "UNQUOTED=value # ignored comment\n"
             "HASH=abc#def\n"
             "export EXPORTED = spaced\n"
@@ -41,6 +44,7 @@ class DotenvParserTest(unittest.TestCase):
 
         self.assertEqual('line\nquote " ok \\ done', parsed["DOUBLE"])
         self.assertEqual("raw\\nvalue", parsed["SINGLE"])
+        self.assertEqual("can't \\ stop", parsed["SINGLE_ESCAPED"])
         self.assertEqual("value", parsed["UNQUOTED"])
         self.assertEqual("abc#def", parsed["HASH"])
         self.assertEqual("spaced", parsed["EXPORTED"])
@@ -71,6 +75,23 @@ class WorkflowSecretScannerTest(unittest.TestCase):
         )
 
         self.assertEqual({"BAR_BAZ", "FOO", "QUX"}, refs)
+
+
+class SecretPlanTest(unittest.TestCase):
+    def test_slack_webhook_is_not_in_release_workflow_allowlist(self):
+        plan = build_plan({"SLACK_WEBHOOK_URL": "unused"}, set())
+
+        self.assertNotIn("SLACK_WEBHOOK_URL", {item.name for item in plan})
+
+    def test_esigner_credential_id_is_optional_in_check(self):
+        result = build_check_result(
+            referenced={"ESIGNER_CREDENTIAL_ID", "ESIGNER_USERNAME"},
+            existing={"ESIGNER_USERNAME"},
+        )
+
+        self.assertEqual(["ESIGNER_USERNAME"], result.present)
+        self.assertEqual(["ESIGNER_CREDENTIAL_ID"], result.optional)
+        self.assertEqual([], result.missing_required)
 
 
 if __name__ == "__main__":

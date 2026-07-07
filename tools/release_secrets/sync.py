@@ -16,9 +16,9 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 
-DEFAULT_ENV_FILE = Path("/Users/shadowfax/code/browseros-release/.env.production")
 DEFAULT_REPO = "browseros-ai/BrowserOS"
 REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_ENV_FILE = REPO_ROOT / ".env.production"
 
 RELEASE_WORKFLOW_FILES = (
     Path(".github/workflows/build-browseros.yml"),
@@ -51,6 +51,15 @@ class PlannedSecret:
     name: str
     status: str
     consumers: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class CheckResult:
+    present: list[str]
+    automatic: list[str]
+    external: list[str]
+    optional: list[str]
+    missing_required: list[str]
 
 
 ALLOWLIST: tuple[SecretSpec, ...] = (
@@ -188,10 +197,6 @@ ALLOWLIST: tuple[SecretSpec, ...] = (
         "VITE_PUBLIC_POSTHOG_HOST",
         ("release-extensions.yml",),
     ),  # Extension build-time PostHog host.
-    SecretSpec(
-        "SLACK_WEBHOOK_URL",
-        ("release notifications",),
-    ),  # Existing notification secret carried by release operators.
 )
 
 KNOWN_AUTOMATIC_SECRETS = frozenset({"GITHUB_TOKEN"})
@@ -203,7 +208,9 @@ KNOWN_EXTERNAL_SECRETS = frozenset(
         "MACOS_KEYCHAIN_PASSWORD",
     }
 )
-KNOWN_OPTIONAL_SECRETS = frozenset({"AGENT_RUNNER_JWT_SECRET"})
+KNOWN_OPTIONAL_SECRETS = frozenset(
+    {"AGENT_RUNNER_JWT_SECRET", "ESIGNER_CREDENTIAL_ID"}
+)
 
 
 def parse_dotenv_file(path: Path) -> dict[str, str]:
@@ -288,6 +295,13 @@ def _parse_quoted_value(
             chars.append(_decode_double_quoted_escape(escaped))
             pos += 2
             continue
+
+        if quote == "'" and char == "\\" and pos + 1 < len(text):
+            escaped = text[pos + 1]
+            if escaped in ("'", "\\"):
+                chars.append(escaped)
+                pos += 2
+                continue
 
         if char == quote:
             return "".join(chars), pos + 1, line_no
@@ -456,26 +470,31 @@ def scan_workflow_secret_refs(repo_root: Path) -> set[str]:
 def print_check(repo: str, repo_root: Path) -> int:
     referenced = scan_workflow_secret_refs(repo_root)
     existing = gh_secret_names(repo)
-
-    present = sorted(referenced & existing)
-    automatic = sorted((referenced - existing) & KNOWN_AUTOMATIC_SECRETS)
-    external = sorted((referenced - existing) & KNOWN_EXTERNAL_SECRETS)
-    optional = sorted((referenced - existing) & KNOWN_OPTIONAL_SECRETS)
-    missing_required = sorted(
-        referenced
-        - existing
-        - KNOWN_AUTOMATIC_SECRETS
-        - KNOWN_EXTERNAL_SECRETS
-        - KNOWN_OPTIONAL_SECRETS
-    )
+    result = build_check_result(referenced, existing)
 
     print(f"target repo: {repo}")
-    _print_name_group("present", present)
-    _print_name_group("automatic", automatic)
-    _print_name_group("missing external", external)
-    _print_name_group("missing optional", optional)
-    _print_name_group("missing required", missing_required)
-    return 1 if missing_required else 0
+    _print_name_group("present", result.present)
+    _print_name_group("automatic", result.automatic)
+    _print_name_group("missing external", result.external)
+    _print_name_group("missing optional", result.optional)
+    _print_name_group("missing required", result.missing_required)
+    return 1 if result.missing_required else 0
+
+
+def build_check_result(referenced: set[str], existing: set[str]) -> CheckResult:
+    missing = referenced - existing
+    return CheckResult(
+        present=sorted(referenced & existing),
+        automatic=sorted(missing & KNOWN_AUTOMATIC_SECRETS),
+        external=sorted(missing & KNOWN_EXTERNAL_SECRETS),
+        optional=sorted(missing & KNOWN_OPTIONAL_SECRETS),
+        missing_required=sorted(
+            missing
+            - KNOWN_AUTOMATIC_SECRETS
+            - KNOWN_EXTERNAL_SECRETS
+            - KNOWN_OPTIONAL_SECRETS
+        ),
+    )
 
 
 def _print_name_group(label: str, names: Sequence[str]) -> None:
