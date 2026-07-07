@@ -9,7 +9,8 @@ use serde_json::json;
 
 const DESCRIPTION: &str = "\
 Manage browser tabs: list open pages (with their page ids), show the active page, \
-open a new page, or close one. Use the returned page id with snapshot/act/navigate.";
+open a new page (snapshot attached), or close one. \
+Use the returned page id with snapshot/act/navigate.";
 
 #[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
@@ -49,7 +50,7 @@ pub fn definition() -> crate::framework::ToolDef {
 fn handler<'a>(
     raw: serde_json::Value,
     ctx: &'a ToolCtx,
-    _response: &'a mut crate::response::ToolResponse,
+    response: &'a mut crate::response::ToolResponse,
 ) -> BoxFuture<'a, ToolExecResult<Option<ToolResult>>> {
     Box::pin(async move {
         let args: TabsArgs = parse_args(raw)?;
@@ -95,10 +96,11 @@ fn handler<'a>(
                         },
                     )
                     .await?;
-                text_result(
-                    format!("opened page {}", page.0),
-                    Some(json!({ "page": page.0 })),
-                )
+                response.text(format!("opened page {}", page.0));
+                // Claw-server hooks key ownership/grouping off this "page" field.
+                response.data(json!({ "page": page.0 }));
+                response.include_snapshot(page.0);
+                return Ok(None);
             }
             TabsAction::Close => {
                 let Some(page) = args.page else {
