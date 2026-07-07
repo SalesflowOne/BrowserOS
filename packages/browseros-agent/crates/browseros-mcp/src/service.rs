@@ -32,7 +32,7 @@ Shared environment. The user (and possibly other agents) are using this browser 
 
 Core loop: snapshot -> act -> verify.
 - snapshot renders the page as an accessibility tree; interactive elements carry [ref=eN] handles.
-- act drives them by ref: click, fill, type, press, hover, check, select, scroll, drag (plus *_at kinds for viewport coordinates). fill accepts fields[] to batch a whole form.
+- act drives them by ref: click, fill, type, press, hover, check, select, scroll, drag (click, type, hover, and drag have _at variants taking viewport coordinates). fill accepts fields[] to batch a whole form.
 - Every act reads back a diff of what changed - usually enough to verify the effect without re-snapshotting. Call diff anytime for the same view.
 - Refs go stale the moment the page changes: after navigate (url/back/forward/reload - returns a fresh snapshot), a form submit, or a big re-render, re-snapshot before using refs again.
 - If content is still loading, wait for="text" or for="selector" on something you expect; a bare time wait is the last resort.
