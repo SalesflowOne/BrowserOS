@@ -1,6 +1,9 @@
 use crate::{
     constants::{GREP_MATCH_LINE_MAX_CHARS, GREP_MAX_MATCHES, INLINE_PAGE_CONTENT_MAX_CHARS},
-    framework::{ToolCtx, ToolExecResult, ToolResult, error_result, parse_args, text_result},
+    framework::{
+        ToolCtx, ToolExecResult, ToolResult, error_result, parse_args, pending_dialog_result,
+        text_result,
+    },
     output_file::write_temp_tool_output_file,
     trust_boundary::wrap_untrusted,
 };
@@ -69,6 +72,9 @@ fn handler<'a>(
             Ok(regex) => regex,
             Err(err) => return Ok(Some(error_result(format!("grep: invalid regex - {err}")))),
         };
+        if let Some(result) = pending_dialog_result(ctx, PageId(args.page)) {
+            return Ok(Some(result));
+        }
         let haystack = match args.over {
             GrepOver::Ax => {
                 ctx.session

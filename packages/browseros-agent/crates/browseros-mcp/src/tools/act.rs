@@ -1,5 +1,6 @@
 use crate::framework::{
-    ToolCtx, ToolExecResult, ToolResult, error_result, parse_args, text_result,
+    ToolCtx, ToolExecResult, ToolResult, error_result, parse_args, pending_dialog_result,
+    text_result,
 };
 use browseros_core::{
     PageId, Ref,
@@ -14,6 +15,7 @@ const DESCRIPTION: &str = "\
 Act on the page using refs from the last snapshot. \
 kinds: click, type (into focused element), fill (one field via ref+value, or many via fields[]), \
 press (a key/combo), hover, focus, check, uncheck, select (an option value), scroll, drag. \
+dialog_accept/dialog_dismiss handle pending JavaScript dialogs. \
 Reads back a diff of what changed - re-snapshot if you need fresh refs.";
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -34,6 +36,8 @@ enum ActKind {
     Scroll,
     Drag,
     DragAt,
+    DialogAccept,
+    DialogDismiss,
 }
 
 impl ActKind {
@@ -54,7 +58,13 @@ impl ActKind {
             Self::Scroll => "scroll",
             Self::Drag => "drag",
             Self::DragAt => "drag_at",
+            Self::DialogAccept => "dialog_accept",
+            Self::DialogDismiss => "dialog_dismiss",
         }
+    }
+
+    fn is_dialog(&self) -> bool {
+        matches!(self, Self::DialogAccept | Self::DialogDismiss)
     }
 }
 
@@ -134,12 +144,23 @@ fn handler<'a>(
 ) -> BoxFuture<'a, ToolExecResult<Option<ToolResult>>> {
     Box::pin(async move {
         let args: ActArgs = parse_args(raw)?;
-        let input = ctx.session.input(PageId(args.page)).await;
+        let page_id = PageId(args.page);
+        if !args.kind.is_dialog()
+            && let Some(result) = pending_dialog_result(ctx, page_id.clone())
+        {
+            return Ok(Some(result));
+        }
+        let console_start = ctx.session.page_signals.console_mark(&page_id);
+        let input = ctx.session.input(page_id.clone()).await;
         if let Some(err) = run_kind(&args, &input).await? {
             return Ok(Some(err));
         }
+        if args.kind.is_dialog() {
+            ctx.session.page_signals.clear_dialog(&page_id);
+        }
         response.data(json!({ "kind": args.kind.as_str() }));
         response.include_diff(args.page, true);
+        response.include_console_summary(args.page, console_start);
         Ok(Some(text_result(
             format!("ok ({})", args.kind.as_str()),
             None,
@@ -291,6 +312,12 @@ async fn run_kind(
                     Point { x: end_x, y: end_y },
                 )
                 .await?;
+        }
+        ActKind::DialogAccept => {
+            input.handle_dialog(true, args.text.as_deref()).await?;
+        }
+        ActKind::DialogDismiss => {
+            input.handle_dialog(false, None).await?;
         }
     }
     Ok(None)

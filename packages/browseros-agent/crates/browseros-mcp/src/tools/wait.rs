@@ -1,6 +1,6 @@
 use crate::framework::{
     ToolCtx, ToolExecResult, ToolResult, abortable_delay, clamp_timeout, error_result, parse_args,
-    text_result,
+    pending_dialog_result, text_result,
 };
 use browseros_core::PageId;
 use futures_util::future::BoxFuture;
@@ -91,6 +91,9 @@ fn handler<'a>(
                 wait_for_name(&args.wait_for)
             ))));
         };
+        if let Some(result) = pending_dialog_result(ctx, PageId(args.page)) {
+            return Ok(Some(result));
+        }
         let page = ctx.session.pages.get_session(PageId(args.page)).await?;
         let expression = match args.wait_for {
             WaitFor::Text => format!(

@@ -1,6 +1,8 @@
 use crate::{
     format::snapshot::format_snapshot_result,
-    framework::{ToolCtx, ToolExecResult, ToolResult, parse_args, text_result},
+    framework::{
+        ToolCtx, ToolExecResult, ToolResult, parse_args, pending_dialog_result, text_result,
+    },
 };
 use browseros_core::PageId;
 use futures_util::future::BoxFuture;
@@ -37,6 +39,9 @@ fn handler<'a>(
 ) -> BoxFuture<'a, ToolExecResult<Option<ToolResult>>> {
     Box::pin(async move {
         let args: SnapshotArgs = parse_args(raw)?;
+        if let Some(result) = pending_dialog_result(ctx, PageId(args.page)) {
+            return Ok(Some(result));
+        }
         let snapshot = ctx
             .session
             .observe(PageId(args.page))

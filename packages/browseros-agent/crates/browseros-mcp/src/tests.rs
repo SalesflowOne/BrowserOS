@@ -8,12 +8,16 @@ use crate::{
 };
 use browseros_cdp::{CdpError, CdpEvent};
 use browseros_core::{
-    BrowserSession, BrowserSessionHooks, CdpConnection, SessionId, snapshot::SnapshotDiff,
+    BrowserSession, BrowserSessionHooks, CdpConnection, PageId, SessionId, snapshot::SnapshotDiff,
 };
 use futures_util::future::BoxFuture;
 use rmcp::handler::server::ServerHandler;
 use serde_json::{Value, json};
-use std::sync::Arc;
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
+use std::time::Duration;
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 
@@ -84,6 +88,206 @@ fn fake_ctx() -> ToolCtx {
         cancel: CancellationToken::new(),
         output_files: create_browser_output_file_access(),
     })
+}
+
+#[derive(Debug, Clone)]
+struct HarnessCall {
+    method: String,
+    params: Value,
+    session: Option<SessionId>,
+}
+
+struct HarnessConnection {
+    sender: broadcast::Sender<CdpEvent>,
+    calls: Mutex<Vec<HarnessCall>>,
+    emit_console_on_input: AtomicBool,
+}
+
+impl HarnessConnection {
+    fn new() -> Arc<Self> {
+        let (sender, _receiver) = broadcast::channel(64);
+        Arc::new(Self {
+            sender,
+            calls: Mutex::new(Vec::new()),
+            emit_console_on_input: AtomicBool::new(false),
+        })
+    }
+
+    fn emit(&self, method: &str, params: Value, session_id: Option<&str>) {
+        let _ = self.sender.send(CdpEvent {
+            method: method.to_string(),
+            params,
+            session_id: session_id.map(SessionId::from),
+        });
+    }
+
+    fn calls(&self) -> Vec<HarnessCall> {
+        self.calls
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    fn enable_console_on_input(&self) {
+        self.emit_console_on_input.store(true, Ordering::SeqCst);
+    }
+}
+
+impl CdpConnection for HarnessConnection {
+    fn send<'a>(
+        &'a self,
+        method: &'a str,
+        params: Value,
+        session: Option<&'a SessionId>,
+    ) -> BoxFuture<'a, Result<Value, CdpError>> {
+        Box::pin(async move {
+            self.calls
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(HarnessCall {
+                    method: method.to_string(),
+                    params: params.clone(),
+                    session: session.cloned(),
+                });
+            match method {
+                "Browser.getTabs" => Ok(json!({ "tabs": [harness_tab()] })),
+                "Browser.getTabInfo" => Ok(json!({ "tab": harness_tab() })),
+                "Target.attachToTarget" => Ok(json!({ "sessionId": "session-1" })),
+                "Page.enable"
+                | "DOM.enable"
+                | "Runtime.enable"
+                | "Accessibility.enable"
+                | "Runtime.runIfWaitingForDebugger"
+                | "Target.setAutoAttach"
+                | "Page.handleJavaScriptDialog" => Ok(json!({})),
+                "Runtime.evaluate" => Ok(json!({ "result": { "value": 0 } })),
+                "Input.dispatchKeyEvent" => {
+                    if self.emit_console_on_input.swap(false, Ordering::SeqCst) {
+                        self.emit(
+                            "Runtime.consoleAPICalled",
+                            json!({
+                                "type": "error",
+                                "args": [{ "type": "string", "value": "TypeError: act failed" }],
+                                "stackTrace": {
+                                    "callFrames": [{
+                                        "url": "https://example.test/app.js",
+                                        "lineNumber": 4,
+                                        "columnNumber": 0
+                                    }]
+                                }
+                            }),
+                            session.map(SessionId::as_str),
+                        );
+                        tokio::task::yield_now().await;
+                    }
+                    Ok(json!({}))
+                }
+                _ => Err(CdpError::Protocol {
+                    code: -1,
+                    message: format!("unexpected harness CDP call: {method}"),
+                }),
+            }
+        })
+    }
+
+    fn send_raw_json<'a>(
+        &'a self,
+        method: &'a str,
+        _params_json: &'a str,
+        _session: Option<&'a SessionId>,
+    ) -> BoxFuture<'a, Result<String, CdpError>> {
+        Box::pin(async move {
+            Err(CdpError::Protocol {
+                code: -1,
+                message: format!("unexpected harness raw call: {method}"),
+            })
+        })
+    }
+
+    fn events(&self) -> broadcast::Receiver<CdpEvent> {
+        self.sender.subscribe()
+    }
+
+    fn is_connected(&self) -> bool {
+        true
+    }
+
+    fn connection_epoch(&self) -> u64 {
+        1
+    }
+}
+
+fn harness_tab() -> Value {
+    json!({
+        "tabId": 101,
+        "targetId": "target-1",
+        "url": "https://example.test/",
+        "title": "Example",
+        "isActive": true,
+        "isLoading": false,
+        "loadProgress": 1.0,
+        "isPinned": false,
+        "isHidden": false,
+        "windowId": 1,
+        "index": 0
+    })
+}
+
+async fn harness_ctx() -> (ToolCtx, Arc<HarnessConnection>, u32) {
+    let connection = HarnessConnection::new();
+    let session = BrowserSession::new(connection.clone(), BrowserSessionHooks::default());
+    let pages = session
+        .pages
+        .list()
+        .await
+        .unwrap_or_else(|err| panic!("harness should list pages: {err}"));
+    let page = pages
+        .first()
+        .unwrap_or_else(|| panic!("harness should create a page"))
+        .page_id
+        .0;
+    session
+        .pages
+        .get_session(browseros_core::PageId(page))
+        .await
+        .unwrap_or_else(|err| panic!("harness should attach page session: {err}"));
+    (
+        ToolCtx::new(BrowserToolOptions {
+            session,
+            defaults: BrowserToolDefaults::default(),
+            cancel: CancellationToken::new(),
+            output_files: create_browser_output_file_access(),
+        }),
+        connection,
+        page,
+    )
+}
+
+async fn eventually(mut condition: impl FnMut() -> bool) {
+    for _attempt in 0..50 {
+        if condition() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(condition());
+}
+
+fn tool_by_name(name: &str) -> crate::framework::ToolDef {
+    catalog()
+        .into_iter()
+        .find(|tool| tool.name == name)
+        .unwrap_or_else(|| panic!("missing {name} tool"))
+}
+
+fn result_text(result: &crate::framework::ToolResult) -> String {
+    result
+        .content
+        .iter()
+        .filter_map(|content| content.as_text())
+        .map(|content| content.text.as_ref())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[test]
@@ -263,6 +467,194 @@ async fn invalid_arguments_are_tool_error_results() {
 }
 
 #[tokio::test]
+async fn snapshot_fails_fast_when_dialog_is_open() {
+    let (ctx, connection, page) = harness_ctx().await;
+    connection.emit(
+        "Page.javascriptDialogOpening",
+        json!({
+            "type": "confirm",
+            "message": "Leave site?",
+            "url": "https://example.test/"
+        }),
+        Some("session-1"),
+    );
+    eventually(|| {
+        ctx.session
+            .page_signals
+            .pending_dialog_line(&PageId(page))
+            .is_some()
+    })
+    .await;
+
+    let snapshot = tool_by_name("snapshot");
+    let result = execute_tool(&snapshot, json!({ "page": page }), &ctx)
+        .await
+        .unwrap_or_else(|err| panic!("snapshot should return a tool result: {err}"));
+    let text = result_text(&result);
+    assert!(result.is_error);
+    assert!(text.starts_with("[page 1 dialog open] confirm: \"Leave site?\""));
+    assert!(text.contains("act kind=\"dialog_accept\""));
+    assert!(
+        !connection
+            .calls()
+            .iter()
+            .any(|call| call.method == "Accessibility.getFullAXTree")
+    );
+}
+
+#[tokio::test]
+async fn act_dialog_accept_sends_cdp_and_clears_pending_dialog() {
+    let (ctx, connection, page) = harness_ctx().await;
+    connection.emit(
+        "Page.javascriptDialogOpening",
+        json!({
+            "type": "prompt",
+            "message": "Name?",
+            "defaultPrompt": "Alice",
+            "url": "https://example.test/"
+        }),
+        Some("session-1"),
+    );
+    eventually(|| {
+        ctx.session
+            .page_signals
+            .pending_dialog_line(&PageId(page))
+            .is_some()
+    })
+    .await;
+
+    let act = tool_by_name("act");
+    let result = execute_tool(
+        &act,
+        json!({ "page": page, "kind": "dialog_accept", "text": "BrowserOS" }),
+        &ctx,
+    )
+    .await
+    .unwrap_or_else(|err| panic!("act should return a tool result: {err}"));
+
+    assert!(!result.is_error);
+    assert!(
+        ctx.session
+            .page_signals
+            .pending_dialog(&PageId(page))
+            .is_none()
+    );
+    assert!(connection.calls().iter().any(|call| {
+        call.method == "Page.handleJavaScriptDialog"
+            && call.params.get("accept").and_then(Value::as_bool) == Some(true)
+            && call.params.get("promptText").and_then(Value::as_str) == Some("BrowserOS")
+            && call.session.as_ref() == Some(&SessionId::from("session-1"))
+    }));
+}
+
+#[tokio::test]
+async fn alert_auto_accept_note_is_prepended_to_next_page_response() {
+    let (ctx, connection, page) = harness_ctx().await;
+    connection.emit(
+        "Page.javascriptDialogOpening",
+        json!({
+            "type": "alert",
+            "message": "Saved",
+            "url": "https://example.test/"
+        }),
+        Some("session-1"),
+    );
+    eventually(|| {
+        connection
+            .calls()
+            .iter()
+            .any(|call| call.method == "Page.handleJavaScriptDialog")
+    })
+    .await;
+
+    let wait = tool_by_name("wait");
+    let result = execute_tool(
+        &wait,
+        json!({ "page": page, "for": "time", "value": 0 }),
+        &ctx,
+    )
+    .await
+    .unwrap_or_else(|err| panic!("wait should return a tool result: {err}"));
+    let text = result_text(&result);
+    assert!(text.starts_with("[page 1 dismissed an alert: \"Saved\"]"));
+    assert!(text.contains("waited 0ms"));
+}
+
+#[tokio::test]
+async fn read_console_returns_captured_ring() {
+    let (ctx, connection, page) = harness_ctx().await;
+    connection.emit(
+        "Runtime.consoleAPICalled",
+        json!({
+            "type": "warning",
+            "args": [{ "type": "string", "value": "deprecated API" }],
+            "stackTrace": {
+                "callFrames": [{
+                    "url": "https://example.test/app.js",
+                    "lineNumber": 9,
+                    "columnNumber": 0
+                }]
+            }
+        }),
+        Some("session-1"),
+    );
+    connection.emit(
+        "Runtime.exceptionThrown",
+        json!({
+            "exceptionDetails": {
+                "text": "Uncaught",
+                "url": "https://example.test/app.js",
+                "lineNumber": 12,
+                "columnNumber": 0,
+                "exception": { "description": "TypeError: x is undefined" }
+            }
+        }),
+        Some("session-1"),
+    );
+    eventually(|| {
+        ctx.session
+            .page_signals
+            .console_entries(&PageId(page))
+            .len()
+            == 2
+    })
+    .await;
+
+    let read = tool_by_name("read");
+    let result = execute_tool(&read, json!({ "page": page, "format": "console" }), &ctx)
+        .await
+        .unwrap_or_else(|err| panic!("read should return a tool result: {err}"));
+    let text = result_text(&result);
+    assert!(text.contains("warning: deprecated API (https://example.test/app.js:10)"));
+    assert!(text.contains("exception: TypeError: x is undefined (https://example.test/app.js:13)"));
+    assert_eq!(
+        result
+            .structured_content
+            .as_ref()
+            .and_then(|value| value.get("format")),
+        Some(&json!("console"))
+    );
+}
+
+#[tokio::test]
+async fn act_appends_console_error_summary_for_action_window() {
+    let (ctx, connection, page) = harness_ctx().await;
+    connection.enable_console_on_input();
+
+    let act = tool_by_name("act");
+    let result = execute_tool(
+        &act,
+        json!({ "page": page, "kind": "press", "key": "Enter" }),
+        &ctx,
+    )
+    .await
+    .unwrap_or_else(|err| panic!("act should return a tool result: {err}"));
+    let text = result_text(&result);
+    assert!(text.contains("[page 1 console] 1 error during action, e.g.: TypeError: act failed"));
+    assert!(!result.is_error);
+}
+
+#[tokio::test]
 async fn snapshot_formatter_wraps_small_page_content() {
     let formatted = format_snapshot_result(
         "- button \"Save\" [ref=e1]",
@@ -300,7 +692,7 @@ async fn diff_post_action_failure_is_visible() {
     let mut response = ToolResponse::new();
     response.include_diff(7, true);
     let built = response
-        .build_for_session(&ctx)
+        .build_for_session(&ctx, None)
         .await
         .unwrap_or_else(|err| panic!("post-action failure should not fail response: {err}"));
     let text = built

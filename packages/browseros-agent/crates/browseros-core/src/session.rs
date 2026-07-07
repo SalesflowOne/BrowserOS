@@ -5,6 +5,7 @@ use crate::{
     input::Input,
     navigation::Navigation,
     observer::Observer,
+    page_signals::PageSignals,
     pages::{PageManager, PageManagerHooks},
     screenshot::{
         ScreenshotCaptureOptions, ScreenshotCaptureResult, capture_screenshot_with_annotations,
@@ -24,6 +25,7 @@ pub struct BrowserSessionHooks {
 pub struct BrowserSession {
     connection: Arc<dyn CdpConnection>,
     pub pages: Arc<PageManager>,
+    pub page_signals: Arc<PageSignals>,
     pub windows: Arc<WindowManager>,
     frames: Arc<FrameRegistry>,
     observers: Mutex<HashMap<PageId, Arc<Observer>>>,
@@ -33,16 +35,20 @@ impl BrowserSession {
     #[must_use]
     pub fn new(connection: Arc<dyn CdpConnection>, hooks: BrowserSessionHooks) -> Arc<Self> {
         let frames = FrameRegistry::new(connection.clone());
+        let page_signals = PageSignals::new(connection.clone());
         let frame_hook = {
             let frames = frames.clone();
+            let page_signals = page_signals.clone();
             let user_hook = hooks.page_manager.on_session_attached.clone();
             Arc::new(
                 move |session: crate::ProtocolSession,
                       page_id: PageId,
                       session_id: crate::SessionId| {
                     let frames = frames.clone();
+                    let page_signals = page_signals.clone();
                     let user_hook = user_hook.clone();
                     Box::pin(async move {
+                        page_signals.attach_page(page_id.clone(), session_id.clone());
                         frames
                             .register_page(session.clone(), page_id.clone(), session_id.clone())
                             .await?;
@@ -55,15 +61,26 @@ impl BrowserSession {
                 },
             )
         };
+        let detach_hook = {
+            let page_signals = page_signals.clone();
+            let user_hook = hooks.page_manager.on_page_detached.clone();
+            Arc::new(move |page_id: PageId| {
+                page_signals.forget_page(&page_id);
+                if let Some(user_hook) = &user_hook {
+                    user_hook(page_id);
+                }
+            })
+        };
         let page_hooks = PageManagerHooks {
             on_session_attached: Some(frame_hook),
-            on_page_detached: hooks.page_manager.on_page_detached,
+            on_page_detached: Some(detach_hook),
         };
         let pages = Arc::new(PageManager::new(connection.clone(), page_hooks));
         let windows = Arc::new(WindowManager::new(connection.clone()));
         let session = Arc::new(Self {
             connection: connection.clone(),
             pages,
+            page_signals,
             windows,
             frames,
             observers: Mutex::new(HashMap::new()),
@@ -96,7 +113,7 @@ impl BrowserSession {
 
     #[must_use]
     pub fn nav(&self, page_id: PageId) -> Navigation {
-        Navigation::new(self.pages.clone(), page_id)
+        Navigation::new(self.pages.clone(), self.page_signals.clone(), page_id)
     }
 
     pub async fn screenshot(
@@ -180,6 +197,7 @@ async fn handle_detached_event(session: &BrowserSession, event: CdpEvent) {
         .and_then(Value::as_str)
         .map(crate::SessionId::from);
     if let Some(session_id) = session_id {
+        session.page_signals.detach_session(&session_id);
         session.pages.detach_session(&session_id).await;
     }
 }

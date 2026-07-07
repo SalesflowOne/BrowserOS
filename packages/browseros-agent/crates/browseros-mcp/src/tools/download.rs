@@ -1,6 +1,9 @@
 use crate::{
     constants::DOWNLOAD_TIMEOUT,
-    framework::{ToolCtx, ToolError, ToolExecResult, ToolResult, parse_args, text_result},
+    framework::{
+        ToolCtx, ToolError, ToolExecResult, ToolResult, parse_args, pending_dialog_result,
+        text_result,
+    },
     output_file::{create_download_output_dir, record_browser_output_file},
 };
 use browseros_core::{PageId, Ref, SessionId};
@@ -34,6 +37,9 @@ fn handler<'a>(
     Box::pin(async move {
         let args: DownloadArgs = parse_args(raw)?;
         let page_id = PageId(args.page);
+        if let Some(result) = pending_dialog_result(ctx, page_id.clone()) {
+            return Ok(Some(result));
+        }
         let page_session = ctx.session.pages.get_session(page_id.clone()).await?;
         let download_dir = create_download_output_dir().await?;
         page_session
