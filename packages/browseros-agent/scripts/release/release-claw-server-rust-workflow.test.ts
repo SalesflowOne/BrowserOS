@@ -7,6 +7,7 @@ const workflow = readFileSync(
   resolve(repoRoot, '.github/workflows/release-claw-server-rust.yml'),
   'utf8',
 )
+const shellChannelPlaceholder = '$' + '{channel}'
 const shellTargetPlaceholder = '$' + '{target}'
 const shellAssetsPlaceholder = '$' + '{assets[@]}'
 
@@ -68,7 +69,7 @@ describe('release-claw-server-rust workflow', () => {
   it('publishes versioned and latest zips to the Rust R2 prefix', () => {
     expect(workflow).toContain('claw-server-rust/prod-resources')
     expect(workflow).toContain(
-      'claw-server-rust/prod-resources/${channel}/$(basename "$file")',
+      `claw-server-rust/prod-resources/${shellChannelPlaceholder}/$(basename "$file")`,
     )
     expect(workflow).toContain(
       `https://cdn.browseros.com/claw-server-rust/prod-resources/latest/browseros-claw-server-rust-resources-${shellTargetPlaceholder}.zip`,

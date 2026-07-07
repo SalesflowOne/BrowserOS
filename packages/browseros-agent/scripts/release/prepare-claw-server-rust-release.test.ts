@@ -72,7 +72,9 @@ async function initFixture(version: string): Promise<{
   bareDir: string
 }> {
   const dir = mkdtempSync(join(tmpdir(), 'claw-server-rust-release-'))
-  const bareDir = mkdtempSync(join(tmpdir(), 'claw-server-rust-release-origin-'))
+  const bareDir = mkdtempSync(
+    join(tmpdir(), 'claw-server-rust-release-origin-'),
+  )
   await mustRun(dir, ['git', 'init', '--initial-branch=main'])
   await mustRun(dir, ['git', 'config', 'user.name', 'BrowserOS Test'])
   await mustRun(dir, ['git', 'config', 'user.email', 'test@browseros.com'])
