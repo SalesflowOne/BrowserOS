@@ -4,6 +4,7 @@ use anyhow::Result;
 use serde::Serialize;
 
 use crate::engine::apply::{self as engine_apply, ApplyOptions, ApplyOutcome};
+use crate::engine::conflict;
 use crate::engine::lock::CheckoutLock;
 use crate::engine::progress::ProgressEvent;
 use crate::engine::state::{DriftSource, StateContext};
@@ -44,6 +45,19 @@ pub enum ApplyReport {
         checkout_base: String,
         /// Base commit pinned in store.yaml.
         store_base: String,
+        /// Process exit code for this result.
+        exit: i32,
+    },
+    /// Store and checkout bases differed and an out-of-worktree merge found conflicts.
+    Conflicts {
+        /// Human display for the new chromium base.
+        base: String,
+        /// Clean store-managed files merged without conflicts.
+        merged: usize,
+        /// Structured conflict list.
+        conflicts: Vec<ApplyConflictFile>,
+        /// Whether the worktree was touched while producing this report.
+        worktree_touched: bool,
         /// Process exit code for this result.
         exit: i32,
     },
@@ -90,6 +104,17 @@ pub struct ApplyDriftFile {
     pub annotation: String,
 }
 
+/// One merge conflict in an apply report.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ApplyConflictFile {
+    /// Repository-relative file path.
+    pub file: PathBuf,
+    /// Feature owning the path, or `(unassigned)`.
+    pub feature: String,
+    /// Conflict kind from git.
+    pub kind: String,
+}
+
 /// Serializable drift source class.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -107,6 +132,7 @@ impl ApplyReport {
             Self::Applied { exit, .. }
             | Self::Converged { exit, .. }
             | Self::BaseMismatch { exit, .. }
+            | Self::Conflicts { exit, .. }
             | Self::Drift { exit, .. }
             | Self::Error { exit, .. } => *exit,
         }
@@ -130,6 +156,27 @@ pub fn run(
     };
 
     match engine_apply::apply(ctx, options, progress) {
+        Ok(ApplyOutcome::BaseMismatch(_)) => match conflict::begin(ctx, progress) {
+            Ok(begin) => ApplyReport::Conflicts {
+                base: begin.base_display,
+                merged: begin.merged,
+                conflicts: begin
+                    .conflicts
+                    .into_iter()
+                    .map(|conflict| ApplyConflictFile {
+                        file: conflict.file,
+                        feature: conflict.feature,
+                        kind: conflict.kind,
+                    })
+                    .collect(),
+                worktree_touched: begin.worktree_touched,
+                exit: 2,
+            },
+            Err(err) => ApplyReport::Error {
+                reason: err.to_string(),
+                exit: 1,
+            },
+        },
         Ok(outcome) => report_from_outcome(outcome),
         Err(err) => ApplyReport::Error {
             reason: err.to_string(),
@@ -187,6 +234,29 @@ pub fn render_human(report: &ApplyReport) -> String {
             store_base,
             ..
         } => format!("base mismatch: checkout base {checkout_base}, store base {store_base}\n"),
+        ApplyReport::Conflicts {
+            base,
+            merged,
+            conflicts,
+            ..
+        } => {
+            let mut out = String::new();
+            out.push_str(&format!(
+                "conflicts on base {base}: {merged} clean {}, {} {}\n",
+                files_label(*merged),
+                conflicts.len(),
+                files_label(conflicts.len())
+            ));
+            for conflict in conflicts {
+                out.push_str(&format!(
+                    "  {} ({}, {})\n",
+                    conflict.file.display(),
+                    conflict.feature,
+                    conflict.kind
+                ));
+            }
+            out
+        }
         ApplyReport::Drift { files, .. } => {
             let mut out = String::new();
             out.push_str(&format!(

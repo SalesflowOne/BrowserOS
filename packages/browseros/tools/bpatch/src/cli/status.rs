@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use serde::Serialize;
 
+use crate::engine::conflict;
 use crate::engine::state::{DriftSource, StateContext, resolve};
 
 /// Serializable status result for a checkout.
@@ -36,6 +37,8 @@ pub struct StatusReport {
     pub last_feature_commit: Option<String>,
     /// Drift entries relative to the applied tree.
     pub drift: Vec<StatusDriftFile>,
+    /// Active conflict session, when one is in progress.
+    pub conflict_session: Option<StatusConflictSession>,
 }
 
 /// Status result discriminator.
@@ -59,6 +62,17 @@ pub struct StatusDriftFile {
     pub source: StatusDriftSource,
     /// Human annotation for the drift.
     pub annotation: String,
+}
+
+/// Conflict-session summary included in status.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct StatusConflictSession {
+    /// Unix timestamp recorded when the session was created.
+    pub created_at: u64,
+    /// Human display for the new chromium base.
+    pub base: String,
+    /// Number of conflicts recorded in the session.
+    pub conflicts: usize,
 }
 
 /// Serializable drift source class.
@@ -89,6 +103,12 @@ pub fn run(ctx: &StateContext) -> Result<StatusReport> {
         })
         .collect::<Vec<_>>();
     let applied = state.applied.as_ref();
+    let conflict_session =
+        conflict::load_session(&ctx.checkout)?.map(|session| StatusConflictSession {
+            created_at: session.created_at,
+            base: session.new_base_display,
+            conflicts: session.conflicts.len(),
+        });
 
     Ok(StatusReport {
         result: if drift.is_empty() {
@@ -111,6 +131,7 @@ pub fn run(ctx: &StateContext) -> Result<StatusReport> {
             .unwrap_or(0),
         last_feature_commit: applied.map(|applied| applied.last_subject.clone()),
         drift,
+        conflict_session,
     })
 }
 
@@ -159,6 +180,13 @@ pub fn render_human(report: &StatusReport) -> String {
             ));
         }
     }
+    if let Some(session) = &report.conflict_session {
+        out.push_str(&format!(
+            "session  conflict session in progress ({} {}) — bpatch continue / bpatch abort\n",
+            session.conflicts,
+            conflicts_label(session.conflicts)
+        ));
+    }
     out
 }
 
@@ -185,4 +213,8 @@ fn feature_commits_label(count: usize) -> &'static str {
 
 fn files_label(count: usize) -> &'static str {
     if count == 1 { "file" } else { "files" }
+}
+
+fn conflicts_label(count: usize) -> &'static str {
+    if count == 1 { "conflict" } else { "conflicts" }
 }

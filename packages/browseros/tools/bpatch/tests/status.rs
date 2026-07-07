@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use bpatch::cli::{diff, status};
+use bpatch::engine::conflict::{self, ConflictFile, ConflictSession};
 use bpatch::engine::state::{self, StateContext, TRAILER_BASE, TRAILER_STORE_REV, TRAILER_TREE};
 use fixtures::FixtureRepo;
 use serde_json::Value;
@@ -232,6 +233,50 @@ fn amending_latest_feature_commit_to_drop_trailers_does_not_wedge_state() -> Res
     let applied = resolved.applied.expect("previous trailer commit");
     assert_eq!(applied.store_rev, scenario.store_rev);
     assert_eq!(applied.tree, scenario.applied_tree);
+    Ok(())
+}
+
+#[test]
+fn status_reports_in_progress_conflict_session() -> Result<()> {
+    let checkout = FixtureRepo::new()?;
+    let base = write_base_checkout(&checkout)?;
+    let store = FixtureRepo::new()?;
+    let store_dir = seed_store(&store, &base)?;
+    let store_rev = store.commit("seed store")?;
+    let path = conflict::session_path(checkout.path())?;
+    std::fs::create_dir_all(path.parent().expect("session parent"))?;
+    std::fs::write(
+        &path,
+        serde_json::to_vec(&ConflictSession {
+            new_base: base.clone(),
+            new_base_display: "148.0.7204.1".to_string(),
+            pin_base: base.clone(),
+            store_rev,
+            merged_tree: checkout.git_adapter().tree_id("HEAD")?,
+            target_tree: checkout.git_adapter().tree_id("HEAD")?,
+            conflicts: vec![ConflictFile {
+                file: PathBuf::from("chrome/app/chrome_main_delegate.cc"),
+                feature: "bootstrap".to_string(),
+                kind: "content".to_string(),
+            }],
+            parent_head: base,
+            created_at: 123,
+        })?,
+    )?;
+
+    let report = status::run(&StateContext::new(checkout.path(), &store_dir))?;
+
+    let session = report.conflict_session.as_ref().expect("conflict session");
+    assert_eq!(session.created_at, 123);
+    assert_eq!(session.base, "148.0.7204.1");
+    assert_eq!(session.conflicts, 1);
+    let human = status::render_human(&report);
+    assert!(human.contains(
+        "session  conflict session in progress (1 conflict) — bpatch continue / bpatch abort"
+    ));
+    let json = serde_json::to_value(&report)?;
+    assert_eq!(json["conflict_session"]["conflicts"], 1);
+    assert_eq!(json["conflict_session"]["created_at"], 123);
     Ok(())
 }
 
