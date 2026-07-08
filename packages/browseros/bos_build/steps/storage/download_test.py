@@ -378,6 +378,20 @@ class DownloadResourceConfigTest(unittest.TestCase):
             ],
         )
 
+    def test_real_config_keeps_active_server_downloads_ungated(self) -> None:
+        operations = self._real_download_operations()
+        server_ops = [
+            op
+            for op in operations
+            if op["name"].startswith("BrowserOS Server Resources")
+            or op["name"].startswith("BrowserOS Claw Server Resources")
+        ]
+
+        self.assertTrue(server_ops)
+        for op in server_ops:
+            with self.subTest(name=op["name"]):
+                self.assertNotIn("product", op)
+
     def test_real_config_keeps_rust_claw_downloads_commented(self) -> None:
         config_path = (
             Path(__file__).resolve().parents[2] / "config" / "download_resources.yaml"

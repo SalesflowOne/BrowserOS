@@ -241,7 +241,7 @@ class CopyResourcesTest(unittest.TestCase):
 
         self.assertFalse((self.chromium.src / "chrome" / "ghost").exists())
 
-    def test_real_config_copies_server_resources_for_browseros_product(self):
+    def test_real_config_copies_both_server_resources_for_browseros_product(self):
         self.root.write_copy_config(self._real_copy_config())
         browseros_source = (
             self.root.root
@@ -319,7 +319,7 @@ class CopyResourcesTest(unittest.TestCase):
             / "browseros-claw-server-rs"
         )
         self.assertEqual(browseros_dest.read_text(), "browseros")
-        self.assertFalse(claw_dest.exists())
+        self.assertEqual(claw_dest.read_text(), "claw")
         self.assertFalse(claw_rust_dest.exists())
 
     def test_real_config_copies_bun_server_resources_for_browserclaw_by_default(
@@ -453,6 +453,21 @@ class CopyResourcesTest(unittest.TestCase):
             "BrowserOS Claw Rust Server Resources - macOS ARM64",
             active_names,
         )
+        self.assertNotIn('#   product: "browserclaw"', text)
+
+    def test_real_config_keeps_active_server_copy_resources_ungated(self):
+        config = self._real_copy_config()
+        server_ops = [
+            op
+            for op in config["copy_operations"]
+            if op["name"].startswith("BrowserOS Server Resources")
+            or op["name"].startswith("BrowserOS Claw Server Resources")
+        ]
+
+        self.assertTrue(server_ops)
+        for op in server_ops:
+            with self.subTest(name=op["name"]):
+                self.assertNotIn("product", op)
 
     def test_real_config_copies_claw_onboard_resources_for_both_products(self):
         # The downloaded onboarding dist must land in the grit resources dir
