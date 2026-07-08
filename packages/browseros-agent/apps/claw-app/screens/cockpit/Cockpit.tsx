@@ -23,6 +23,12 @@ export function Cockpit() {
   const connections = useBrowserosConnections()
   const taskProbe = useTasks({
     variables: { limit: ONBOARDING_PROBE_LIMIT },
+    // Scoped to the cockpit probe: while the reader sits on the
+    // first-run / waiting shells the poll needs to feel live so the
+    // 'ready' handoff lands within a few seconds of their first
+    // agent write. React-query's default polling elsewhere in the
+    // app is unchanged.
+    refetchInterval: 4000,
   })
   // Only count harnesses that appear on the /mcp screen. Hidden ones
   // (Hermes, OpenClaw, Gemini CLI, retired Claude Desktop) may be
