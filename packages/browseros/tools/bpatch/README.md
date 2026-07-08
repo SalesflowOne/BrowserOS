@@ -13,9 +13,13 @@ Configure the store once:
 ```toml
 # ~/.config/bpatch/config.toml
 store = "/Users/shadowfax/code/browseros-project/packages/browseros/chromium_patches"
+
+[checkouts]
+ch1 = "/Users/shadowfax/ch1-src"
+ch2 = "/Users/shadowfax/ch2-src"
 ```
 
-`--store <STORE>` overrides the config file for any command.
+`--store <STORE>` overrides the config file for any command. Checkout aliases are optional; without a checkout selector, `bpatch` discovers the checkout from the current directory as before.
 
 Requirements: Git 2.40 or newer; base-bump conflict sessions use `git merge-tree --write-tree --merge-base`.
 
@@ -50,6 +54,15 @@ apply: store 8c1f2ab (delta vs applied 55e0d3c: 3 files)
 converged. → incremental build will recompile ~1 target dir
 ```
 
+The same checkout-scoped commands can target an alias or path from any directory:
+
+```console
+$ bpatch status ch1
+$ bpatch diff ch1
+$ bpatch apply ch1
+$ bpatch -C ch1 extract HEAD~1..HEAD
+```
+
 ## Verbs
 
 Global flags:
@@ -57,6 +70,7 @@ Global flags:
 | Flag | Meaning |
 | --- | --- |
 | `--store <STORE>` | Use this `chromium_patches` directory instead of `~/.config/bpatch/config.toml`. |
+| `-C, --checkout <CHECKOUT>` | Use a checkout alias or path instead of discovering from cwd. |
 | `--json` | Emit one JSON object, suppress progress and prompts. |
 
 | Verb | Flags | Exit codes | Use |
@@ -67,10 +81,15 @@ Global flags:
 | `bpatch extract [SPEC]` | `--feature <FEATURE>`, `--commit`, `--repin`, global flags | `0`, `3`, `1` | Extract `<rev>` or `<rev1>..<rev2>` into the store, or repin existing store patches to the checkout base. |
 | `bpatch feature list` | global flags | `0`, `1` | List features, owned patch counts, and last applied sequence numbers. |
 | `bpatch feature add <NAME> --path <PATH>` | `--description <DESCRIPTION>`, global flags | `0`, `1` | Append a new feature block to `features.yaml`. |
+| `bpatch alias add <NAME> <PATH>` | global flags | `0`, `1` | Add or update a checkout alias in `~/.config/bpatch/config.toml`. |
+| `bpatch alias list` | global flags | `0`, `1` | List checkout aliases. |
+| `bpatch alias remove <NAME>` | global flags | `0`, `1` | Remove a checkout alias. |
 | `bpatch abort` | global flags | `0`, `1` | Remove a pending conflict session. |
 | `bpatch continue` | `--materialize`, global flags | `0`, `2`, `1` | Materialize conflict markers or finish a conflict session after resolution. |
 
 `extract` also has a hidden `--accept-suggestions` flag used by integration tests and scripted TTY bypasses; normal non-interactive routing should use `--feature <FEATURE>` or accept the `needs-feature` JSON result.
+
+`status`, `diff`, `apply`, `abort`, and `continue` also accept an optional positional checkout selector, for example `bpatch apply ch1`. Use `-C/--checkout` for verbs with their own positional arguments, such as `extract`.
 
 ## Exit Codes
 
@@ -157,6 +176,7 @@ The old Go tool stays in the repo until cutover; removing it is a separate effor
 | `extract` | `bpatch extract <rev>` or `bpatch extract <rev1>..<rev2>` |
 | feature inventory | `bpatch feature list` |
 | feature creation | `bpatch feature add <name> --path <path> [--description ...]` |
+| checkout aliases | `bpatch alias add <name> <path>`, then `bpatch apply <name>` or `bpatch -C <name> ...` |
 | conflict abort | `bpatch abort` |
 | conflict continue | `bpatch continue` or `bpatch continue --materialize` |
 | base repin/rebase-store flow | `bpatch extract --repin` |
@@ -164,7 +184,6 @@ The old Go tool stays in the repo until cutover; removing it is a separate effor
 Not carried over in v1:
 
 - `.bpatch` state files; state is recovered from commit trailers and git trees.
-- Checkout aliases; run from the checkout directory and use config/`--store` for the store path.
 - `publish`, `add`, `remove`, and `skip` flows.
 - Branch-rebuild refresh machinery; convergence is tree-based and minimal-touch on same-base updates.
 - `feature move`; feature mutation is append-only for now.

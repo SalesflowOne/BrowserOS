@@ -1,4 +1,5 @@
 pub mod abort;
+pub mod alias;
 pub mod apply;
 pub mod continue_cmd;
 pub mod diff;
@@ -7,6 +8,7 @@ pub mod feature;
 pub mod render;
 pub mod status;
 
+use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::io::{self, Write};
@@ -33,6 +35,15 @@ pub struct Cli {
     /// Emit a single JSON object and disable progress and prompts.
     #[arg(long, global = true)]
     pub json: bool,
+    /// Target a checkout alias or path instead of discovering from cwd.
+    #[arg(
+        id = "checkout_flag",
+        short = 'C',
+        long = "checkout",
+        global = true,
+        value_name = "CHECKOUT"
+    )]
+    pub checkout: Option<String>,
     /// Command to run.
     #[command(subcommand)]
     pub command: Command,
@@ -42,19 +53,28 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Show checkout/store state.
-    Status,
+    Status(CheckoutArgs),
     /// Show what apply would touch.
-    Diff,
+    Diff(CheckoutArgs),
     /// Converge the checkout to the store.
     Apply(ApplyArgs),
     /// Extract commits into the store or repin the store base.
     Extract(ExtractArgs),
     /// Manage features.yaml entries.
     Feature(FeatureArgs),
+    /// Manage checkout aliases.
+    Alias(alias::AliasArgs),
     /// Abort a conflict session.
-    Abort,
+    Abort(CheckoutArgs),
     /// Continue a conflict session.
     Continue(ContinueArgs),
+}
+
+/// Positional checkout selector shared by checkout-scoped commands.
+#[derive(Debug, Args)]
+pub struct CheckoutArgs {
+    /// Checkout alias or path.
+    pub checkout: Option<String>,
 }
 
 /// Apply command flags.
@@ -63,6 +83,8 @@ pub struct ApplyArgs {
     /// Fast-forward the store repository before applying.
     #[arg(long)]
     pub pull: bool,
+    /// Checkout alias or path.
+    pub checkout: Option<String>,
 }
 
 /// Extract command flags.
@@ -120,11 +142,26 @@ pub struct ContinueArgs {
     /// Write conflict marker files instead of finishing convergence.
     #[arg(long)]
     pub materialize: bool,
+    /// Checkout alias or path.
+    pub checkout: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+impl Command {
+    fn positional_checkout(&self) -> Option<&str> {
+        match self {
+            Self::Status(args) | Self::Diff(args) | Self::Abort(args) => args.checkout.as_deref(),
+            Self::Apply(args) => args.checkout.as_deref(),
+            Self::Continue(args) => args.checkout.as_deref(),
+            Self::Extract(_) | Self::Feature(_) | Self::Alias(_) => None,
+        }
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
 struct Config {
     store: Option<PathBuf>,
+    #[serde(default)]
+    checkouts: BTreeMap<String, PathBuf>,
 }
 
 /// Runs the parsed CLI and returns the process exit code.
@@ -139,13 +176,17 @@ pub fn run(cli: Cli) -> i32 {
 }
 
 fn run_inner(cli: &Cli) -> Result<i32> {
-    let checkout = discover_checkout(&env::current_dir()?)?;
+    if let Command::Alias(args) = &cli.command {
+        return alias::run(args, cli.json);
+    }
+
+    let checkout = resolve_checkout(cli)?;
     GitAdapter::new(&checkout).preflight()?;
     let store_dir = discover_store(cli.store.as_deref())?;
     let state_ctx = StateContext::new(&checkout, &store_dir);
 
     match &cli.command {
-        Command::Status => {
+        Command::Status(_) => {
             let report = status::run(&state_ctx)?;
             write_output(
                 cli.json,
@@ -154,7 +195,7 @@ fn run_inner(cli: &Cli) -> Result<i32> {
             )?;
             Ok(0)
         }
-        Command::Diff => {
+        Command::Diff(_) => {
             let report = diff::run(&state_ctx)?;
             write_output(
                 cli.json,
@@ -175,7 +216,8 @@ fn run_inner(cli: &Cli) -> Result<i32> {
         }
         Command::Extract(args) => run_extract(cli, args, &checkout, &store_dir),
         Command::Feature(args) => run_feature(cli, args, &state_ctx, &store_dir),
-        Command::Abort => {
+        Command::Alias(_) => unreachable!("handled before checkout discovery"),
+        Command::Abort(_) => {
             let report = abort::run(&state_ctx);
             write_output(
                 cli.json,
@@ -200,6 +242,82 @@ fn run_inner(cli: &Cli) -> Result<i32> {
             )?;
             Ok(report.exit_code())
         }
+    }
+}
+
+/// Resolves `-C` or positional checkout selectors into the checkout used by all checkout verbs.
+fn resolve_checkout(cli: &Cli) -> Result<PathBuf> {
+    match (cli.checkout.as_deref(), cli.command.positional_checkout()) {
+        (None, None) => discover_checkout(&env::current_dir()?),
+        (Some(selector), None) | (None, Some(selector)) => {
+            let config_path = config_path();
+            let config = load_config(&config_path)?;
+            resolve_checkout_selector(selector, config.as_ref())
+        }
+        (Some(flag), Some(positional)) => {
+            let config_path = config_path();
+            let config = load_config(&config_path)?;
+            let flag_checkout = resolve_checkout_selector(flag, config.as_ref())?;
+            let positional_checkout = resolve_checkout_selector(positional, config.as_ref())?;
+            if flag_checkout != positional_checkout {
+                bail!(
+                    "-C/--checkout `{}` and positional checkout `{}` resolve to different checkouts ({} != {})",
+                    flag,
+                    positional,
+                    flag_checkout.display(),
+                    positional_checkout.display()
+                );
+            }
+            Ok(flag_checkout)
+        }
+    }
+}
+
+fn resolve_checkout_selector(selector: &str, config: Option<&Config>) -> Result<PathBuf> {
+    if let Some(path) = config.and_then(|config| config.checkouts.get(selector)) {
+        return canonical_checkout_path(path).with_context(|| {
+            format!(
+                "checkout alias `{}` points to invalid path {}",
+                selector,
+                path.display()
+            )
+        });
+    }
+
+    let path = PathBuf::from(selector);
+    if path.is_dir() {
+        return canonical_checkout_path(&path);
+    }
+
+    bail!(
+        "unknown checkout `{}`; known aliases: {}",
+        selector,
+        format_known_aliases(config)
+    )
+}
+
+fn canonical_checkout_path(path: &Path) -> Result<PathBuf> {
+    let path = path
+        .canonicalize()
+        .with_context(|| format!("resolving {}", path.display()))?;
+    discover_checkout(&path)?
+        .canonicalize()
+        .with_context(|| format!("resolving checkout root from {}", path.display()))
+}
+
+fn format_known_aliases(config: Option<&Config>) -> String {
+    let Some(config) = config else {
+        return "none".to_string();
+    };
+    if config.checkouts.is_empty() {
+        "none".to_string()
+    } else {
+        config
+            .checkouts
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 }
 

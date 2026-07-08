@@ -552,6 +552,203 @@ fn config_discovery_runs_from_subdirectory_and_missing_store_is_actionable() -> 
     Ok(())
 }
 
+#[test]
+fn checkout_aliases_and_paths_target_fixture_from_unrelated_cwd() -> Result<()> {
+    let scenario = applied_rev1_scenario()?;
+    write_checkout_rev2(&scenario.checkout, false)?;
+    commit_store_from_index(
+        &scenario.store,
+        &scenario.checkout,
+        &scenario.base,
+        &[
+            "chrome/browser/ui/llmchat/panel.cc",
+            "chrome/browser/ui/llmchat/panel.h",
+            "chrome/browser/ui/llmchat/resize_util.cc",
+        ],
+        "store rev2",
+    )?;
+    scenario
+        .checkout
+        .git()
+        .run(&["reset", "--hard", &scenario.rev1_commit])?;
+
+    let home = tempfile::tempdir()?;
+    write_bpatch_config(
+        home.path(),
+        Some(&scenario.store_dir),
+        &[("ch1", scenario.checkout.path())],
+    )?;
+    let unrelated = tempfile::tempdir()?;
+
+    let status = run_bpatch_with_home(
+        unrelated.path(),
+        None,
+        strs(&["status", "ch1"]),
+        home.path(),
+    )?;
+    assert_eq!(status.code, 0, "{}", status.stderr);
+    assert!(status.stdout.contains("base     148.0.7204.1"));
+
+    let flag_status = run_bpatch_with_home(
+        unrelated.path(),
+        None,
+        strs(&["-C", "ch1", "status", "--json"]),
+        home.path(),
+    )?;
+    assert_eq!(flag_status.code, 0, "{}", flag_status.stderr);
+    let json = parse_json(&flag_status.stdout)?;
+    assert_eq!(json["result"], "clean");
+
+    let diff = run_bpatch_with_home(unrelated.path(), None, strs(&["diff", "ch1"]), home.path())?;
+    assert_eq!(diff.code, 0, "{}", diff.stderr);
+    assert!(diff.stdout.contains("apply would touch 3 files"));
+
+    let apply = run_bpatch_with_home(unrelated.path(), None, strs(&["apply", "ch1"]), home.path())?;
+    assert_eq!(apply.code, 0, "{}", apply.stderr);
+    assert!(apply.stdout.contains("apply: store "));
+    assert!(apply.stdout.contains("✓ 3 files written"));
+
+    let raw_path = scenario.checkout.path().display().to_string();
+    let raw = run_bpatch_with_home(
+        unrelated.path(),
+        None,
+        vec!["status".into(), raw_path],
+        home.path(),
+    )?;
+    assert_eq!(raw.code, 0, "{}", raw.stderr);
+    assert!(raw.stdout.contains("tree     clean"));
+
+    let repin = run_bpatch_with_home(
+        unrelated.path(),
+        None,
+        strs(&["-C", "ch1", "extract", "--repin", "--json"]),
+        home.path(),
+    )?;
+    assert_eq!(repin.code, 0, "{}", repin.stderr);
+    let json = parse_json(&repin.stdout)?;
+    assert_eq!(json["result"], "repinned");
+
+    let unknown = run_bpatch_with_home(
+        unrelated.path(),
+        None,
+        strs(&["status", "missing", "--json"]),
+        home.path(),
+    )?;
+    assert_eq!(unknown.code, 1);
+    let json = parse_json(&unknown.stdout)?;
+    assert_eq!(json["result"], "error");
+    assert!(
+        json["reason"]
+            .as_str()
+            .unwrap()
+            .contains("unknown checkout `missing`")
+    );
+    assert!(
+        json["reason"]
+            .as_str()
+            .unwrap()
+            .contains("known aliases: ch1")
+    );
+
+    let other = FixtureRepo::new()?;
+    let disagree = run_bpatch_with_home(
+        unrelated.path(),
+        None,
+        vec![
+            "-C".into(),
+            "ch1".into(),
+            "status".into(),
+            other.path().display().to_string(),
+            "--json".into(),
+        ],
+        home.path(),
+    )?;
+    assert_eq!(disagree.code, 1);
+    let json = parse_json(&disagree.stdout)?;
+    assert!(
+        json["reason"]
+            .as_str()
+            .unwrap()
+            .contains("resolve to different checkouts"),
+        "{}",
+        json["reason"]
+    );
+    Ok(())
+}
+
+#[test]
+fn alias_add_list_remove_round_trips_config_and_json() -> Result<()> {
+    let checkout = FixtureRepo::new()?;
+    write_apply_base(&checkout)?;
+    let home = tempfile::tempdir()?;
+    let config_dir = home.path().join(".config/bpatch");
+    fs::create_dir_all(&config_dir)?;
+    fs::write(
+        config_dir.join("config.toml"),
+        "# keep this comment\ncustom = \"preserve\"\n",
+    )?;
+    let cwd = tempfile::tempdir()?;
+
+    let add = run_bpatch_with_home(
+        cwd.path(),
+        None,
+        vec![
+            "--json".into(),
+            "alias".into(),
+            "add".into(),
+            "ch1".into(),
+            checkout.path().display().to_string(),
+        ],
+        home.path(),
+    )?;
+    assert_eq!(add.code, 0, "{}", add.stderr);
+    let json = parse_json(&add.stdout)?;
+    assert_eq!(json["result"], "added");
+    assert_eq!(json["alias"], "ch1");
+    assert_eq!(json["exit"], 0);
+    assert_eq!(
+        json["path"].as_str().unwrap(),
+        checkout.path().canonicalize()?.to_str().unwrap()
+    );
+    let after_add = fs::read_to_string(config_dir.join("config.toml"))?;
+    assert!(after_add.contains("# keep this comment"));
+    assert!(after_add.contains("custom = \"preserve\""));
+    assert!(after_add.contains("[checkouts]"));
+    assert!(after_add.contains("ch1"));
+
+    let list = run_bpatch_with_home(
+        cwd.path(),
+        None,
+        strs(&["alias", "list", "--json"]),
+        home.path(),
+    )?;
+    assert_eq!(list.code, 0, "{}", list.stderr);
+    let json = parse_json(&list.stdout)?;
+    assert_eq!(json["result"], "listed");
+    assert_eq!(
+        json["checkouts"]["ch1"],
+        checkout.path().canonicalize()?.to_str().unwrap()
+    );
+    assert_eq!(json["exit"], 0);
+
+    let remove = run_bpatch_with_home(
+        cwd.path(),
+        None,
+        strs(&["alias", "remove", "ch1", "--json"]),
+        home.path(),
+    )?;
+    assert_eq!(remove.code, 0, "{}", remove.stderr);
+    let json = parse_json(&remove.stdout)?;
+    assert_eq!(json["result"], "removed");
+    assert_eq!(json["alias"], "ch1");
+    assert_eq!(json["exit"], 0);
+    let after_remove = fs::read_to_string(config_dir.join("config.toml"))?;
+    assert!(after_remove.contains("# keep this comment"));
+    assert!(after_remove.contains("custom = \"preserve\""));
+    assert!(!after_remove.contains("ch1 ="));
+    Ok(())
+}
+
 fn run_bpatch(cwd: &Path, store: Option<&Path>, args: Vec<String>) -> Result<CmdOutput> {
     let home = tempfile::tempdir()?;
     run_bpatch_with_home(cwd, store, args, home.path())
@@ -583,6 +780,27 @@ fn strs(args: &[&str]) -> Vec<String> {
 
 fn parse_json(stdout: &str) -> Result<Value> {
     Ok(serde_json::from_str(stdout.trim())?)
+}
+
+fn write_bpatch_config(
+    home: &Path,
+    store: Option<&Path>,
+    checkouts: &[(&str, &Path)],
+) -> Result<()> {
+    let config_dir = home.join(".config/bpatch");
+    fs::create_dir_all(&config_dir)?;
+    let mut text = String::new();
+    if let Some(store) = store {
+        text.push_str(&format!("store = {:?}\n", store.display().to_string()));
+    }
+    if !checkouts.is_empty() {
+        text.push_str("\n[checkouts]\n");
+        for (alias, path) in checkouts {
+            text.push_str(&format!("{} = {:?}\n", alias, path.display().to_string()));
+        }
+    }
+    fs::write(config_dir.join("config.toml"), text)?;
+    Ok(())
 }
 
 fn applied_rev1_scenario() -> Result<AppliedScenario> {
