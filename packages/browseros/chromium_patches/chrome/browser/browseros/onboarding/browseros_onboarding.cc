@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000000000..e936189f913b130160a04bbca0b871e09dafad54
 --- /dev/null
 +++ b/chrome/browser/browseros/onboarding/browseros_onboarding.cc
-@@ -0,0 +1,728 @@
+@@ -0,0 +1,734 @@
 +// Copyright 2026 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
