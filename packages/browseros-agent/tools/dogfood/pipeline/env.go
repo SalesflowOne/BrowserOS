@@ -20,7 +20,13 @@ func WriteProductionEnvFile(agentRoot string, cfg config.Config) error {
 		values[key] = value
 	}
 	for key, value := range cfg.ProductionEnv.Server {
-		values[key] = value
+		if value != "" {
+			values[key] = value
+			continue
+		}
+		if _, ok := values[key]; !ok {
+			values[key] = value
+		}
 	}
 	return writeEnvFile(filepath.Join(agentRoot, ".env.production"), values)
 }

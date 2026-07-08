@@ -42,6 +42,24 @@ func TestWriteProductionEnvFile(t *testing.T) {
 	assertNotContains(t, path, "R2_DOWNLOAD_PREFIX")
 }
 
+func TestWriteProductionEnvFileKeepsCLIDefaultWhenServerDefaultIsEmpty(t *testing.T) {
+	root := t.TempDir()
+	if err := WriteProductionEnvFile(root, config.Config{}); err != nil {
+		t.Fatal(err)
+	}
+
+	assertContains(t, filepath.Join(root, ".env.production"), "R2_BUCKET=browseros\n")
+}
+
+func TestWriteProductionEnvFileWritesServerOnlyEmptyValues(t *testing.T) {
+	root := t.TempDir()
+	if err := WriteProductionEnvFile(root, config.Config{}); err != nil {
+		t.Fatal(err)
+	}
+
+	assertContains(t, filepath.Join(root, ".env.production"), "SENTRY_DSN=\n")
+}
+
 func TestWriteEnvFileQuotesUnsafeValues(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".env.production")
 	if err := writeEnvFile(path, map[string]string{"TOKEN": "abc=123 with space"}); err != nil {
