@@ -1,9 +1,9 @@
 diff --git a/chrome/browser/browseros/onboarding/browseros_onboarding_prefs.cc b/chrome/browser/browseros/onboarding/browseros_onboarding_prefs.cc
 new file mode 100644
-index 0000000000000..635f4df18b9f4
+index 0000000000000..a364aaf41d14b
 --- /dev/null
 +++ b/chrome/browser/browseros/onboarding/browseros_onboarding_prefs.cc
-@@ -0,0 +1,31 @@
+@@ -0,0 +1,32 @@
 +// Copyright 2026 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -30,8 +30,9 @@ index 0000000000000..635f4df18b9f4
 +    return;
 +  }
 +
-+  profile->GetPrefs()->SetBoolean(browseros::prefs::kOnboardingCompleted,
-+                                  true);
++  PrefService* prefs = profile->GetPrefs();
++  prefs->SetBoolean(browseros::prefs::kOnboardingCompleted, true);
++  prefs->CommitPendingWrite();
 +}
 +
 +}  // namespace browseros::onboarding
