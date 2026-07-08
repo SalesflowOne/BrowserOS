@@ -17,6 +17,8 @@ export const MOCK_BROWSEROS_IMPORT_SOURCES: readonly BrowserOSImportSource[] = [
     displayName: 'Google Chrome - Work',
     browserName: 'Google Chrome',
     profileName: 'Work',
+    accountName: 'work@example.com',
+    isManaged: true,
     supportedItems: [
       'history',
       'bookmarks',
@@ -41,6 +43,8 @@ export const MOCK_BROWSEROS_IMPORT_SOURCES: readonly BrowserOSImportSource[] = [
     displayName: 'Google Chrome - Personal',
     browserName: 'Google Chrome',
     profileName: 'Personal',
+    accountName: 'personal@example.com',
+    isManaged: false,
     supportedItems: [
       'history',
       'bookmarks',
@@ -55,6 +59,8 @@ export const MOCK_BROWSEROS_IMPORT_SOURCES: readonly BrowserOSImportSource[] = [
     displayName: 'Microsoft Edge - Default',
     browserName: 'Microsoft Edge',
     profileName: 'Default',
+    accountName: '',
+    isManaged: false,
     supportedItems: ['history', 'bookmarks', 'cookies', 'passwords'],
     recommendedItems: ['history', 'bookmarks', 'cookies'],
   },
