@@ -19,9 +19,16 @@ import { ScenePan } from './scenes/ScenePan'
 import { ScenePrompt } from './scenes/ScenePrompt'
 import { SCENES } from './timing'
 
+// Mirrors claw-app's --font-sans. Explicit because the headless
+// render browser falls back to a serif when no family is set.
+const FONT_SANS =
+  '"Schibsted Grotesk Variable", "Schibsted Grotesk", system-ui, sans-serif'
+
 export function FirstRunDemo() {
   return (
-    <AbsoluteFill style={{ background: palette.bgCanvas }}>
+    <AbsoluteFill
+      style={{ background: palette.bgCanvas, fontFamily: FONT_SANS }}
+    >
       <Sequence
         from={SCENES.cockpit.from}
         durationInFrames={SCENES.cockpit.duration}

@@ -14,7 +14,7 @@
  */
 
 import { AbsoluteFill, Easing, interpolate, useCurrentFrame } from 'remotion'
-import { CockpitFrame } from '../components/CockpitFrame'
+import { BROWSER_CHROME_HEIGHT, CockpitFrame } from '../components/CockpitFrame'
 import { SceneLabel } from '../components/SceneLabel'
 import { palette } from '../palette'
 
@@ -89,7 +89,7 @@ function EndpointCard({
       style={{
         position: 'absolute',
         left: 250,
-        top: 140,
+        top: 140 + BROWSER_CHROME_HEIGHT,
         width: 420,
         borderRadius: 16,
         background: palette.card,

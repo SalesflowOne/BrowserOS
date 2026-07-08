@@ -113,7 +113,7 @@ describe('Cockpit (v2)', () => {
     expect(html).toContain('You watch. Your agent')
     expect(html).toContain('Set up MCP endpoint')
     expect(html).toContain(
-      'https://cdn.browseros.com/artifacts/claw/onboarding-video/v0.1.0/first-run-demo.mp4',
+      'https://cdn.browseros.com/artifacts/claw/onboarding-video/v0.2.0/first-run-demo.mp4',
     )
   })
 })
