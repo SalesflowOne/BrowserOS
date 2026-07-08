@@ -1,4 +1,5 @@
 pub mod abort;
+pub mod alias;
 pub mod apply;
 mod checkout_guard;
 pub mod continue_cmd;
@@ -9,6 +10,7 @@ pub mod init;
 pub mod render;
 pub mod status;
 
+use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::io::{self, Write};
@@ -41,6 +43,7 @@ use crate::store::{self, Store};
 
 GLOBAL FLAGS:
   --store <STORE>  Overrides the config file for store-reading commands.
+  -C, --checkout   Targets a checkout alias or path instead of discovering from cwd.
   --json           Emits a single JSON object and suppresses progress and prompts.
 
 EXAMPLES:
@@ -72,6 +75,15 @@ pub struct Cli {
     /// Emit a single JSON object and disable progress and prompts.
     #[arg(long, global = true)]
     pub json: bool,
+    /// Target a checkout alias or path instead of discovering from cwd.
+    #[arg(
+        id = "checkout_flag",
+        short = 'C',
+        long = "checkout",
+        global = true,
+        value_name = "CHECKOUT"
+    )]
+    pub checkout: Option<String>,
     /// Command to run.
     #[command(subcommand)]
     pub command: Command,
@@ -85,17 +97,19 @@ pub enum Command {
         long_about = "Show checkout base, store rev, applied trailers, and drift.",
         after_long_help = r#"EXAMPLE:
   bpatch status
+  bpatch status ch1
 "#
     )]
-    Status,
+    Status(CheckoutArgs),
     /// Show what apply would touch.
     #[command(
         long_about = "Show what apply would touch, grouped by feature, with a rebuild-scope hint.",
         after_long_help = r#"EXAMPLE:
   bpatch diff
+  bpatch diff ch1
 "#
     )]
-    Diff,
+    Diff(CheckoutArgs),
     /// Converge the checkout to the store.
     #[command(
         long_about = "Optionally fast-forward the store repo with --pull, then converge the checkout to the store. Exit 2 means conflicts are pending; exit 3 means drift or refusal blocked the write.",
@@ -121,6 +135,16 @@ pub enum Command {
 "#
     )]
     Feature(FeatureArgs),
+    /// Manage checkout aliases.
+    #[command(
+        long_about = "Manage checkout aliases in ~/.config/bpatch/config.toml. Aliases let checkout-scoped commands target a Chromium checkout from any directory.",
+        after_long_help = r#"EXAMPLES:
+  bpatch alias add ch1 /Users/shadowfax/ch1-src
+  bpatch alias list
+  bpatch alias remove ch1
+"#
+    )]
+    Alias(alias::AliasArgs),
     /// Write the patch store path to the user config.
     #[command(
         long_about = "Canonicalize a chromium_patches store directory, validate that it contains bpatch metadata, and write it to ~/.config/bpatch/config.toml while preserving other config keys and comments.",
@@ -137,7 +161,7 @@ pub enum Command {
   bpatch abort
 "#
     )]
-    Abort,
+    Abort(CheckoutArgs),
     /// Continue a conflict session.
     #[command(
         long_about = "Use continue --materialize first to write conflict marker files, then resolve markers and run bare continue to finish convergence.",
@@ -148,12 +172,21 @@ pub enum Command {
     Continue(ContinueArgs),
 }
 
+/// Positional checkout selector shared by checkout-scoped commands.
+#[derive(Debug, Args)]
+pub struct CheckoutArgs {
+    /// Checkout alias or path.
+    pub checkout: Option<String>,
+}
+
 /// Apply command flags.
 #[derive(Debug, Args)]
 pub struct ApplyArgs {
     /// Fast-forward the store repository before applying.
     #[arg(long)]
     pub pull: bool,
+    /// Checkout alias or path.
+    pub checkout: Option<String>,
 }
 
 /// Extract command flags.
@@ -223,6 +256,19 @@ pub struct ContinueArgs {
     /// Write conflict marker files instead of finishing convergence.
     #[arg(long)]
     pub materialize: bool,
+    /// Checkout alias or path.
+    pub checkout: Option<String>,
+}
+
+impl Command {
+    fn positional_checkout(&self) -> Option<&str> {
+        match self {
+            Self::Status(args) | Self::Diff(args) | Self::Abort(args) => args.checkout.as_deref(),
+            Self::Apply(args) => args.checkout.as_deref(),
+            Self::Continue(args) => args.checkout.as_deref(),
+            Self::Extract(_) | Self::Feature(_) | Self::Alias(_) | Self::Init(_) => None,
+        }
+    }
 }
 
 /// Init command arguments.
@@ -232,9 +278,11 @@ pub struct InitArgs {
     pub store_dir: Option<PathBuf>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 struct Config {
     store: Option<PathBuf>,
+    #[serde(default)]
+    checkouts: BTreeMap<String, PathBuf>,
 }
 
 /// Runs the parsed CLI and returns the process exit code.
@@ -250,6 +298,14 @@ pub fn run(cli: Cli) -> i32 {
 }
 
 fn run_inner(cli: &Cli) -> Result<i32> {
+    if let Command::Alias(args) = &cli.command {
+        if cli.checkout.is_some() {
+            bail!(
+                "alias commands do not accept -C/--checkout; aliases manage the global checkout map"
+            );
+        }
+        return alias::run(args, cli.json);
+    }
     if let Command::Init(args) = &cli.command {
         let report = init::run(args, &config_path())?;
         write_output(
@@ -260,7 +316,7 @@ fn run_inner(cli: &Cli) -> Result<i32> {
         return Ok(0);
     }
 
-    let checkout = discover_checkout(&env::current_dir()?)?;
+    let checkout = resolve_checkout(cli)?;
     GitAdapter::new(&checkout).preflight()?;
     let store_dir = discover_store(cli.store.as_deref())?;
     if needs_checkout_store_guard(&cli.command) {
@@ -269,7 +325,7 @@ fn run_inner(cli: &Cli) -> Result<i32> {
     let state_ctx = StateContext::new(&checkout, &store_dir);
 
     match &cli.command {
-        Command::Status => {
+        Command::Status(_) => {
             let report = status::run(&state_ctx)?;
             write_output(
                 cli.json,
@@ -278,7 +334,7 @@ fn run_inner(cli: &Cli) -> Result<i32> {
             )?;
             Ok(0)
         }
-        Command::Diff => {
+        Command::Diff(_) => {
             let report = diff::run(&state_ctx)?;
             write_output(
                 cli.json,
@@ -299,8 +355,9 @@ fn run_inner(cli: &Cli) -> Result<i32> {
         }
         Command::Extract(args) => run_extract(cli, args, &checkout, &store_dir),
         Command::Feature(args) => run_feature(cli, args, &state_ctx, &store_dir),
+        Command::Alias(_) => unreachable!("alias dispatches before checkout/store discovery"),
         Command::Init(_) => unreachable!("init dispatches before checkout/store discovery"),
-        Command::Abort => {
+        Command::Abort(_) => {
             let report = abort::run(&state_ctx);
             write_output(
                 cli.json,
@@ -325,6 +382,82 @@ fn run_inner(cli: &Cli) -> Result<i32> {
             )?;
             Ok(report.exit_code())
         }
+    }
+}
+
+/// Resolves `-C` or positional checkout selectors into the checkout used by all checkout verbs.
+fn resolve_checkout(cli: &Cli) -> Result<PathBuf> {
+    match (cli.checkout.as_deref(), cli.command.positional_checkout()) {
+        (None, None) => discover_checkout(&env::current_dir()?),
+        (Some(selector), None) | (None, Some(selector)) => {
+            let config_path = config_path();
+            let config = load_config(&config_path)?;
+            resolve_checkout_selector(selector, config.as_ref())
+        }
+        (Some(flag), Some(positional)) => {
+            let config_path = config_path();
+            let config = load_config(&config_path)?;
+            let flag_checkout = resolve_checkout_selector(flag, config.as_ref())?;
+            let positional_checkout = resolve_checkout_selector(positional, config.as_ref())?;
+            if flag_checkout != positional_checkout {
+                bail!(
+                    "-C/--checkout `{}` and positional checkout `{}` resolve to different checkouts ({} != {})",
+                    flag,
+                    positional,
+                    flag_checkout.display(),
+                    positional_checkout.display()
+                );
+            }
+            Ok(flag_checkout)
+        }
+    }
+}
+
+fn resolve_checkout_selector(selector: &str, config: Option<&Config>) -> Result<PathBuf> {
+    if let Some(path) = config.and_then(|config| config.checkouts.get(selector)) {
+        return canonical_checkout_path(path).with_context(|| {
+            format!(
+                "checkout alias `{}` points to invalid path {}",
+                selector,
+                path.display()
+            )
+        });
+    }
+
+    let path = PathBuf::from(selector);
+    if path.is_dir() {
+        return canonical_checkout_path(&path);
+    }
+
+    bail!(
+        "unknown checkout `{}`; known aliases: {}",
+        selector,
+        format_known_aliases(config)
+    )
+}
+
+fn canonical_checkout_path(path: &Path) -> Result<PathBuf> {
+    let path = path
+        .canonicalize()
+        .with_context(|| format!("resolving {}", path.display()))?;
+    discover_checkout(&path)?
+        .canonicalize()
+        .with_context(|| format!("resolving checkout root from {}", path.display()))
+}
+
+fn format_known_aliases(config: Option<&Config>) -> String {
+    let Some(config) = config else {
+        return "none".to_string();
+    };
+    if config.checkouts.is_empty() {
+        "none".to_string()
+    } else {
+        config
+            .checkouts
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 }
 
@@ -426,7 +559,10 @@ fn extract_policy(args: &ExtractArgs) -> FeatureDecisionPolicy {
 }
 
 fn needs_checkout_store_guard(command: &Command) -> bool {
-    matches!(command, Command::Status | Command::Diff | Command::Apply(_))
+    matches!(
+        command,
+        Command::Status(_) | Command::Diff(_) | Command::Apply(_)
+    )
 }
 
 #[derive(Debug, Error)]
