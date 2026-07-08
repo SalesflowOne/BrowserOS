@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use crate::process::Git;
 
-const MIN_GIT_VERSION: GitVersion = GitVersion::new(2, 38, 0);
+const MIN_GIT_VERSION: GitVersion = GitVersion::new(2, 40, 0);
 
 /// Result type returned by the typed git adapter.
 pub type GitResult<T> = std::result::Result<T, GitError>;
@@ -16,7 +16,7 @@ pub type GitResult<T> = std::result::Result<T, GitError>;
 pub enum GitError {
     /// Git is older than the merge-tree floor required by bpatch.
     #[error(
-        "git {actual} is too old; bpatch requires git >= {required} because it uses `git merge-tree --write-tree`; upgrade git and retry"
+        "git {actual} is too old; bpatch requires git >= {required} because it uses `git merge-tree --write-tree --merge-base`; upgrade git and retry"
     )]
     UnsupportedGitVersion {
         /// Version reported by `git version`.

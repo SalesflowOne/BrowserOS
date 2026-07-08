@@ -129,11 +129,11 @@ fn materializes_two_tree_delta_without_rewriting_unchanged_or_untracked_files() 
 
 #[test]
 fn preflight_rejects_git_before_merge_tree_floor_with_actionable_error() {
-    let err = GitAdapter::preflight_version_output("git version 2.37.9").unwrap_err();
+    let err = GitAdapter::preflight_version_output("git version 2.39.5").unwrap_err();
     let message = err.to_string();
-    assert!(message.contains("git 2.37.9 is too old"));
-    assert!(message.contains("requires git >= 2.38"));
-    assert!(message.contains("merge-tree --write-tree"));
+    assert!(message.contains("git 2.39.5 is too old"));
+    assert!(message.contains("requires git >= 2.40"));
+    assert!(message.contains("merge-tree --write-tree --merge-base"));
     assert!(message.contains("upgrade git"));
 }
 

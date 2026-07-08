@@ -17,6 +17,8 @@ store = "/Users/shadowfax/code/browseros-project/packages/browseros/chromium_pat
 
 `--store <STORE>` overrides the config file for any command.
 
+Requirements: Git 2.40 or newer; base-bump conflict sessions use `git merge-tree --write-tree --merge-base`.
+
 Daily loop:
 
 ```console
@@ -120,7 +122,7 @@ store base pin: 148.0.7204.1 → 149.0.7250.0
 next: bpatch extract --commit   (store repo commit: "chore: repin to 149.0.7250.0")
 ```
 
-Before `continue --materialize`, `bpatch abort` only deletes the session file; the worktree has not been touched. When git plumbing fails during materialization or conflict completion, error messages include the exact `git read-tree`, `git update-index`, or recovery command to run manually.
+Before `continue --materialize`, `bpatch abort` only deletes the session file; the worktree has not been touched. A pending conflict session blocks `bpatch apply`; finish with `bpatch continue` or clear it with `bpatch abort`. When git plumbing fails during materialization or conflict completion, error messages include the exact `git read-tree`, `git update-index`, or recovery command to run manually.
 
 ## Store Layout
 
@@ -163,5 +165,4 @@ Not carried over in v1:
 
 - Renames materialize as delete+add.
 - Delete-kind merge conflicts refuse loudly at materialization.
-- A resolved file containing a bare `=======` column-0 line trips the marker check and refuses loudly.
 - First extract/repin normalizes legacy abbreviated `index` lines per file as content changes touch them; change counts ignore `index` lines.
