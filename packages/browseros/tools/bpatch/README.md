@@ -10,12 +10,13 @@ The tool is built for three operators: a human doing the daily loop, cron applyi
 
 Configure the store once:
 
-```toml
-# ~/.config/bpatch/config.toml
-store = "/Users/shadowfax/code/browseros-project/packages/browseros/chromium_patches"
+```console
+$ bpatch init /Users/shadowfax/code/browseros-project/packages/browseros/chromium_patches
+initialized store /Users/shadowfax/code/browseros-project/packages/browseros/chromium_patches
+config      /Users/shadowfax/.config/bpatch/config.toml
 ```
 
-`--store <STORE>` overrides the config file for any command.
+Run `bpatch init` from inside `chromium_patches/` to use the current directory. `--store <STORE>` overrides the config file for commands that read the store.
 
 Requirements: Git 2.40 or newer; base-bump conflict sessions use `git merge-tree --write-tree --merge-base`.
 
@@ -56,13 +57,14 @@ Global flags:
 
 | Flag | Meaning |
 | --- | --- |
-| `--store <STORE>` | Use this `chromium_patches` directory instead of `~/.config/bpatch/config.toml`. |
+| `--store <STORE>` | Use this `chromium_patches` directory instead of `~/.config/bpatch/config.toml` for store-reading commands. |
 | `--json` | Emit one JSON object, suppress progress and prompts. |
 
 | Verb | Flags | Exit codes | Use |
 | --- | --- | --- | --- |
-| `bpatch status` | global flags | `0`, `1` | Show checkout base, store rev, applied trailers, and drift. |
-| `bpatch diff` | global flags | `0`, `1` | Show what `apply` would touch, grouped by feature, with rebuild-scope hint. |
+| `bpatch init [STORE]` | global flags | `0`, `1` | Write `store = "<abs path>"` to `~/.config/bpatch/config.toml`, preserving other config keys and comments. |
+| `bpatch status` | global flags | `0`, `3`, `1` | Show checkout base, store rev, applied trailers, and drift. |
+| `bpatch diff` | global flags | `0`, `3`, `1` | Show what `apply` would touch, grouped by feature, with rebuild-scope hint. |
 | `bpatch apply` | `--pull`, global flags | `0`, `2`, `3`, `1` | Optionally fast-forward the store repo, then converge the checkout or report conflicts/drift. |
 | `bpatch extract [SPEC]` | `--feature <FEATURE>`, `--commit`, `--repin`, global flags | `0`, `3`, `1` | Extract `<rev>` or `<rev1>..<rev2>` into the store, or repin existing store patches to the checkout base. |
 | `bpatch feature list` | global flags | `0`, `1` | List features, owned patch counts, and last applied sequence numbers. |
@@ -76,12 +78,16 @@ Global flags:
 
 | Code | Meaning |
 | --- | --- |
-| `0` | Converged, applied, extracted, repinned, listed, added, aborted, or completed. |
+| `0` | Initialized, converged, applied, extracted, repinned, listed, added, aborted, or completed. |
 | `2` | Conflicts are pending or conflict files remain unresolved. |
 | `3` | Drift/refusal or `extract` needs a feature decision. |
 | `1` | CLI, git, lock, config, or unexpected error. |
 
 With `--json`, every command emits a single object carrying `result` and `exit`.
+
+## Troubleshooting
+
+If `status`, `diff`, or `apply` says the current path does not look like a Chromium checkout, you are probably running `bpatch` from the BrowserOS repo that contains `chromium_patches`, or from another git repo that is not the Chromium checkout. `cd` into the Chromium checkout that has the store base commit and re-run with the same `--store` path.
 
 ## Cron Recipe
 
