@@ -15,7 +15,6 @@ from ...lib.utils import (
     join_paths,
     IS_WINDOWS,
 )
-from ...lib.notify import get_notifier, COLOR_GREEN
 from ..compile.standard import autoninja_command
 
 
@@ -48,7 +47,7 @@ class MiniInstallerModule(Step):
             raise RuntimeError("Failed to build mini_installer")
 
 
-@step("package_windows", phase="package", platforms=("windows",), notify=True)
+@step("package_windows", phase="package", platforms=("windows",))
 class WindowsPackageModule(Step):
     produces = ["installer", "installer_zip"]
     requires = []
@@ -60,9 +59,15 @@ class WindowsPackageModule(Step):
 
         build_output_dir = join_paths(context.chromium_src, context.out_dir)
         mini_installer_path = build_output_dir / "mini_installer.exe"
+        winsparkle_path = build_output_dir / "WinSparkle.dll"
 
         if not mini_installer_path.exists():
             raise ValidationError(f"mini_installer.exe not found: {mini_installer_path}")
+        if not winsparkle_path.exists():
+            raise ValidationError(
+                f"WinSparkle.dll not found: {winsparkle_path}. "
+                "WinSparkle auto-update won't ship without it."
+            )
 
     def execute(self, context: Context) -> None:
         log_info("\n📦 Creating Windows packages...")
@@ -74,17 +79,6 @@ class WindowsPackageModule(Step):
         context.artifact_registry.add("installer_zip", zip_path)
 
         log_success("Windows packages created successfully")
-
-        notifier = get_notifier()
-        notifier.notify(
-            "📦 Package Created",
-            "Windows packages created successfully",
-            {
-                "Artifacts": f"{installer_path.name}, {zip_path.name}",
-                "Version": context.semantic_version,
-            },
-            color=COLOR_GREEN,
-        )
 
     def _create_installer(self, ctx: Context) -> Path:
         build_output_dir = join_paths(ctx.chromium_src, ctx.out_dir)

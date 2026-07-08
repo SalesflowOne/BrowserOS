@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Tests for copy_resources against a mock chromium checkout."""
 
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -258,12 +259,27 @@ class CopyResourcesTest(unittest.TestCase):
             / "darwin-arm64"
             / "resources"
         )
+        claw_rust_source = (
+            self.root.root
+            / "resources"
+            / "binaries"
+            / "browseros_claw_server_rust"
+            / "darwin-arm64"
+            / "resources"
+        )
         (browseros_source / "bin").mkdir(parents=True)
         (browseros_source / "bin" / "browseros_server").write_text("browseros")
         (claw_source / "bin").mkdir(parents=True)
         (claw_source / "bin" / "browseros-claw-server").write_text("claw")
+        (claw_rust_source / "bin").mkdir(parents=True)
+        (claw_rust_source / "bin" / "browseros-claw-server-rs").write_text(
+            "claw-rust"
+        )
 
-        with patch("bos_build.steps.resources.resources.get_platform", return_value="macos"):
+        with patch(
+            "bos_build.steps.resources.resources.get_platform",
+            return_value="macos",
+        ):
             ctx = make_context(
                 self.chromium,
                 self.root,
@@ -292,10 +308,23 @@ class CopyResourcesTest(unittest.TestCase):
             / "bin"
             / "browseros-claw-server"
         )
+        claw_rust_dest = (
+            self.chromium.src
+            / "chrome"
+            / "browser"
+            / "browseros"
+            / "claw_server_rust"
+            / "resources"
+            / "bin"
+            / "browseros-claw-server-rs"
+        )
         self.assertEqual(browseros_dest.read_text(), "browseros")
-        self.assertEqual(claw_dest.read_text(), "claw")
+        self.assertFalse(claw_dest.exists())
+        self.assertFalse(claw_rust_dest.exists())
 
-    def test_real_config_copies_server_resources_for_browserclaw_product(self):
+    def test_real_config_copies_rust_server_resources_for_browserclaw_by_default(
+        self,
+    ):
         self.root.write_copy_config(self._real_copy_config())
         browseros_source = (
             self.root.root
@@ -313,12 +342,40 @@ class CopyResourcesTest(unittest.TestCase):
             / "darwin-arm64"
             / "resources"
         )
+        claw_rust_source = (
+            self.root.root
+            / "resources"
+            / "binaries"
+            / "browseros_claw_server_rust"
+            / "darwin-arm64"
+            / "resources"
+        )
         (browseros_source / "bin").mkdir(parents=True)
         (browseros_source / "bin" / "browseros_server").write_text("browseros")
         (claw_source / "bin").mkdir(parents=True)
         (claw_source / "bin" / "browseros-claw-server").write_text("claw")
+        (claw_rust_source / "bin").mkdir(parents=True)
+        (claw_rust_source / "bin" / "browseros-claw-server-rs").write_text(
+            "claw-rust"
+        )
+        stale_ts_only_file = (
+            self.chromium.src
+            / "chrome"
+            / "browser"
+            / "browseros"
+            / "claw_server"
+            / "resources"
+            / "bin"
+            / "third_party"
+            / "bun"
+        )
+        stale_ts_only_file.parent.mkdir(parents=True)
+        stale_ts_only_file.write_text("stale")
 
-        with patch("bos_build.steps.resources.resources.get_platform", return_value="macos"):
+        with patch(
+            "bos_build.steps.resources.resources.get_platform",
+            return_value="macos",
+        ):
             ctx = make_context(
                 self.chromium,
                 self.root,
@@ -348,8 +405,91 @@ class CopyResourcesTest(unittest.TestCase):
             / "bin"
             / "browseros-claw-server"
         )
+        claw_rust_dest = (
+            self.chromium.src
+            / "chrome"
+            / "browser"
+            / "browseros"
+            / "claw_server_rust"
+            / "resources"
+            / "bin"
+            / "browseros-claw-server-rs"
+        )
         self.assertEqual(browseros_dest.read_text(), "browseros")
-        self.assertEqual(claw_dest.read_text(), "claw")
+        self.assertEqual(claw_dest.read_text(), "claw-rust")
+        self.assertFalse(claw_rust_dest.exists())
+        self.assertFalse(stale_ts_only_file.exists())
+
+    def test_real_config_keeps_typescript_claw_server_switch_block_commented(
+        self,
+    ):
+        config_path = (
+            Path(__file__).resolve().parents[2] / "config" / "copy_resources.yaml"
+        )
+        text = config_path.read_text()
+        config = self._real_copy_config()
+        active_names = [op["name"] for op in config["copy_operations"]]
+
+        self.assertIn(
+            "# BrowserOS Claw Server resources - switch variants by swapping which block is commented.",
+            text,
+        )
+        self.assertIn(
+            '# - name: "BrowserOS Claw Server Resources - macOS ARM64"',
+            text,
+        )
+        self.assertIn(
+            '#   destination: "chrome/browser/browseros/claw_server/resources"',
+            text,
+        )
+        self.assertNotIn(
+            "BrowserOS Claw Server Resources - macOS ARM64",
+            active_names,
+        )
+        self.assertIn(
+            "BrowserOS Claw Rust Server Resources - macOS ARM64",
+            active_names,
+        )
+
+    def test_real_config_copies_claw_onboard_resources_for_both_products(self):
+        # The downloaded onboarding dist must land in the grit resources dir
+        # for every product, since the onboarding pak builds unconditionally.
+        self.root.write_copy_config(self._real_copy_config())
+        onboard_source = (
+            self.root.root / "resources" / "binaries" / "browseros_claw_onboard" / "resources"
+        )
+        (onboard_source / "icon").mkdir(parents=True)
+        (onboard_source / "index.html").write_text("<html>onboard</html>")
+        (onboard_source / "icon" / "32.png").write_text("icon-bytes")
+
+        onboard_dest = (
+            self.chromium.src / "chrome" / "browser" / "browseros" / "onboarding" / "resources"
+        )
+
+        for product in ("browseros", "browserclaw"):
+            with self.subTest(product=product):
+                if onboard_dest.exists():
+                    shutil.rmtree(onboard_dest)
+
+                with patch(
+                    "bos_build.steps.resources.resources.get_platform",
+                    return_value="macos",
+                ):
+                    ctx = make_context(
+                        self.chromium,
+                        self.root,
+                        architecture="arm64",
+                        build_type="release",
+                        product=product,
+                    )
+                    self.assertTrue(copy_resources_impl(ctx))
+
+                self.assertEqual(
+                    (onboard_dest / "index.html").read_text(), "<html>onboard</html>"
+                )
+                self.assertEqual(
+                    (onboard_dest / "icon" / "32.png").read_text(), "icon-bytes"
+                )
 
     def _real_copy_config(self) -> dict:
         config_path = (

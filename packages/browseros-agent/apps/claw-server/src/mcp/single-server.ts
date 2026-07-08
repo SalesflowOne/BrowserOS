@@ -3,14 +3,14 @@
  * Copyright 2025 BrowserOS
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * v2 single MCP endpoint. Every agent connects to the same public
- * URL (`POST /mcp`); the SDK's stateful Streamable HTTP
- * transport supports one session per transport instance, so we keep
- * a `sessionId -> { server, transport }` map and route each request
- * to its session's transport. Identity is captured on the client's
- * InitializedNotification (by then both `transport.sessionId` and
- * the server's stored `clientInfo` are set) and dropped when the
- * session ends. Tool dispatch reads identity back via
+ * Single MCP endpoint. Every agent connects to the same public URL
+ * (`POST /mcp`); the SDK's stateful Streamable HTTP transport
+ * supports one session per transport instance, so we keep a
+ * `sessionId -> { server, transport }` map and route each request to
+ * its session's transport. Identity is captured on the client's
+ * InitializedNotification (by then both `transport.sessionId` and the
+ * server's stored `clientInfo` are set) and dropped when the session
+ * ends. Tool dispatch reads identity back via
  * `extra.sessionId`, the same id the transport stamps onto the
  * session at handshake.
  */
@@ -34,6 +34,7 @@ import {
 import { closeAgentTabGroupForAgent } from '../services/tab-group-ops'
 import { VERSION } from '../version'
 import { registerBrowserToolsForSingleServer } from './register'
+import { requestSessionNaming } from './session-naming'
 
 const SERVER_NAME = 'browseros-claw-server'
 const SERVER_TITLE = 'BrowserOS'
@@ -77,6 +78,10 @@ function buildSession(): Session {
 
   transport.onerror = (err) => {
     const sessionId = transport.sessionId
+    logger.warn('mcp session transport error', {
+      sessionId: sessionId ?? null,
+      error: err instanceof Error ? err.message : String(err),
+    })
     if (!sessionId) return
     recordSessionEnd({
       sessionId,
@@ -102,9 +107,6 @@ function buildSession(): Session {
         title: clientInfo?.title,
       },
     })
-    // Bump the tab-group tracker's per-agentId ref count so the
-    // close path only deletes the group when the last session for
-    // this agent ends.
     const { agentId, slug } = agentIdentityFromClient(identity)
     tabGroupTracker.incrementSession(agentId)
     const agentLabel =
@@ -121,6 +123,14 @@ function buildSession(): Session {
       clientName: identity.clientName,
       clientVersion: identity.clientVersion,
     })
+    void requestSessionNaming({ server: server.server, sessionId }).catch(
+      (err) => {
+        logger.warn('mcp session naming failed unexpectedly', {
+          sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      },
+    )
     logger.info('cockpit v2 mcp session opened', {
       sessionId,
       clientName: clientInfo?.name ?? '',
@@ -163,8 +173,8 @@ function cleanupSessionState(sessionId: string): void {
       // browser to dispatch to.
       tabGroupTracker.decrementSession(agentId)
     }
-    // Drop the per-agent tabs ledger so the next session for this
-    // agentId starts empty. Symmetric with the tab-group tracker.
+    // Drop this session-scoped ownership bucket. Symmetric with the
+    // tab-group tracker cleanup.
     agentTabs.forgetAgent(agentId)
   }
   sessions.delete(sessionId)
@@ -207,6 +217,11 @@ export function sweepIdleSessions(now: number): string[] {
     if (now - session.lastActivityAt > env.sessionIdleMs) {
       idle.push(sessionId)
     }
+  }
+  // Distinguishes sweeper teardowns from client DELETEs in the log:
+  // the 'session closed' lines that follow this one were idle reaps.
+  if (idle.length > 0) {
+    logger.info('sweeping idle mcp sessions', { count: idle.length })
   }
   for (const sessionId of idle) cleanupSessionState(sessionId)
   return idle
@@ -254,6 +269,12 @@ export async function handleSingleMcpRequest(
     // + transport that the SDK immediately rejects in validateSession
     // (no matching session id), leaving the pair connected and
     // un-tracked: a per-request leak.
+    // Expected after a server restart (every live client's next
+    // request lands here once) — logged because a client stuck in
+    // this state shows up as a run of these lines.
+    logger.warn('rejected request for unknown mcp session', {
+      sessionId: headerSessionId,
+    })
     return new Response(
       JSON.stringify({
         error: 'unknown mcp-session-id',

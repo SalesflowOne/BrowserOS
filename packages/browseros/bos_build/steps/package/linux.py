@@ -21,7 +21,6 @@ from ...lib.utils import (
     get_platform_arch,
     IS_LINUX,
 )
-from ...lib.notify import get_notifier, COLOR_GREEN
 
 # Target-arch packaging metadata. These describe the artifact we're
 # producing, not the build machine. `appimage_arch` is passed to
@@ -92,7 +91,7 @@ def appimage_icon_source(ctx: Context) -> Optional[Path]:
     return None
 
 
-@step("package_linux", phase="package", platforms=("linux",), notify=True)
+@step("package_linux", phase="package", platforms=("linux",))
 class LinuxPackageModule(Step):
     produces = ["appimage", "deb"]
     requires = []
@@ -138,23 +137,6 @@ class LinuxPackageModule(Step):
             log_warning("   Only AppImage created (.deb failed)")
         elif deb_path:
             log_warning("   Only .deb created (AppImage failed)")
-
-        # Send Slack notification
-        notifier = get_notifier()
-        artifacts = []
-        if appimage_path:
-            artifacts.append(appimage_path.name)
-        if deb_path:
-            artifacts.append(deb_path.name)
-        notifier.notify(
-            "📦 Package Created",
-            "Linux packages created successfully",
-            {
-                "Artifacts": ", ".join(artifacts),
-                "Version": ctx.semantic_version,
-            },
-            color=COLOR_GREEN,
-        )
 
     def _package_appimage(self, ctx: Context, package_dir: Path) -> Optional[Path]:
         return package_appimage(ctx, package_dir)
@@ -244,7 +226,11 @@ def copy_browser_files(
 def _server_output_roots(ctx: Context) -> list[str]:
     """Return final server bundle roots for the active product."""
     product = getattr(ctx, "product", None)
-    bundles = server_bundles_for_product(product.id) if product else all_server_bundles()
+    bundles = (
+        server_bundles_for_product(product.id)
+        if product
+        else all_server_bundles()
+    )
     return [bundle.chromium_output_root for bundle in bundles]
 
 
@@ -367,7 +353,9 @@ def download_appimagetool(ctx: Context) -> Optional[Path]:
     arch is communicated via the ARCH env var in create_appimage().
     """
     tool_dir = Path(join_paths(ctx.root_dir, "build", "tools"))
-    tool_dir.mkdir(exist_ok=True)
+    # build/ left the repo in the bos_build refactor (#1499) — on a fresh CI
+    # checkout the parent doesn't exist, so create the whole chain.
+    tool_dir.mkdir(parents=True, exist_ok=True)
 
     tool_filename, url = get_host_appimagetool()
     tool_path = Path(join_paths(tool_dir, tool_filename))

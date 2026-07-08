@@ -4,29 +4,15 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
  * Wires every browser tool from `@browseros/browser-mcp`'s catalogue onto
- * a per-agent MCP server with a permission gate in front. Each
- * dispatch:
+ * a per-agent MCP server. Each dispatch:
  *
- *   1. Maps the tool name to a permission verb in the cockpit's
- *      catalog space.
- *   2. Looks up a domain hint from the agent (real per-page URL
- *      tracking is a future-phase concern; today we use the agent's
- *      first declared site).
- *   3. Calls `permissions.check(agent, verb, domain)` and
- *      short-circuits on `block` / `ask`.
- *   4. Looks up the live BrowserSession; if not yet wired, returns
+ *   1. Applies the hard navigate URL-scheme guard.
+ *   2. Looks up the live BrowserSession; if not yet wired, returns
  *      a structured "session not connected" error so the wire shape
  *      stays honest.
- *   5. Hands off to `executeTool` from `@browseros/browser-mcp`'s tool
+ *   3. Hands off to `executeTool` from `@browseros/browser-mcp`'s tool
  *      framework. That handles arg validation, error formatting,
  *      tab-id metadata, and result composition.
- *
- * Known coarseness: the real catalogue's `act` tool covers every
- * mutation (click/type/fill/press/hover/scroll). We map it onto the
- * cockpit's `input` verb today, which means a site rule keyed on
- * `payments` does NOT clamp an `act({kind:'click'})` on a payment
- * button. Finer-grained classification (per-arg verb extraction) is
- * a follow-up.
  */
 
 import { BROWSER_TOOLS } from '@browseros/browser-mcp/registry'
@@ -39,6 +25,7 @@ import { logger } from '../lib/logger'
 import {
   agentIdentityFromClient,
   type ClientIdentity,
+  identityService,
 } from '../lib/mcp-session'
 import {
   extractPageId,
@@ -51,89 +38,25 @@ import {
   CANCELLATION_REASON,
   dispatchCancellation,
 } from '../services/dispatch-cancellation'
-import { check } from '../services/permissions'
 import { persistScreenshot } from '../services/screenshots'
 import { ensureAgentTabGroup } from '../services/tab-group-ops'
 import { cancellationErrorResult } from './cancellation-result'
 import { asRegister, type ToolResult } from './register-fn'
+import {
+  annotateTabsListWithOwnership,
+  buildOwnershipDeps,
+} from './tabs-ownership'
 
 /**
  * Schemes the cockpit refuses to forward to `navigate`, regardless of
  * what the parent server's tool schema would accept. The real navigate
  * tool's zod input is `z.string().optional()` with no scheme check, so
- * without this guard a `javascript:`, `file:`, or `data:` URL would
- * pass the permission gate and reach the CDP layer. Re-asserts the
- * defense the old per-tool wrapper had before we switched to the real
- * catalogue.
+ * without this guard a `javascript:`, `file:`, or `data:` URL would reach
+ * the CDP layer.
  */
 const NAVIGATE_BLOCKED_SCHEMES = new Set(['javascript:', 'file:', 'data:'])
 
-/**
- * Maps each tool in the real catalogue to a permission verb. Tools
- * that mutate site context (`tabs`, `navigate`, `windows`,
- * `tab_groups`) map to `navigate`; `upload` maps to the catalog's
- * own `upload` verb; everything else maps to `input`, the cockpit's
- * catch-all for "click / type / read / etc.".
- *
- * `act`, `run`, `evaluate`, and `download` are deliberately lumped
- * under `input` despite being the higher-risk tools in the surface:
- * `download` has no dedicated catalog verb yet, and `run` /
- * `evaluate` execute arbitrary JS in page context. A richer
- * classifier (look at the `kind` arg of `act`, block `run` /
- * `evaluate` unless the agent opts in, add a `download` verb) is
- * the follow-up that closes this gap. Dispatches of the
- * arbitrary-script tools are logged for audit until that lands.
- */
-const TOOL_TO_VERB: Record<string, string> = {
-  tabs: 'navigate',
-  navigate: 'navigate',
-  windows: 'navigate',
-  tab_groups: 'navigate',
-  upload: 'upload',
-  snapshot: 'input',
-  diff: 'input',
-  act: 'input',
-  read: 'input',
-  grep: 'input',
-  screenshot: 'input',
-  wait: 'input',
-  pdf: 'input',
-  download: 'input',
-  run: 'input',
-  evaluate: 'input',
-}
-
 const ARBITRARY_SCRIPT_TOOLS = new Set(['run', 'evaluate'])
-
-/**
- * Picks a domain for the permission check. `navigate` carries the
- * target URL in its args, which is the cleanest signal we have until
- * per-page URL tracking ships. Every other tool falls back to the
- * agent's first declared site, or `'*'` so wildcard site rules still
- * fire for agents with an empty `selectedSites`.
- */
-function domainForCall(
-  toolName: string,
-  rawArgs: unknown,
-  agent: StoredAgentProfile,
-): string {
-  if (
-    toolName === 'navigate' &&
-    typeof rawArgs === 'object' &&
-    rawArgs !== null
-  ) {
-    const url = (rawArgs as { url?: unknown }).url
-    if (typeof url === 'string' && url.length > 0) {
-      try {
-        const hostname = new URL(url).hostname
-        if (hostname) return hostname
-      } catch {
-        // fall through to the agent hint
-      }
-    }
-  }
-  return agent.selectedSites[0] ?? '*'
-}
 
 /**
  * Records a successful dispatch into the tab-activity registry. The
@@ -167,7 +90,6 @@ export function registerBrowserTools(
 ): void {
   const register = asRegister(server)
   for (const tool of BROWSER_TOOLS) {
-    const verb = TOOL_TO_VERB[tool.name] ?? 'input'
     register(
       tool.name,
       {
@@ -199,34 +121,6 @@ export function registerBrowserTools(
             }
           }
         }
-        const domain = domainForCall(tool.name, rawArgs, agent)
-        const verdict = await check({
-          agentId: agent.id,
-          verb,
-          domain,
-        })
-        if (verdict.verdict === 'block') {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `blocked by ${verdict.source}: ${tool.name} on ${domain}`,
-              },
-            ],
-            isError: true,
-          } satisfies ToolResult
-        }
-        if (verdict.verdict === 'ask') {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `approval required for ${tool.name} on ${domain}; the cockpit will surface this once run-lifecycle approvals ship`,
-              },
-            ],
-            isError: true,
-          } satisfies ToolResult
-        }
 
         const session = getBrowserSession()
         if (!session) {
@@ -242,16 +136,9 @@ export function registerBrowserTools(
         }
 
         if (ARBITRARY_SCRIPT_TOOLS.has(tool.name)) {
-          // `run` and `evaluate` execute arbitrary JS in the page's
-          // context. They map to the same `input` verb as low-risk
-          // reads today, so an agent with `input: 'Auto'` runs
-          // scripts without confirmation. A dedicated catalog verb
-          // (and a UI surface for it) is the proper fix; this log
-          // keeps the dispatch auditable until that lands.
           logger.warn('cockpit dispatched arbitrary-script tool', {
             tool: tool.name,
             agentId: agent.id,
-            domain,
           })
         }
         const result = await executeTool(tool, rawArgs, {
@@ -298,41 +185,25 @@ function composeAbortSignals(
 }
 
 /**
- * Rewrite a successful `tabs list` result to only include pages the
- * calling agent owns. Both channels are rebuilt from the surviving
- * subset:
- *   - `structuredContent.pages` is filtered.
- *   - `content[0].text` is rebuilt via the tool's `formatPageLine`
- *     shape (`[N] URL (title)` or `[N] URL` when no title). Empty
- *     survivors yield `(no open pages)` which matches the underlying
- *     tool's empty output so codex's LLM interprets it as "no tabs,
- *     open one" and dispatches `tabs new` instead of hijacking.
- *
- * Exported for unit tests; production callers reach it via the
- * dispatch handler.
+ * First text block of a failed dispatch result, capped so a long
+ * tool message cannot bloat the log line. executeTool's error
+ * results carry their human-readable reason here.
  */
-export function filterTabsListToAgent<
-  R extends {
-    content: unknown
-    isError?: boolean
-    structuredContent?: unknown
-  },
->(result: R, owned: ReadonlySet<number>): R {
-  const sc = result.structuredContent as
-    | { pages?: Array<{ page: number; url?: string; title?: string }> }
-    | undefined
-  const allPages = sc?.pages ?? []
-  const surviving = allPages.filter((p) => owned.has(p.page))
-  const lines = surviving.map(
-    (p) => `[${p.page}] ${p.url ?? ''}${p.title ? ` (${p.title})` : ''}`,
-  )
-  const text = lines.length > 0 ? lines.join('\n') : '(no open pages)'
-  return {
-    ...result,
-    isError: false,
-    content: [{ type: 'text', text }],
-    structuredContent: { pages: surviving },
-  } as R
+const DISPATCH_ERROR_TEXT_MAX = 200
+
+function dispatchErrorText(content: unknown): string | null {
+  if (!Array.isArray(content)) return null
+  for (const block of content) {
+    if (
+      block !== null &&
+      typeof block === 'object' &&
+      (block as { type?: unknown }).type === 'text' &&
+      typeof (block as { text?: unknown }).text === 'string'
+    ) {
+      return (block as { text: string }).text.slice(0, DISPATCH_ERROR_TEXT_MAX)
+    }
+  }
+  return null
 }
 
 /**
@@ -370,11 +241,8 @@ function recordSuccessfulDispatchV2(args: {
  * tab-activity registry can attribute calls to specific agents even
  * though every agent shares the same endpoint.
  *
- * v2 deliberately skips the per-agent permission gate: there is no
- * `StoredAgentProfile` to look up. The navigate-scheme guard stays
- * (it is a hard security check on the URL shape, not a per-agent
- * policy). A future "global permissions" surface can grow back into
- * this code path when product needs it.
+ * The navigate-scheme guard stays because it is a hard security check on
+ * the URL shape, not a per-agent policy.
  */
 export function registerBrowserToolsForSingleServer(
   server: McpServer,
@@ -397,6 +265,15 @@ export function registerBrowserToolsForSingleServer(
           if (typeof url === 'string' && url.length > 0) {
             const scheme = url.slice(0, url.indexOf(':') + 1).toLowerCase()
             if (NAVIGATE_BLOCKED_SCHEMES.has(scheme)) {
+              // Rejections before dispatchStart get their own message
+              // (vs 'dispatch failed'): nothing was executed, and an
+              // agent probing javascript:/file:/data: URLs is signal
+              // worth spotting on its own.
+              logger.warn('cockpit v2 tool dispatch rejected', {
+                tool: tool.name,
+                sessionId: extra?.sessionId,
+                reason: 'blocked navigate scheme',
+              })
               return {
                 content: [
                   {
@@ -412,6 +289,14 @@ export function registerBrowserToolsForSingleServer(
 
         const session = getBrowserSession()
         if (!session) {
+          // Every call an agent makes while the cockpit runs without
+          // an attached BrowserOS lands here; without this line the
+          // only trace is the single boot-time bootstrap warn.
+          logger.warn('cockpit v2 tool dispatch rejected', {
+            tool: tool.name,
+            sessionId: extra?.sessionId,
+            reason: 'browser session not connected',
+          })
           return {
             content: [
               {
@@ -502,6 +387,23 @@ export function registerBrowserToolsForSingleServer(
           if (userCancel.signal.aborted) {
             result = cancellationErrorResult(CANCELLATION_REASON)
           } else {
+            // A client-driven abort (notifications/cancelled, harness
+            // timeout) is normal lifecycle, not a server fault; only a
+            // throw with no abort anywhere is a genuine failure.
+            if (extra?.signal?.aborted) {
+              logger.info('cockpit v2 tool dispatch cancelled by client', {
+                tool: tool.name,
+                sessionId: extra?.sessionId,
+                durationMs: Date.now() - dispatchStart,
+              })
+            } else {
+              logger.error('cockpit v2 tool dispatch threw', {
+                tool: tool.name,
+                sessionId: extra?.sessionId,
+                durationMs: Date.now() - dispatchStart,
+                error: err instanceof Error ? err.message : String(err),
+              })
+            }
             throw err
           }
         } finally {
@@ -514,6 +416,18 @@ export function registerBrowserToolsForSingleServer(
           result = cancellationErrorResult(CANCELLATION_REASON)
         }
         const durationMs = Date.now() - dispatchStart
+
+        // Failed dispatches are otherwise invisible server-side: the
+        // audit DB rows land only for successes and operator cancels,
+        // and the isError result rides back to the agent's harness.
+        if (result.isError && !userCancel.signal.aborted) {
+          logger.warn('cockpit v2 tool dispatch failed', {
+            tool: tool.name,
+            sessionId: extra?.sessionId,
+            durationMs,
+            error: dispatchErrorText(result.content),
+          })
+        }
 
         // Record cancelled dispatches in the audit log so the task
         // timeline shows the operator's intervention. The existing
@@ -680,16 +594,19 @@ export function registerBrowserToolsForSingleServer(
                   agentTabs.markClosed(agentId, closedPage)
                 }
               } else if ((args?.action ?? 'list') === 'list') {
-                // Filter the list to only pages this agent owns.
-                // With no owned pages, the surviving text is
-                // `(no open pages)` which mirrors the tool's own
-                // empty output; the LLM interprets it as "I have no
-                // tabs, I need to open one" and calls `tabs new`.
-                const { agentId } = agentIdentityFromClient(identity)
-                result = filterTabsListToAgent(
-                  result,
-                  agentTabs.ownedBy(agentId),
+                // Annotate every open page with an ownership tag and
+                // group the text output into Your tabs / User's tabs
+                // / Other agents' tabs. Every page in the underlying
+                // result survives; the cross-agent page guard above
+                // still hard-rejects a page-targeted dispatch on a
+                // foreign page, so broader visibility does not open
+                // a broader action surface.
+                const deps = buildOwnershipDeps(
+                  identity,
+                  agentTabs,
+                  identityService,
                 )
+                result = annotateTabsListWithOwnership(result, deps)
               }
             }
           } else {

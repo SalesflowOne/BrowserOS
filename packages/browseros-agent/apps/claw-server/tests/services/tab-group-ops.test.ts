@@ -43,8 +43,11 @@ mock.module('@browseros/browser-mcp/tools/framework', () => ({
 
 // IMPORTANT: dynamic import happens AFTER the module mocks above.
 const { tabGroupTracker } = await import('../../src/lib/agent-tab-groups')
-const { ensureAgentTabGroup, closeAgentTabGroupForAgent, focusAgentTabGroup } =
-  await import('../../src/services/tab-group-ops')
+const {
+  applyAgentTabGroupTitle,
+  ensureAgentTabGroup,
+  closeAgentTabGroupForAgent,
+} = await import('../../src/services/tab-group-ops')
 
 const fakeSession = {} as never
 
@@ -235,48 +238,90 @@ describe('closeAgentTabGroupForAgent', () => {
   })
 })
 
-describe('focusAgentTabGroup', () => {
+describe('applyAgentTabGroupTitle', () => {
   beforeEach(() => {
     calls.length = 0
     queued.length = 0
     tabGroupTracker.reset()
   })
-
-  it('returns ok=false when the tracker has no group for the agent', async () => {
-    const r = await focusAgentTabGroup({
-      agentId: 'unknown',
-      session: fakeSession,
-    })
-    expect(r.ok).toBe(false)
+  afterEach(() => {
+    queued.length = 0
   })
 
-  it('expands the group and activates the window for a tracked agent', async () => {
-    queue(ok({ group: { groupId: 'G1', windowId: 42 } }), ok(), ok(), ok())
+  it('sets the title before first group create', async () => {
+    tabGroupTracker.incrementSession('claude-code-abc123')
+    await applyAgentTabGroupTitle({
+      agentId: 'claude-code-abc123',
+      title: 'claude/invoice-processing',
+      session: null,
+    })
+    queue(ok({ group: { groupId: 'G1', windowId: 42 } }), ok())
     await ensureAgentTabGroup({
-      agentId: 'a',
-      slug: 'a',
+      agentId: 'claude-code-abc123',
+      slug: 'claude-code',
       pageId: 1,
       session: fakeSession,
     })
-    const r = await focusAgentTabGroup({
-      agentId: 'a',
+    expect(calls[0]?.args).toMatchObject({
+      action: 'create',
+      pages: [1],
+      title: 'claude/invoice-processing',
+    })
+  })
+
+  it('updates an already-created group title', async () => {
+    queue(ok({ group: { groupId: 'G1', windowId: 42 } }), ok())
+    await ensureAgentTabGroup({
+      agentId: 'cursor-abc123',
+      slug: 'cursor',
+      pageId: 1,
       session: fakeSession,
     })
-    expect(r.ok).toBe(true)
-    expect(r.groupId).toBe('G1')
-    expect(r.windowId).toBe(42)
-    const expand = calls.find(
-      (c) =>
-        (c.args as { action?: string }).action === 'update' &&
-        (c.args as { collapsed?: boolean }).collapsed === false,
-    )
-    expect(expand).toBeDefined()
-    const activate = calls.find(
-      (c) =>
-        c.toolName === 'windows' &&
-        (c.args as { action?: string }).action === 'activate',
-    )
-    expect(activate).toBeDefined()
-    expect((activate?.args as { windowId?: number }).windowId).toBe(42)
+    calls.length = 0
+    queue(ok())
+    await applyAgentTabGroupTitle({
+      agentId: 'cursor-abc123',
+      title: 'cursor/linkedin-jobs',
+      session: fakeSession,
+    })
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.args).toMatchObject({
+      action: 'update',
+      groupId: 'G1',
+      title: 'cursor/linkedin-jobs',
+    })
+  })
+
+  it('resolves without dispatch when no tracker record exists', async () => {
+    await applyAgentTabGroupTitle({
+      agentId: 'missing',
+      title: 'claude/invoice-processing',
+      session: fakeSession,
+    })
+    expect(calls).toEqual([])
+  })
+
+  it('resolves when title update returns an error', async () => {
+    queue(ok({ group: { groupId: 'G1', windowId: 42 } }), ok())
+    await ensureAgentTabGroup({
+      agentId: 'claude-code-abc123',
+      slug: 'claude-code',
+      pageId: 1,
+      session: fakeSession,
+    })
+    calls.length = 0
+    queue(err('update failed'))
+    await expect(
+      applyAgentTabGroupTitle({
+        agentId: 'claude-code-abc123',
+        title: 'claude/invoice-processing',
+        session: fakeSession,
+      }),
+    ).resolves.toBeUndefined()
+    expect(calls[0]?.args).toMatchObject({
+      action: 'update',
+      groupId: 'G1',
+      title: 'claude/invoice-processing',
+    })
   })
 })

@@ -49,12 +49,6 @@ export const KIND_STYLE: Record<ReplayKind, KindStyle> = {
     tileFgClass: 'text-ink-2',
     noteClass: 'bg-bg-sunken text-ink-3',
   },
-  approval: {
-    dotClass: 'bg-accent',
-    tileBgClass: 'bg-accent-tint',
-    tileFgClass: 'text-accent-ink',
-    noteClass: 'bg-accent-tint text-accent-ink',
-  },
   block: {
     dotClass: 'bg-red',
     tileBgClass: 'bg-red-tint',

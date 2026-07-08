@@ -82,6 +82,7 @@ export class Application {
         executionDir: this.config.executionDir,
         resourcesDir: this.config.resourcesDir,
         aiSdkDevtoolsEnabled: this.config.aiSdkDevtoolsEnabled,
+        onShutdown: () => this.stop('shutdown-endpoint'),
       })
     } catch (error) {
       this.handleStartupError('HTTP server', this.config.serverPort, error)
@@ -133,7 +134,7 @@ export class Application {
       `HTTP server listening on http://127.0.0.1:${this.config.serverPort}`,
     )
     logger.info(
-      `Health endpoint: http://127.0.0.1:${this.config.serverPort}/health`,
+      `Health endpoint: http://127.0.0.1:${this.config.serverPort}/system/health`,
     )
 
     this.logStartupSummary()

@@ -188,9 +188,11 @@ jobs:
           if [ "${{ steps.test.outputs.exit_code }}" = "0" ]; then
             echo "### :white_check_mark: ${{ matrix.suite }} suite passed" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "### :x: ${{ matrix.suite }} suite failed (exit code ${{ steps.test.outputs.exit_code }})" >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "See the uploaded \`junit-${{ matrix.suite }}\` artifact for details." >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### :x: ${{ matrix.suite }} suite failed (exit code ${{ steps.test.outputs.exit_code }})"
+              echo ""
+              echo "See the uploaded \`junit-${{ matrix.suite }}\` artifact for details."
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
 

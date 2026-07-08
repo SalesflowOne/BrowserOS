@@ -13,12 +13,24 @@ function render(): string {
 }
 
 describe('ReadyStep', () => {
-  it('renders the Open BrowserOS CTA', () => {
-    expect(render()).toContain('Open BrowserOS')
+  it('confirms imported logins before pointing to MCP setup', () => {
+    const html = render()
+
+    expect(html).toContain('Logins')
+    expect(html).toContain('imported')
+    expect(html).toContain('One step left.')
+    expect(html).toContain('Open the MCP page in BrowserClaw')
+    expect(html).toContain('Claude Code, Cursor, Codex')
+    expect(html).toContain('You watch, approve, and audit.')
   })
 
-  it('renders the first two starter prompts from the fixture', () => {
+  it('renders the MCP setup CTA', () => {
+    expect(render()).toContain('Connect your AI')
+  })
+
+  it('frames starter prompts as post-connection examples', () => {
     const html = render()
+    expect(html).toContain('Once connected, try one of these.')
     expect(html).toContain(STARTER_PROMPTS[0])
     expect(html).toContain(STARTER_PROMPTS[1])
   })

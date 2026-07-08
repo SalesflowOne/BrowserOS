@@ -81,6 +81,9 @@ class Context:
     # Per-invocation --gn-arg overrides; configure appends them last in
     # args.gn (GN last-write-wins). Never persisted to profiles.
     extra_gn_args: tuple[str, ...] = ()
+    # Nightly-only opt-in: build in-repo bundled extensions from this checkout
+    # instead of using their CDN-pinned CRX entries.
+    bundle_local_extensions: bool = False
 
     # Third party pins
     SPARKLE_VERSION: str = "2.7.0"

@@ -178,6 +178,7 @@ packages/*/dist
 
 # Build output directory
 /build/
+target/
 
 # Compiled binaries
 browseros-server
@@ -196,6 +197,9 @@ tmp/
 # CI artifacts
 .ci/
 test-results/
+
+# Bun compile temp artifacts (dropped by bun build --compile test runs)
+.*.bun-build
 
 # Coding agent artifacts
 .agent/

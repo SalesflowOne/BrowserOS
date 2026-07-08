@@ -5,6 +5,7 @@ Every invocation scrubs CHROMIUM_SRC/ARCH from the environment, so a
 passing projection test proves the path never needs a chromium checkout.
 """
 
+import multiprocessing
 import os
 import re
 import tempfile
@@ -16,6 +17,7 @@ from typer.testing import CliRunner
 
 from bos_build.browseros import app
 from bos_build.cli.build import _resolve_preset
+from bos_build.core.checkout_lock import ChromiumCheckoutLock
 from bos_build.core.planner import Switches, plan
 from bos_build.lib.testing import MockChromium
 from bos_build.lib.utils import get_platform, get_platform_arch
@@ -46,6 +48,16 @@ def scrubbed_env(*extra: str):
     drop = {"CHROMIUM_SRC", "ARCH", *extra}
     clean = {k: v for k, v in os.environ.items() if k not in drop}
     return mock.patch.dict(os.environ, clean, clear=True)
+
+
+def _hold_checkout_lock(chromium_src: str, ready, release) -> None:
+    with ChromiumCheckoutLock(
+        Path(chromium_src),
+        product="browserclaw",
+        command=("test-holder",),
+    ):
+        ready.set()
+        release.wait(15)
 
 
 def plan_lines(output: str):
@@ -92,9 +104,7 @@ class ShowPlanPresetTest(_ProfileMixin):
 
     def test_from_reflected(self):
         with scrubbed_env():
-            result = invoke(
-                "--preset", "release", "--from", "configure", "--show-plan"
-            )
+            result = invoke("--preset", "release", "--from", "configure", "--show-plan")
         self.assertEqual(result.exit_code, 0, combined(result))
         self.assertEqual(plan_lines(result.output)[0], "configure")
 
@@ -105,6 +115,13 @@ class ShowPlanPresetTest(_ProfileMixin):
         self.assertEqual(result.exit_code, 0, combined(result))
         self.assertIn("x64 (", result.output)
         self.assertIn("arm64 (", result.output)
+
+    def test_bundle_local_extensions_switch_reflected(self):
+        path = self._profile("preset: release\nbundle_local_extensions: true\n")
+        with scrubbed_env():
+            result = invoke("--profile", str(path), "--show-plan")
+        self.assertEqual(result.exit_code, 0, combined(result))
+        self.assertIn("bundle_local_extensions=True", result.output)
 
     def test_profile_skip_unions_with_cli_skip(self):
         path = self._profile("preset: release\nskip: [upload]\n")
@@ -154,7 +171,9 @@ class EmptyPlanTest(unittest.TestCase):
 
     def test_all_steps_skipped_fails_before_chromium(self):
         with scrubbed_env():
-            result = invoke("--preset", "debug", "--skip", ",".join(self._host_debug_plan()))
+            result = invoke(
+                "--preset", "debug", "--skip", ",".join(self._host_debug_plan())
+            )
         self.assertNotEqual(result.exit_code, 0)
         self.assertIn("empty", combined(result).lower())
 
@@ -205,6 +224,36 @@ class ModeGuardTest(unittest.TestCase):
             result = invoke("--modules", "clean", "--arch", "bogus", "--show-plan")
         self.assertNotEqual(result.exit_code, 0)
         self.assertIn("Invalid architecture", combined(result))
+
+
+class CheckoutLockCliTest(unittest.TestCase):
+    def test_build_fails_fast_when_checkout_is_locked(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            m = MockChromium(Path(tmp))
+            ctx = multiprocessing.get_context("spawn")
+            ready = ctx.Event()
+            release = ctx.Event()
+            proc = ctx.Process(
+                target=_hold_checkout_lock,
+                args=(str(m.src), ready, release),
+            )
+            proc.start()
+            try:
+                self.assertTrue(ready.wait(5), f"lock holder exited: {proc.exitcode}")
+                with scrubbed_env():
+                    result = invoke("--modules", "clean", "--chromium-src", str(m.src))
+                self.assertNotEqual(result.exit_code, 0)
+                output = plain_output(result)
+                self.assertIn("Chromium checkout is already locked", output)
+                self.assertIn("product=browserclaw", output)
+                self.assertIn("--lock-wait", output)
+            finally:
+                release.set()
+                proc.join(5)
+                if proc.is_alive():
+                    proc.kill()
+                    proc.join(5)
+            self.assertEqual(proc.exitcode, 0)
 
 
 class ModulesProfileCliTest(_ProfileMixin):
@@ -322,7 +371,11 @@ class GnArgOptionTest(_ProfileMixin):
     def test_direct_show_plan_lists_overrides(self):
         with scrubbed_env():
             result = invoke(
-                "--modules", "clean,compile", "--gn-arg", "symbol_level=2", "--show-plan"
+                "--modules",
+                "clean,compile",
+                "--gn-arg",
+                "symbol_level=2",
+                "--show-plan",
             )
         self.assertEqual(result.exit_code, 0, combined(result))
         self.assertIn("GN arg overrides: symbol_level=2", result.output)
@@ -371,6 +424,19 @@ class GnArgPlumbingTest(_ProfileMixin):
         self.assertTrue(runs)
         for ctx, _steps in runs:
             self.assertEqual(ctx.extra_gn_args, ("symbol_level=2",))
+
+    def test_preset_build_runs_carry_bundle_local_extensions(self):
+        profile_path = self._profile("preset: release\nbundle_local_extensions: true\n")
+        with tempfile.TemporaryDirectory() as tmp:
+            m = MockChromium(Path(tmp))
+            with scrubbed_env():
+                projection = _resolve_preset(
+                    **self._preset_kwargs(profile=profile_path, chromium_src=m.src)
+                )
+                runs = projection.build_runs()
+        self.assertTrue(runs)
+        for ctx, _steps in runs:
+            self.assertTrue(ctx.bundle_local_extensions)
 
     def test_modules_profile_build_runs_carry_extra_gn_args(self):
         profile_path = self._profile("modules: [clean]\n")

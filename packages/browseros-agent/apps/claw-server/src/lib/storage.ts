@@ -3,29 +3,22 @@
  * Copyright 2025 BrowserOS
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * File-backed JSON storage under the claw-server root. Every read and
+ * File-backed JSON storage under the BrowserClaw state root. Every read and
  * write goes through a zod schema so on-disk shapes can't drift
  * silently. Writes are atomic via a `<name>.tmp` -> rename swap so a
  * crash mid-write leaves either the prior contents or nothing at all,
  * never a half-written file.
  *
  * The relative path argument is always evaluated against
- * `getClawServerDir()`; callers cannot reach outside the claw-server
+ * `getClawServerDir()`; callers cannot reach outside the BrowserClaw state
  * root. Absolute paths or `..` segments throw `StorageInvalidPathError`
  * so a stray join doesn't accidentally escape.
  */
 
-import {
-  mkdir,
-  readdir,
-  readFile,
-  rename,
-  rm,
-  writeFile,
-} from 'node:fs/promises'
+import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, normalize, sep } from 'node:path'
 import type { ZodType } from 'zod'
-import { resolveClawServerPath } from './browseros-dir'
+import { resolveClawServerPath } from './browserclaw-dir'
 
 export class StorageNotFoundError extends Error {
   readonly relPath: string
@@ -48,7 +41,9 @@ export class StorageCorruptError extends Error {
 export class StorageInvalidPathError extends Error {
   readonly relPath: string
   constructor(relPath: string) {
-    super(`storage: relative path escapes the claw-server root: ${relPath}`)
+    super(
+      `storage: relative path escapes the BrowserClaw state root: ${relPath}`,
+    )
     this.name = 'StorageInvalidPathError'
     this.relPath = relPath
   }
@@ -111,6 +106,30 @@ export async function readJson<T>(
   return result.data
 }
 
+/**
+ * Schema-less read used by migrations that need to peek at fields
+ * before deciding whether the file is still valid under the current
+ * schema. Throws `StorageNotFoundError` for missing files and
+ * `StorageCorruptError` for JSON parse failures; schema-level
+ * mismatches are the caller's problem.
+ */
+export async function readJsonRaw(relPath: string): Promise<unknown> {
+  guardRelativePath(relPath)
+  const abs = resolveClawServerPath(relPath)
+  let raw: string
+  try {
+    raw = await readFile(abs, 'utf8')
+  } catch (err) {
+    if (isFsError(err, 'ENOENT')) throw new StorageNotFoundError(relPath)
+    throw err
+  }
+  try {
+    return JSON.parse(raw)
+  } catch (err) {
+    throw new StorageCorruptError(relPath, err)
+  }
+}
+
 export async function writeJson<T>(
   relPath: string,
   value: T,
@@ -125,17 +144,6 @@ export async function writeJson<T>(
   const tmp = `${abs}.tmp`
   await writeFile(tmp, JSON.stringify(parseResult.data, null, 2), 'utf8')
   await rename(tmp, abs)
-}
-
-export async function removeFile(relPath: string): Promise<boolean> {
-  guardRelativePath(relPath)
-  try {
-    await rm(resolveClawServerPath(relPath))
-    return true
-  } catch (err) {
-    if (isFsError(err, 'ENOENT')) return false
-    throw err
-  }
 }
 
 /**
@@ -158,17 +166,6 @@ export async function listFiles(
       .map((entry) => entry.name)
   } catch (err) {
     if (isFsError(err, 'ENOENT')) return []
-    throw err
-  }
-}
-
-export async function fileExists(relPath: string): Promise<boolean> {
-  guardRelativePath(relPath)
-  try {
-    await readFile(resolveClawServerPath(relPath), 'utf8')
-    return true
-  } catch (err) {
-    if (isFsError(err, 'ENOENT')) return false
     throw err
   }
 }

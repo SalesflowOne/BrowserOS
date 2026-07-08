@@ -26,7 +26,6 @@ from ...lib.utils import (
     "sign_windows",
     phase="sign",
     platforms=("windows",),
-    notify=True,
     env=(
         "CODE_SIGN_TOOL_PATH",
         "ESIGNER_USERNAME",
@@ -79,9 +78,7 @@ class WindowsSignModule(Step):
         env = ctx.env
         binaries_to_sign_first = [build_output_dir / "chrome.exe"]
         binaries_to_sign_first.extend(
-            get_existing_browseros_server_binary_paths(
-                build_output_dir, ctx.product.id
-            )
+            get_existing_browseros_server_binary_paths(build_output_dir, ctx.product.id)
         )
         missing = get_missing_required_browseros_server_binary_paths(
             build_output_dir, ctx.product.id
@@ -124,14 +121,16 @@ class WindowsSignModule(Step):
 
 
 def get_browseros_server_binary_paths(
-    build_output_dir: Path, product_id: str | None = None
+    build_output_dir: Path,
+    product_id: str | None = None,
 ) -> List[Path]:
     """Return absolute paths to bundled server binaries for signing."""
     return expected_windows_bundle_binary_paths(build_output_dir, product_id)
 
 
 def get_existing_browseros_server_binary_paths(
-    build_output_dir: Path, product_id: str | None = None
+    build_output_dir: Path,
+    product_id: str | None = None,
 ) -> List[Path]:
     """Return bundled server binary paths that exist in a build output dir."""
     return [
@@ -142,11 +141,16 @@ def get_existing_browseros_server_binary_paths(
 
 
 def get_missing_required_browseros_server_binary_paths(
-    build_output_dir: Path, product_id: str | None = None
+    build_output_dir: Path,
+    product_id: str | None = None,
 ) -> List[Path]:
     """Return missing bundled server binaries that should already be packaged."""
     missing: List[Path] = []
-    bundles = server_bundles_for_product(product_id) if product_id else all_server_bundles()
+    bundles = (
+        server_bundles_for_product(product_id)
+        if product_id
+        else all_server_bundles()
+    )
     for bundle in bundles:
         bundle_root = build_output_dir / bundle.windows_bundle_resources_root
         should_exist = (

@@ -101,6 +101,19 @@ export function selectableItemsForSource(
   ]
 }
 
+export function sanitizeImportSelection(
+  source: BrowserOSImportSource,
+  items: readonly BrowserOSImportItem[],
+): BrowserOSImportItem[] {
+  const selectedItems = new Set(items)
+  const emittedItems = new Set<BrowserOSImportItem>()
+  return source.supportedItems.filter((item) => {
+    if (!selectedItems.has(item) || emittedItems.has(item)) return false
+    emittedItems.add(item)
+    return true
+  })
+}
+
 export function selectedSourceById(
   sources: readonly BrowserOSImportSource[],
   sourceId: string,
@@ -108,14 +121,38 @@ export function selectedSourceById(
   return sources.find((source) => source.id === sourceId)
 }
 
+export interface ImportSourceSelectionChange {
+  selectedSourceId: string
+  selectedItems: BrowserOSImportItem[]
+}
+
+export function importSourceSelectionChangeFor(
+  sources: readonly BrowserOSImportSource[],
+  currentSourceId: string,
+): ImportSourceSelectionChange | null {
+  if (sources.length === 0) {
+    return { selectedSourceId: '', selectedItems: [] }
+  }
+  if (selectedSourceById(sources, currentSourceId)) return null
+  const nextSource = sources[0]
+  return {
+    selectedSourceId: nextSource.id,
+    selectedItems: selectableItemsForSource(nextSource),
+  }
+}
+
 export function startImportRequestFor(
   source: BrowserOSImportSource,
+  items?: readonly BrowserOSImportItem[],
 ): BrowserOSStartImportRequest | null {
-  const items = selectableItemsForSource(source)
-  if (items.length === 0) return null
+  const importItems =
+    items === undefined
+      ? selectableItemsForSource(source)
+      : sanitizeImportSelection(source, items)
+  if (importItems.length === 0) return null
   return {
     sourceId: source.id,
-    items,
+    items: importItems,
   }
 }
 
@@ -126,13 +163,13 @@ export function completedImportItemCount(
 }
 
 export function importProgressTotal(
-  source: BrowserOSImportSource,
+  selectedItemCount: number,
   progress: BrowserOSImportProgress | undefined,
 ): number {
-  return progress?.totalItems ?? selectableItemsForSource(source).length
+  return progress?.totalItems ?? selectedItemCount
 }
 
 export const STARTER_PROMPTS: readonly string[] = [
-  'Find me a coffee shop within walking distance and save it to my Maps.',
-  'Apply for the SF visa for me, you have my passport scan in iCloud.',
+  'Book me the cheapest morning flight from SFO to NYC next Friday.',
+  'Open the pull requests assigned to me on GitHub and summarize each.',
 ]

@@ -2,18 +2,27 @@
  * @license
  * Copyright 2025 BrowserOS
  * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Choke-point relink for a managed MCP server. Every claw-server
+ * write path (Connect button, profile install, profile reconcile,
+ * boot URL migration) funnels through here so the transport rule
+ * lives in one place. On failure, restores the previous link so a
+ * partial write does not orphan the entry.
+ *
+ * Since agent-mcp-manager 0.0.4 the library emits the Claude Code
+ * `type: "http"` transport tag natively at the catalog layer, so
+ * the post-write fixup that used to live here retired.
  */
 
 import type {
   AgentId,
-  LinkServerResult,
-  McpManager,
-  McpServerLink,
+  BoundApi,
+  LinkPlanSummary,
   McpServerSpec,
 } from 'agent-mcp-manager'
 
 interface RelinkManagedServerOptions {
-  mgr: McpManager
+  mgr: BoundApi
   serverName: string
   agent: AgentId
   spec: McpServerSpec
@@ -27,35 +36,20 @@ export async function relinkManagedServer({
   agent,
   spec,
   allowOverwrite,
-}: RelinkManagedServerOptions): Promise<LinkServerResult> {
-  const existingLink = await findExistingLink(mgr, serverName, agent)
-  const previousSpec = existingLink
-    ? await findExistingSpec(mgr, serverName)
-    : null
-
-  await mgr.add({ name: serverName, spec })
+}: RelinkManagedServerOptions): Promise<LinkPlanSummary> {
+  const previousSpec = await findExistingSpec(mgr, serverName)
   try {
-    if (existingLink) {
-      await mgr.unlink({
-        serverName,
-        agent,
-        configPath: existingLink.configPath,
-      })
-    }
     return await mgr.link({
-      serverName,
+      server: { name: serverName, spec },
       agent,
-      ...(existingLink ? { configPath: existingLink.configPath } : {}),
       ...(allowOverwrite ? { allowOverwrite } : {}),
     })
   } catch (err) {
-    if (existingLink && previousSpec) {
+    if (previousSpec) {
       try {
-        await mgr.add({ name: serverName, spec: previousSpec })
         await mgr.link({
-          serverName,
+          server: { name: serverName, spec: previousSpec },
           agent,
-          configPath: existingLink.configPath,
           ...(allowOverwrite ? { allowOverwrite } : {}),
         })
       } catch (restoreErr) {
@@ -71,19 +65,10 @@ export async function relinkManagedServer({
   }
 }
 
-async function findExistingLink(
-  mgr: McpManager,
-  serverName: string,
-  agent: AgentId,
-): Promise<McpServerLink | null> {
-  const links = await mgr.listLinks({ serverNames: [serverName] })
-  return links.find((link) => link.agent === agent) ?? null
-}
-
 async function findExistingSpec(
-  mgr: McpManager,
+  mgr: BoundApi,
   serverName: string,
 ): Promise<McpServerSpec | null> {
-  const servers = await mgr.listServers()
+  const servers = await mgr.list()
   return servers.find((server) => server.name === serverName)?.spec ?? null
 }

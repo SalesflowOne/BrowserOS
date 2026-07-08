@@ -19,7 +19,7 @@ MCP server and AI agent loop powering BrowserOS browser automation. This is the 
 │                                                                      │
 │   /mcp ─────── MCP tool endpoints (53+ tools)                       │
 │   /chat ────── Agent streaming (AI SDK)                              │
-│   /health ─── Health check                                           │
+│   /system/health ─ Health check                                      │
 │                                                                      │
 │   ┌─────────────────────────────────────────────────────────────┐   │
 │   │  Agent Loop                                                  │   │

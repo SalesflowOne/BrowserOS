@@ -41,14 +41,6 @@ const TAB_GROUPS_TOOL: ToolDefinition = (() => {
   return t
 })()
 
-const WINDOWS_TOOL: ToolDefinition = (() => {
-  const t = BROWSER_TOOLS.find((tool) => tool.name === 'windows')
-  if (!t) {
-    throw new Error('windows tool not found in BROWSER_TOOLS')
-  }
-  return t
-})()
-
 interface EnsureInput {
   agentId: string
   slug: string
@@ -57,15 +49,16 @@ interface EnsureInput {
   signal?: AbortSignal
 }
 
-interface FocusInput {
-  agentId: string
-  session: BrowserSession
-  signal?: AbortSignal
-}
-
 interface CloseInput {
   agentId: string
   session: BrowserSession
+}
+
+interface ApplyTitleInput {
+  agentId: string
+  title: string
+  session: BrowserSession | null
+  signal?: AbortSignal
 }
 
 /** In-flight create promises keyed by agentId. See file comment. */
@@ -206,6 +199,44 @@ export async function ensureAgentTabGroup(input: EnsureInput): Promise<void> {
   }
 }
 
+/** Stores and, when possible, applies a display title to an agent tab group. */
+export async function applyAgentTabGroupTitle(
+  input: ApplyTitleInput,
+): Promise<void> {
+  tabGroupTracker.setTitle(input.agentId, input.title)
+  try {
+    await inflight.get(input.agentId)
+  } catch (err) {
+    logger.warn('agent tab group create finished before title apply', {
+      agentId: input.agentId,
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
+
+  const record = tabGroupTracker.getByAgentId(input.agentId)
+  if (!record?.groupId || !input.session) return
+
+  try {
+    const result = await executeTool(
+      TAB_GROUPS_TOOL,
+      { action: 'update', groupId: record.groupId, title: input.title },
+      { session: input.session, signal: input.signal },
+    )
+    if (result.isError) {
+      logger.warn('agent tab group title update failed', {
+        agentId: input.agentId,
+        groupId: record.groupId,
+        error: extractFirstText(result),
+      })
+    }
+  } catch (err) {
+    logger.warn('agent tab group title update threw', {
+      agentId: input.agentId,
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
+}
+
 /**
  * Called from the transport's `onsessionclosed`. Decrements the ref
  * count; only the final session for a given agentId closes the group
@@ -239,61 +270,5 @@ export async function closeAgentTabGroupForAgent(
       agentId: input.agentId,
       error: err instanceof Error ? err.message : String(err),
     })
-  }
-}
-
-/**
- * Called by the focus route. Expands the agent's group (in case it
- * was collapsed) and activates the window the group lives in so
- * BrowserOS surfaces the live run for the user.
- */
-export async function focusAgentTabGroup(input: FocusInput): Promise<{
-  ok: boolean
-  groupId?: string
-  windowId?: number
-  reason?: string
-}> {
-  const record = tabGroupTracker.getByAgentId(input.agentId)
-  if (!record?.groupId) {
-    return { ok: false, reason: 'no group for this agent' }
-  }
-  try {
-    const expand = await executeTool(
-      TAB_GROUPS_TOOL,
-      { action: 'update', groupId: record.groupId, collapsed: false },
-      { session: input.session, signal: input.signal },
-    )
-    if (expand.isError) {
-      return { ok: false, reason: extractFirstText(expand) }
-    }
-    if (typeof record.windowId === 'number') {
-      const activate = await executeTool(
-        WINDOWS_TOOL,
-        {
-          action: 'activate',
-          windowId: record.windowId,
-          activate: true,
-        },
-        { session: input.session, signal: input.signal },
-      )
-      if (activate.isError) {
-        logger.warn('windows activate failed during focus', {
-          agentId: input.agentId,
-          windowId: record.windowId,
-          error: extractFirstText(activate),
-        })
-        // The expand succeeded, so focus is partially honoured.
-      }
-    }
-    return {
-      ok: true,
-      groupId: record.groupId,
-      windowId: record.windowId ?? undefined,
-    }
-  } catch (err) {
-    return {
-      ok: false,
-      reason: err instanceof Error ? err.message : String(err),
-    }
   }
 }

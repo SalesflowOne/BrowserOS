@@ -16,7 +16,6 @@ from ...lib.utils import (
     IS_WINDOWS,
     IS_MACOS,
 )
-from ...lib.notify import get_notifier, COLOR_GREEN
 
 from ...lib.r2 import (
     BOTO3_AVAILABLE,
@@ -36,7 +35,7 @@ def _get_platform() -> str:
         return "linux"
 
 
-@step("upload", phase="upload", notify=True)
+@step("upload", phase="upload")
 class UploadModule(Step):
     """Upload build artifacts to Cloudflare R2"""
 
@@ -194,6 +193,25 @@ def _get_artifact_key(filename: str, platform: str) -> str:
     return Path(filename).stem
 
 
+def _product_artifact_filename_prefix(ctx: Context) -> str:
+    """Return the exact filename prefix for this product/version's artifacts."""
+    return f"{ctx.product.artifact_prefix}_v{ctx.get_semantic_version()}_"
+
+
+def _filter_product_artifacts(ctx: Context, artifacts: List[Path]) -> List[Path]:
+    expected_prefix = _product_artifact_filename_prefix(ctx)
+    filtered = [
+        artifact for artifact in artifacts if artifact.name.startswith(expected_prefix)
+    ]
+    skipped = [artifact.name for artifact in artifacts if artifact not in filtered]
+    if skipped:
+        log_warning(
+            "Ignoring artifact(s) that do not belong to "
+            f"{ctx.product.id} v{ctx.get_semantic_version()}: {', '.join(skipped)}"
+        )
+    return filtered
+
+
 def detect_artifacts(ctx: Context) -> List[Path]:
     """Detect artifacts in dist directory based on platform
 
@@ -215,7 +233,7 @@ def detect_artifacts(ctx: Context) -> List[Path]:
         artifacts.extend(dist_dir.glob("*.AppImage"))
         artifacts.extend(dist_dir.glob("*.deb"))
 
-    return sorted(artifacts)
+    return sorted(_filter_product_artifacts(ctx, artifacts))
 
 
 def upload_release_artifacts(
@@ -301,19 +319,10 @@ def upload_release_artifacts(
         log_info(f"  Sparkle version: {release_data.get('sparkle_version', 'N/A')}")
     log_info(f"  Artifacts: {list(release_data['artifacts'].keys())}")
 
-    notifier = get_notifier()
-    artifact_urls = [
-        f"{a['filename']}: {a['url']}" for a in release_data["artifacts"].values()
+    release_links = [
+        (artifact["filename"], artifact["url"])
+        for artifact in release_data["artifacts"].values()
     ]
-    notifier.notify(
-        "Upload Complete",
-        f"Uploaded {len(artifacts)} artifact(s) to R2",
-        {
-            "Version": release_data["version"],
-            "Platform": platform,
-            "Artifacts": "\n".join(artifact_urls),
-        },
-        color=COLOR_GREEN,
-    )
+    ctx.artifact_registry.add("release_links", release_links)
 
     return True, release_data

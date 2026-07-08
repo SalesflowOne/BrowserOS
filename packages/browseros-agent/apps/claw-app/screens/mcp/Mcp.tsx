@@ -1,5 +1,9 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
+import {
+  type Harness,
+  isUserFacingHarness,
+} from '@/components/harness/harness.types'
 import { EditorialEmpty } from '@/components/ui/EditorialEmpty'
 import {
   useBrowserosConnections,
@@ -7,37 +11,8 @@ import {
   useDisconnectBrowseros,
 } from '@/modules/api/connections.hooks'
 import { resolveCanonicalMcpEndpointUrl } from '@/modules/api/mcp-endpoint'
-import {
-  type Harness,
-  RETIRED_HARNESSES,
-} from '@/screens/new-agent/new-agent.schemas'
 import { ConnectionRow } from './ConnectionRow'
 import { HeroCard } from './HeroCard'
-
-/**
- * Editorial MCP install board. Compressed hero with a single dark-
- * ink endpoint strip; hairline-separated Connected-agents list below.
- * Three groups of harnesses are hidden at the render layer; the
- * underlying `useBrowserosConnections` data source is untouched:
- *
- *   - `RETIRED_HARNESSES` (currently Claude Desktop): stdio-only host
- *     configs whose recommended `npx mcp-remote` bridge requires
- *     Node on the user's machine, which BrowserOS cannot guarantee.
- *     Mirrors the new-agent picker's `SELECTABLE_HARNESSES` filter.
- *   - Hermes / OpenClaw: BrowserOS-internal harnesses that read as
- *     Built-in and do not need a user-facing Connect flow.
- *   - Gemini CLI: dropped per operator direction.
- *
- * Live MCP-session state (who is connected right now) is surfaced on
- * the cockpit's running grid, not here; this page is the install
- * board.
- */
-const HIDDEN_HARNESSES: readonly Harness[] = [
-  ...RETIRED_HARNESSES,
-  'Hermes',
-  'OpenClaw',
-  'Gemini CLI',
-]
 
 export function Mcp() {
   const [url, setUrl] = useState<string | null>(null)
@@ -61,7 +36,7 @@ export function Mcp() {
 
   const visibleRows = useMemo(() => {
     const list = connections.data?.connections ?? []
-    return list.filter((c) => !HIDDEN_HARNESSES.includes(c.harness))
+    return list.filter((c) => isUserFacingHarness(c.harness))
   }, [connections.data])
 
   const connectedCount = visibleRows.filter((c) => c.installed).length

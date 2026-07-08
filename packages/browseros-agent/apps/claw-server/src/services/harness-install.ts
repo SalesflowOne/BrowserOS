@@ -3,27 +3,18 @@
  * Copyright 2025 BrowserOS
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * Wires a cockpit agent profile into the user's chosen harness's MCP
- * config file via `agent-mcp-manager`. Each cockpit profile becomes
- * one entry in the harness's config, keyed by the profile's slug,
- * pointing at the canonical `http://127.0.0.1:9200/mcp` endpoint.
- *
- * `installForAgent` runs on POST /agents (right after the profile
- * file is written). `uninstallForAgent` runs on DELETE /agents/:id
- * (right before the profile file is removed). Both are best-effort
- * from the caller's point of view: an install failure does not
- * prevent the profile from being created, and an uninstall failure
- * does not prevent the profile from being deleted. The HTTP response
- * carries the outcome so the UI can surface it.
- *
- * Harness mapping is documented in HARNESS_TO_AGENT_ID below; two
- * harnesses (Hermes, OpenClaw) are BrowserOS-internal and do not
- * have a third-party config to write, so they short-circuit as a
- * no-op success.
+ * Wires a stored cockpit agent profile into the user's chosen harness
+ * MCP config via `agent-mcp-manager`. Install and uninstall are
+ * best-effort from profile persistence: failed harness writes return
+ * an outcome instead of rolling back the profile mutation.
  */
 
 import type { AgentId } from 'agent-mcp-manager'
-import { AgentNotSupportedError, ForeignEntryError } from 'agent-mcp-manager'
+import {
+  AgentNotSupportedError,
+  ForeignEntryError,
+  resolveAgentMcpConfigPath,
+} from 'agent-mcp-manager'
 import { logger } from '../lib/logger'
 import { getMcpManager } from '../lib/mcp-manager'
 import type { Harness, StoredAgentProfile } from '../routes/agents/schemas'
@@ -31,67 +22,49 @@ import { relinkManagedServer } from './mcp-relink'
 import { specFor } from './spec-for'
 
 export interface InstallOutcome {
-  /** True iff the harness config was written successfully (or no-op for internal harnesses). */
   installed: boolean
-  /**
-   * Single-line human-readable message. Always present so the UI can
-   * surface the same string for success and failure.
-   */
   message: string
-  /** Filled when `installed` is true and the library wrote to a real file. */
   agent?: AgentId
   configPath?: string
 }
 
-/**
- * Map the wizard's harness label to the upstream library's agent id.
- * `null` means "no third-party config to write" (BrowserOS-internal
- * harness); the install short-circuits as a successful no-op.
- *
- * If a mapping is wrong, change it here and every install/uninstall
- * path picks up the new target.
- */
-export const HARNESS_TO_AGENT_ID: Record<Harness, AgentId | null> = {
+/** Maps stored harness labels to the upstream agent-mcp-manager id. */
+export const HARNESS_TO_AGENT_ID: Record<Harness, AgentId> = {
   'Claude Code': 'claude-code',
-  'Claude Desktop': 'claude-desktop',
+  Codex: 'codex',
   Cursor: 'cursor',
+  OpenCode: 'opencode',
+  Antigravity: 'antigravity',
   'VS Code': 'vscode',
   Zed: 'zed',
-  Codex: 'codex',
-  'Gemini CLI': 'gemini',
-  Hermes: null,
-  OpenClaw: null,
 }
 
 export async function installForAgent(
   profile: Pick<StoredAgentProfile, 'slug' | 'mcpUrl' | 'harness'>,
 ): Promise<InstallOutcome> {
   const agentId = HARNESS_TO_AGENT_ID[profile.harness]
-  if (agentId === null) {
-    return {
-      installed: true,
-      message: `${profile.harness} runs inside BrowserOS; no harness config to write.`,
-    }
-  }
   const mgr = getMcpManager()
   const spec = specFor(agentId, profile.mcpUrl)
   try {
-    const link = await relinkManagedServer({
+    await relinkManagedServer({
       mgr,
       serverName: profile.slug,
       agent: agentId,
       spec,
     })
+    const configPath = await resolveAgentMcpConfigPath(agentId, 'system').catch(
+      () => undefined,
+    )
     logger.info('installed cockpit agent into harness', {
       slug: profile.slug,
       agent: agentId,
-      configPath: link.configPath,
+      configPath,
     })
     return {
       installed: true,
       message: `Endpoint registered with ${profile.harness}.`,
       agent: agentId,
-      configPath: link.configPath,
+      configPath,
     }
   } catch (err) {
     return failure(err, profile.harness)
@@ -102,18 +75,18 @@ export async function uninstallForAgent(
   profile: Pick<StoredAgentProfile, 'slug' | 'harness'>,
 ): Promise<InstallOutcome> {
   const agentId = HARNESS_TO_AGENT_ID[profile.harness]
-  if (agentId === null) {
-    return {
-      installed: false,
-      message: `${profile.harness} runs inside BrowserOS; nothing to uninstall.`,
-    }
-  }
   const mgr = getMcpManager()
   try {
-    await mgr.unlink({ serverName: profile.slug, agent: agentId })
-    // Also drop the manifest entry so a future agent reusing the
-    // slug isn't blocked by a lingering record.
-    await mgr.remove({ serverName: profile.slug, unlinkFirst: false })
+    // `disconnect` is the 0.0.4 primitive that unlinks the agent AND
+    // drops the manifest entry only when no other agents remain
+    // linked to it. Replaces the pre-0.0.4 three-step unlink + list
+    // + conditional remove dance, which had a race window where two
+    // concurrent uninstalls could orphan each other's link records.
+    await mgr.disconnect({
+      serverName: profile.slug,
+      agent: agentId,
+      removeIfLast: true,
+    })
     logger.info('uninstalled cockpit agent from harness', {
       slug: profile.slug,
       agent: agentId,
@@ -126,36 +99,6 @@ export async function uninstallForAgent(
   } catch (err) {
     return failure(err, profile.harness)
   }
-}
-
-/**
- * Re-sync the harness MCP config after a profile mutation that
- * rotated the slug, swapped the harness, or changed the URL. Slug
- * and harness changes install the new entry before removing the old
- * one; URL-only changes rewrite the same entry with rollback.
- *
- * No-op when harness, slug, and URL all stayed the same. Returns the
- * install + uninstall outcomes so callers can log them (today) or
- * surface them in the response (later).
- */
-export async function reconcileHarnessLink(input: {
-  before: Pick<StoredAgentProfile, 'slug' | 'mcpUrl' | 'harness'>
-  after: Pick<StoredAgentProfile, 'slug' | 'mcpUrl' | 'harness'>
-}): Promise<{
-  install: InstallOutcome | null
-  uninstall: InstallOutcome | null
-}> {
-  const { before, after } = input
-  const harnessChanged = before.harness !== after.harness
-  const slugChanged = before.slug !== after.slug
-  const urlChanged = before.mcpUrl !== after.mcpUrl
-  if (!harnessChanged && !slugChanged && !urlChanged) {
-    return { install: null, uninstall: null }
-  }
-  const install = await installForAgent(after)
-  const uninstall =
-    harnessChanged || slugChanged ? await uninstallForAgent(before) : null
-  return { install, uninstall }
 }
 
 function failure(err: unknown, harness: Harness): InstallOutcome {
