@@ -26,7 +26,7 @@ use crate::engine::apply::ApplyOptions;
 use crate::engine::extract::{ExtractContext, ExtractSpec, FeatureDecisionPolicy};
 use crate::engine::state::StateContext;
 use crate::git::GitAdapter;
-use crate::store::Store;
+use crate::store::{self, Store};
 
 /// Top-level bpatch command-line interface.
 #[derive(Debug, Parser)]
@@ -126,9 +126,9 @@ pub enum Command {
 "#
     )]
     Extract(ExtractArgs),
-    /// Manage features.yaml entries.
+    /// Manage .features.yaml entries.
     #[command(
-        long_about = "Manage features.yaml entries. List the feature inventory or append a new feature block with an owned path.",
+        long_about = "Manage .features.yaml entries. List the feature inventory or append a new feature block with an owned path.",
         after_long_help = r#"EXAMPLES:
   bpatch feature list
   bpatch feature add wallet --path chrome/browser/browseros/wallet/
@@ -147,7 +147,7 @@ pub enum Command {
     Alias(alias::AliasArgs),
     /// Write the patch store path to the user config.
     #[command(
-        long_about = "Canonicalize a chromium_patches store directory, validate that it contains store.yaml, and write it to ~/.config/bpatch/config.toml while preserving other config keys and comments.",
+        long_about = "Canonicalize a chromium_patches store directory, validate that it contains bpatch metadata, and write it to ~/.config/bpatch/config.toml while preserving other config keys and comments.",
         after_long_help = r#"EXAMPLES:
   bpatch init /abs/path/to/chromium_patches
   cd /abs/path/to/chromium_patches && bpatch init
@@ -229,7 +229,7 @@ pub enum FeatureCommand {
     List,
     /// Add a feature path block.
     #[command(
-        long_about = "Append a new feature block to features.yaml. Provide a feature name and an exact path or directory prefix with --path.",
+        long_about = "Append a new feature block to .features.yaml. Provide a feature name and an exact path or directory prefix with --path.",
         after_long_help = r#"EXAMPLE:
   bpatch feature add wallet --path chrome/browser/browseros/wallet/ --description "Wallet UI"
 "#
@@ -274,7 +274,7 @@ impl Command {
 /// Init command arguments.
 #[derive(Debug, Args)]
 pub struct InitArgs {
-    /// chromium_patches store directory. Defaults to cwd when cwd contains store.yaml.
+    /// chromium_patches store directory. Defaults to cwd when cwd has bpatch metadata.
     pub store_dir: Option<PathBuf>,
 }
 
@@ -611,13 +611,13 @@ fn discover_store(flag: Option<&Path>) -> Result<PathBuf> {
             .ok_or_else(|| anyhow!("{}", missing_store_message(&config_path)))?
     };
 
-    if !store.join("store.yaml").exists() {
-        bail!(
-            "patch store {} is missing store.yaml; pass --store <dir>, run `bpatch init <dir>`, or set `store = \"/abs/path\"` in {}",
+    store::validate_metadata_layout(&store).with_context(|| {
+        format!(
+            "invalid patch store {}; pass --store <dir>, run `bpatch init <dir>`, or set `store = \"/abs/path\"` in {}",
             store.display(),
             config_path.display()
-        );
-    }
+        )
+    })?;
     Ok(store)
 }
 
