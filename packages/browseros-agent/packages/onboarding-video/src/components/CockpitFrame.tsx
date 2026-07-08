@@ -15,6 +15,7 @@
  */
 
 import type { CSSProperties } from 'react'
+import { fonts } from '../fonts'
 import { palette } from '../palette'
 
 interface CockpitFrameProps {
@@ -394,7 +395,7 @@ function MainColumn({
             fontSize: 10,
             color: palette.ink3,
             letterSpacing: 2,
-            fontFamily: '"JetBrains Mono", monospace',
+            fontFamily: fonts.mono,
           }}
         >
           COCKPIT
@@ -444,7 +445,7 @@ function TableHeader() {
         fontSize: 10,
         color: palette.ink3,
         letterSpacing: 1.6,
-        fontFamily: '"JetBrains Mono", monospace',
+        fontFamily: fonts.mono,
         borderBottom: `1px solid ${palette.border2}`,
         paddingBottom: 8,
       }}

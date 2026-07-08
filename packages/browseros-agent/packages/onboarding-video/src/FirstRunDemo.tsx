@@ -10,6 +10,7 @@
  */
 
 import { AbsoluteFill, Sequence } from 'remotion'
+import { fonts } from './fonts'
 import { palette } from './palette'
 import { SceneActivity } from './scenes/SceneActivity'
 import { SceneCockpit } from './scenes/SceneCockpit'
@@ -19,15 +20,10 @@ import { ScenePan } from './scenes/ScenePan'
 import { ScenePrompt } from './scenes/ScenePrompt'
 import { SCENES } from './timing'
 
-// Mirrors claw-app's --font-sans. Explicit because the headless
-// render browser falls back to a serif when no family is set.
-const FONT_SANS =
-  '"Schibsted Grotesk Variable", "Schibsted Grotesk", system-ui, sans-serif'
-
 export function FirstRunDemo() {
   return (
     <AbsoluteFill
-      style={{ background: palette.bgCanvas, fontFamily: FONT_SANS }}
+      style={{ background: palette.bgCanvas, fontFamily: fonts.sans }}
     >
       <Sequence
         from={SCENES.cockpit.from}

@@ -27,6 +27,8 @@ describe('MOCK_BROWSEROS_IMPORT_SOURCES fixture', () => {
   it('uses the Chromium contract source shape', () => {
     for (const source of MOCK_BROWSEROS_IMPORT_SOURCES) {
       expect(source.displayName.length).toBeGreaterThan(0)
+      expect(typeof source.accountName).toBe('string')
+      expect(typeof source.isManaged).toBe('boolean')
       expect(source.recommendedItems.length).toBeGreaterThan(0)
       expect(source.supportedItems).toContain(source.recommendedItems[0])
     }

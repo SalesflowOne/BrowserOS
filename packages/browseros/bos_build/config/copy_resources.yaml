@@ -192,7 +192,6 @@ copy_operations:
     destination: "chrome/browser/browseros/claw_server/resources"
     clear_destination: true
     type: "directory"
-    product: "browserclaw"
     os: ["macos"]
     arch: ["arm64"]
 
@@ -204,7 +203,6 @@ copy_operations:
   #     - from: "bin/browseros-claw-server-rs"
   #       to: "bin/browseros-claw-server"
   #   type: "directory"
-  #   product: "browserclaw"
   #   os: ["macos"]
   #   arch: ["arm64"]
 
@@ -213,7 +211,6 @@ copy_operations:
     destination: "chrome/browser/browseros/claw_server/resources"
     clear_destination: true
     type: "directory"
-    product: "browserclaw"
     os: ["macos"]
     arch: ["x64"]
 
@@ -225,7 +222,6 @@ copy_operations:
   #     - from: "bin/browseros-claw-server-rs"
   #       to: "bin/browseros-claw-server"
   #   type: "directory"
-  #   product: "browserclaw"
   #   os: ["macos"]
   #   arch: ["x64"]
 
@@ -234,7 +230,6 @@ copy_operations:
     destination: "chrome/browser/browseros/claw_server/resources"
     clear_destination: true
     type: "directory"
-    product: "browserclaw"
     os: ["linux"]
     arch: ["arm64"]
 
@@ -246,7 +241,6 @@ copy_operations:
   #     - from: "bin/browseros-claw-server-rs"
   #       to: "bin/browseros-claw-server"
   #   type: "directory"
-  #   product: "browserclaw"
   #   os: ["linux"]
   #   arch: ["arm64"]
 
@@ -255,7 +249,6 @@ copy_operations:
     destination: "chrome/browser/browseros/claw_server/resources"
     clear_destination: true
     type: "directory"
-    product: "browserclaw"
     os: ["linux"]
     arch: ["x64"]
 
@@ -267,7 +260,6 @@ copy_operations:
   #     - from: "bin/browseros-claw-server-rs"
   #       to: "bin/browseros-claw-server"
   #   type: "directory"
-  #   product: "browserclaw"
   #   os: ["linux"]
   #   arch: ["x64"]
 
@@ -276,7 +268,6 @@ copy_operations:
     destination: "chrome/browser/browseros/claw_server/resources"
     clear_destination: true
     type: "directory"
-    product: "browserclaw"
     os: ["windows"]
     arch: ["x64"]
 
@@ -288,7 +279,6 @@ copy_operations:
   #     - from: "bin/browseros-claw-server-rs.exe"
   #       to: "bin/browseros-claw-server.exe"
   #   type: "directory"
-  #   product: "browserclaw"
   #   os: ["windows"]
   #   arch: ["x64"]
 
