@@ -32,6 +32,12 @@ function dispatch(
   }
 }
 
+function expectDefined<T>(value: T | undefined): T {
+  expect(value).toBeDefined()
+  if (value === undefined) throw new Error('Expected value to be defined')
+  return value
+}
+
 describe('groupDispatchesByTab', () => {
   it('returns an empty array for zero dispatches', () => {
     expect(groupDispatchesByTab([], [])).toEqual([])
@@ -41,11 +47,12 @@ describe('groupDispatchesByTab', () => {
     const rows = [dispatch(1, null), dispatch(2, null), dispatch(3, null)]
     const groups = groupDispatchesByTab(rows, [])
     expect(groups).toHaveLength(1)
-    expect(groups[0]!.id).toBe('session')
-    expect(groups[0]!.label).toBe('Session')
-    expect(groups[0]!.pageId).toBeNull()
-    expect(groups[0]!.dispatchCount).toBe(3)
-    expect(groups[0]!.dispatches.map((d) => d.id)).toEqual([1, 2, 3])
+    const session = expectDefined(groups[0])
+    expect(session.id).toBe('session')
+    expect(session.label).toBe('Session')
+    expect(session.pageId).toBeNull()
+    expect(session.dispatchCount).toBe(3)
+    expect(session.dispatches.map((d) => d.id)).toEqual([1, 2, 3])
   })
 
   it('single pageId + zero null dispatches yields Session + one page tab', () => {
@@ -55,10 +62,12 @@ describe('groupDispatchesByTab', () => {
     ]
     const groups = groupDispatchesByTab(rows, [])
     expect(groups).toHaveLength(2)
-    expect(groups[0]!.id).toBe('session')
-    expect(groups[0]!.dispatchCount).toBe(2)
-    expect(groups[1]!.id).toBe('page-7')
-    expect(groups[1]!.label).toBe('Tab 1')
+    const session = expectDefined(groups[0])
+    const page = expectDefined(groups[1])
+    expect(session.id).toBe('session')
+    expect(session.dispatchCount).toBe(2)
+    expect(page.id).toBe('page-7')
+    expect(page.label).toBe('Tab 1')
   })
 
   it('page tabs are labelled sequentially by first-appearance order (Tab 1, Tab 2, ...) not by raw pageId', () => {
@@ -86,7 +95,7 @@ describe('groupDispatchesByTab', () => {
       dispatch(5, 3),
     ]
     const groups = groupDispatchesByTab(rows, [])
-    const session = groups.find((g) => g.id === 'session')!
+    const session = expectDefined(groups.find((g) => g.id === 'session'))
     expect(session.dispatchCount).toBe(5)
     expect(session.dispatches.map((d) => d.id)).toEqual([1, 2, 3, 4, 5])
   })
@@ -100,7 +109,7 @@ describe('groupDispatchesByTab', () => {
       dispatch(5, 7),
     ]
     const groups = groupDispatchesByTab(rows, [1, 3, 5])
-    const session = groups.find((g) => g.id === 'session')!
+    const session = expectDefined(groups.find((g) => g.id === 'session'))
     expect(session.screenshotDispatchIds).toEqual([1, 3, 5])
   })
 
@@ -113,9 +122,8 @@ describe('groupDispatchesByTab', () => {
       dispatch(5, null),
     ]
     const groups = groupDispatchesByTab(rows, [])
-    expect(
-      groups.find((g) => g.id === 'page-5')!.dispatches.map((d) => d.id),
-    ).toEqual([1, 3, 4])
+    const page = expectDefined(groups.find((g) => g.id === 'page-5'))
+    expect(page.dispatches.map((d) => d.id)).toEqual([1, 3, 4])
   })
 
   it('per-page displayUrl uses the LAST non-null url observed in that group', () => {
@@ -125,14 +133,18 @@ describe('groupDispatchesByTab', () => {
       dispatch(3, 7, { url: 'https://latest.example/', title: 'Latest' }),
       dispatch(4, 7, { url: null, title: null }),
     ]
-    const g = groupDispatchesByTab(rows, []).find((x) => x.id === 'page-7')!
+    const g = expectDefined(
+      groupDispatchesByTab(rows, []).find((x) => x.id === 'page-7'),
+    )
     expect(g.displayUrl).toBe('https://latest.example/')
     expect(g.displayTitle).toBe('Latest')
   })
 
   it('per-page displayUrl is null when every url in the group is null', () => {
     const rows = [dispatch(1, 9), dispatch(2, 9)]
-    const g = groupDispatchesByTab(rows, []).find((x) => x.id === 'page-9')!
+    const g = expectDefined(
+      groupDispatchesByTab(rows, []).find((x) => x.id === 'page-9'),
+    )
     expect(g.displayUrl).toBeNull()
     expect(g.displayTitle).toBeNull()
   })
@@ -149,7 +161,9 @@ describe('groupDispatchesByTab', () => {
       dispatch(2, 7, { url: 'https://new.example/', title: null }),
       dispatch(3, 7, { url: 'https://new.example/', title: 'New title' }),
     ]
-    const g = groupDispatchesByTab(rows, []).find((x) => x.id === 'page-7')!
+    const g = expectDefined(
+      groupDispatchesByTab(rows, []).find((x) => x.id === 'page-7'),
+    )
     expect(g.displayUrl).toBe('https://new.example/')
     expect(g.displayTitle).toBe('New title')
   })
@@ -161,7 +175,9 @@ describe('groupDispatchesByTab', () => {
       dispatch(1, 3, { url: null, title: 'Only title' }),
       dispatch(2, 3, { url: 'https://only-url.example/', title: null }),
     ]
-    const g = groupDispatchesByTab(rows, []).find((x) => x.id === 'page-3')!
+    const g = expectDefined(
+      groupDispatchesByTab(rows, []).find((x) => x.id === 'page-3'),
+    )
     expect(g.displayUrl).toBe('https://only-url.example/')
     expect(g.displayTitle).toBe('Only title')
   })
@@ -174,14 +190,11 @@ describe('groupDispatchesByTab', () => {
       dispatch(4, 7),
       dispatch(5, 7),
     ]
-    // Assume screenshots exist for ids 1, 3, 5 (mixed groups).
     const groups = groupDispatchesByTab(rows, [1, 3, 5])
-    expect(
-      groups.find((g) => g.id === 'page-3')!.screenshotDispatchIds,
-    ).toEqual([3])
-    expect(
-      groups.find((g) => g.id === 'page-7')!.screenshotDispatchIds,
-    ).toEqual([5])
+    const page3 = expectDefined(groups.find((g) => g.id === 'page-3'))
+    const page7 = expectDefined(groups.find((g) => g.id === 'page-7'))
+    expect(page3.screenshotDispatchIds).toEqual([3])
+    expect(page7.screenshotDispatchIds).toEqual([5])
   })
 })
 

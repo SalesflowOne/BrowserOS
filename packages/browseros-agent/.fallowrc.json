@@ -42,6 +42,7 @@
     "**/.output/**",
     "**/coverage/**",
     "**/tmp/**",
+    ".scripts/**",
     "apps/app/schema/**",
     "apps/cli/**",
     "apps/app/assets/**",
