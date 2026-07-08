@@ -4,6 +4,7 @@ pub mod continue_cmd;
 pub mod diff;
 pub mod extract;
 pub mod feature;
+pub mod init;
 pub mod render;
 pub mod status;
 
@@ -51,6 +52,8 @@ pub enum Command {
     Extract(ExtractArgs),
     /// Manage features.yaml entries.
     Feature(FeatureArgs),
+    /// Write the patch store path to the user config.
+    Init(InitArgs),
     /// Abort a conflict session.
     Abort,
     /// Continue a conflict session.
@@ -122,6 +125,13 @@ pub struct ContinueArgs {
     pub materialize: bool,
 }
 
+/// Init command arguments.
+#[derive(Debug, Args)]
+pub struct InitArgs {
+    /// chromium_patches store directory. Defaults to cwd when cwd contains store.yaml.
+    pub store_dir: Option<PathBuf>,
+}
+
 #[derive(Debug, Deserialize)]
 struct Config {
     store: Option<PathBuf>,
@@ -139,6 +149,16 @@ pub fn run(cli: Cli) -> i32 {
 }
 
 fn run_inner(cli: &Cli) -> Result<i32> {
+    if let Command::Init(args) = &cli.command {
+        let report = init::run(args, &config_path())?;
+        write_output(
+            cli.json,
+            &init::render_json(&report)?,
+            &init::render_human(&report),
+        )?;
+        return Ok(0);
+    }
+
     let checkout = discover_checkout(&env::current_dir()?)?;
     GitAdapter::new(&checkout).preflight()?;
     let store_dir = discover_store(cli.store.as_deref())?;
@@ -175,6 +195,7 @@ fn run_inner(cli: &Cli) -> Result<i32> {
         }
         Command::Extract(args) => run_extract(cli, args, &checkout, &store_dir),
         Command::Feature(args) => run_feature(cli, args, &state_ctx, &store_dir),
+        Command::Init(_) => unreachable!("init dispatches before checkout/store discovery"),
         Command::Abort => {
             let report = abort::run(&state_ctx);
             write_output(
@@ -318,22 +339,16 @@ fn discover_store(flag: Option<&Path>) -> Result<PathBuf> {
         store.to_path_buf()
     } else {
         let Some(config) = load_config(&config_path)? else {
-            bail!(
-                "missing patch store; pass --store <dir> or set `store = \"/abs/path\"` in {}",
-                config_path.display()
-            );
+            bail!("{}", missing_store_message(&config_path));
         };
-        config.store.ok_or_else(|| {
-            anyhow!(
-                "missing patch store; pass --store <dir> or set `store = \"/abs/path\"` in {}",
-                config_path.display()
-            )
-        })?
+        config
+            .store
+            .ok_or_else(|| anyhow!("{}", missing_store_message(&config_path)))?
     };
 
     if !store.join("store.yaml").exists() {
         bail!(
-            "patch store {} is missing store.yaml; pass --store <dir> or set `store = \"/abs/path\"` in {}",
+            "patch store {} is missing store.yaml; pass --store <dir>, run `bpatch init <dir>`, or set `store = \"/abs/path\"` in {}",
             store.display(),
             config_path.display()
         );
@@ -356,6 +371,13 @@ fn config_path() -> PathBuf {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".config/bpatch/config.toml")
+}
+
+fn missing_store_message(config_path: &Path) -> String {
+    format!(
+        "missing patch store; pass --store <dir>, run `bpatch init <dir>`, or set `store = \"/abs/path\"` in {}",
+        config_path.display()
+    )
 }
 
 fn store_has_feature(store_dir: &Path, feature: &str) -> Result<bool> {
