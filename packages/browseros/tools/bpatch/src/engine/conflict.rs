@@ -5,7 +5,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 
-use crate::engine::apply::{AuthorCommitsInput, AuthoredCommit, author_feature_commits};
+use crate::engine::apply::{
+    AuthorCommitsInput, AuthoredCommit, author_feature_commits, finalize_head,
+};
 use crate::engine::progress::ProgressEvent;
 use crate::engine::state::StateContext;
 use crate::git::GitAdapter;
@@ -221,22 +223,10 @@ pub fn continue_session(
     let store = Store::load(&ctx.store_dir)?;
     let resolved = resolved_blobs(&git, &ctx.checkout, &session)?;
     let final_tree = final_tree_with_resolutions(&git, &session, &resolved)?;
-    update_real_index_with_resolutions(git.process(), &resolved)?;
-    let old_prime = git.process().run_str(&["write-tree"])?;
-
-    let clean_delta = git.diff_tree_name_status(&old_prime, &final_tree)?;
-    progress(ProgressEvent::Start {
-        phase: "materialize",
-        total: Some(clean_delta.len()),
-    });
-    git.materialize_tree_delta(&old_prime, &final_tree)?;
-    progress(ProgressEvent::End {
-        phase: "materialize",
-    });
 
     let new_base_tree = git.tree_id(&session.new_base)?;
     let delta = git.diff_tree_name_status(&new_base_tree, &final_tree)?;
-    let commits = author_feature_commits(
+    let chain = author_feature_commits(
         AuthorCommitsInput {
             checkout: &ctx.checkout,
             store: &store,
@@ -249,13 +239,39 @@ pub fn continue_session(
         },
         progress,
     )?;
+
+    update_real_index_with_resolutions(git.process(), &resolved)
+        .context("staging resolved conflict files failed; recover with `git update-index --index-info` for the resolved paths")?;
+    let old_prime = git.process().run_str(&["write-tree"])?;
+
+    let clean_delta = git.diff_tree_name_status(&old_prime, &final_tree)?;
+    progress(ProgressEvent::Start {
+        phase: "materialize",
+        total: Some(clean_delta.len()),
+    });
+    git.materialize_tree_delta(&old_prime, &final_tree)
+        .with_context(|| {
+            format!(
+                "materializing clean conflict remainder failed; recover with `git read-tree -m -u {old_prime} {final_tree}`"
+            )
+        })?;
+    progress(ProgressEvent::End {
+        phase: "materialize",
+    });
+    finalize_head(
+        &ctx.checkout,
+        &session.parent_head,
+        &chain.final_sha,
+        &final_tree,
+    )?;
+
     let store_short_rev = GitAdapter::new(&ctx.store_dir).short_rev(&session.store_rev)?;
     abort(&ctx.checkout)?;
 
     Ok(ContinueOutcome::Completed(CompletedConflict {
         base_display: session.new_base_display,
         store_short_rev,
-        commits,
+        commits: chain.commits,
     }))
 }
 

@@ -117,6 +117,15 @@ pub struct AuthoredCommit {
     pub subject: String,
 }
 
+/// Object-only authored commit chain ready to become HEAD.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuthoredCommitChain {
+    /// Feature commits authored by this run.
+    pub commits: Vec<AuthoredCommit>,
+    /// Full sha of the last authored commit.
+    pub final_sha: String,
+}
+
 struct CommitGroup {
     feature: String,
     seq: usize,
@@ -169,16 +178,8 @@ pub fn apply(
         .map(|applied| applied.tree.as_str())
         .unwrap_or(&state.head_tree);
     let delta = checkout.diff_tree_name_status(applied_tree, &target_tree)?;
-    progress(ProgressEvent::Start {
-        phase: "materialize",
-        total: Some(delta.len()),
-    });
-    checkout.materialize_tree_delta(applied_tree, &target_tree)?;
-    progress(ProgressEvent::End {
-        phase: "materialize",
-    });
 
-    let commits = author_feature_commits(
+    let chain = author_feature_commits(
         AuthorCommitsInput {
             checkout: &ctx.checkout,
             store: &store,
@@ -192,6 +193,27 @@ pub fn apply(
         progress,
     )?;
 
+    progress(ProgressEvent::Start {
+        phase: "materialize",
+        total: Some(delta.len()),
+    });
+    checkout
+        .materialize_tree_delta(applied_tree, &target_tree)
+        .with_context(|| {
+            format!(
+                "materializing target tree failed; recover with `git read-tree -m -u {applied_tree} {target_tree}`"
+            )
+        })?;
+    progress(ProgressEvent::End {
+        phase: "materialize",
+    });
+    finalize_head(
+        &ctx.checkout,
+        &state.head_rev,
+        &chain.final_sha,
+        &target_tree,
+    )?;
+
     Ok(ApplyOutcome::Applied(AppliedApply {
         store_rev: state.store.head_rev,
         store_short_rev: state.store.short_head_rev,
@@ -201,17 +223,20 @@ pub fn apply(
         files_changed: delta.len(),
         store_managed_files: store.patches().len(),
         target_tree,
-        commits,
+        commits: chain.commits,
     }))
 }
 
-/// Authors grouped feature commits with commit-tree and updates HEAD once.
+/// Authors grouped feature commits with commit-tree without moving refs.
 pub fn author_feature_commits(
     input: AuthorCommitsInput<'_>,
     progress: &mut dyn FnMut(ProgressEvent<'_>),
-) -> Result<Vec<AuthoredCommit>> {
+) -> Result<AuthoredCommitChain> {
     if input.delta.is_empty() {
-        return Ok(Vec::new());
+        return Ok(AuthoredCommitChain {
+            commits: Vec::new(),
+            final_sha: input.parent_commit.to_string(),
+        });
     }
 
     let git = GitAdapter::new(input.checkout);
@@ -281,13 +306,37 @@ pub fn author_feature_commits(
             input.target_tree
         );
     }
-    git.process()
-        .run(&["update-ref", "HEAD", &parent, input.parent_commit])?;
-    git.process().run(&["read-tree", input.target_tree])?;
-    git.refresh_index()?;
     progress(ProgressEvent::End { phase: "commit" });
 
-    Ok(authored)
+    Ok(AuthoredCommitChain {
+        commits: authored,
+        final_sha: parent,
+    })
+}
+
+/// Moves HEAD to an already-authored chain tip and syncs the real index.
+pub fn finalize_head(
+    checkout: impl AsRef<Path>,
+    old_head: &str,
+    final_sha: &str,
+    final_tree: &str,
+) -> Result<()> {
+    let git = GitAdapter::new(checkout.as_ref());
+    git.process()
+        .run(&["update-ref", "HEAD", final_sha, old_head])
+        .with_context(|| {
+            format!(
+                "finalizing HEAD failed; recover with `git update-ref HEAD {final_sha} {old_head}`"
+            )
+        })?;
+    git.process()
+        .run(&["read-tree", final_tree])
+        .with_context(|| {
+            format!("syncing index failed; recover with `git read-tree {final_tree}`")
+        })?;
+    git.refresh_index()
+        .context("refreshing index failed; recover with `git update-index -q --refresh`")?;
+    Ok(())
 }
 
 fn pull_store(store_dir: &Path, progress: &mut dyn FnMut(ProgressEvent<'_>)) -> Result<()> {

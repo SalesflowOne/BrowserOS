@@ -281,6 +281,56 @@ fn drift_refuses_apply_and_leaves_worktree_unchanged() -> Result<()> {
 }
 
 #[test]
+fn authoring_failure_happens_before_checkout_mutation() -> Result<()> {
+    let scenario = applied_rev1_scenario()?;
+    write_checkout_rev2(&scenario.checkout, false)?;
+    commit_store_from_index(
+        &scenario.store,
+        &scenario.checkout,
+        &scenario.base,
+        &[
+            "chrome/browser/ui/llmchat/panel.cc",
+            "chrome/browser/ui/llmchat/resize_util.cc",
+        ],
+        "store rev2",
+    )?;
+    scenario
+        .checkout
+        .git()
+        .run(&["reset", "--hard", &scenario.rev1_commit])?;
+    scenario.checkout.git().run(&["config", "user.name", ""])?;
+    scenario.checkout.git().run(&["config", "user.email", ""])?;
+    scenario.checkout.git_adapter().refresh_index()?;
+
+    let head_before = scenario.checkout.git().run_str(&["rev-parse", "HEAD"])?;
+    let index_before = fs::read(scenario.checkout.path().join(".git/index"))?;
+    let worktree_before = worktree_snapshot(scenario.checkout.path())?;
+
+    let report = run_apply(&scenario.store_dir, &scenario.checkout, false);
+
+    match report {
+        ApplyReport::Error { reason, exit } => {
+            assert_eq!(exit, 1);
+            assert!(reason.contains("Author identity unknown"));
+        }
+        other => panic!("expected authoring error report, got {other:?}"),
+    }
+    assert_eq!(
+        scenario.checkout.git().run_str(&["rev-parse", "HEAD"])?,
+        head_before
+    );
+    assert_eq!(
+        fs::read(scenario.checkout.path().join(".git/index"))?,
+        index_before
+    );
+    assert_eq!(
+        worktree_snapshot(scenario.checkout.path())?,
+        worktree_before
+    );
+    Ok(())
+}
+
+#[test]
 fn held_lock_returns_error_report_with_holder() -> Result<()> {
     let scenario = applied_rev1_scenario()?;
     let _held = CheckoutLock::acquire(scenario.checkout.path())?;
