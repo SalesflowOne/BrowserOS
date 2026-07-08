@@ -366,6 +366,7 @@ fn store_has_feature(store_dir: &Path, feature: &str) -> Result<bool> {
 }
 
 fn write_output(json: bool, json_text: &str, human: &str) -> Result<()> {
+    render::clear_live_progress(json);
     if json {
         println!("{json_text}");
     } else {
@@ -376,12 +377,14 @@ fn write_output(json: bool, json_text: &str, human: &str) -> Result<()> {
 }
 
 fn write_error(json_mode: bool, err: &anyhow::Error) {
+    render::clear_live_progress(json_mode);
+    let reason = format!("{err:#}");
     if json_mode {
         println!(
             "{}",
-            json!({ "result": "error", "reason": err.to_string(), "exit": 1 })
+            json!({ "result": "error", "reason": reason, "exit": 1 })
         );
     } else {
-        eprintln!("error: {err}");
+        eprintln!("error: {reason}");
     }
 }

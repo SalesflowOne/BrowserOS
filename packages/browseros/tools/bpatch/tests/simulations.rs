@@ -521,6 +521,34 @@ fn config_discovery_runs_from_subdirectory_and_missing_store_is_actionable() -> 
     assert!(json["reason"].as_str().unwrap().contains("--store <dir>"));
     assert!(json["reason"].as_str().unwrap().contains("config.toml"));
     assert_eq!(json["exit"], 1);
+
+    let malformed_home = tempfile::tempdir()?;
+    let malformed_config_dir = malformed_home.path().join(".config/bpatch");
+    fs::create_dir_all(&malformed_config_dir)?;
+    fs::write(malformed_config_dir.join("config.toml"), "store = [")?;
+    let malformed_json = run_bpatch_with_home(
+        scenario.checkout.path(),
+        None,
+        strs(&["status", "--json"]),
+        malformed_home.path(),
+    )?;
+    assert_eq!(malformed_json.code, 1);
+    let json = parse_json(&malformed_json.stdout)?;
+    let reason = json["reason"].as_str().expect("reason string");
+    assert!(reason.contains("parsing"));
+    assert!(reason.contains("config.toml"));
+    assert!(reason.contains("expected"));
+
+    let malformed_human = run_bpatch_with_home(
+        scenario.checkout.path(),
+        None,
+        strs(&["status"]),
+        malformed_home.path(),
+    )?;
+    assert_eq!(malformed_human.code, 1);
+    assert!(malformed_human.stdout.is_empty());
+    assert!(malformed_human.stderr.contains("error: parsing"));
+    assert!(malformed_human.stderr.contains("expected"));
     Ok(())
 }
 
