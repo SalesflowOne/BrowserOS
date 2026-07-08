@@ -1,12 +1,8 @@
-/** Pins the Claw homepage's hero, running grid, and recent activity sections. */
-
 import { describe, expect, it, mock } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router'
 
-// Stub the data hook so the test does not need a network mock or
-// real polling. The shape mirrors the v2 CockpitData interface.
 mock.module('./cockpit.data', () => ({
   useCockpitData: () => ({
     agents: [],
@@ -15,8 +11,6 @@ mock.module('./cockpit.data', () => ({
   }),
 }))
 
-// RecentActivity now consumes useTasks directly. Stub it to return an
-// empty page so the empty-state branch renders.
 mock.module('@/modules/api/audit.hooks', () => ({
   useTasks: () => ({
     data: { pages: [{ tasks: [], nextCursor: null }] },
@@ -24,6 +18,12 @@ mock.module('@/modules/api/audit.hooks', () => ({
   }),
   taskScreenshotUrl: (id: number) => `/audit/screenshot/${id}`,
   useTaskScreenshotBaseUrl: () => null,
+}))
+
+mock.module('@/modules/api/connections.hooks', () => ({
+  useBrowserosConnections: () => ({
+    data: { connections: [] },
+  }),
 }))
 
 const { Cockpit } = await import('./Cockpit')
@@ -42,11 +42,12 @@ function renderApp(): string {
 }
 
 describe('Cockpit (v2)', () => {
-  it('renders the hero and activity header (running grid hides when no agents)', () => {
+  it('renders the first-run hero and hides the running grid when no agents exist', () => {
     const html = renderApp()
-    expect(html).toContain('working on')
-    expect(html).toContain('Recent activity')
-    // No agents in the stub data means RunningGrid returns null.
+    expect(html).toContain('You watch. Your agent')
+    expect(html).toContain(
+      'https://cdn.browseros.com/artifacts/claw/onboarding-video/v0.1.0/first-run-demo.mp4',
+    )
     expect(html).not.toContain('Running now')
   })
 
@@ -56,10 +57,13 @@ describe('Cockpit (v2)', () => {
     expect(html).not.toContain('harness . logins . guardrails')
   })
 
-  it('shows only the recent-activity empty state when registry is empty (Running now hides)', () => {
+  it('shows the first-run shell when there are no connections or runs', () => {
     const html = renderApp()
     expect(html).not.toContain('No agents connected')
     expect(html).not.toContain('Running now')
-    expect(html).toContain('No recent activity')
+    expect(html).toContain('Set up MCP endpoint')
+    expect(html).toContain(
+      'Use BrowserClaw. Book me the cheapest morning flight',
+    )
   })
 })
