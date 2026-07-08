@@ -2,7 +2,7 @@
 
 The build pipeline's patch step runs this on pristine pinned trees;
 patches either apply cleanly or the build fails loudly. Interactive
-conflict workflows belong to the Go bpatch tool — runners must never
+conflict workflows belong to the Rust bpatch tool — runners must never
 need it, so this stays in Python.
 """
 
@@ -38,10 +38,12 @@ def reset_file_to_commit(file_path: str, commit: str, chromium_src: Path) -> boo
 # are never applied; the doctor maps them back onto their base path.
 MARKER_SUFFIXES = (".deleted", ".binary", ".rename")
 
-# bpatch-v2 (#1690) keeps its metadata at the patch-tree root; these are not
-# patches. Matched by exact root-relative path so a real chromium yaml patch
-# deeper in the tree still applies.
-METADATA_ROOT_FILES = ("features.yaml", "store.yaml")
+METADATA_ROOT_FILES = (
+    ".features.yaml",
+    ".store.yaml",
+    "features.yaml",
+    "store.yaml",
+)
 
 
 def find_patch_files(patches_dir: Path) -> List[Path]:

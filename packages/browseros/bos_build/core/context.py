@@ -15,7 +15,7 @@ from typing import Any, Dict, Optional
 
 from ..lib import versions as versions_mod
 from ..lib.env import EnvConfig
-from ..lib.paths import get_package_root
+from ..lib.paths import get_feature_registry_path, get_package_root
 from .products import (
     ProductDescriptor,
     default_product_descriptor,
@@ -309,8 +309,8 @@ class Context:
         ]
 
     def get_features_yaml_path(self) -> Path:
-        """Get features.yaml file path"""
-        return join_paths(self.root_dir, "bos_build", "features.yaml")
+        """Get the canonical feature registry path."""
+        return get_feature_registry_path(self.root_dir)
 
     def get_patch_path_for_file(self, file_path: str) -> Path:
         """Convert a chromium file path to patch file path"""

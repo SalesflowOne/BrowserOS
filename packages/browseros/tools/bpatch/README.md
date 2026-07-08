@@ -230,9 +230,11 @@ features:
       - chrome/app/theme/chromium/
 ```
 
-## Cutover Checklist Vs `tools/patch`
+## Cutover Notes From `tools/patch`
 
-The old Go tool stays in the repo until cutover; removing it is a separate effort. `packages/browseros/bos_build/features.yaml` also still exists for `bos_build`'s reader while consolidation is pending.
+The old Go tool has been removed from the repo. `chromium_patches/.features.yaml`
+is now the single feature registry for both bpatch and bos_build's Python patch
+reader.
 
 | Old `tools/patch` behavior | New `bpatch` path |
 | --- | --- |

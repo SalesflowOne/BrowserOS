@@ -17,6 +17,7 @@ import yaml
 
 from ..core.context import Context
 from ..core.products import get_product_descriptor
+from .paths import get_feature_registry_path
 
 DEFAULT_CHROMIUM_VERSION = "137.0.7151.69"
 DEFAULT_BUILD_OFFSET = "80"
@@ -197,8 +198,8 @@ class MockBrowserOSRoot:
         return path
 
     def write_features_yaml(self, features: Dict) -> Path:
-        """Write bos_build/features.yaml wrapping the given features mapping."""
-        path = self.root / "bos_build" / "features.yaml"
+        """Write the canonical feature registry wrapping the given features mapping."""
+        path = get_feature_registry_path(self.root)
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w") as f:
             yaml.safe_dump(
