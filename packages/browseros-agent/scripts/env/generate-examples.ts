@@ -2,8 +2,8 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { generateEnvExample } from '../../packages/shared/src/env/generate'
-import type { EnvMode } from '../../packages/shared/src/env/registry'
+import { generateEnvExample } from '@browseros/shared/env/generate'
+import type { EnvMode } from '@browseros/shared/env/registry'
 
 const EXAMPLES: Array<{ mode: EnvMode; file: string }> = [
   { mode: 'development', file: '.env.development.example' },

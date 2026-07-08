@@ -21,6 +21,7 @@ const TEST_ENV_KEYS = [
   ...Object.keys(REQUIRED_INLINE_ENV),
   ...Object.keys(R2_ENV),
   'LOG_LEVEL',
+  'NODE_ENV',
   'R2_DOWNLOAD_PREFIX',
   'R2_UPLOAD_PREFIX',
 ] as const
@@ -53,7 +54,7 @@ describe('build config', () => {
     }
   })
 
-  it('reads package version and inline env from the product env file', async () => {
+  it('reads package version and inline env from the root production env file', async () => {
     const rootDir = await writeProdRoot({
       ...REQUIRED_INLINE_ENV,
       ...R2_ENV,
@@ -68,22 +69,40 @@ describe('build config', () => {
       LOG_LEVEL: 'debug',
     })
     expect(config.r2?.uploadPrefix).toBe('test-server/prod-resources')
+    expect(config.r2?.downloadPrefix).toBe('artifacts/vendor')
   })
 
-  it('lets process env override inline env and R2 prefixes from the product env file', async () => {
+  it('lets process env override inline env and R2 prefixes', async () => {
     const rootDir = await writeProdRoot({
       ...REQUIRED_INLINE_ENV,
       ...R2_ENV,
       LOG_LEVEL: 'debug',
-      R2_UPLOAD_PREFIX: 'file-prefix',
+      R2_UPLOAD_PREFIX: 'ignored-file-prefix',
+      R2_DOWNLOAD_PREFIX: 'ignored-file-prefix',
     })
     process.env.LOG_LEVEL = 'warn'
     process.env.R2_UPLOAD_PREFIX = 'process-prefix'
+    process.env.R2_DOWNLOAD_PREFIX = 'process-vendor'
 
     const config = loadBuildConfig(rootDir, testProduct(), { requireR2: true })
 
     expect(config.envVars.LOG_LEVEL).toBe('warn')
     expect(config.r2?.uploadPrefix).toBe('process-prefix')
+    expect(config.r2?.downloadPrefix).toBe('process-vendor')
+  })
+
+  it('does not use root-file R2 prefix fallbacks', async () => {
+    const rootDir = await writeProdRoot({
+      ...REQUIRED_INLINE_ENV,
+      ...R2_ENV,
+      R2_UPLOAD_PREFIX: 'ignored-file-prefix',
+      R2_DOWNLOAD_PREFIX: 'ignored-file-prefix',
+    })
+
+    const config = loadBuildConfig(rootDir, testProduct(), { requireR2: true })
+
+    expect(config.r2?.uploadPrefix).toBe('test-server/prod-resources')
+    expect(config.r2?.downloadPrefix).toBe('artifacts/vendor')
   })
 
   it('applies product inline env overrides after file and process env', async () => {
@@ -123,7 +142,6 @@ describe('build config', () => {
     const product = testProduct({
       env: {
         ...testProduct().env,
-        requireProdEnvFile: false,
         requiredInlineEnvKeys: [],
         inlineEnvKeys: [],
       },
@@ -140,7 +158,6 @@ describe('build config', () => {
     const product = testProduct({
       env: {
         ...testProduct().env,
-        requireProdEnvFile: false,
         requiredInlineEnvKeys: [],
         inlineEnvKeys: [],
       },
@@ -149,6 +166,35 @@ describe('build config', () => {
     expect(() =>
       loadBuildConfig(rootDir, product, { requireR2: true }),
     ).toThrow('R2_ACCOUNT_ID')
+  })
+
+  it('demotes Bun auto-loaded development values during production config resolution', async () => {
+    tempRoot = await mkdtemp(join(tmpdir(), 'build-server-config-'))
+    const packageDir = join(tempRoot, 'apps/test-server')
+    await mkdir(packageDir, { recursive: true })
+    await writeFile(
+      join(packageDir, 'package.json'),
+      '{"version":"0.0.0-test"}',
+    )
+    await writeFile(
+      join(tempRoot, '.env.development'),
+      formatEnv({ NODE_ENV: 'development' }),
+    )
+    await writeFile(
+      join(tempRoot, '.env.production'),
+      formatEnv({ ...REQUIRED_INLINE_ENV, NODE_ENV: 'production' }),
+    )
+    process.env.NODE_ENV = 'development'
+    const product = testProduct({
+      env: {
+        ...testProduct().env,
+        inlineEnvKeys: ['TEST_CONFIG_URL', 'NODE_ENV'],
+      },
+    })
+
+    const config = loadBuildConfig(tempRoot, product)
+
+    expect(config.envVars.NODE_ENV).toBe('production')
   })
 
   async function writeProdRoot(
@@ -162,9 +208,8 @@ describe('build config', () => {
       join(packageDir, 'package.json'),
       '{"version":"0.0.0-test"}',
     )
-    await writeFile(join(packageDir, '.env.production.example'), '')
     if (options.envFile !== false) {
-      await writeFile(join(packageDir, '.env.production'), formatEnv(env))
+      await writeFile(join(tempRoot, '.env.production'), formatEnv(env))
     }
     return tempRoot
   }

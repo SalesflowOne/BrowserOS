@@ -1,12 +1,9 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { generateEnvExample } from '../../packages/shared/src/env/generate'
-import { parseEnvFile } from '../../packages/shared/src/env/load'
-import {
-  type EnvMode,
-  findEnvKeySpec,
-} from '../../packages/shared/src/env/registry'
+import { generateEnvExample } from '@browseros/shared/env/generate'
+import { parseEnvFile } from '@browseros/shared/env/load'
+import { type EnvMode, findEnvKeySpec } from '@browseros/shared/env/registry'
 
 interface HarvestedValue {
   mode: EnvMode

@@ -60,15 +60,12 @@ const R2_ENV_STUBS: Record<string, string> = {
 describe('server build', () => {
   const rootDir = resolve(import.meta.dir, '../../..')
   const serverPkgPath = resolve(rootDir, 'apps/server/package.json')
-  const prodEnvPath = resolve(rootDir, 'apps/server/.env.production')
-  const prodEnvTemplatePath = resolve(
-    rootDir,
-    'apps/server/.env.production.example',
-  )
-  const originalProdEnv = existsSync(prodEnvPath)
-    ? readFileSync(prodEnvPath, 'utf-8')
+  const rootProductionEnvPath = resolve(rootDir, '.env.production')
+  const rootProductionExamplePath = resolve(rootDir, '.env.production.example')
+  const originalProdEnv = existsSync(rootProductionEnvPath)
+    ? readFileSync(rootProductionEnvPath, 'utf-8')
     : null
-  const prodEnvTemplate = readFileSync(prodEnvTemplatePath, 'utf-8')
+  const prodEnvTemplate = readFileSync(rootProductionExamplePath, 'utf-8')
   const buildScript = resolve(rootDir, 'scripts/build/server.ts')
   const target = getNativeTarget()
   const binaryPath = resolve(
@@ -102,16 +99,16 @@ describe('server build', () => {
   }
 
   function resetProdEnvToTemplate(): void {
-    writeFileSync(prodEnvPath, prodEnvTemplate)
+    writeFileSync(rootProductionEnvPath, prodEnvTemplate)
   }
 
   afterAll(() => {
     rmSync(tempDir, { recursive: true, force: true })
     if (originalProdEnv === null) {
-      rmSync(prodEnvPath, { force: true })
+      rmSync(rootProductionEnvPath, { force: true })
       return
     }
-    writeFileSync(prodEnvPath, originalProdEnv)
+    writeFileSync(rootProductionEnvPath, originalProdEnv)
   })
 
   it('compiles and --version outputs correct version', async () => {
