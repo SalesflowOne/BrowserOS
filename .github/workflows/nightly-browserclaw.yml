@@ -104,7 +104,8 @@ jobs:
         run: |
           set -euo pipefail
           cd "$BROWSEROS_REPO"
-          git fetch origin --tags --prune
+          # Rolling nightly release tags move nightly; persistent checkouts must force-update and prune deleted tags.
+          git fetch origin --tags --prune --prune-tags --force
           # Wipe any local edits before switching refs. The builder's working
           # tree can carry stray modifications to tracked files, which would
           # otherwise make the checkout below abort before reset --hard runs.
