@@ -67,7 +67,104 @@ fn apply_base_bump_begins_conflict_session_without_worktree_writes() -> Result<(
     assert_eq!(json["conflicts"][0]["kind"], "content");
 
     assert!(conflict::session_path(scenario.checkout.path())?.exists());
+    assert!(
+        !conflict::load_session(scenario.checkout.path())?
+            .expect("session")
+            .materialized
+    );
     assert_eq!(worktree_snapshot(scenario.checkout.path())?, before);
+    Ok(())
+}
+
+#[test]
+fn apply_refuses_to_overwrite_pending_conflict_session() -> Result<()> {
+    let scenario = conflict_scenario()?;
+    run_apply(&scenario);
+    let session_path = conflict::session_path(scenario.checkout.path())?;
+    let session_before = fs::read(&session_path)?;
+
+    let report = run_apply(&scenario);
+
+    match &report {
+        ApplyReport::SessionPending {
+            created_at,
+            conflicts,
+            exit,
+        } => {
+            assert!(*created_at > 0);
+            assert_eq!(*conflicts, 1);
+            assert_eq!(*exit, 2);
+        }
+        other => panic!("expected session-pending report, got {other:?}"),
+    }
+    let human = cli_apply::render_human(&report);
+    assert!(human.contains("conflict session in progress"));
+    assert!(human.contains("finish with `bpatch continue` or `bpatch abort`"));
+    let json: Value = serde_json::from_str(&cli_apply::render_json(&report)?)?;
+    assert_eq!(json["result"], "session-pending");
+    assert_eq!(json["exit"], 2);
+    assert_eq!(fs::read(&session_path)?, session_before);
+    Ok(())
+}
+
+#[test]
+fn final_continue_refuses_before_conflicts_are_materialized() -> Result<()> {
+    let scenario = conflict_scenario()?;
+    run_apply(&scenario);
+    let session_path = conflict::session_path(scenario.checkout.path())?;
+    let session_before = fs::read(&session_path)?;
+    let worktree_before = worktree_snapshot(scenario.checkout.path())?;
+    let store_before = scenario.store.status_porcelain()?;
+
+    let report = continue_cmd::run(
+        &ctx(&scenario),
+        ContinueOptions { materialize: false },
+        &mut progress::noop(),
+    );
+
+    match &report {
+        ContinueReport::NotMaterialized { reason, exit } => {
+            assert_eq!(*exit, 2);
+            assert_eq!(
+                reason,
+                "conflicts were never materialized — run `bpatch continue --materialize`, resolve, then continue"
+            );
+        }
+        other => panic!("expected not-materialized report, got {other:?}"),
+    }
+    assert_eq!(
+        worktree_snapshot(scenario.checkout.path())?,
+        worktree_before
+    );
+    assert_eq!(scenario.store.status_porcelain()?, store_before);
+    assert_eq!(fs::read(&session_path)?, session_before);
+    Ok(())
+}
+
+#[test]
+fn base_bump_apply_refuses_uncommitted_drift_before_session_begin() -> Result<()> {
+    let scenario = conflict_scenario()?;
+    scenario
+        .checkout
+        .write_file("chrome/app/chrome_main_delegate.cc", "local edit\n")?;
+    let before = worktree_snapshot(scenario.checkout.path())?;
+
+    let report = run_apply(&scenario);
+
+    match report {
+        ApplyReport::Drift { files, exit } => {
+            assert_eq!(exit, 3);
+            assert_eq!(files.len(), 1);
+            assert_eq!(
+                files[0].path,
+                PathBuf::from("chrome/app/chrome_main_delegate.cc")
+            );
+            assert_eq!(files[0].annotation, "modified, uncommitted");
+        }
+        other => panic!("expected drift report, got {other:?}"),
+    }
+    assert_eq!(worktree_snapshot(scenario.checkout.path())?, before);
+    assert!(!conflict::session_path(scenario.checkout.path())?.exists());
     Ok(())
 }
 
@@ -114,6 +211,11 @@ fn continue_materialize_writes_only_conflicted_files_with_markers() -> Result<()
         }
     );
     assert!(
+        conflict::load_session(scenario.checkout.path())?
+            .expect("session")
+            .materialized
+    );
+    assert!(
         continue_cmd::render_human(&report)
             .contains("1 file written with conflict markers; 1 clean file staged for convergence")
     );
@@ -132,6 +234,42 @@ fn continue_materialize_writes_only_conflicted_files_with_markers() -> Result<()
             .checkout
             .read_file("chrome/browser/ui/llmchat/clean.cc")?,
         "clean base\n"
+    );
+    Ok(())
+}
+
+#[test]
+fn materialize_refuses_to_overwrite_dirty_conflict_file() -> Result<()> {
+    let scenario = conflict_scenario()?;
+    run_apply(&scenario);
+    scenario
+        .checkout
+        .write_file("chrome/app/chrome_main_delegate.cc", "local edit\n")?;
+    let before = worktree_snapshot(scenario.checkout.path())?;
+
+    let report = continue_cmd::run(
+        &ctx(&scenario),
+        ContinueOptions { materialize: true },
+        &mut progress::noop(),
+    );
+
+    match report {
+        ContinueReport::Drift { files, exit } => {
+            assert_eq!(exit, 3);
+            assert_eq!(files.len(), 1);
+            assert_eq!(
+                files[0].path,
+                PathBuf::from("chrome/app/chrome_main_delegate.cc")
+            );
+            assert_eq!(files[0].annotation, "modified, uncommitted");
+        }
+        other => panic!("expected drift report, got {other:?}"),
+    }
+    assert_eq!(worktree_snapshot(scenario.checkout.path())?, before);
+    assert!(
+        !conflict::load_session(scenario.checkout.path())?
+            .expect("session")
+            .materialized
     );
     Ok(())
 }
@@ -163,6 +301,31 @@ fn unresolved_markers_refuse_final_continue_with_file_list() -> Result<()> {
         other => panic!("expected unresolved report, got {other:?}"),
     }
     assert!(conflict::session_path(scenario.checkout.path())?.exists());
+    Ok(())
+}
+
+#[test]
+fn separator_line_alone_does_not_block_final_continue() -> Result<()> {
+    let scenario = conflict_scenario()?;
+    run_apply(&scenario);
+    continue_cmd::run(
+        &ctx(&scenario),
+        ContinueOptions { materialize: true },
+        &mut progress::noop(),
+    );
+    scenario.checkout.write_file(
+        "chrome/app/chrome_main_delegate.cc",
+        "resolved heading\n=======\nresolved bootstrap\n",
+    )?;
+
+    let report = continue_cmd::run(
+        &ctx(&scenario),
+        ContinueOptions { materialize: false },
+        &mut progress::noop(),
+    );
+
+    assert!(matches!(report, ContinueReport::Completed { .. }));
+    assert!(!conflict::session_path(scenario.checkout.path())?.exists());
     Ok(())
 }
 

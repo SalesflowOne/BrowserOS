@@ -261,6 +261,7 @@ fn status_reports_in_progress_conflict_session() -> Result<()> {
             }],
             parent_head: base,
             created_at: 123,
+            materialized: false,
         })?,
     )?;
 

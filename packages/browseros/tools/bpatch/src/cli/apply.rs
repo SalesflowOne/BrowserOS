@@ -3,11 +3,13 @@ use std::path::PathBuf;
 use anyhow::Result;
 use serde::Serialize;
 
-use crate::engine::apply::{self as engine_apply, ApplyOptions, ApplyOutcome};
+use crate::engine::apply::{self as engine_apply, ApplyOptions, ApplyOutcome, BaseMismatch};
 use crate::engine::conflict;
 use crate::engine::lock::CheckoutLock;
 use crate::engine::progress::ProgressEvent;
-use crate::engine::state::{DriftSource, StateContext};
+use crate::engine::state::{DriftFile, DriftSource, StateContext};
+use crate::git::GitAdapter;
+use crate::store::Store;
 
 /// Serializable apply result for a checkout.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -58,6 +60,32 @@ pub enum ApplyReport {
         conflicts: Vec<ApplyConflictFile>,
         /// Whether the worktree was touched while producing this report.
         worktree_touched: bool,
+        /// Process exit code for this result.
+        exit: i32,
+    },
+    /// Apply refused because a conflict session is already active.
+    #[serde(rename = "session-pending")]
+    SessionPending {
+        /// Unix timestamp recorded when the session was created.
+        created_at: u64,
+        /// Number of conflicts recorded in the session.
+        conflicts: usize,
+        /// Process exit code for this result.
+        exit: i32,
+    },
+    /// Store base pin moved while this checkout is still on old bpatch history.
+    #[serde(rename = "base-pin-moved")]
+    BasePinMoved {
+        /// Base commit pinned in store.yaml.
+        store_base: String,
+        /// Short base commit pinned in store.yaml.
+        store_base_short: String,
+        /// Human store base display string.
+        store_base_display: String,
+        /// Base commit from the checkout state.
+        checkout_base: String,
+        /// Human checkout base display string.
+        checkout_base_display: String,
         /// Process exit code for this result.
         exit: i32,
     },
@@ -133,6 +161,8 @@ impl ApplyReport {
             | Self::Converged { exit, .. }
             | Self::BaseMismatch { exit, .. }
             | Self::Conflicts { exit, .. }
+            | Self::SessionPending { exit, .. }
+            | Self::BasePinMoved { exit, .. }
             | Self::Drift { exit, .. }
             | Self::Error { exit, .. } => *exit,
         }
@@ -155,28 +185,25 @@ pub fn run(
         }
     };
 
-    match engine_apply::apply(ctx, options, progress) {
-        Ok(ApplyOutcome::BaseMismatch(_)) => match conflict::begin(ctx, progress) {
-            Ok(begin) => ApplyReport::Conflicts {
-                base: begin.base_display,
-                merged: begin.merged,
-                conflicts: begin
-                    .conflicts
-                    .into_iter()
-                    .map(|conflict| ApplyConflictFile {
-                        file: conflict.file,
-                        feature: conflict.feature,
-                        kind: conflict.kind,
-                    })
-                    .collect(),
-                worktree_touched: begin.worktree_touched,
+    match conflict::load_session(&ctx.checkout) {
+        Ok(Some(session)) => {
+            return ApplyReport::SessionPending {
+                created_at: session.created_at,
+                conflicts: session.conflicts.len(),
                 exit: 2,
-            },
-            Err(err) => ApplyReport::Error {
+            };
+        }
+        Ok(None) => {}
+        Err(err) => {
+            return ApplyReport::Error {
                 reason: err.to_string(),
                 exit: 1,
-            },
-        },
+            };
+        }
+    }
+
+    match engine_apply::apply(ctx, options, progress) {
+        Ok(ApplyOutcome::BaseMismatch(mismatch)) => base_mismatch_report(ctx, mismatch, progress),
         Ok(outcome) => report_from_outcome(outcome),
         Err(err) => ApplyReport::Error {
             reason: err.to_string(),
@@ -257,6 +284,26 @@ pub fn render_human(report: &ApplyReport) -> String {
             }
             out
         }
+        ApplyReport::SessionPending {
+            created_at,
+            conflicts,
+            ..
+        } => format!(
+            "conflict session in progress (started {}, {} {}) — finish with `bpatch continue` or `bpatch abort`\n",
+            created_at,
+            conflicts,
+            conflicts_label(*conflicts)
+        ),
+        ApplyReport::BasePinMoved {
+            store_base,
+            store_base_short,
+            store_base_display,
+            checkout_base_display,
+            ..
+        } => format!(
+            "store base pin moved to {} ({}) but this checkout is converged on {} — check out the new base first: `git checkout {} && gclient sync`, then `bpatch apply`\n",
+            store_base_display, store_base_short, checkout_base_display, store_base
+        ),
         ApplyReport::Drift { files, .. } => {
             let mut out = String::new();
             out.push_str(&format!(
@@ -317,24 +364,105 @@ fn report_from_outcome(outcome: ApplyOutcome) -> ApplyReport {
             exit: 2,
         },
         ApplyOutcome::Drift(drift) => ApplyReport::Drift {
-            files: drift
-                .files
-                .into_iter()
-                .map(|file| ApplyDriftFile {
-                    path: file.path,
-                    status: file.status,
-                    source: match file.source {
-                        DriftSource::Committed => ApplyDriftSource::Committed,
-                        DriftSource::Uncommitted => ApplyDriftSource::Uncommitted,
-                    },
-                    annotation: file.annotation,
-                })
-                .collect(),
+            files: apply_drift_files(drift.files),
             exit: 3,
         },
     }
 }
 
+fn base_mismatch_report(
+    ctx: &StateContext,
+    mismatch: BaseMismatch,
+    progress: &mut dyn FnMut(ProgressEvent<'_>),
+) -> ApplyReport {
+    let state = match crate::engine::state::resolve(ctx) {
+        Ok(state) => state,
+        Err(err) => {
+            return ApplyReport::Error {
+                reason: err.to_string(),
+                exit: 1,
+            };
+        }
+    };
+    if !state.drift.is_clean() {
+        return drift_report(state.drift.files().to_vec());
+    }
+    if state.applied.is_some() {
+        let store = match Store::load(&ctx.store_dir) {
+            Ok(store) => store,
+            Err(err) => {
+                return ApplyReport::Error {
+                    reason: err.to_string(),
+                    exit: 1,
+                };
+            }
+        };
+        let git = GitAdapter::new(&ctx.checkout);
+        return ApplyReport::BasePinMoved {
+            store_base_short: git
+                .short_rev(&mismatch.store_base)
+                .unwrap_or_else(|_| short_sha_fallback(&mismatch.store_base)),
+            store_base_display: store.metadata().base_version.clone(),
+            store_base: mismatch.store_base,
+            checkout_base: state.base.sha,
+            checkout_base_display: state.base.display,
+            exit: 3,
+        };
+    }
+
+    match conflict::begin(ctx, progress) {
+        Ok(begin) => ApplyReport::Conflicts {
+            base: begin.base_display,
+            merged: begin.merged,
+            conflicts: begin
+                .conflicts
+                .into_iter()
+                .map(|conflict| ApplyConflictFile {
+                    file: conflict.file,
+                    feature: conflict.feature,
+                    kind: conflict.kind,
+                })
+                .collect(),
+            worktree_touched: begin.worktree_touched,
+            exit: 2,
+        },
+        Err(err) => ApplyReport::Error {
+            reason: err.to_string(),
+            exit: 1,
+        },
+    }
+}
+
+fn drift_report(files: Vec<DriftFile>) -> ApplyReport {
+    ApplyReport::Drift {
+        files: apply_drift_files(files),
+        exit: 3,
+    }
+}
+
+fn apply_drift_files(files: Vec<DriftFile>) -> Vec<ApplyDriftFile> {
+    files
+        .into_iter()
+        .map(|file| ApplyDriftFile {
+            path: file.path,
+            status: file.status,
+            source: match file.source {
+                DriftSource::Committed => ApplyDriftSource::Committed,
+                DriftSource::Uncommitted => ApplyDriftSource::Uncommitted,
+            },
+            annotation: file.annotation,
+        })
+        .collect()
+}
+
+fn short_sha_fallback(sha: &str) -> String {
+    sha.chars().take(12).collect()
+}
+
 fn files_label(count: usize) -> &'static str {
     if count == 1 { "file" } else { "files" }
+}
+
+fn conflicts_label(count: usize) -> &'static str {
+    if count == 1 { "conflict" } else { "conflicts" }
 }

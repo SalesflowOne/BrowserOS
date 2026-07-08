@@ -331,6 +331,110 @@ fn authoring_failure_happens_before_checkout_mutation() -> Result<()> {
 }
 
 #[test]
+fn untracked_added_path_refuses_before_authoring_or_materialization() -> Result<()> {
+    let scenario = applied_rev1_scenario()?;
+    write_checkout_rev2(&scenario.checkout, false)?;
+    commit_store_from_index(
+        &scenario.store,
+        &scenario.checkout,
+        &scenario.base,
+        &[
+            "chrome/browser/ui/llmchat/panel.cc",
+            "chrome/browser/ui/llmchat/resize_util.cc",
+        ],
+        "store rev2",
+    )?;
+    scenario
+        .checkout
+        .git()
+        .run(&["reset", "--hard", &scenario.rev1_commit])?;
+    scenario.checkout.plant_untracked(
+        "chrome/browser/ui/llmchat/resize_util.cc",
+        "local untracked\n",
+    )?;
+    let head_before = scenario.checkout.git().run_str(&["rev-parse", "HEAD"])?;
+    let worktree_before = worktree_snapshot(scenario.checkout.path())?;
+
+    let report = run_apply(&scenario.store_dir, &scenario.checkout, false);
+
+    match report {
+        ApplyReport::Drift { files, exit } => {
+            assert_eq!(exit, 3);
+            assert_eq!(files.len(), 1);
+            assert_eq!(
+                files[0].path,
+                PathBuf::from("chrome/browser/ui/llmchat/resize_util.cc")
+            );
+            assert_eq!(files[0].status, "??");
+            assert_eq!(files[0].annotation, "untracked, would be overwritten");
+        }
+        other => panic!("expected drift report, got {other:?}"),
+    }
+    assert_eq!(
+        scenario.checkout.git().run_str(&["rev-parse", "HEAD"])?,
+        head_before
+    );
+    assert_eq!(
+        worktree_snapshot(scenario.checkout.path())?,
+        worktree_before
+    );
+    assert_eq!(
+        scenario
+            .checkout
+            .read_file("chrome/browser/ui/llmchat/resize_util.cc")?,
+        "local untracked\n"
+    );
+    Ok(())
+}
+
+#[test]
+fn store_base_pin_move_refuses_when_checkout_still_has_applied_history() -> Result<()> {
+    let scenario = applied_rev1_scenario()?;
+    scenario
+        .checkout
+        .git()
+        .run(&["checkout", "-B", "base-149", &scenario.base])?;
+    scenario.checkout.write_file(
+        "chrome/VERSION",
+        "MAJOR=149\nMINOR=0\nBUILD=7250\nPATCH=0\n",
+    )?;
+    let new_base = scenario.checkout.commit("Chromium 149.0.7250.0")?;
+    scenario
+        .checkout
+        .git()
+        .run(&["checkout", "-B", "main", &scenario.rev1_commit])?;
+    scenario.store.write_file(
+        "chromium_patches/store.yaml",
+        format!("base_commit: {new_base}\nbase_version: \"149.0.7250.0\"\n"),
+    )?;
+    scenario.store.commit("repin store")?;
+
+    let report = run_apply(&scenario.store_dir, &scenario.checkout, false);
+
+    match &report {
+        ApplyReport::BasePinMoved {
+            store_base,
+            store_base_display,
+            checkout_base_display,
+            exit,
+            ..
+        } => {
+            assert_eq!(store_base, &new_base);
+            assert_eq!(store_base_display, "149.0.7250.0");
+            assert_eq!(checkout_base_display, "148.0.7204.1");
+            assert_eq!(*exit, 3);
+        }
+        other => panic!("expected base-pin-moved report, got {other:?}"),
+    }
+    let human = cli_apply::render_human(&report);
+    assert!(human.contains("store base pin moved to 149.0.7250.0"));
+    assert!(human.contains("check out the new base first"));
+    assert!(human.contains(&format!("git checkout {new_base} && gclient sync")));
+    assert!(!bpatch::engine::conflict::session_path(scenario.checkout.path())?.exists());
+    Ok(())
+}
+
+#[test]
 fn held_lock_returns_error_report_with_holder() -> Result<()> {
     let scenario = applied_rev1_scenario()?;
     let _held = CheckoutLock::acquire(scenario.checkout.path())?;

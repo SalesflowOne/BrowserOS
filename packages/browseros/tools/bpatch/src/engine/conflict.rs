@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -7,9 +8,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::engine::apply::{
     AuthorCommitsInput, AuthoredCommit, author_feature_commits, finalize_head,
+    untracked_add_collisions,
 };
 use crate::engine::progress::ProgressEvent;
-use crate::engine::state::StateContext;
+use crate::engine::state::{DriftFile, DriftSource, StateContext};
 use crate::git::GitAdapter;
 use crate::process::Git;
 use crate::store::{FeatureMatch, Store};
@@ -37,6 +39,9 @@ pub struct ConflictSession {
     pub parent_head: String,
     /// Unix timestamp recorded when the session was created.
     pub created_at: u64,
+    /// Whether conflicted blobs have been written into the worktree.
+    #[serde(default)]
+    pub materialized: bool,
 }
 
 /// One conflicted file in a persisted session.
@@ -81,6 +86,10 @@ pub enum ContinueOutcome {
     Completed(CompletedConflict),
     /// One or more conflicted files still contain conflict markers.
     Unresolved(UnresolvedConflicts),
+    /// Final continue was attempted before marker files were materialized.
+    NotMaterialized(NotMaterializedConflicts),
+    /// The index or worktree has edits that would be overwritten.
+    Drift(ConflictDrift),
     /// No session file existed.
     NoSession,
 }
@@ -112,6 +121,20 @@ pub struct UnresolvedConflicts {
     pub files: Vec<PathBuf>,
 }
 
+/// Refusal result when a session has not been materialized.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NotMaterializedConflicts {
+    /// Human-readable recovery guidance.
+    pub reason: String,
+}
+
+/// Drift refusal result for conflict-session commands.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConflictDrift {
+    /// Drift entries that blocked conflict-session writes.
+    pub files: Vec<DriftFile>,
+}
+
 struct ResolvedBlob {
     path: PathBuf,
     mode: String,
@@ -123,10 +146,25 @@ pub fn begin(
     ctx: &StateContext,
     progress: &mut dyn FnMut(ProgressEvent<'_>),
 ) -> Result<BeginResult> {
+    if session_path(&ctx.checkout)?.exists() {
+        bail!("conflict session already exists");
+    }
+
     let state = crate::engine::state::resolve(ctx)?;
     let store = Store::load(&ctx.store_dir)?;
     if store.metadata().base_commit == state.base.sha {
         bail!("store base matches checkout base; no conflict session needed");
+    }
+    if state.applied.is_some() {
+        let git = GitAdapter::new(&ctx.checkout);
+        let store_short = git.short_rev(&store.metadata().base_commit)?;
+        bail!(
+            "store base pin moved to {} ({}) but this checkout is converged on {} — check out the new base first: `git checkout {} && gclient sync`, then `bpatch apply`",
+            store.metadata().base_version,
+            store_short,
+            state.base.display,
+            store.metadata().base_commit
+        );
     }
 
     let git = GitAdapter::new(&ctx.checkout);
@@ -177,6 +215,7 @@ pub fn begin(
         conflicts: conflicts.clone(),
         parent_head: state.head_rev.clone(),
         created_at: now_epoch_seconds(),
+        materialized: false,
     };
     save_session(&ctx.checkout, &session)?;
 
@@ -212,6 +251,12 @@ pub fn continue_session(
         return materialize_conflicts(ctx, &session, progress);
     }
 
+    if !session.materialized {
+        return Ok(ContinueOutcome::NotMaterialized(NotMaterializedConflicts {
+            reason: "conflicts were never materialized — run `bpatch continue --materialize`, resolve, then continue".to_string(),
+        }));
+    }
+
     let unresolved = unresolved_marker_files(&ctx.checkout, &session)?;
     if !unresolved.is_empty() {
         return Ok(ContinueOutcome::Unresolved(UnresolvedConflicts {
@@ -226,6 +271,11 @@ pub fn continue_session(
 
     let new_base_tree = git.tree_id(&session.new_base)?;
     let delta = git.diff_tree_name_status(&new_base_tree, &final_tree)?;
+    let collisions = untracked_add_collisions(&git, &delta)?;
+    if !collisions.is_empty() {
+        return Ok(ContinueOutcome::Drift(ConflictDrift { files: collisions }));
+    }
+
     let chain = author_feature_commits(
         AuthorCommitsInput {
             checkout: &ctx.checkout,
@@ -307,6 +357,11 @@ fn materialize_conflicts(
     progress: &mut dyn FnMut(ProgressEvent<'_>),
 ) -> Result<ContinueOutcome> {
     let git = GitAdapter::new(&ctx.checkout);
+    let drift = uncommitted_conflict_drift(&git, session)?;
+    if !drift.is_empty() {
+        return Ok(ContinueOutcome::Drift(ConflictDrift { files: drift }));
+    }
+
     progress(ProgressEvent::Start {
         phase: "materialize",
         total: Some(session.conflicts.len()),
@@ -335,6 +390,10 @@ fn materialize_conflicts(
         phase: "materialize",
     });
 
+    let mut materialized = session.clone();
+    materialized.materialized = true;
+    save_session(&ctx.checkout, &materialized)?;
+
     Ok(ContinueOutcome::Materialized(MaterializedConflicts {
         files_written: session.conflicts.len(),
         clean_files: clean_file_count(ctx, session)?,
@@ -354,7 +413,50 @@ fn unresolved_marker_files(checkout: &Path, session: &ConflictSession) -> Result
 }
 
 fn is_marker_line(line: &str) -> bool {
-    line.starts_with("<<<<<<<") || line.starts_with("=======") || line.starts_with(">>>>>>>")
+    line.starts_with("<<<<<<<") || line.starts_with(">>>>>>>")
+}
+
+fn uncommitted_conflict_drift(
+    git: &GitAdapter,
+    session: &ConflictSession,
+) -> Result<Vec<DriftFile>> {
+    let conflict_paths = session
+        .conflicts
+        .iter()
+        .map(|conflict| conflict.file.clone())
+        .collect::<BTreeSet<_>>();
+    if conflict_paths.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    git.refresh_index()?;
+    let status = git.status_porcelain_z()?;
+    let mut parts = status.split(|byte| *byte == 0);
+    let mut files = Vec::new();
+    let mut seen = BTreeSet::new();
+    while let Some(record) = parts.next() {
+        if record.is_empty() {
+            break;
+        }
+        let text = std::str::from_utf8(record)?;
+        if text.len() < 4 {
+            continue;
+        }
+        let status = &text[..2];
+        let path = PathBuf::from(&text[3..]);
+        if status.starts_with('R') || status.starts_with('C') {
+            let _old_path = parts.next();
+        }
+        if conflict_paths.contains(&path) && seen.insert(path.clone()) {
+            files.push(DriftFile {
+                path,
+                status: status.trim().to_string(),
+                source: DriftSource::Uncommitted,
+                annotation: "modified, uncommitted".to_string(),
+            });
+        }
+    }
+    Ok(files)
 }
 
 fn resolved_blobs(

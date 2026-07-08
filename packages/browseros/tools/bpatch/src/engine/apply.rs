@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -6,7 +6,8 @@ use anyhow::{Context, Result, anyhow, bail};
 
 use crate::engine::progress::ProgressEvent;
 use crate::engine::state::{
-    DriftFile, StateContext, format_apply_trailers, parse_apply_trailers, unassigned_feature_name,
+    DriftFile, DriftSource, StateContext, format_apply_trailers, parse_apply_trailers,
+    unassigned_feature_name,
 };
 use crate::git::{GitAdapter, TreeDiffEntry};
 use crate::process::Git;
@@ -178,6 +179,10 @@ pub fn apply(
         .map(|applied| applied.tree.as_str())
         .unwrap_or(&state.head_tree);
     let delta = checkout.diff_tree_name_status(applied_tree, &target_tree)?;
+    let collisions = untracked_add_collisions(&checkout, &delta)?;
+    if !collisions.is_empty() {
+        return Ok(ApplyOutcome::Drift(DriftApply { files: collisions }));
+    }
 
     let chain = author_feature_commits(
         AuthorCommitsInput {
@@ -337,6 +342,55 @@ pub fn finalize_head(
     git.refresh_index()
         .context("refreshing index failed; recover with `git update-index -q --refresh`")?;
     Ok(())
+}
+
+pub(crate) fn untracked_add_collisions(
+    git: &GitAdapter,
+    delta: &[TreeDiffEntry],
+) -> Result<Vec<DriftFile>> {
+    let added = delta
+        .iter()
+        .filter(|entry| entry.status == "A")
+        .map(|entry| entry.path.clone())
+        .collect::<BTreeSet<_>>();
+    if added.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    git.refresh_index()?;
+    let untracked = untracked_paths(&git.status_porcelain_z()?)?;
+    Ok(added
+        .into_iter()
+        .filter(|path| untracked.contains(path))
+        .map(|path| DriftFile {
+            path,
+            status: "??".to_string(),
+            source: DriftSource::Uncommitted,
+            annotation: "untracked, would be overwritten".to_string(),
+        })
+        .collect())
+}
+
+fn untracked_paths(bytes: &[u8]) -> Result<BTreeSet<PathBuf>> {
+    let mut parts = bytes.split(|byte| *byte == 0);
+    let mut paths = BTreeSet::new();
+    while let Some(record) = parts.next() {
+        if record.is_empty() {
+            break;
+        }
+        let text = std::str::from_utf8(record)?;
+        if text.len() < 4 {
+            continue;
+        }
+        let status = &text[..2];
+        let path = &text[3..];
+        if status == "??" {
+            paths.insert(PathBuf::from(path));
+        } else if status.starts_with('R') || status.starts_with('C') {
+            let _old_path = parts.next();
+        }
+    }
+    Ok(paths)
 }
 
 fn pull_store(store_dir: &Path, progress: &mut dyn FnMut(ProgressEvent<'_>)) -> Result<()> {

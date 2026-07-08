@@ -6,7 +6,7 @@ use serde::Serialize;
 use crate::engine::conflict::{self, ContinueOutcome};
 use crate::engine::lock::CheckoutLock;
 use crate::engine::progress::ProgressEvent;
-use crate::engine::state::StateContext;
+use crate::engine::state::{DriftSource, StateContext};
 
 /// Options controlling conflict-session continue.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -46,6 +46,20 @@ pub enum ContinueReport {
         /// Process exit code for this result.
         exit: i32,
     },
+    /// Conflicts were not materialized before final continue.
+    NotMaterialized {
+        /// Human-readable recovery guidance.
+        reason: String,
+        /// Process exit code for this result.
+        exit: i32,
+    },
+    /// Continue refused to overwrite uncommitted worktree or index changes.
+    Drift {
+        /// Drift entries that blocked continue.
+        files: Vec<ContinueDriftFile>,
+        /// Process exit code for this result.
+        exit: i32,
+    },
     /// No conflict session exists.
     NoSession {
         /// Human-readable reason.
@@ -62,6 +76,27 @@ pub enum ContinueReport {
     },
 }
 
+/// One drift entry in a continue refusal.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ContinueDriftFile {
+    /// Repository-relative file path.
+    pub path: PathBuf,
+    /// Git status code for the drift.
+    pub status: String,
+    /// Drift source class.
+    pub source: ContinueDriftSource,
+    /// Human annotation for the drift.
+    pub annotation: String,
+}
+
+/// Serializable drift source class.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ContinueDriftSource {
+    /// The index or worktree differs from HEAD.
+    Uncommitted,
+}
+
 impl ContinueReport {
     /// Returns the process exit code represented by the report.
     pub fn exit_code(&self) -> i32 {
@@ -69,6 +104,8 @@ impl ContinueReport {
             Self::Materialized { exit, .. }
             | Self::Completed { exit, .. }
             | Self::Unresolved { exit, .. }
+            | Self::NotMaterialized { exit, .. }
+            | Self::Drift { exit, .. }
             | Self::NoSession { exit, .. }
             | Self::Error { exit, .. } => *exit,
         }
@@ -106,6 +143,26 @@ pub fn run(
         Ok(ContinueOutcome::Unresolved(unresolved)) => ContinueReport::Unresolved {
             files: unresolved.files,
             exit: 2,
+        },
+        Ok(ContinueOutcome::NotMaterialized(not_materialized)) => ContinueReport::NotMaterialized {
+            reason: not_materialized.reason,
+            exit: 2,
+        },
+        Ok(ContinueOutcome::Drift(drift)) => ContinueReport::Drift {
+            files: drift
+                .files
+                .into_iter()
+                .map(|file| ContinueDriftFile {
+                    path: file.path,
+                    status: file.status,
+                    source: match file.source {
+                        DriftSource::Committed => ContinueDriftSource::Uncommitted,
+                        DriftSource::Uncommitted => ContinueDriftSource::Uncommitted,
+                    },
+                    annotation: file.annotation,
+                })
+                .collect(),
+            exit: 3,
         },
         Ok(ContinueOutcome::NoSession) => ContinueReport::NoSession {
             reason: "no conflict session".to_string(),
@@ -155,6 +212,24 @@ pub fn render_human(report: &ContinueReport) -> String {
             for file in files {
                 out.push_str(&format!("  {}\n", file.display()));
             }
+            out
+        }
+        ContinueReport::NotMaterialized { reason, .. } => format!("error: {reason}\n"),
+        ContinueReport::Drift { files, .. } => {
+            let mut out = String::new();
+            out.push_str(&format!(
+                "drift: working tree has {} {} that would be overwritten:\n",
+                files.len(),
+                files_label(files.len())
+            ));
+            for file in files {
+                out.push_str(&format!(
+                    "  {:<44} ({})\n",
+                    file.path.display(),
+                    file.annotation
+                ));
+            }
+            out.push_str("refusing to touch a drifted tree.\n");
             out
         }
         ContinueReport::NoSession { reason, .. } | ContinueReport::Error { reason, .. } => {
