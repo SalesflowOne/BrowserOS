@@ -26,9 +26,45 @@ use crate::store::Store;
 
 /// Top-level bpatch command-line interface.
 #[derive(Debug, Parser)]
-#[command(name = "bpatch", about = "Manage BrowserOS Chromium patches")]
+#[command(
+    name = "bpatch",
+    about = "Manage BrowserOS Chromium patches",
+    after_long_help = r#"GETTING STARTED:
+  Configure the patch store once:
+    bpatch init /abs/path/to/chromium_patches
+
+  Or run bpatch init from inside chromium_patches.
+  Pass --store /abs/path/to/chromium_patches on store-reading commands.
+  Run bpatch from inside a Chromium checkout.
+
+GLOBAL FLAGS:
+  --store <STORE>  Overrides the config file for store-reading commands.
+  --json           Emits a single JSON object and suppresses progress and prompts.
+
+EXAMPLES:
+  Setup:
+    bpatch init /abs/path/to/chromium_patches
+
+  Daily loop:
+    bpatch status
+    bpatch diff
+    bpatch apply
+
+  Extract checkout commits into the store:
+    bpatch extract <rev1>..<rev2> --feature <name>
+
+  Base upgrade:
+    bpatch apply -> bpatch continue --materialize -> resolve markers -> bpatch continue -> bpatch extract --repin
+
+EXIT CODES:
+  0  Initialized, converged, applied, extracted, repinned, listed, added, aborted, or completed.
+  2  Conflicts are pending or conflict files remain unresolved.
+  3  Drift/refusal or extract needs a feature decision.
+  1  CLI, git, lock, config, or unexpected error.
+"#
+)]
 pub struct Cli {
-    /// Path to the chromium_patches store directory.
+    /// Override the config file's chromium_patches store directory for store-reading commands.
     #[arg(long, global = true)]
     pub store: Option<PathBuf>,
     /// Emit a single JSON object and disable progress and prompts.
@@ -43,20 +79,70 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Show checkout/store state.
+    #[command(
+        long_about = "Show checkout base, store rev, applied trailers, and drift.",
+        after_long_help = r#"EXAMPLE:
+  bpatch status
+"#
+    )]
     Status,
     /// Show what apply would touch.
+    #[command(
+        long_about = "Show what apply would touch, grouped by feature, with a rebuild-scope hint.",
+        after_long_help = r#"EXAMPLE:
+  bpatch diff
+"#
+    )]
     Diff,
     /// Converge the checkout to the store.
+    #[command(
+        long_about = "Optionally fast-forward the store repo with --pull, then converge the checkout to the store. Exit 2 means conflicts are pending; exit 3 means drift or refusal blocked the write.",
+        after_long_help = r#"EXAMPLE:
+  bpatch apply --pull
+"#
+    )]
     Apply(ApplyArgs),
     /// Extract commits into the store or repin the store base.
+    #[command(
+        long_about = "Extract <rev> or <rev1>..<rev2> into the store, or repin existing store patches to the checkout base. Use --feature <FEATURE> to route unmatched files, --commit to commit store repo changes, and --repin without a spec for base upgrades.",
+        after_long_help = r#"EXAMPLE:
+  bpatch extract <rev1>..<rev2> --feature <name>
+"#
+    )]
     Extract(ExtractArgs),
     /// Manage features.yaml entries.
+    #[command(
+        long_about = "Manage features.yaml entries. List the feature inventory or append a new feature block with an owned path.",
+        after_long_help = r#"EXAMPLES:
+  bpatch feature list
+  bpatch feature add wallet --path chrome/browser/browseros/wallet/
+"#
+    )]
     Feature(FeatureArgs),
     /// Write the patch store path to the user config.
+    #[command(
+        long_about = "Canonicalize a chromium_patches store directory, validate that it contains store.yaml, and write it to ~/.config/bpatch/config.toml while preserving other config keys and comments.",
+        after_long_help = r#"EXAMPLES:
+  bpatch init /abs/path/to/chromium_patches
+  cd /abs/path/to/chromium_patches && bpatch init
+"#
+    )]
     Init(InitArgs),
     /// Abort a conflict session.
+    #[command(
+        long_about = "Remove a pending conflict session. Before continue --materialize, abort only deletes the session file; the worktree has not been touched.",
+        after_long_help = r#"EXAMPLE:
+  bpatch abort
+"#
+    )]
     Abort,
     /// Continue a conflict session.
+    #[command(
+        long_about = "Use continue --materialize first to write conflict marker files, then resolve markers and run bare continue to finish convergence.",
+        after_long_help = r#"EXAMPLE:
+  bpatch continue --materialize -> resolve markers -> bpatch continue
+"#
+    )]
     Continue(ContinueArgs),
 }
 
@@ -99,8 +185,20 @@ pub struct FeatureArgs {
 #[derive(Debug, Subcommand)]
 pub enum FeatureCommand {
     /// List features, patch counts, and last applied sequence.
+    #[command(
+        long_about = "List features, owned patch counts, and last applied sequence numbers.",
+        after_long_help = r#"EXAMPLE:
+  bpatch feature list
+"#
+    )]
     List,
     /// Add a feature path block.
+    #[command(
+        long_about = "Append a new feature block to features.yaml. Provide a feature name and an exact path or directory prefix with --path.",
+        after_long_help = r#"EXAMPLE:
+  bpatch feature add wallet --path chrome/browser/browseros/wallet/ --description "Wallet UI"
+"#
+    )]
     Add(FeatureAddArgs),
 }
 

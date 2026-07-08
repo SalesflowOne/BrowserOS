@@ -28,6 +28,53 @@ struct AppliedScenario {
 }
 
 #[test]
+fn top_level_help_teaches_chromium_workflow() -> Result<()> {
+    let output = Command::new(env!("CARGO_BIN_EXE_bpatch"))
+        .arg("--help")
+        .output()
+        .context("running bpatch --help")?;
+    let stdout = String::from_utf8(output.stdout)?;
+    let stderr = String::from_utf8(output.stderr)?;
+
+    assert!(output.status.success(), "{stderr}");
+    assert!(stderr.is_empty());
+    assert!(!stdout.contains('\u{1b}'));
+    assert!(stdout.contains("GETTING STARTED:"));
+    assert!(stdout.contains("bpatch init /abs/path/to/chromium_patches"));
+    assert!(stdout.contains("Or run bpatch init from inside chromium_patches."));
+    assert!(stdout.contains("Run bpatch from inside a Chromium checkout."));
+    assert!(stdout.contains("GLOBAL FLAGS:"));
+    assert!(
+        stdout.contains("--store <STORE>  Overrides the config file for store-reading commands.")
+    );
+    assert!(stdout.contains("--json           Emits a single JSON object"));
+    assert!(stdout.contains("EXAMPLES:"));
+    assert!(stdout.contains("bpatch status"));
+    assert!(stdout.contains("bpatch diff"));
+    assert!(stdout.contains("bpatch apply"));
+    assert!(stdout.contains("bpatch extract <rev1>..<rev2> --feature <name>"));
+    assert!(stdout.contains("bpatch apply -> bpatch continue --materialize"));
+    assert!(stdout.contains("EXIT CODES:"));
+    assert!(stdout.contains("0  Initialized, converged, applied"));
+    assert!(stdout.contains("2  Conflicts are pending"));
+    assert!(stdout.contains("3  Drift/refusal or extract needs a feature decision."));
+    assert!(stdout.contains("1  CLI, git, lock, config, or unexpected error."));
+
+    let short = Command::new(env!("CARGO_BIN_EXE_bpatch"))
+        .arg("-h")
+        .output()
+        .context("running bpatch -h")?;
+    let short_stdout = String::from_utf8(short.stdout)?;
+    let short_stderr = String::from_utf8(short.stderr)?;
+
+    assert!(short.status.success(), "{short_stderr}");
+    assert!(short_stderr.is_empty());
+    assert!(!short_stdout.contains("GETTING STARTED:"));
+    assert!(!short_stdout.contains("EXIT CODES:"));
+    Ok(())
+}
+
+#[test]
 fn sim1_extract_hack_commit_renders_routing_net_fold_and_next_step() -> Result<()> {
     let checkout = FixtureRepo::new()?;
     let base = write_extract_base(&checkout)?;
