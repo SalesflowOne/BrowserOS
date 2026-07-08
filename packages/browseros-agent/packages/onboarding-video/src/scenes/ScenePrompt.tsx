@@ -89,12 +89,16 @@ export function ScenePrompt() {
           />
         </div>
       </div>
-      {/* MCP packet */}
+      {/* MCP arrow: straight line from terminal left edge to cockpit
+       *  right edge, both at their vertical midpoints (composition
+       *  space). Terminal at composition x=790..1516, cockpit
+       *  (scaled 0.78) at composition x=-316..386. Both midpoints
+       *  land around y=364. */}
       <ConnectorPacket
         progress={packetProgress}
         opacity={packetOpacity}
-        from={{ x: 1450, y: 400 }}
-        to={{ x: 380, y: 470 }}
+        from={{ x: 790, y: 364 }}
+        to={{ x: 400, y: 364 }}
       />
     </AbsoluteFill>
   )
