@@ -20,15 +20,61 @@ mock.module('@/modules/api/audit.hooks', () => ({
   useTaskScreenshotBaseUrl: () => null,
 }))
 
-mock.module('@/modules/api/connections.hooks', () => ({
-  useBrowserosConnections: () => ({
+const connectionsHookResultKey = '__browserclawConnectionsHookResult'
+
+function connectionsHookState() {
+  return globalThis as Record<string, unknown>
+}
+
+function setConnectionsProbePending() {
+  connectionsHookState()[connectionsHookResultKey] = {
+    data: undefined,
+    isPending: true,
+    isError: false,
+  }
+}
+
+function setConnectionsProbeEmpty() {
+  connectionsHookState()[connectionsHookResultKey] = {
     data: { connections: [] },
+    isPending: false,
+    isError: false,
+  }
+}
+
+mock.module('@/modules/api/connections.hooks', () => ({
+  useBrowserosConnections: Object.assign(
+    () =>
+      connectionsHookState()[connectionsHookResultKey] ?? {
+        data: undefined,
+        isPending: true,
+        isError: false,
+      },
+    { getKey: () => ['cockpit', 'connections'] },
+  ),
+  useConnectBrowseros: () => ({
+    isPending: false,
+    variables: undefined,
+    mutateAsync: async () => ({ installed: true }),
+  }),
+  useDisconnectBrowseros: () => ({
+    isPending: false,
+    variables: undefined,
+    mutateAsync: async () => ({ installed: false }),
   }),
 }))
 
 const { Cockpit } = await import('./Cockpit')
 
-function renderApp(): string {
+function renderApp(
+  options: { connections?: 'pending' | 'empty' } = {},
+): string {
+  if (options.connections === 'empty') {
+    setConnectionsProbeEmpty()
+  } else {
+    setConnectionsProbePending()
+  }
+
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -42,12 +88,10 @@ function renderApp(): string {
 }
 
 describe('Cockpit (v2)', () => {
-  it('renders the first-run hero and hides the running grid when no agents exist', () => {
+  it('renders the hero and activity header when connection probing is pending', () => {
     const html = renderApp()
-    expect(html).toContain('You watch. Your agent')
-    expect(html).toContain(
-      'https://cdn.browseros.com/artifacts/claw/onboarding-video/v0.1.0/first-run-demo.mp4',
-    )
+    expect(html).toContain('working on')
+    expect(html).toContain('Recent activity')
     expect(html).not.toContain('Running now')
   })
 
@@ -57,13 +101,19 @@ describe('Cockpit (v2)', () => {
     expect(html).not.toContain('harness . logins . guardrails')
   })
 
-  it('shows the first-run shell when there are no connections or runs', () => {
+  it('shows only the recent-activity empty state while connection probing is pending', () => {
     const html = renderApp()
     expect(html).not.toContain('No agents connected')
     expect(html).not.toContain('Running now')
+    expect(html).toContain('No recent activity')
+  })
+
+  it('shows the first-run shell when there are no connections or runs', () => {
+    const html = renderApp({ connections: 'empty' })
+    expect(html).toContain('You watch. Your agent')
     expect(html).toContain('Set up MCP endpoint')
     expect(html).toContain(
-      'Use BrowserClaw. Book me the cheapest morning flight',
+      'https://cdn.browseros.com/artifacts/claw/onboarding-video/v0.1.0/first-run-demo.mp4',
     )
   })
 })
