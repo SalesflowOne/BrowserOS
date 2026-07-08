@@ -23,6 +23,9 @@ func LoadRepoPatchSet(patchesDir string, filters []string) (PatchSet, error) {
 			return err
 		}
 		relPath = NormalizeChromiumPath(relPath)
+		if IsInternalPath(relPath) {
+			return nil
+		}
 		patchFile, err := loadPatchFile(fullPath, relPath)
 		if err != nil {
 			return err

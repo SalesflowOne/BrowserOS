@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
 
@@ -40,7 +40,12 @@ pub struct UnclaimedPath {
 /// Scans the checkout's porcelain status without mutating the index.
 pub fn scan_dirty(git: &GitAdapter) -> Result<DirtyScan> {
     git.refresh_index()?;
-    parse_dirty_status(&git.status_porcelain_z()?)
+    let mut scan = parse_dirty_status(&git.status_porcelain_z()?)?;
+    scan.entries
+        .retain(|entry| !entry_has_ignored_checkout_state_path(entry));
+    scan.conflicts
+        .retain(|entry| !entry_has_ignored_checkout_state_path(entry));
+    Ok(scan)
 }
 
 /// Classifies dirty entries into stored features, store:false resources, and leftovers.
@@ -256,6 +261,22 @@ fn is_store_metadata_path(path: &str) -> bool {
         path,
         FEATURES_FILE | STORE_FILE | "features.yaml" | "store.yaml"
     )
+}
+
+fn entry_has_ignored_checkout_state_path(entry: &DirtyEntry) -> bool {
+    is_ignored_checkout_state_path(&entry.path)
+        || entry
+            .old_path
+            .as_ref()
+            .is_some_and(|path| is_ignored_checkout_state_path(path))
+}
+
+fn is_ignored_checkout_state_path(path: &Path) -> bool {
+    path.to_str().is_some_and(|path| {
+        path == ".browseros-patch"
+            || path == ".browseros-patch/"
+            || path.starts_with(".browseros-patch/")
+    })
 }
 
 fn pathspec_bytes(paths: &[PathBuf]) -> Result<Vec<u8>> {

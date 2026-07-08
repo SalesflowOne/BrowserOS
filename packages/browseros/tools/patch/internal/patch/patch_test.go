@@ -81,8 +81,48 @@ rename to chrome/new.cc
 }
 
 func TestPathMatchesSkipsInternalState(t *testing.T) {
-	if PathMatches(".browseros-patch/state.yaml", nil) {
-		t.Fatalf("expected internal state path to be ignored")
+	for _, rel := range []string{
+		".browseros-patch/state.yaml",
+		".features.yaml",
+		".store.yaml",
+		"features.yaml",
+		"store.yaml",
+	} {
+		if PathMatches(rel, nil) {
+			t.Fatalf("expected internal path %s to be ignored", rel)
+		}
+	}
+}
+
+func TestLoadRepoPatchSetSkipsInternalMetadata(t *testing.T) {
+	patchesDir := t.TempDir()
+	for _, rel := range []string{
+		".features.yaml",
+		".store.yaml",
+		"features.yaml",
+		"store.yaml",
+		".browseros-patch/state.yaml",
+	} {
+		writeRepoFile(t, filepath.Join(patchesDir, filepath.FromSlash(rel)), "not a patch\n")
+	}
+	writeRepoFile(
+		t,
+		filepath.Join(patchesDir, "chrome", "foo.cc"),
+		"diff --git a/chrome/foo.cc b/chrome/foo.cc\n"+
+			"index 0000000000000000000000000000000000000000..1111111111111111111111111111111111111111 100644\n"+
+			"--- a/chrome/foo.cc\n"+
+			"+++ b/chrome/foo.cc\n"+
+			"@@ -1 +1 @@\n"+
+			"-old\n"+
+			"+new\n",
+	)
+
+	loaded, err := LoadRepoPatchSet(patchesDir, nil)
+	if err != nil {
+		t.Fatalf("LoadRepoPatchSet: %v", err)
+	}
+	if len(loaded) != 1 || loaded["chrome/foo.cc"].Path != "chrome/foo.cc" {
+		t.Fatalf("expected only chrome/foo.cc, got %+v", loaded)
 	}
 }
 

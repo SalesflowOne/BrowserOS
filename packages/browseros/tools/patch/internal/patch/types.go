@@ -69,7 +69,12 @@ func PathMatches(rel string, filters []string) bool {
 
 func IsInternalPath(rel string) bool {
 	candidate := NormalizeChromiumPath(rel)
-	return candidate == ".browseros-patch" || strings.HasPrefix(candidate, ".browseros-patch/")
+	return candidate == ".browseros-patch" ||
+		strings.HasPrefix(candidate, ".browseros-patch/") ||
+		candidate == ".features.yaml" ||
+		candidate == ".store.yaml" ||
+		candidate == "features.yaml" ||
+		candidate == "store.yaml"
 }
 
 func (p FilePatch) IsPureRename() bool {

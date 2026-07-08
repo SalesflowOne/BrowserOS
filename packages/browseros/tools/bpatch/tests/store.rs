@@ -223,6 +223,42 @@ fn feature_store_false_defaults_and_appends_preserve_yaml() -> Result<()> {
 }
 
 #[test]
+fn canonical_store_loads_build_resources_as_unstored() -> Result<()> {
+    let store_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("chromium_patches");
+    let store = Store::load(&store_dir)?;
+    let feature = store
+        .features()
+        .features
+        .get("build-resources")
+        .expect("build-resources");
+    let expected = vec![
+        "chrome/BROWSEROS_VERSION",
+        "chrome/VERSION",
+        "chrome/app/chromium_strings.grd",
+        "chrome/app/settings_chromium_strings.grdp",
+        "chrome/app/theme/chromium/",
+        "chrome/app/theme/default_100_percent/chromium/",
+        "chrome/app/theme/default_200_percent/chromium/",
+        "chrome/browser/browseros/claw_server/resources/",
+        "chrome/browser/browseros/server/resources/",
+        "chrome/browser/browseros/onboarding/resources/",
+        "chrome/enterprise_companion/branding.gni",
+        "chrome/updater/branding.gni",
+    ];
+
+    assert_eq!(feature.description, "resource: bos_build outputs");
+    assert!(!feature.store);
+    assert_eq!(feature.paths, expected);
+    assert!(!store.stores_path("chrome/app/theme/chromium/product_logo.png"));
+    assert!(!store.stores_path("chrome/browser/browseros/server/resources/bin/browseros_server"));
+    assert!(!store.stores_path("chrome/browser/browseros/claw_server/resources/bin/server"));
+    assert!(store.stores_path("chrome/browser/browseros/claw_server/BUILD.gn"));
+    Ok(())
+}
+
+#[test]
 fn non_patch_files_are_ignored_and_preserved_on_save() -> Result<()> {
     let dir = tempfile::tempdir()?;
     write_minimal_store(dir.path())?;

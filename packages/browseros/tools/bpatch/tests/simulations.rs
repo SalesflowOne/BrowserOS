@@ -693,6 +693,7 @@ fn sim9_store_false_resource_commit_is_clean_for_status_and_diff() -> Result<()>
     store.commit("seed annotate store")?;
 
     checkout.write_file("chrome/BROWSEROS_VERSION", "resource changed\n")?;
+    checkout.plant_untracked(".browseros-patch/state.json", "{}\n")?;
     let annotated = run_bpatch(
         checkout.path(),
         Some(&store_dir),
@@ -718,6 +719,14 @@ fn sim9_store_false_resource_commit_is_clean_for_status_and_diff() -> Result<()>
     let json = parse_json(&diff.stdout)?;
     assert_eq!(json["result"], "converged");
     assert_eq!(json["files_changed"], 0);
+
+    let triage = run_bpatch(
+        checkout.path(),
+        Some(&store_dir),
+        strs(&["annotate", "--triage", "--json"]),
+    )?;
+    assert_eq!(triage.code, 0, "{}", triage.stderr);
+    assert_eq!(parse_json(&triage.stdout)?["result"], "clean");
     Ok(())
 }
 
