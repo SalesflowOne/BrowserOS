@@ -52,6 +52,7 @@
     "build:agent:dev": "FORCE_COLOR=1 bun run --filter @browseros/app --elide-lines=0 build:dev",
     "build:agent": "bun run codegen:agent && bun run --filter @browseros/app build",
     "codegen:agent": "bun run --filter @browseros/app codegen",
+    "upload:onboarding-video": "FORCE_COLOR=1 bun scripts/build/upload-onboarding-video.ts",
     "test": "bun run test:all",
     "test:all": "bun run ./scripts/run-test-suite.ts all",
     "test:fixtures": "bun apps/server/tests/__fixtures__/browser-fixtures/serve.ts",

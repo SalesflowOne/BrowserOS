@@ -1,6 +1,6 @@
 {
   "name": "@browseros/onboarding-video",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Remotion compositions for BrowserClaw cockpit first-run motion demo. Shared by claw-app (runtime via @remotion/player) and a future offline render pipeline (webm output).",
