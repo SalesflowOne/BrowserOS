@@ -978,6 +978,22 @@ fn alias_add_list_remove_round_trips_config_and_json() -> Result<()> {
     );
     assert_eq!(json["exit"], 0);
 
+    let scoped_alias = run_bpatch_with_home(
+        cwd.path(),
+        None,
+        strs(&["-C", "ch1", "alias", "list", "--json"]),
+        home.path(),
+    )?;
+    assert_eq!(scoped_alias.code, 1);
+    let json = parse_json(&scoped_alias.stdout)?;
+    assert_eq!(json["result"], "error");
+    assert!(
+        json["reason"]
+            .as_str()
+            .unwrap()
+            .contains("alias commands do not accept -C/--checkout")
+    );
+
     let remove = run_bpatch_with_home(
         cwd.path(),
         None,
@@ -992,6 +1008,7 @@ fn alias_add_list_remove_round_trips_config_and_json() -> Result<()> {
     let after_remove = fs::read_to_string(config_dir.join("config.toml"))?;
     assert!(after_remove.contains("# keep this comment"));
     assert!(after_remove.contains("custom = \"preserve\""));
+    assert!(!after_remove.contains("[checkouts]"));
     assert!(!after_remove.contains("ch1 ="));
     Ok(())
 }

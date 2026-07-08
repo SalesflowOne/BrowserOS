@@ -299,6 +299,11 @@ pub fn run(cli: Cli) -> i32 {
 
 fn run_inner(cli: &Cli) -> Result<i32> {
     if let Command::Alias(args) = &cli.command {
+        if cli.checkout.is_some() {
+            bail!(
+                "alias commands do not accept -C/--checkout; aliases manage the global checkout map"
+            );
+        }
         return alias::run(args, cli.json);
     }
     if let Command::Init(args) = &cli.command {

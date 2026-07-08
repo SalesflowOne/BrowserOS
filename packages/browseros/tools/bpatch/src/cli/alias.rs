@@ -124,15 +124,25 @@ fn list() -> Result<AliasReport> {
 
 fn remove(name: &str) -> Result<AliasReport> {
     let path = super::config_path();
-    let config = super::load_config(&path)?.unwrap_or_default();
-    let removed = config
-        .checkouts
-        .get(name)
-        .cloned()
-        .ok_or_else(|| anyhow!("unknown checkout alias `{}`", name))?;
-
     let mut doc = load_document()?;
-    checkouts_table_mut(&mut doc)?.remove(name);
+    let (removed, remove_table) = {
+        let table = doc
+            .as_table_mut()
+            .get_mut("checkouts")
+            .and_then(Item::as_table_mut)
+            .ok_or_else(|| anyhow!("unknown checkout alias `{}`", name))?;
+        let removed = table
+            .get(name)
+            .and_then(Item::as_value)
+            .and_then(|value| value.as_str())
+            .map(PathBuf::from)
+            .ok_or_else(|| anyhow!("unknown checkout alias `{}`", name))?;
+        table.remove(name);
+        (removed, table.is_empty())
+    };
+    if remove_table {
+        doc.as_table_mut().remove("checkouts");
+    }
     write_document(&path, &doc)?;
 
     Ok(AliasReport::Removed {
