@@ -1,9 +1,9 @@
 diff --git a/chrome/browser/browseros/onboarding/browseros_onboarding.cc b/chrome/browser/browseros/onboarding/browseros_onboarding.cc
 new file mode 100644
-index 0000000000000..e936189f913b130160a04bbca0b871e09dafad54
+index 0000000000000..372f36bcb4864f440e38a461e9cf4ab982b191dd
 --- /dev/null
 +++ b/chrome/browser/browseros/onboarding/browseros_onboarding.cc
-@@ -0,0 +1,734 @@
+@@ -0,0 +1,605 @@
 +// Copyright 2026 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -14,16 +14,13 @@ index 0000000000000..e936189f913b130160a04bbca0b871e09dafad54
 +
 +#include <memory>
 +#include <optional>
-+#include <set>
 +#include <string>
 +#include <string_view>
 +#include <utility>
-+#include <vector>
 +
 +#include "base/functional/bind.h"
 +#include "base/functional/callback.h"
 +#include "base/location.h"
-+#include "base/memory/weak_ptr.h"
 +#include "base/notreached.h"
 +#include "base/strings/stringprintf.h"
 +#include "base/strings/utf_string_conversions.h"
@@ -154,7 +151,6 @@ index 0000000000000..e936189f913b130160a04bbca0b871e09dafad54
 +
 + private:
 +  enum class ImportSourceResultStatus {
-+    kPending,
 +    kImporting,
 +    kSucceeded,
 +    kFailed,
@@ -167,17 +163,10 @@ index 0000000000000..e936189f913b130160a04bbca0b871e09dafad54
 +    bool has_selected_items = false;
 +  };
 +
-+  struct ImportQueueEntry {
-+    user_data_importer::SourceProfile source_profile;
-+    std::string source_id;
-+    std::string display_name;
-+    uint16_t imported_items = user_data_importer::NONE;
-+  };
-+
 +  struct ImportSourceResult {
 +    std::string source_id;
 +    std::string display_name;
-+    ImportSourceResultStatus status = ImportSourceResultStatus::kPending;
++    ImportSourceResultStatus status;
 +  };
 +
 +  void RegisterMessages() override {
@@ -223,7 +212,7 @@ index 0000000000000..e936189f913b130160a04bbca0b871e09dafad54
 +  }
 +
 +  void HandleRefreshSources(const base::ListValue& args) {
-+    if (IsImportQueueRunning()) {
++    if (IsImportRunning()) {
 +      SendFailure("importing", "import_in_progress",
 +                  "An import is already in progress.");
 +      return;
@@ -235,7 +224,7 @@ index 0000000000000..e936189f913b130160a04bbca0b871e09dafad54
 +  }
 +
 +  void HandleStartImport(const base::ListValue& args) {
-+    if (IsImportQueueRunning()) {
++    if (IsImportRunning()) {
 +      SendFailure("importing", "import_in_progress",
 +                  "An import is already in progress.");
 +      return;
@@ -255,39 +244,40 @@ index 0000000000000..e936189f913b130160a04bbca0b871e09dafad54
 +      return;
 +    }
 +
-+    std::vector<ImportRequestSelection> selections;
-+    if (!BuildImportSelections(args, &selections)) {
++    ImportRequestSelection selection;
++    if (!BuildImportSelection(args, &selection)) {
 +      SendFailure("invalid_source", "Selected import source is not valid.");
 +      return;
 +    }
 +
-+    std::vector<ImportQueueEntry> import_queue;
-+    std::vector<ImportSourceResult> import_results;
-+    bool has_supported_items = false;
-+    for (const ImportRequestSelection& selection : selections) {
-+      const user_data_importer::SourceProfile& source_profile =
-+          importer_list_->GetSourceProfileAt(selection.source_index);
-+      uint16_t imported_items =
-+          GetEffectiveImportItems(source_profile, selection);
-+      has_supported_items = has_supported_items || imported_items != 0;
++    const user_data_importer::SourceProfile& source_profile =
++        importer_list_->GetSourceProfileAt(selection.source_index);
++    imported_items_ = GetEffectiveImportItems(source_profile, selection);
 +
-+      std::string display_name = GetDisplayName(source_profile);
-+      import_queue.push_back(
-+          {source_profile, selection.source_id, display_name, imported_items});
-+      import_results.push_back({selection.source_id, display_name,
-+                                ImportSourceResultStatus::kPending});
-+    }
-+
-+    if (!has_supported_items) {
++    if (!imported_items_) {
 +      SendFailure("no_supported_items",
 +                  "Selected source has no supported import items.");
 +      return;
 +    }
 +
-+    import_queue_ = std::move(import_queue);
-+    import_results_ = std::move(import_results);
-+    import_queue_index_ = 0;
-+    StartNextImport();
++    std::string display_name = GetDisplayName(source_profile);
++    import_result_ = ImportSourceResult{selection.source_id, display_name,
++                                        ImportSourceResultStatus::kImporting};
++    current_item_ = user_data_importer::NONE;
++    completed_items_ = user_data_importer::NONE;
++    import_did_succeed_ = false;
++
++    if (importer_host_) {
++      importer_host_->set_observer(nullptr);
++      importer_host_ = nullptr;
++    }
++    importer_host_ = new ExternalProcessImporterHost();
++    importer_host_->set_observer(this);
++    Profile* profile = Profile::FromWebUI(web_ui());
++    SendState("importing");
++    importer_host_->StartImportSettings(source_profile, profile,
++                                        imported_items_,
++                                        new ProfileWriter(profile));
 +  }
 +
 +  void HandleComplete(const base::ListValue& args) {
@@ -336,26 +326,14 @@ index 0000000000000..e936189f913b130160a04bbca0b871e09dafad54
 +    return false;
 +  }
 +
-+  bool BuildImportSelections(
-+      const base::ListValue& args,
-+      std::vector<ImportRequestSelection>* selections) const {
++  bool BuildImportSelection(const base::ListValue& args,
++                            ImportRequestSelection* selection) const {
 +    if (!args.empty() && args[0].is_dict()) {
 +      const base::DictValue& request = args[0].GetDict();
 +      if (request.contains("selections")) {
-+        const base::ListValue* requested_selections =
-+            request.FindList("selections");
-+        if (!requested_selections) {
-+          return false;
-+        }
-+        return BuildImportSelectionsFromList(*requested_selections, selections);
-+      }
-+
-+      ImportRequestSelection selection;
-+      if (!BuildImportSelectionFromDict(request, &selection)) {
 +        return false;
 +      }
-+      selections->push_back(std::move(selection));
-+      return true;
++      return BuildImportSelectionFromDict(request, selection);
 +    }
 +
 +    std::optional<int> browser_index = args.empty() ? 0 : args[0].GetIfInt();
@@ -366,35 +344,10 @@ index 0000000000000..e936189f913b130160a04bbca0b871e09dafad54
 +      return false;
 +    }
 +
-+    selections->push_back(
-+        {*browser_index, SourceIdForIndex(static_cast<size_t>(*browser_index)),
-+         user_data_importer::NONE, false});
-+    return true;
-+  }
-+
-+  bool BuildImportSelectionsFromList(
-+      const base::ListValue& requested_selections,
-+      std::vector<ImportRequestSelection>* selections) const {
-+    if (requested_selections.empty()) {
-+      return false;
-+    }
-+
-+    std::set<std::string> source_ids;
-+    for (const base::Value& selection_value : requested_selections) {
-+      if (!selection_value.is_dict()) {
-+        return false;
-+      }
-+
-+      ImportRequestSelection selection;
-+      if (!BuildImportSelectionFromDict(selection_value.GetDict(),
-+                                        &selection)) {
-+        return false;
-+      }
-+      if (!source_ids.insert(selection.source_id).second) {
-+        return false;
-+      }
-+      selections->push_back(std::move(selection));
-+    }
++    selection->source_index = *browser_index;
++    selection->source_id = SourceIdForIndex(static_cast<size_t>(*browser_index));
++    selection->selected_items = user_data_importer::NONE;
++    selection->has_selected_items = false;
 +    return true;
 +  }
 +
@@ -450,12 +403,16 @@ index 0000000000000..e936189f913b130160a04bbca0b871e09dafad54
 +      std::string browser_name =
 +          base::UTF16ToUTF8(source_profile.importer_name);
 +      std::string profile_name = base::UTF16ToUTF8(source_profile.profile);
++      std::string account_name =
++          base::UTF16ToUTF8(source_profile.account_name);
 +
 +      base::DictValue source;
 +      source.Set("id", SourceIdForIndex(i));
 +      source.Set("displayName", GetDisplayName(source_profile));
 +      source.Set("browserName", browser_name);
 +      source.Set("profileName", profile_name);
++      source.Set("accountName", account_name);
++      source.Set("isManaged", source_profile.is_managed);
 +      source.Set("supportedItems", ImportItemsFromMask(services));
 +      source.Set("recommendedItems", ImportItemsFromMask(services));
 +      sources.Append(std::move(source));
@@ -466,8 +423,6 @@ index 0000000000000..e936189f913b130160a04bbca0b871e09dafad54
 +  const char* ImportSourceResultStatusToString(
 +      ImportSourceResultStatus status) const {
 +    switch (status) {
-+      case ImportSourceResultStatus::kPending:
-+        return "pending";
 +      case ImportSourceResultStatus::kImporting:
 +        return "importing";
 +      case ImportSourceResultStatus::kSucceeded:
@@ -480,12 +435,12 @@ index 0000000000000..e936189f913b130160a04bbca0b871e09dafad54
 +
 +  base::ListValue BuildResults() const {
 +    base::ListValue results;
-+    for (const ImportSourceResult& result : import_results_) {
++    if (import_result_) {
 +      base::DictValue result_value;
-+      result_value.Set("sourceId", result.source_id);
-+      result_value.Set("displayName", result.display_name);
-+      result_value.Set("status",
-+                       ImportSourceResultStatusToString(result.status));
++      result_value.Set("sourceId", import_result_->source_id);
++      result_value.Set("displayName", import_result_->display_name);
++      result_value.Set(
++          "status", ImportSourceResultStatusToString(import_result_->status));
 +      results.Append(std::move(result_value));
 +    }
 +    return results;
@@ -497,11 +452,10 @@ index 0000000000000..e936189f913b130160a04bbca0b871e09dafad54
 +    progress.Set("totalItems",
 +                 static_cast<int>(ImportItemsFromMask(imported_items_).size()));
 +    progress.Set("completedSources", GetCompletedSourceCount());
-+    progress.Set("totalSources", static_cast<int>(import_results_.size()));
-+    if (has_current_source_) {
-+      const ImportQueueEntry& entry = import_queue_[current_source_index_];
-+      progress.Set("currentSourceId", entry.source_id);
-+      progress.Set("currentSourceName", entry.display_name);
++    progress.Set("totalSources", import_result_ ? 1 : 0);
++    if (IsImportRunning()) {
++      progress.Set("currentSourceId", import_result_->source_id);
++      progress.Set("currentSourceName", import_result_->display_name);
 +    }
 +    const char* current_item = ImportItemToString(current_item_);
 +    if (current_item) {
@@ -516,10 +470,10 @@ index 0000000000000..e936189f913b130160a04bbca0b871e09dafad54
 +      state.Set("apiVersion", kBrowserOSOnboardingApiVersion);
 +      state.Set("status", std::string(status));
 +      state.Set("sources", BuildSources());
-+      if (!import_results_.empty()) {
++      if (import_result_) {
 +        state.Set("results", BuildResults());
 +      }
-+      if (imported_items_ || !import_results_.empty()) {
++      if (imported_items_ || import_result_) {
 +        state.Set("progress", BuildProgress());
 +      }
 +      CallJavascriptFunction("browserosOnboarding.receiveState", state);
@@ -538,10 +492,10 @@ index 0000000000000..e936189f913b130160a04bbca0b871e09dafad54
 +      state.Set("apiVersion", kBrowserOSOnboardingApiVersion);
 +      state.Set("status", std::string(status));
 +      state.Set("sources", BuildSources());
-+      if (!import_results_.empty()) {
++      if (import_result_) {
 +        state.Set("results", BuildResults());
 +      }
-+      if (imported_items_ || !import_results_.empty()) {
++      if (imported_items_ || import_result_) {
 +        state.Set("progress", BuildProgress());
 +      }
 +      base::DictValue error;
@@ -571,111 +525,38 @@ index 0000000000000..e936189f913b130160a04bbca0b871e09dafad54
 +      importer_host_->set_observer(nullptr);
 +      importer_host_ = nullptr;
 +    }
-+    if (import_results_.empty()) {
++    if (!import_result_) {
 +      return;
 +    }
 +
 +    current_item_ = user_data_importer::NONE;
-+    if (import_queue_index_ < import_results_.size()) {
-+      import_results_[import_queue_index_].status =
-+          import_did_succeed_ ? ImportSourceResultStatus::kSucceeded
-+                              : ImportSourceResultStatus::kFailed;
-+      ++import_queue_index_;
-+    }
-+
-+    if (IsImportQueueTerminal()) {
-+      has_current_source_ = false;
-+      SendState(GetTerminalImportStatus());
-+      return;
-+    }
-+
-+    SendState("importing");
-+    PostStartNextImport();
++    import_result_->status = import_did_succeed_
++                                 ? ImportSourceResultStatus::kSucceeded
++                                 : ImportSourceResultStatus::kFailed;
++    SendState(GetTerminalImportStatus());
 +  }
 +
-+  void StartNextImport() {
-+    if (import_queue_index_ >= import_queue_.size()) {
-+      has_current_source_ = false;
-+      SendState(GetTerminalImportStatus());
-+      return;
-+    }
-+
-+    current_source_index_ = import_queue_index_;
-+    has_current_source_ = true;
-+    current_item_ = user_data_importer::NONE;
-+    completed_items_ = user_data_importer::NONE;
-+    imported_items_ = import_queue_[import_queue_index_].imported_items;
-+    import_did_succeed_ = false;
-+
-+    if (!imported_items_) {
-+      import_results_[import_queue_index_].status =
-+          ImportSourceResultStatus::kFailed;
-+      ++import_queue_index_;
-+      bool is_terminal = IsImportQueueTerminal();
-+      if (is_terminal) {
-+        has_current_source_ = false;
-+      }
-+      SendState(is_terminal ? GetTerminalImportStatus() : "importing");
-+      if (!is_terminal) {
-+        PostStartNextImport();
-+      }
-+      return;
-+    }
-+
-+    import_results_[import_queue_index_].status =
-+        ImportSourceResultStatus::kImporting;
-+    if (importer_host_) {
-+      importer_host_->set_observer(nullptr);
-+      importer_host_ = nullptr;
-+    }
-+    importer_host_ = new ExternalProcessImporterHost();
-+    importer_host_->set_observer(this);
-+    Profile* profile = Profile::FromWebUI(web_ui());
-+    SendState("importing");
-+    importer_host_->StartImportSettings(
-+        import_queue_[import_queue_index_].source_profile, profile,
-+        imported_items_, new ProfileWriter(profile));
-+  }
-+
-+  void PostStartNextImport() {
-+    // The host deletes itself after ImportEnded(), so the next host starts
-+    // later.
-+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
-+        FROM_HERE, base::BindOnce(&BrowserOSOnboardingHandler::StartNextImport,
-+                                  weak_factory_.GetWeakPtr()));
-+  }
-+
-+  bool IsImportQueueRunning() const {
-+    return !import_results_.empty() && !IsImportQueueTerminal();
-+  }
-+
-+  bool IsImportQueueTerminal() const {
-+    if (import_results_.empty()) {
-+      return false;
-+    }
-+    return GetCompletedSourceCount() ==
-+           static_cast<int>(import_results_.size());
++  bool IsImportRunning() const {
++    return import_result_ &&
++           import_result_->status == ImportSourceResultStatus::kImporting;
 +  }
 +
 +  int GetCompletedSourceCount() const {
-+    int count = 0;
-+    for (const ImportSourceResult& result : import_results_) {
-+      if (result.status == ImportSourceResultStatus::kSucceeded ||
-+          result.status == ImportSourceResultStatus::kFailed) {
-+        ++count;
-+      }
++    if (!import_result_) {
++      return 0;
 +    }
-+    return count;
++    return (import_result_->status == ImportSourceResultStatus::kSucceeded ||
++            import_result_->status == ImportSourceResultStatus::kFailed)
++               ? 1
++               : 0;
 +  }
 +
 +  int GetSucceededSourceCount() const {
-+    int count = 0;
-+    for (const ImportSourceResult& result : import_results_) {
-+      if (result.status == ImportSourceResultStatus::kSucceeded) {
-+        ++count;
-+      }
++    if (!import_result_) {
++      return 0;
 +    }
-+    return count;
++    return import_result_->status == ImportSourceResultStatus::kSucceeded ? 1
++                                                                          : 0;
 +  }
 +
 +  const char* GetTerminalImportStatus() const {
@@ -683,33 +564,23 @@ index 0000000000000..e936189f913b130160a04bbca0b871e09dafad54
 +  }
 +
 +  void ResetImportState() {
-+    weak_factory_.InvalidateWeakPtrs();
 +    current_item_ = user_data_importer::NONE;
 +    completed_items_ = user_data_importer::NONE;
 +    imported_items_ = user_data_importer::NONE;
 +    import_did_succeed_ = false;
-+    import_queue_.clear();
-+    import_results_.clear();
-+    import_queue_index_ = 0;
-+    current_source_index_ = 0;
-+    has_current_source_ = false;
++    import_result_.reset();
 +  }
 +
 +  std::unique_ptr<ImporterList> importer_list_;
 +  raw_ptr<ExternalProcessImporterHost> importer_host_ = nullptr;
 +  base::RepeatingClosure completion_callback_;
-+  std::vector<ImportQueueEntry> import_queue_;
-+  std::vector<ImportSourceResult> import_results_;
++  std::optional<ImportSourceResult> import_result_;
 +  user_data_importer::ImportItem current_item_ = user_data_importer::NONE;
 +  uint16_t completed_items_ = user_data_importer::NONE;
 +  uint16_t imported_items_ = user_data_importer::NONE;
-+  size_t import_queue_index_ = 0;
-+  size_t current_source_index_ = 0;
 +  bool importer_list_loaded_ = false;
 +  bool import_did_succeed_ = false;
-+  bool has_current_source_ = false;
 +  bool completion_handled_ = false;
-+  base::WeakPtrFactory<BrowserOSOnboardingHandler> weak_factory_{this};
 +};
 +
 +BrowserOSOnboardingUIConfig::BrowserOSOnboardingUIConfig()

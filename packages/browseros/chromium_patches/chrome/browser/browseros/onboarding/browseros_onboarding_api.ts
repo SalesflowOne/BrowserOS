@@ -1,9 +1,9 @@
 diff --git a/chrome/browser/browseros/onboarding/browseros_onboarding_api.ts b/chrome/browser/browseros/onboarding/browseros_onboarding_api.ts
 new file mode 100644
-index 0000000000000..83a1cb5ea28c7
+index 0000000000000..2bf836fe76daa
 --- /dev/null
 +++ b/chrome/browser/browseros/onboarding/browseros_onboarding_api.ts
-@@ -0,0 +1,99 @@
+@@ -0,0 +1,94 @@
 +// Copyright 2026 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -31,6 +31,8 @@ index 0000000000000..83a1cb5ea28c7
 +  displayName: string;
 +  browserName: string;
 +  profileName: string;
++  accountName: string;
++  isManaged: boolean;
 +  supportedItems: BrowserOSImportItem[];
 +  recommendedItems: BrowserOSImportItem[];
 +}
@@ -50,13 +52,8 @@ index 0000000000000..83a1cb5ea28c7
 +  message: string;
 +}
 +
-+export interface BrowserOSImportSelection {
-+  sourceId: string;
-+  items?: BrowserOSImportItem[];
-+}
-+
 +export type BrowserOSImportSourceResultStatus =
-+    'pending'|'importing'|'succeeded'|'failed';
++    'importing'|'succeeded'|'failed';
 +
 +export interface BrowserOSImportSourceResult {
 +  sourceId: string;
@@ -70,22 +67,20 @@ index 0000000000000..83a1cb5ea28c7
 +  sources: BrowserOSImportSource[];
 +  progress?: BrowserOSImportProgress;
 +  error?: BrowserOSOnboardingError;
-+  /** Multi-source imports can end succeeded with failed per-source results. */
++  /** Single-source imports report one per-source result. */
 +  results?: BrowserOSImportSourceResult[];
 +}
 +
 +/**
-+ * Starts one source or an ordered multi-source import queue.
++ * Starts one source import.
 + *
 + * Must be sent directly from the visible Import action. The browser process
 + * rejects hidden or non-interactive startImport messages because importing
 + * cookies/passwords can trigger the macOS Chrome Safe Storage keychain prompt.
 + */
 +export interface BrowserOSStartImportRequest {
-+  sourceId?: string;
++  sourceId: string;
 +  items?: BrowserOSImportItem[];
-+  /** When present, selections takes precedence over sourceId/items. */
-+  selections?: BrowserOSImportSelection[];
 +}
 +
 +export interface BrowserOSOnboardingClient {

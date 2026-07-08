@@ -467,3 +467,11 @@ features:
       - chrome/installer/setup/setup_main.cc
       - chrome/installer/util/util_constants.cc
       - chrome/installer/util/util_constants.h
+
+  keychain-prompts:
+    description: "fix: reduce macOS keychain prompts during Chrome import"
+    files:
+      - components/os_crypt/common/BUILD.gn
+      - components/os_crypt/common/keychain_password_mac_unittest.mm
+      - ui/webui/resources/tools/generate_grd.gni
+      - ui/webui/resources/tools/generate_grd.py

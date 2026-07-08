@@ -1,9 +1,9 @@
 diff --git a/chrome/utility/importer/browseros/chrome_password_importer.cc b/chrome/utility/importer/browseros/chrome_password_importer.cc
 new file mode 100644
-index 0000000000000..00528908da168
+index 0000000000000..3aaeb073d7554
 --- /dev/null
 +++ b/chrome/utility/importer/browseros/chrome_password_importer.cc
-@@ -0,0 +1,148 @@
+@@ -0,0 +1,143 @@
 +// Copyright 2024 AKW Technology Inc
 +// Chrome password importer implementation
 +
@@ -30,8 +30,14 @@ index 0000000000000..00528908da168
 +}  // namespace
 +
 +std::vector<user_data_importer::ImportedPasswordForm> ImportChromePasswords(
-+    const base::FilePath& profile_path) {
++    const base::FilePath& profile_path,
++    const std::string& encryption_key) {
 +  std::vector<user_data_importer::ImportedPasswordForm> passwords;
++  if (encryption_key.empty()) {
++    LOG(WARNING) << "browseros: Chrome encryption key unavailable; "
++                 << "skipping password import";
++    return passwords;
++  }
 +
 +  // Path to Login Data database
 +  base::FilePath login_data_path = profile_path.AppendASCII(kLoginDataFilename);
@@ -69,17 +75,6 @@ index 0000000000000..00528908da168
 +    sql::Statement statement(db.GetUniqueStatement(kQuery));
 +    if (!statement.is_valid()) {
 +      LOG(WARNING) << "browseros: Failed to prepare query";
-+      DeleteDatabaseTemp(temp_db_path);
-+      return passwords;
-+    }
-+
-+    // Extract encryption key only once the selected Login Data database is
-+    // known to exist and have the schema we import.
-+    KeyExtractionResult key_result;
-+    std::string encryption_key = ExtractChromeKey(profile_path, &key_result);
-+    if (encryption_key.empty()) {
-+      LOG(WARNING) << "browseros: Failed to extract encryption key, "
-+                   << "result: " << static_cast<int>(key_result);
 +      DeleteDatabaseTemp(temp_db_path);
 +      return passwords;
 +    }
