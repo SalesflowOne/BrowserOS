@@ -3,6 +3,22 @@ features:
   # ── LAYER 1: CORE & BRANDING ──────────────────────────────
   # Foundation patches applied first. Shared files (3+ features)
   # live here so later features don't duplicate them.
+  #
+  #
+build-resources:
+  description: "feat: build resources"
+  files:
+    - chrome/BROWSEROS_VERSION
+    - chrome/VERSION
+    - chrome/app/chromium_strings.grd
+    - chrome/app/settings_chromium_strings.grdp
+    - chrome/app/theme/chromium/
+    - chrome/app/theme/
+    - chrome/browser/browseros/claw_server/resources/
+    - chrome/browser/browseros/server/resources/
+    - chrome/browser/browseros/onboarding/resources/
+    - chrome/enterprise_companion/branding.gni
+    - chrome/updater/branding.gni
 
   browseros-core:
     description: "chore: browseros core infrastructure"

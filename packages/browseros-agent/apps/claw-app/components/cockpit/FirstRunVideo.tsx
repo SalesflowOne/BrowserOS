@@ -51,7 +51,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 const CDN_BASE_URL = 'https://cdn.browseros.com'
-const ASSET_VERSION = '0.1.0'
+const ASSET_VERSION = '0.2.0'
 const ASSET_BASE = `${CDN_BASE_URL}/artifacts/claw/onboarding-video/v${ASSET_VERSION}`
 const VIDEO_SRC = `${ASSET_BASE}/first-run-demo.mp4`
 const POSTER_SRC = `${ASSET_BASE}/first-run-demo-poster.png`
