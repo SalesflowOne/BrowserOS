@@ -1,6 +1,7 @@
 pub mod abort;
 pub mod alias;
 pub mod apply;
+mod checkout_guard;
 pub mod continue_cmd;
 pub mod diff;
 pub mod extract;
@@ -19,6 +20,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args, Parser, Subcommand};
 use serde::Deserialize;
 use serde_json::json;
+use thiserror::Error;
 
 use crate::engine::apply::ApplyOptions;
 use crate::engine::extract::{ExtractContext, ExtractSpec, FeatureDecisionPolicy};
@@ -288,8 +290,9 @@ pub fn run(cli: Cli) -> i32 {
     match run_inner(&cli) {
         Ok(code) => code,
         Err(err) => {
-            write_error(cli.json, &err);
-            1
+            let exit = error_exit(&err);
+            write_error(cli.json, &err, exit);
+            exit
         }
     }
 }
@@ -311,6 +314,9 @@ fn run_inner(cli: &Cli) -> Result<i32> {
     let checkout = resolve_checkout(cli)?;
     GitAdapter::new(&checkout).preflight()?;
     let store_dir = discover_store(cli.store.as_deref())?;
+    if needs_checkout_store_guard(&cli.command) {
+        checkout_guard::ensure_matches_store(&checkout, &store_dir)?;
+    }
     let state_ctx = StateContext::new(&checkout, &store_dir);
 
     match &cli.command {
@@ -547,6 +553,34 @@ fn extract_policy(args: &ExtractArgs) -> FeatureDecisionPolicy {
     }
 }
 
+fn needs_checkout_store_guard(command: &Command) -> bool {
+    matches!(
+        command,
+        Command::Status(_) | Command::Diff(_) | Command::Apply(_)
+    )
+}
+
+#[derive(Debug, Error)]
+#[error("{reason}")]
+struct CliFailure {
+    reason: String,
+    exit: i32,
+}
+
+fn refusal(reason: impl Into<String>) -> anyhow::Error {
+    CliFailure {
+        reason: reason.into(),
+        exit: 3,
+    }
+    .into()
+}
+
+fn error_exit(err: &anyhow::Error) -> i32 {
+    err.downcast_ref::<CliFailure>()
+        .map(|failure| failure.exit)
+        .unwrap_or(1)
+}
+
 fn discover_checkout(cwd: &Path) -> Result<PathBuf> {
     for dir in cwd.ancestors() {
         if dir.join(".git").exists() {
@@ -624,13 +658,13 @@ fn write_output(json: bool, json_text: &str, human: &str) -> Result<()> {
     Ok(())
 }
 
-fn write_error(json_mode: bool, err: &anyhow::Error) {
+fn write_error(json_mode: bool, err: &anyhow::Error, exit: i32) {
     render::clear_live_progress(json_mode);
     let reason = format!("{err:#}");
     if json_mode {
         println!(
             "{}",
-            json!({ "result": "error", "reason": reason, "exit": 1 })
+            json!({ "result": "error", "reason": reason, "exit": exit })
         );
     } else {
         eprintln!("error: {reason}");
