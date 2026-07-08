@@ -59,11 +59,15 @@ export function ImportStep({
 }: ImportStepProps) {
   const selectedSourceId = form.watch('selectedSourceId')
   const selectedSource = selectedSourceById(state.sources, selectedSourceId)
+  const sourceResult = state.results?.[0]
   const checkedItems = selectedSource
     ? sanitizeImportSelection(selectedSource, form.watch('selectedItems'))
     : []
   const sourceName =
-    selectedSource?.profileName || selectedSource?.browserName || 'source'
+    sourceResult?.displayName ||
+    selectedSource?.profileName ||
+    selectedSource?.browserName ||
+    'source'
   const isDetecting = state.status === 'detecting'
   const hasSupportedItems = (selectedSource?.supportedItems.length ?? 0) > 0
   const isPickerValid =
@@ -78,6 +82,7 @@ export function ImportStep({
   const currentItemLabel = state.progress?.currentItem
     ? importItemLabel(state.progress.currentItem)
     : undefined
+  const currentSourceLabel = state.progress?.currentSourceName
   const importedItems = state.progress?.completedItems ?? []
   const importedItemSummary = state.progress
     ? importedItems.length
@@ -202,6 +207,7 @@ export function ImportStep({
         <ImportingProgressCard
           currentItemLabel={currentItemLabel}
           progress={completedItems}
+          sourceLabel={currentSourceLabel}
           total={totalItems}
         />
       )}

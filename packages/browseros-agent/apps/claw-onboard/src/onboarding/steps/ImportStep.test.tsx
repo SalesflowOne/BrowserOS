@@ -190,12 +190,24 @@ describe('ImportStep', () => {
         status: 'importing',
         progress: {
           currentItem: 'cookies',
+          currentSourceId: MOCK_BROWSEROS_IMPORT_SOURCES[0].id,
+          currentSourceName: MOCK_BROWSEROS_IMPORT_SOURCES[0].displayName,
           completedItems: ['history', 'bookmarks'],
           totalItems: 7,
+          completedSources: 0,
+          totalSources: 1,
         },
+        results: [
+          {
+            sourceId: MOCK_BROWSEROS_IMPORT_SOURCES[0].id,
+            displayName: MOCK_BROWSEROS_IMPORT_SOURCES[0].displayName,
+            status: 'importing',
+          },
+        ],
       }),
     )
     expect(html).toContain('Importing Cookies')
+    expect(html).toContain('Google Chrome - Work')
     expect(html).toContain('2 / 7 items')
   })
 
@@ -225,10 +237,19 @@ describe('ImportStep', () => {
         progress: {
           completedItems: MOCK_BROWSEROS_IMPORT_SOURCES[0].recommendedItems,
           totalItems: 7,
+          completedSources: 1,
+          totalSources: 1,
         },
+        results: [
+          {
+            sourceId: MOCK_BROWSEROS_IMPORT_SOURCES[0].id,
+            displayName: MOCK_BROWSEROS_IMPORT_SOURCES[0].displayName,
+            status: 'succeeded',
+          },
+        ],
       }),
     )
-    expect(html).toContain('Imported 7 items from Work')
+    expect(html).toContain('Imported 7 items from Google Chrome - Work')
     expect(html).toContain('History, Bookmarks')
     expect(html).toContain('Continue')
   })
