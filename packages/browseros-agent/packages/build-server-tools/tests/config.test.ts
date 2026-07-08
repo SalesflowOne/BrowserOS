@@ -24,6 +24,7 @@ const TEST_ENV_KEYS = [
   'NODE_ENV',
   'R2_DOWNLOAD_PREFIX',
   'R2_UPLOAD_PREFIX',
+  'VITE_BROWSEROS_CLAW_API_URL',
 ] as const
 
 describe('build config', () => {
@@ -195,6 +196,51 @@ describe('build config', () => {
     const config = loadBuildConfig(tempRoot, product)
 
     expect(config.envVars.NODE_ENV).toBe('production')
+  })
+
+  it('does not pass demoted wrong-source process env to subprocesses', async () => {
+    tempRoot = await mkdtemp(join(tmpdir(), 'build-server-config-'))
+    const packageDir = join(tempRoot, 'apps/test-server')
+    await mkdir(packageDir, { recursive: true })
+    await writeFile(
+      join(packageDir, 'package.json'),
+      '{"version":"0.0.0-test"}',
+    )
+    await writeFile(
+      join(tempRoot, '.env.development'),
+      formatEnv({ VITE_BROWSEROS_CLAW_API_URL: 'http://127.0.0.1:9200' }),
+    )
+    await writeFile(
+      join(tempRoot, '.env.production'),
+      formatEnv(REQUIRED_INLINE_ENV),
+    )
+    process.env.VITE_BROWSEROS_CLAW_API_URL = 'http://127.0.0.1:9200'
+    const warnings: string[] = []
+    const originalWarn = console.warn
+    console.warn = (message?: unknown) => {
+      warnings.push(String(message))
+    }
+    try {
+      const config = loadBuildConfig(tempRoot, testProduct())
+
+      expect(config.processEnv.VITE_BROWSEROS_CLAW_API_URL).toBeUndefined()
+      expect(warnings).toEqual([
+        'env: ignoring 1 process values that match root .env.development (Bun auto-load): VITE_BROWSEROS_CLAW_API_URL',
+      ])
+    } finally {
+      console.warn = originalWarn
+    }
+  })
+
+  it('passes process env through in CI when there are no root files to demote', async () => {
+    const rootDir = await writeProdRoot({}, { envFile: false })
+    process.env.VITE_BROWSEROS_CLAW_API_URL = 'http://127.0.0.1:9200'
+
+    const config = loadBuildConfig(rootDir, testProduct(), { ci: true })
+
+    expect(config.processEnv.VITE_BROWSEROS_CLAW_API_URL).toBe(
+      'http://127.0.0.1:9200',
+    )
   })
 
   async function writeProdRoot(

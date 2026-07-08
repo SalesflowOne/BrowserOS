@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { ENV_REGISTRY, type EnvMode, findEnvKeySpec } from './registry'
+import { type EnvMode, findEnvKeySpec } from './registry'
 
 export type EnvValueSource = 'root-file' | 'process' | 'override'
 
@@ -11,30 +11,173 @@ export interface ResolvedEnv {
   values: Record<string, string>
   sources: Partial<Record<string, EnvValueSource>>
   targetFile: string
+  demotedKeys: string[]
 }
 
 /** Parses the subset of dotenv syntax used by BrowserOS env files. */
 export function parseEnvFile(text: string): Record<string, string> {
   const values: Record<string, string> = {}
+  let index = 0
 
-  for (const rawLine of text.split(/\r?\n/)) {
-    const line = rawLine.trim()
-    if (!line || line.startsWith('#')) {
+  while (index < text.length) {
+    index = skipHorizontalWhitespace(text, index)
+    if (index >= text.length) {
+      break
+    }
+    if (isNewline(text[index])) {
+      index = skipNewline(text, index)
+      continue
+    }
+    if (text[index] === '#') {
+      index = skipLine(text, index)
       continue
     }
 
-    const match = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(
-      line,
-    )
-    if (!match) {
+    const parsed = readAssignment(text, index)
+    if (!parsed) {
+      index = skipLine(text, index)
       continue
     }
 
-    const [, key, rawValue] = match
-    values[key] = parseEnvValue(rawValue)
+    values[parsed.key] = parsed.value
+    index = parsed.nextIndex
   }
 
   return values
+}
+
+function readAssignment(
+  text: string,
+  startIndex: number,
+): { key: string; value: string; nextIndex: number } | null {
+  let index = startIndex
+
+  if (
+    text.startsWith('export', index) &&
+    isHorizontalWhitespace(text[index + 6])
+  ) {
+    index = skipHorizontalWhitespace(text, index + 6)
+  }
+
+  const keyMatch = /^[A-Za-z_][A-Za-z0-9_]*/.exec(text.slice(index))
+  if (!keyMatch) {
+    return null
+  }
+
+  const key = keyMatch[0]
+  index += key.length
+  index = skipHorizontalWhitespace(text, index)
+
+  if (text[index] !== '=') {
+    return null
+  }
+
+  index = skipHorizontalWhitespace(text, index + 1)
+
+  if (text[index] === "'") {
+    const quoted = readSingleQuotedValue(text, index, key)
+    return {
+      key,
+      value: quoted.value,
+      nextIndex: skipLine(text, quoted.nextIndex),
+    }
+  }
+
+  if (text[index] === '"') {
+    const quoted = readDoubleQuotedValue(text, index, key)
+    return {
+      key,
+      value: quoted.value,
+      nextIndex: skipLine(text, quoted.nextIndex),
+    }
+  }
+
+  const valueStart = index
+  while (index < text.length && !isNewline(text[index])) {
+    index += 1
+  }
+
+  let rawValue = text.slice(valueStart, index)
+  if (rawValue.endsWith('\r')) {
+    rawValue = rawValue.slice(0, -1)
+  }
+
+  return {
+    key,
+    value: stripUnquotedInlineComment(rawValue).trim(),
+    nextIndex: skipNewline(text, index),
+  }
+}
+
+function skipHorizontalWhitespace(text: string, index: number): number {
+  while (index < text.length && isHorizontalWhitespace(text[index])) {
+    index += 1
+  }
+  return index
+}
+
+function isHorizontalWhitespace(char: string | undefined): boolean {
+  return char === ' ' || char === '\t'
+}
+
+function isNewline(char: string | undefined): boolean {
+  return char === '\n' || char === '\r'
+}
+
+function skipLine(text: string, index: number): number {
+  while (index < text.length && !isNewline(text[index])) {
+    index += 1
+  }
+  return skipNewline(text, index)
+}
+
+function skipNewline(text: string, index: number): number {
+  if (text[index] === '\r' && text[index + 1] === '\n') {
+    return index + 2
+  }
+  if (isNewline(text[index])) {
+    return index + 1
+  }
+  return index
+}
+
+function readSingleQuotedValue(
+  text: string,
+  quoteIndex: number,
+  key: string,
+): { value: string; nextIndex: number } {
+  const end = text.indexOf("'", quoteIndex + 1)
+  if (end === -1) {
+    throw new Error(`Unterminated quoted value for ${key}`)
+  }
+
+  return { value: text.slice(quoteIndex + 1, end), nextIndex: end + 1 }
+}
+
+function readDoubleQuotedValue(
+  text: string,
+  quoteIndex: number,
+  key: string,
+): { value: string; nextIndex: number } {
+  let result = ''
+
+  for (let index = quoteIndex + 1; index < text.length; index += 1) {
+    const char = text[index]
+    if (char === '"') {
+      return { value: result, nextIndex: index + 1 }
+    }
+
+    if (char !== '\\') {
+      result += char
+      continue
+    }
+
+    const decodedEscape = readEscapeSequence(text, index)
+    result += decodedEscape.value
+    index = decodedEscape.nextIndex
+  }
+
+  throw new Error(`Unterminated quoted value for ${key}`)
 }
 
 /** Loads the mode-specific root env file, returning an empty layer when absent. */
@@ -59,6 +202,7 @@ export function resolveEnv(options: {
   )
   const values: Record<string, string> = { ...fileValues }
   const sources: Partial<Record<string, EnvValueSource>> = {}
+  const demotedKeys: string[] = []
 
   for (const key of Object.keys(fileValues)) {
     sources[key] = 'root-file'
@@ -73,6 +217,7 @@ export function resolveEnv(options: {
     if (
       shouldDemoteAutoLoadedValue(key, value, fileValues, wrongAutoLoadValues)
     ) {
+      demotedKeys.push(key)
       continue
     }
 
@@ -85,14 +230,13 @@ export function resolveEnv(options: {
     sources[key] = 'override'
   }
 
-  validateResolvedValues(values)
-
   return {
     rootDir: options.rootDir,
     mode: options.mode,
     values,
     sources,
     targetFile,
+    demotedKeys,
   }
 }
 
@@ -118,49 +262,7 @@ export function requireEnv(
     throw new Error(formatMissingEnvError(resolved.mode, missing))
   }
 
-  return result
-}
-
-function parseEnvValue(rawValue: string): string {
-  const value = rawValue.trimStart()
-
-  if (value.startsWith("'")) {
-    return readSingleQuotedValue(value)
-  }
-
-  if (value.startsWith('"')) {
-    return readDoubleQuotedValue(value)
-  }
-
-  return stripUnquotedInlineComment(value).trim()
-}
-
-function readSingleQuotedValue(value: string): string {
-  const end = value.indexOf("'", 1)
-  if (end === -1) {
-    return value.slice(1)
-  }
-  return value.slice(1, end)
-}
-
-function readDoubleQuotedValue(value: string): string {
-  let result = ''
-
-  for (let index = 1; index < value.length; index += 1) {
-    const char = value[index]
-    if (char === '"') {
-      return result
-    }
-
-    if (char !== '\\') {
-      result += char
-      continue
-    }
-
-    const decodedEscape = readEscapeSequence(value, index)
-    result += decodedEscape.value
-    index = decodedEscape.nextIndex
-  }
+  validateRequiredValues(keys, result)
 
   return result
 }
@@ -263,27 +365,30 @@ function shouldDemoteAutoLoadedValue(
   wrongAutoLoadValues: Array<Record<string, string>>,
 ): boolean {
   const targetValue = targetValues[key]
-  if (targetValue === undefined || targetValue === processValue) {
+  if (targetValue === processValue) {
     return false
   }
 
   return wrongAutoLoadValues.some((values) => values[key] === processValue)
 }
 
-function validateResolvedValues(values: Record<string, string>): void {
-  for (const spec of ENV_REGISTRY) {
-    const value = values[spec.key]
-    if (value === undefined) {
+function validateRequiredValues(
+  keys: string[],
+  values: Record<string, string>,
+): void {
+  for (const key of keys) {
+    const spec = findEnvKeySpec(key)
+    if (!spec) {
       continue
     }
 
-    const result = spec.schema.safeParse(value)
+    const result = spec.schema.safeParse(values[key])
     if (!result.success) {
       const section = ` (section: ${spec.section})`
       const reason = result.error.issues
         .map((issue) => issue.message)
         .join('; ')
-      throw new Error(`Invalid env: ${spec.key}${section}. ${reason}`)
+      throw new Error(`Invalid env: ${key}${section}. ${reason}`)
     }
   }
 }

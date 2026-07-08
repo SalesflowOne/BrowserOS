@@ -76,6 +76,71 @@ describe('migrateLocalEnv', () => {
     ])
   })
 
+  test('harvests root .env and .env.local into development at lowest priority', async () => {
+    const rootDir = requireTempRoot(tempRoot)
+    await writeFixture(rootDir, 'apps/server/.env.development', {
+      LOG_LEVEL: 'debug',
+    })
+    await writeFixture(rootDir, '.env', {
+      CDP_PROTOCOL_JSON: '/tmp/protocol.json',
+      LOG_LEVEL: 'info',
+    })
+    await writeFixture(rootDir, '.env.local', {
+      BROWSEROS_BINARY: '/tmp/BrowserOS',
+    })
+
+    const plan = buildLocalEnvMigration(rootDir)
+    const development = plan.files.find((file) => file.mode === 'development')
+
+    expect(development?.content).toContain(
+      'CDP_PROTOCOL_JSON=/tmp/protocol.json',
+    )
+    expect(development?.content).toContain('BROWSEROS_BINARY=/tmp/BrowserOS')
+    expect(development?.content).toContain('LOG_LEVEL=debug')
+    expect(development?.content).not.toContain('LOG_LEVEL=info')
+    expect(plan.oldFiles).toEqual(
+      expect.arrayContaining([
+        join(rootDir, '.env'),
+        join(rootDir, '.env.local'),
+      ]),
+    )
+  })
+
+  test('warns loudly when retired R2 prefixes differ from code defaults', async () => {
+    const rootDir = requireTempRoot(tempRoot)
+    await writeFixture(rootDir, 'apps/server/.env.production', {
+      R2_UPLOAD_PREFIX: 'custom/server',
+      R2_DOWNLOAD_PREFIX: 'custom/vendor',
+    })
+    await writeFixture(rootDir, 'apps/cli/.env.production', {
+      R2_UPLOAD_PREFIX: 'cli',
+    })
+
+    const plan = buildLocalEnvMigration(rootDir)
+
+    expect(plan.dropped).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: 'R2_UPLOAD_PREFIX',
+          warning: expect.stringContaining(
+            'RETIRED PREFIX WARNING: R2_UPLOAD_PREFIX=custom/server',
+          ),
+        }),
+        expect.objectContaining({
+          key: 'R2_DOWNLOAD_PREFIX',
+          warning: expect.stringContaining(
+            'RETIRED PREFIX WARNING: R2_DOWNLOAD_PREFIX=custom/vendor',
+          ),
+        }),
+        expect.objectContaining({
+          key: 'R2_UPLOAD_PREFIX',
+          sourceFile: join(rootDir, 'apps/cli/.env.production'),
+          warning: undefined,
+        }),
+      ]),
+    )
+  })
+
   test('refuses to overwrite root env files without force', async () => {
     const rootDir = requireTempRoot(tempRoot)
     await writeFixture(rootDir, 'apps/server/.env.development', {

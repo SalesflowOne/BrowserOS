@@ -35,6 +35,31 @@ BACKSLASH="with \\ slash"
     })
   })
 
+  test('parses multiline quoted values', () => {
+    expect(
+      parseEnvFile(`
+DOUBLE="-----BEGIN KEY-----
+line1
+line2
+-----END KEY-----"
+SINGLE='first line
+second line'
+`),
+    ).toEqual({
+      DOUBLE: '-----BEGIN KEY-----\nline1\nline2\n-----END KEY-----',
+      SINGLE: 'first line\nsecond line',
+    })
+  })
+
+  test('throws on unterminated quoted values', () => {
+    expect(() => parseEnvFile('SECRET="unterminated\nnext line')).toThrow(
+      'Unterminated quoted value for SECRET',
+    )
+    expect(() => parseEnvFile("TOKEN='unterminated\nnext line")).toThrow(
+      'Unterminated quoted value for TOKEN',
+    )
+  })
+
   test('strips inline comments from unquoted values only', () => {
     expect(
       parseEnvFile(`
@@ -118,6 +143,22 @@ describe('resolveEnv', () => {
 
     expect(resolved.values.NODE_ENV).toBe('production')
     expect(resolved.sources.NODE_ENV).toBe('root-file')
+    expect(resolved.demotedKeys).toEqual(['NODE_ENV'])
+  })
+
+  test('demotes wrong-source values when the target file lacks the key', async () => {
+    tempRoot = await mkdtemp(join(tmpdir(), 'root-env-load-'))
+    await writeEnvFile(tempRoot, '.env.development', {
+      POSTHOG_API_KEY: 'phc_dev',
+    })
+    await writeEnvFile(tempRoot, '.env.production', { NODE_ENV: 'production' })
+    process.env.POSTHOG_API_KEY = 'phc_dev'
+
+    const resolved = resolveEnv({ rootDir: tempRoot, mode: 'production' })
+
+    expect(resolved.values).not.toHaveProperty('POSTHOG_API_KEY')
+    expect(resolved.sources).not.toHaveProperty('POSTHOG_API_KEY')
+    expect(resolved.demotedKeys).toEqual(['POSTHOG_API_KEY'])
   })
 
   test('keeps explicit process env when it does not match a wrong-source file', async () => {
@@ -151,6 +192,27 @@ describe('resolveEnv', () => {
     expect(requireEnv(resolved, ['LOG_LEVEL'])).toEqual({ LOG_LEVEL: 'debug' })
     expect(() => requireEnv(resolved, ['UNKNOWN_REQUIRED_KEY'])).toThrow(
       /UNKNOWN_REQUIRED_KEY\. Set it in \.env\.development/,
+    )
+  })
+
+  test('does not validate unrelated ambient registry values', async () => {
+    tempRoot = await writeRootEnv('production', {
+      LOG_LEVEL: 'info',
+    })
+    process.env.BROWSEROS_CONFIG_URL = 'not a url'
+    const resolved = resolveEnv({ rootDir: tempRoot, mode: 'production' })
+
+    expect(requireEnv(resolved, ['LOG_LEVEL'])).toEqual({ LOG_LEVEL: 'info' })
+  })
+
+  test('validates requested non-empty values only', async () => {
+    tempRoot = await writeRootEnv('production', {
+      BROWSEROS_CONFIG_URL: 'not a url',
+    })
+    const resolved = resolveEnv({ rootDir: tempRoot, mode: 'production' })
+
+    expect(() => requireEnv(resolved, ['BROWSEROS_CONFIG_URL'])).toThrow(
+      /Invalid env: BROWSEROS_CONFIG_URL \(section: server\).*url/i,
     )
   })
 

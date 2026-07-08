@@ -25,6 +25,7 @@ interface DroppedEnvKey {
   key: string
   sourceFile: string
   reason: string
+  warning?: string
 }
 
 interface PlannedRootFile {
@@ -52,6 +53,15 @@ export interface LocalEnvMigrationResult extends LocalEnvMigrationPlan {
 
 const MODE_ORDER: readonly EnvMode[] = ['development', 'production']
 const RETIRED_KEYS = new Set(['R2_UPLOAD_PREFIX', 'R2_DOWNLOAD_PREFIX'])
+const RETIRED_PREFIX_DEFAULTS: Record<string, readonly string[]> = {
+  R2_UPLOAD_PREFIX: [
+    'artifacts/server',
+    'cli',
+    'claw-server/prod-resources',
+    'claw-onboard/prod-resources',
+  ],
+  R2_DOWNLOAD_PREFIX: ['artifacts/vendor'],
+}
 const PRIMARY_OLD_FILES: Record<EnvMode, string[]> = {
   development: [
     'apps/server/.env.development',
@@ -154,6 +164,7 @@ function harvestEnvFile(options: {
         reason: RETIRED_KEYS.has(key)
           ? 'retired to code constants'
           : `not in the ${options.mode} registry`,
+        warning: retiredPrefixWarning(key, value, options.sourceFile),
       })
       continue
     }
@@ -192,7 +203,11 @@ function findOldEnvFiles(rootDir: string, mode: EnvMode): string[] {
     join(rootDir, path),
   )
   const found = findAppEnvFiles(rootDir, `.env.${mode}`)
-  const ordered = [...primaryFiles, ...found.sort()]
+  const legacyRootFiles =
+    mode === 'development'
+      ? [join(rootDir, '.env'), join(rootDir, '.env.local')]
+      : []
+  const ordered = [...primaryFiles, ...found.sort(), ...legacyRootFiles]
   const seen = new Set<string>()
 
   return ordered.filter((path) => {
@@ -203,6 +218,22 @@ function findOldEnvFiles(rootDir: string, mode: EnvMode): string[] {
     seen.add(path)
     return true
   })
+}
+
+function retiredPrefixWarning(
+  key: string,
+  value: string,
+  sourceFile: string,
+): string | undefined {
+  const defaults = RETIRED_PREFIX_DEFAULTS[key]
+  const trimmedValue = value.trim()
+  if (!defaults || trimmedValue === '' || defaults.includes(trimmedValue)) {
+    return undefined
+  }
+
+  return `RETIRED PREFIX WARNING: ${key}=${trimmedValue} from ${sourceFile} is retired; builds now default to code constants (${defaults.join(
+    ', ',
+  )}). Export ${key} in the environment when running upload scripts to use a custom prefix.`
 }
 
 function findAppEnvFiles(rootDir: string, filename: string): string[] {
@@ -270,9 +301,13 @@ function formatEnvValue(value: string): string {
 
 function printResult(result: LocalEnvMigrationResult): void {
   for (const dropped of result.dropped) {
-    console.warn(
-      `dropped ${relative(result.rootDir, dropped.sourceFile)} ${dropped.key}: ${dropped.reason}`,
-    )
+    if (dropped.warning) {
+      console.warn(dropped.warning)
+    } else {
+      console.warn(
+        `dropped ${relative(result.rootDir, dropped.sourceFile)} ${dropped.key}: ${dropped.reason}`,
+      )
+    }
   }
 
   for (const conflict of result.conflicts) {

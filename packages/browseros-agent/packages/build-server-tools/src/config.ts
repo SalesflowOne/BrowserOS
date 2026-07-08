@@ -56,6 +56,26 @@ function rootFileEnv(resolved: ResolvedEnv): Record<string, string> {
   return values
 }
 
+function ambientEnvWithoutDemotions(resolved: ResolvedEnv): NodeJS.ProcessEnv {
+  const ambient: NodeJS.ProcessEnv = { ...process.env }
+  for (const key of resolved.demotedKeys) {
+    delete ambient[key]
+  }
+  return ambient
+}
+
+function warnDemotedEnv(resolved: ResolvedEnv): void {
+  if (resolved.demotedKeys.length === 0) {
+    return
+  }
+
+  console.warn(
+    `env: ignoring ${resolved.demotedKeys.length} process values that match root .env.development (Bun auto-load): ${resolved.demotedKeys
+      .toSorted()
+      .join(', ')}`,
+  )
+}
+
 export interface LoadBuildConfigOptions {
   ci?: boolean
   requireR2?: boolean
@@ -69,7 +89,11 @@ export function loadBuildConfig(
 ): BuildConfig {
   const resolved = resolveEnv({ rootDir, mode: 'production' })
   const fileEnv = rootFileEnv(resolved)
+  const ambientEnv = ambientEnvWithoutDemotions(resolved)
   const envVars = buildInlineEnv(product, resolved)
+  if (!options.ci) {
+    warnDemotedEnv(resolved)
+  }
   if (options.ci) {
     for (const [key, value] of Object.entries(
       product.env.ciInlineEnvDefaults ?? {},
@@ -88,7 +112,7 @@ export function loadBuildConfig(
   const processEnv: NodeJS.ProcessEnv = {
     PATH: process.env.PATH ?? '',
     ...fileEnv,
-    ...process.env,
+    ...ambientEnv,
   }
 
   const config: BuildConfig = {

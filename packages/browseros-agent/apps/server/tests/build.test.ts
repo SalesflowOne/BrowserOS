@@ -8,13 +8,7 @@
 
 import { afterAll, describe, it } from 'bun:test'
 import assert from 'node:assert'
-import {
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -45,9 +39,11 @@ const R2_ENV_KEYS = [
 const PROD_SECRET_KEYS = [...REQUIRED_INLINE_ENV_KEYS, ...R2_ENV_KEYS]
 
 const INLINE_ENV_STUBS: Record<string, string> = {
-  BROWSEROS_CONFIG_URL: 'https://stub.test/config',
-  POSTHOG_API_KEY: 'phc_test_stub',
-  SENTRY_DSN: 'https://stub@sentry.test/0',
+  BROWSEROS_CONFIG_URL: 'https://server-build-test.invalid/config',
+  POSTHOG_API_KEY: 'phc_server_build_test_unique',
+  SENTRY_DSN: 'https://server-build-test@sentry.invalid/0',
+  LOG_LEVEL: 'info',
+  NODE_ENV: 'production',
 }
 
 const R2_ENV_STUBS: Record<string, string> = {
@@ -60,12 +56,6 @@ const R2_ENV_STUBS: Record<string, string> = {
 describe('server build', () => {
   const rootDir = resolve(import.meta.dir, '../../..')
   const serverPkgPath = resolve(rootDir, 'apps/server/package.json')
-  const rootProductionEnvPath = resolve(rootDir, '.env.production')
-  const rootProductionExamplePath = resolve(rootDir, '.env.production.example')
-  const originalProdEnv = existsSync(rootProductionEnvPath)
-    ? readFileSync(rootProductionEnvPath, 'utf-8')
-    : null
-  const prodEnvTemplate = readFileSync(rootProductionExamplePath, 'utf-8')
   const buildScript = resolve(rootDir, 'scripts/build/server.ts')
   const target = getNativeTarget()
   const binaryPath = resolve(
@@ -98,21 +88,11 @@ describe('server build', () => {
     return env
   }
 
-  function resetProdEnvToTemplate(): void {
-    writeFileSync(rootProductionEnvPath, prodEnvTemplate)
-  }
-
   afterAll(() => {
     rmSync(tempDir, { recursive: true, force: true })
-    if (originalProdEnv === null) {
-      rmSync(rootProductionEnvPath, { force: true })
-      return
-    }
-    writeFileSync(rootProductionEnvPath, originalProdEnv)
   })
 
   it('compiles and --version outputs correct version', async () => {
-    resetProdEnvToTemplate()
     const pkg = await Bun.file(serverPkgPath).json()
     const expectedVersion: string = pkg.version
 
@@ -162,7 +142,6 @@ describe('server build', () => {
   }, 300_000)
 
   it('archives CI builds without R2 config or production env secrets', async () => {
-    resetProdEnvToTemplate()
     rmSync(zipPath, { force: true })
 
     const build = Bun.spawn(
