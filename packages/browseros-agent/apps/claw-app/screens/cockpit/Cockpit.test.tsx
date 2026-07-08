@@ -1,12 +1,8 @@
-/** Pins the Claw homepage's hero, running grid, and recent activity sections. */
-
 import { describe, expect, it, mock } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router'
 
-// Stub the data hook so the test does not need a network mock or
-// real polling. The shape mirrors the v2 CockpitData interface.
 mock.module('./cockpit.data', () => ({
   useCockpitData: () => ({
     agents: [],
@@ -15,8 +11,6 @@ mock.module('./cockpit.data', () => ({
   }),
 }))
 
-// RecentActivity now consumes useTasks directly. Stub it to return an
-// empty page so the empty-state branch renders.
 mock.module('@/modules/api/audit.hooks', () => ({
   useTasks: () => ({
     data: { pages: [{ tasks: [], nextCursor: null }] },
@@ -26,9 +20,61 @@ mock.module('@/modules/api/audit.hooks', () => ({
   useTaskScreenshotBaseUrl: () => null,
 }))
 
+const connectionsHookResultKey = '__browserclawConnectionsHookResult'
+
+function connectionsHookState() {
+  return globalThis as Record<string, unknown>
+}
+
+function setConnectionsProbePending() {
+  connectionsHookState()[connectionsHookResultKey] = {
+    data: undefined,
+    isPending: true,
+    isError: false,
+  }
+}
+
+function setConnectionsProbeEmpty() {
+  connectionsHookState()[connectionsHookResultKey] = {
+    data: { connections: [] },
+    isPending: false,
+    isError: false,
+  }
+}
+
+mock.module('@/modules/api/connections.hooks', () => ({
+  useBrowserosConnections: Object.assign(
+    () =>
+      connectionsHookState()[connectionsHookResultKey] ?? {
+        data: undefined,
+        isPending: true,
+        isError: false,
+      },
+    { getKey: () => ['cockpit', 'connections'] },
+  ),
+  useConnectBrowseros: () => ({
+    isPending: false,
+    variables: undefined,
+    mutateAsync: async () => ({ installed: true }),
+  }),
+  useDisconnectBrowseros: () => ({
+    isPending: false,
+    variables: undefined,
+    mutateAsync: async () => ({ installed: false }),
+  }),
+}))
+
 const { Cockpit } = await import('./Cockpit')
 
-function renderApp(): string {
+function renderApp(
+  options: { connections?: 'pending' | 'empty' } = {},
+): string {
+  if (options.connections === 'empty') {
+    setConnectionsProbeEmpty()
+  } else {
+    setConnectionsProbePending()
+  }
+
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -42,11 +88,10 @@ function renderApp(): string {
 }
 
 describe('Cockpit (v2)', () => {
-  it('renders the hero and activity header (running grid hides when no agents)', () => {
+  it('renders the hero and activity header when connection probing is pending', () => {
     const html = renderApp()
     expect(html).toContain('working on')
     expect(html).toContain('Recent activity')
-    // No agents in the stub data means RunningGrid returns null.
     expect(html).not.toContain('Running now')
   })
 
@@ -56,10 +101,19 @@ describe('Cockpit (v2)', () => {
     expect(html).not.toContain('harness . logins . guardrails')
   })
 
-  it('shows only the recent-activity empty state when registry is empty (Running now hides)', () => {
+  it('shows only the recent-activity empty state while connection probing is pending', () => {
     const html = renderApp()
     expect(html).not.toContain('No agents connected')
     expect(html).not.toContain('Running now')
     expect(html).toContain('No recent activity')
+  })
+
+  it('shows the first-run shell when there are no connections or runs', () => {
+    const html = renderApp({ connections: 'empty' })
+    expect(html).toContain('You watch. Your agent')
+    expect(html).toContain('Set up MCP endpoint')
+    expect(html).toContain(
+      'https://cdn.browseros.com/artifacts/claw/onboarding-video/v0.1.0/first-run-demo.mp4',
+    )
   })
 })

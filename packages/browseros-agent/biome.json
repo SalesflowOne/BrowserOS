@@ -7,7 +7,12 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "includes": ["**", "!**/apps/eval/src/dashboard/index.html", "!**/*.svg"]
+    "includes": [
+      "**",
+      "!.scripts",
+      "!**/apps/eval/src/dashboard/index.html",
+      "!**/*.svg"
+    ]
   },
   "formatter": {
     "enabled": true,
