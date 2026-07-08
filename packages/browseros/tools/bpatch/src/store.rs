@@ -208,14 +208,6 @@ impl Store {
         }
     }
 
-    /// Returns the parsed feature for a matched path.
-    pub fn matched_feature(&self, path: &str) -> Option<&Feature> {
-        match self.match_path(path) {
-            FeatureMatch::Matched { feature, .. } => self.features.features.get(&feature),
-            FeatureMatch::Unmatched { .. } => None,
-        }
-    }
-
     fn exact_match(&self, path: &str) -> Option<(String, String)> {
         self.features.features.iter().find_map(|(name, feature)| {
             feature
