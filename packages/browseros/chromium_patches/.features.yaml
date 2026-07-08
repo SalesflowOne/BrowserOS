@@ -449,6 +449,15 @@ features:
       - chrome/browser/ui/views/side_panel/side_panel.h
       - chrome/browser/ui/views/side_panel/side_panel_coordinator.cc
 
+  onboarding-complete-crash:
+    description: "fix: BrowserOS onboarding completion crash"
+    files:
+      - chrome/browser/profiles/profile_window.cc
+      - chrome/browser/profiles/profile_window.h
+      - chrome/browser/ui/profiles/profile_picker.cc
+      - chrome/browser/ui/profiles/profile_picker.h
+      - chrome/browser/ui/views/profiles/profile_management_flow_controller.cc
+
   misc:
     description: "chore: miscellaneous patches"
     files:
@@ -477,3 +486,11 @@ features:
       - chrome/installer/setup/setup_main.cc
       - chrome/installer/util/util_constants.cc
       - chrome/installer/util/util_constants.h
+
+  keychain-prompts:
+    description: "fix: reduce macOS keychain prompts during Chrome import"
+    files:
+      - components/os_crypt/common/BUILD.gn
+      - components/os_crypt/common/keychain_password_mac_unittest.mm
+      - ui/webui/resources/tools/generate_grd.gni
+      - ui/webui/resources/tools/generate_grd.py

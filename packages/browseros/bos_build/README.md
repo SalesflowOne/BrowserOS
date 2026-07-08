@@ -25,9 +25,9 @@ bos_build/
   release/      RELEASE toolset — list, publish, download, github, appcast;
                 release/ota/ ships server OTA updates
   patchkit/     DEV toolset — the Python patch surface: dev extract,
-                non-interactive batch-apply, features.yaml IO, and the
+                non-interactive batch-apply, .features.yaml IO, and the
                 read-only patch-stack doctor (interactive apply/sync
-                lives in the Go tool: tools/patch, `bpatch`)
+                lives in the Rust tool: tools/bpatch, `bpatch`)
   profiles/     saved switch sets (flat yaml; a local profile may opt into
                 an explicit modules: list — shipped profiles never do)
   config/       data: gn flags, resource yamls, appcast templates, offset
@@ -153,12 +153,12 @@ browseros product doctor          # identity uniqueness + branding assets
 
 ## Patch stack
 
-`features.yaml` maps each feature to its patches under
-`chromium_patches/`. The dev doctor keeps that map honest — read-only,
+`chromium_patches/.features.yaml` maps each feature to its patches. The
+dev doctor keeps that map honest — read-only,
 so it can run in CI and before a chromium bump:
 
 ```bash
-browseros dev doctor                            # features.yaml ↔ patches on disk
+browseros dev doctor                            # .features.yaml ↔ patches on disk
 browseros dev doctor --against ~/chromium/src   # + which patches fail, by feature
 browseros dev doctor --feature llm-chat --json  # filtered / machine-readable
 ```

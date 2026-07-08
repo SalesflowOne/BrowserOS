@@ -84,9 +84,7 @@ class BatchApplyTest(unittest.TestCase):
         applied, failed = apply_all_patches(self._ctx())
 
         self.assertEqual((applied, failed), (1, []))
-        self.assertIn(
-            "line two changed", (self.repo / "chrome" / "a.txt").read_text()
-        )
+        self.assertIn("line two changed", (self.repo / "chrome" / "a.txt").read_text())
 
     def test_corrupt_patch_reports_failure(self):
         bad = self.patches_dir / "chrome" / "a.txt"
@@ -119,8 +117,8 @@ class BatchApplyTest(unittest.TestCase):
         self.assertEqual(names, ["a.patch"])
 
     def test_find_patch_files_skips_root_metadata_but_not_nested_yaml(self):
-        # bpatch-v2 metadata at the tree root is not a patch; a chromium
-        # yaml file patched deeper in the tree still is.
+        (self.patches_dir / ".features.yaml").write_text("x")
+        (self.patches_dir / ".store.yaml").write_text("x")
         (self.patches_dir / "features.yaml").write_text("x")
         (self.patches_dir / "store.yaml").write_text("x")
         nested = self.patches_dir / "chrome" / "app"
