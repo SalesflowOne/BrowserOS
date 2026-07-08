@@ -1,9 +1,9 @@
 diff --git a/chrome/utility/importer/browseros/chrome_importer.h b/chrome/utility/importer/browseros/chrome_importer.h
 new file mode 100644
-index 0000000000000..b6b0ab5e6952e
+index 0000000000000..5b45173f702b7
 --- /dev/null
 +++ b/chrome/utility/importer/browseros/chrome_importer.h
-@@ -0,0 +1,47 @@
+@@ -0,0 +1,48 @@
 +// Copyright 2023 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -48,6 +48,7 @@ index 0000000000000..b6b0ab5e6952e
 +
 +  base::FilePath source_path_;
 +  std::u16string source_profile_name_;
++  std::string chrome_encryption_key_;
 +};
 +
 +#endif  // CHROME_UTILITY_IMPORTER_BROWSEROS_CHROME_IMPORTER_H_
