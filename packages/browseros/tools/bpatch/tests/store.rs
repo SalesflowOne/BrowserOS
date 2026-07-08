@@ -144,6 +144,28 @@ fn adding_feature_appends_without_rewriting_existing_comments() -> Result<()> {
 }
 
 #[test]
+fn non_patch_files_are_ignored_and_preserved_on_save() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    write_minimal_store(dir.path())?;
+    write_file(dir.path().join(".DS_Store"), b"finder metadata")?;
+    write_file(dir.path().join("README.md"), b"# patch store\n")?;
+
+    let store = Store::load(dir.path())?;
+
+    assert_eq!(store.patches().len(), 1);
+    assert!(!store.patches().contains_key(".DS_Store"));
+    assert!(!store.patches().contains_key("README.md"));
+    assert_eq!(
+        store.ignored_files(),
+        &BTreeSet::from([".DS_Store".to_string(), "README.md".to_string()])
+    );
+    store.save()?;
+    assert_eq!(fs::read(dir.path().join(".DS_Store"))?, b"finder metadata");
+    assert_eq!(fs::read(dir.path().join("README.md"))?, b"# patch store\n");
+    Ok(())
+}
+
+#[test]
 fn net_diff_generation_covers_forms_and_tree_foldings() -> Result<()> {
     let (repo, git) = init_repo()?;
     let root = repo.path();

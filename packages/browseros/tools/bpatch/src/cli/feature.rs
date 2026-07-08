@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use serde::Serialize;
 
+use crate::engine::lock::CheckoutLock;
 use crate::engine::state::{StateContext, parse_apply_trailers};
 use crate::git::GitAdapter;
 use crate::store::{FeatureMatch, Store};
@@ -81,6 +82,7 @@ pub fn add(
     description: Option<&str>,
 ) -> Result<FeatureReport> {
     let store_dir = store_dir.into();
+    let _store_lock = CheckoutLock::acquire_store_repo(&store_dir)?;
     let description = description
         .map(ToOwned::to_owned)
         .unwrap_or_else(|| format!("feat: {name}"));

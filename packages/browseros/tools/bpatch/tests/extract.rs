@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use bpatch::cli::extract::{self, ExtractMode, ExtractOptions, ExtractReportResult};
 use bpatch::engine::extract::{ExtractContext, ExtractSpec, FeatureDecisionPolicy};
+use bpatch::engine::lock::CheckoutLock;
 use bpatch::engine::progress;
 use bpatch::engine::state::{TRAILER_BASE, TRAILER_STORE_REV, TRAILER_TREE};
 use bpatch::store::Store;
@@ -180,6 +181,72 @@ fn commit_option_commits_store_repo_and_hand_commit_extraction_needs_no_trailers
     assert_eq!(store.status_porcelain()?, "");
     let subject = store.git().run_str(&["log", "-1", "--format=%s"])?;
     assert!(subject.starts_with("feat(chromium_patches): extract "));
+    Ok(())
+}
+
+#[test]
+fn extract_fails_fast_when_store_lock_is_held() -> Result<()> {
+    let checkout = FixtureRepo::new()?;
+    let base = write_base_checkout(&checkout)?;
+    let store = FixtureRepo::new()?;
+    let store_dir = seed_store(&store, &base)?;
+    store.commit("seed store")?;
+    checkout.write_file("chrome/browser/ui/llmchat/panel.cc", "locked edit\n")?;
+    let rev = checkout.commit("locked edit")?;
+    let _held = CheckoutLock::acquire_store_repo(&store_dir)?;
+
+    let err = extract::run(
+        &ExtractContext::new(checkout.path(), &store_dir),
+        &ExtractOptions {
+            mode: ExtractMode::Revs {
+                spec: ExtractSpec::Rev(rev),
+                policy: FeatureDecisionPolicy::RequireExplicit,
+            },
+            commit: false,
+        },
+        &mut progress::noop(),
+    )
+    .unwrap_err();
+
+    let message = err.to_string();
+    assert!(message.contains("lock held by pid"));
+    assert!(message.contains("(started "));
+    Ok(())
+}
+
+#[test]
+fn extract_patch_generation_ignores_user_diff_drivers() -> Result<()> {
+    let checkout = FixtureRepo::new()?;
+    let base = write_base_checkout(&checkout)?;
+    let store = FixtureRepo::new()?;
+    let store_dir = seed_store(&store, &base)?;
+    store.commit("seed store")?;
+    checkout
+        .git()
+        .run(&["config", "diff.external", "/bin/false"])?;
+    checkout.write_file("chrome/browser/ui/llmchat/panel.cc", "external diff safe\n")?;
+    let rev = checkout.commit("panel edit")?;
+
+    let report = extract::run(
+        &ExtractContext::new(checkout.path(), &store_dir),
+        &ExtractOptions {
+            mode: ExtractMode::Revs {
+                spec: ExtractSpec::Rev(rev),
+                policy: FeatureDecisionPolicy::RequireExplicit,
+            },
+            commit: false,
+        },
+        &mut progress::noop(),
+    )?;
+
+    assert_eq!(report.result, ExtractReportResult::Extracted);
+    let patch_path = store_dir.join("chrome/browser/ui/llmchat/panel.cc");
+    let patch = fs::read(&patch_path)?;
+    assert!(patch.starts_with(b"diff --git "));
+    checkout.git().run(&["reset", "--hard", &base])?;
+    checkout
+        .git()
+        .run(&["apply", "--check", patch_path.to_str().expect("utf-8 path")])?;
     Ok(())
 }
 

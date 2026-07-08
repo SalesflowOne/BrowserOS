@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result, anyhow, bail};
 
+use crate::engine::lock::CheckoutLock;
 use crate::engine::progress::ProgressEvent;
 use crate::engine::state::{self, StateContext};
 use crate::process::Git;
@@ -151,6 +152,7 @@ pub fn extract(
     policy: &FeatureDecisionPolicy,
     progress: &mut dyn FnMut(ProgressEvent<'_>),
 ) -> Result<ExtractOutcome> {
+    let _store_lock = CheckoutLock::acquire_store_repo(&ctx.store_dir)?;
     let git = Git::new(&ctx.checkout);
     let mut store = Store::load(&ctx.store_dir)?;
     let base_commit = store.metadata().base_commit.clone();
@@ -312,6 +314,7 @@ pub fn repin(
     ctx: &ExtractContext,
     progress: &mut dyn FnMut(ProgressEvent<'_>),
 ) -> Result<RepinResult> {
+    let _store_lock = CheckoutLock::acquire_store_repo(&ctx.store_dir)?;
     let state = state::resolve(&StateContext::new(&ctx.checkout, &ctx.store_dir))?;
     let git = Git::new(&ctx.checkout);
     let mut store = Store::load(&ctx.store_dir)?;
@@ -479,6 +482,8 @@ fn net_patch_for_path(
         "diff",
         "--binary",
         "--full-index",
+        "--no-ext-diff",
+        "--no-textconv",
         "--no-renames",
         base,
         target,
@@ -499,6 +504,8 @@ fn status_for_path(git: &Git, base: &str, target: &str, path: &str) -> Result<Op
         "diff",
         "--name-status",
         "-z",
+        "--no-ext-diff",
+        "--no-textconv",
         "--no-renames",
         base,
         target,

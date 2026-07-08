@@ -17,10 +17,19 @@ pub struct CheckoutLock {
 impl CheckoutLock {
     /// Acquires `.git/bpatch/lock` without waiting and records this process as holder.
     pub fn acquire(checkout: impl AsRef<Path>) -> Result<Self, LockError> {
-        let checkout = checkout.as_ref();
-        let lock_dir = git_private_dir(checkout)?.join("bpatch");
+        Self::acquire_named(checkout, "lock")
+    }
+
+    /// Acquires `.git/bpatch/store.lock` in the store repo without waiting.
+    pub fn acquire_store_repo(store_dir: impl AsRef<Path>) -> Result<Self, LockError> {
+        Self::acquire_named(store_dir, "store.lock")
+    }
+
+    fn acquire_named(repo: impl AsRef<Path>, name: &str) -> Result<Self, LockError> {
+        let repo = repo.as_ref();
+        let lock_dir = git_private_dir(repo)?.join("bpatch");
         fs::create_dir_all(&lock_dir)?;
-        let path = lock_dir.join("lock");
+        let path = lock_dir.join(name);
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)

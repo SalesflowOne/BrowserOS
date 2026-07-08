@@ -17,6 +17,7 @@ pub struct Store {
     metadata: StoreMetadata,
     features: Features,
     patches: BTreeMap<String, PatchFile>,
+    ignored_files: BTreeSet<String>,
     store_yaml: Vec<u8>,
     features_yaml: Vec<u8>,
     metadata_dirty: bool,
@@ -34,13 +35,14 @@ impl Store {
             .with_context(|| format!("reading {}", dir.join(FEATURES_FILE).display()))?;
         let features = parse_features_yaml(&features_yaml)
             .with_context(|| format!("parsing {}", dir.join(FEATURES_FILE).display()))?;
-        let patches = load_patch_files(&dir)?;
+        let loaded = load_patch_files(&dir)?;
 
         Ok(Self {
             dir,
             metadata,
             features,
-            patches,
+            patches: loaded.patches,
+            ignored_files: loaded.ignored_files,
             store_yaml,
             features_yaml,
             metadata_dirty: false,
@@ -94,6 +96,11 @@ impl Store {
     /// Returns the patch files keyed by chromium-relative path.
     pub fn patches(&self) -> &BTreeMap<String, PatchFile> {
         &self.patches
+    }
+
+    /// Returns store files skipped because they are not patch files.
+    pub fn ignored_files(&self) -> &BTreeSet<String> {
+        &self.ignored_files
     }
 
     /// Replaces all patch files in the model with net-diff patch entries.
@@ -273,6 +280,8 @@ pub fn generate_net_patches(
         "diff",
         "--binary",
         "--full-index",
+        "--no-ext-diff",
+        "--no-textconv",
         "--no-renames",
         base_treeish,
         target_treeish,
@@ -286,6 +295,8 @@ pub fn generate_net_patches(
         "diff",
         "--name-only",
         "-z",
+        "--no-ext-diff",
+        "--no-textconv",
         "--no-renames",
         base_treeish,
         target_treeish,
@@ -346,17 +357,21 @@ fn parse_features_yaml(bytes: &[u8]) -> Result<Features> {
     })
 }
 
-fn load_patch_files(dir: &Path) -> Result<BTreeMap<String, PatchFile>> {
-    let mut patches = BTreeMap::new();
-    collect_patch_files(dir, dir, &mut patches)?;
-    Ok(patches)
+struct LoadedPatchFiles {
+    patches: BTreeMap<String, PatchFile>,
+    ignored_files: BTreeSet<String>,
 }
 
-fn collect_patch_files(
-    root: &Path,
-    dir: &Path,
-    patches: &mut BTreeMap<String, PatchFile>,
-) -> Result<()> {
+fn load_patch_files(dir: &Path) -> Result<LoadedPatchFiles> {
+    let mut loaded = LoadedPatchFiles {
+        patches: BTreeMap::new(),
+        ignored_files: BTreeSet::new(),
+    };
+    collect_patch_files(dir, dir, &mut loaded)?;
+    Ok(loaded)
+}
+
+fn collect_patch_files(root: &Path, dir: &Path, loaded: &mut LoadedPatchFiles) -> Result<()> {
     let mut entries = fs::read_dir(dir)
         .with_context(|| format!("reading {}", dir.display()))?
         .collect::<std::io::Result<Vec<_>>>()
@@ -367,7 +382,7 @@ fn collect_patch_files(
         let path = entry.path();
         let file_type = entry.file_type()?;
         if file_type.is_dir() {
-            collect_patch_files(root, &path, patches)?;
+            collect_patch_files(root, &path, loaded)?;
             continue;
         }
         if !file_type.is_file() {
@@ -379,7 +394,11 @@ fn collect_patch_files(
             continue;
         }
         let contents = fs::read(&path).with_context(|| format!("reading {}", path.display()))?;
-        patches.insert(
+        if !contents.starts_with(b"diff --git ") {
+            loaded.ignored_files.insert(rel);
+            continue;
+        }
+        loaded.patches.insert(
             rel.clone(),
             PatchFile {
                 path: rel,
@@ -400,7 +419,11 @@ fn remove_stale_patch_files<'a>(
 
     let desired = desired_paths.into_iter().cloned().collect::<BTreeSet<_>>();
     let existing = load_patch_files(dir)?;
-    for path in existing.keys().filter(|path| !desired.contains(*path)) {
+    for path in existing
+        .patches
+        .keys()
+        .filter(|path| !desired.contains(*path))
+    {
         let full = dir.join(path);
         fs::remove_file(&full).with_context(|| format!("removing {}", full.display()))?;
         remove_empty_parents(dir, full.parent())?;
