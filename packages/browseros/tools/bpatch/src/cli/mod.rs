@@ -21,7 +21,7 @@ use crate::engine::apply::ApplyOptions;
 use crate::engine::extract::{ExtractContext, ExtractSpec, FeatureDecisionPolicy};
 use crate::engine::state::StateContext;
 use crate::git::GitAdapter;
-use crate::store::Store;
+use crate::store::{self, Store};
 
 /// Top-level bpatch command-line interface.
 #[derive(Debug, Parser)]
@@ -49,7 +49,7 @@ pub enum Command {
     Apply(ApplyArgs),
     /// Extract commits into the store or repin the store base.
     Extract(ExtractArgs),
-    /// Manage features.yaml entries.
+    /// Manage .features.yaml entries.
     Feature(FeatureArgs),
     /// Abort a conflict session.
     Abort,
@@ -331,13 +331,13 @@ fn discover_store(flag: Option<&Path>) -> Result<PathBuf> {
         })?
     };
 
-    if !store.join("store.yaml").exists() {
-        bail!(
-            "patch store {} is missing store.yaml; pass --store <dir> or set `store = \"/abs/path\"` in {}",
+    store::validate_metadata_layout(&store).with_context(|| {
+        format!(
+            "invalid patch store {}; pass --store <dir> or set `store = \"/abs/path\"` in {}",
             store.display(),
             config_path.display()
-        );
-    }
+        )
+    })?;
     Ok(store)
 }
 
