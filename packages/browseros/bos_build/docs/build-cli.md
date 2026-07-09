@@ -107,9 +107,14 @@ WarpCache, `browseros source cache restore|save` handles the R2 checkout cache.
 
 ## Concurrency
 
-Every build takes a lock on its Chromium checkout, keyed by path. A second build
-against the same checkout fails fast. Pass `--lock-wait` to queue behind it
-instead.
+Every build takes an exclusive lock on its Chromium checkout, keyed by the
+resolved `src` path and held regardless of product. A second build against the
+same checkout fails fast and tells you who holds it. Pass `--lock-wait` to queue
+behind it instead.
+
+Release builds run `git reset`, `git clean`, and patch application in one shared
+checkout, which is why the lock exists. The lock file sits next to the gclient
+root rather than under `src/`, so `git clean` cannot delete it mid-build.
 
 ## Products
 
