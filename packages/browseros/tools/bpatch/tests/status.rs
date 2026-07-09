@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use bpatch::cli::{diff, status};
 use bpatch::engine::conflict::{self, ConflictFile, ConflictSession};
-use bpatch::engine::state::{self, StateContext, TRAILER_BASE, TRAILER_STORE_REV, TRAILER_TREE};
+use bpatch::engine::state::{
+    self, StateContext, TRAILER_ANNOTATED, TRAILER_BASE, TRAILER_STORE_REV, TRAILER_TREE,
+};
 use fixtures::FixtureRepo;
 use serde_json::Value;
 
@@ -115,6 +117,132 @@ fn drift_reports_clean_committed_and_uncommitted_paths() -> Result<()> {
     assert!(human.contains("(modified since feat: llmchat)"));
     assert!(human.contains("chrome/BUILD.gn"));
     assert!(human.contains("(modified, uncommitted)"));
+    Ok(())
+}
+
+#[test]
+fn annotate_commit_is_clean_and_anchors_later_committed_drift() -> Result<()> {
+    let checkout = FixtureRepo::new()?;
+    let base = write_base_checkout(&checkout)?;
+    let store = FixtureRepo::new()?;
+    let store_dir = seed_store(&store, &base)?;
+    store.commit("seed store")?;
+
+    checkout.write_file("chrome/browser/ui/llmchat/panel.cc", "annotated\n")?;
+    checkout.commit_with_trailers(
+        "feat: llmchat from bos_build",
+        &[(TRAILER_BASE, base.as_str()), (TRAILER_ANNOTATED, "true")],
+    )?;
+
+    let ctx = StateContext::new(checkout.path(), &store_dir);
+    let annotated = status::run(&ctx)?;
+    assert!(annotated.applied_store_rev.is_none());
+    assert!(annotated.drift.is_empty());
+
+    checkout.write_file("chrome/browser/ui/llmchat/panel.cc", "manual commit\n")?;
+    checkout.commit("manual edit")?;
+
+    let drifted = status::run(&ctx)?;
+    assert_eq!(drifted.drift.len(), 1);
+    assert_eq!(
+        drifted.drift[0].annotation,
+        "modified since feat: llmchat from bos_build"
+    );
+    Ok(())
+}
+
+#[test]
+fn annotate_after_apply_replaces_only_the_drift_anchor() -> Result<()> {
+    let scenario = applied_scenario(true)?;
+    scenario.checkout.write_file(
+        "chrome/browser/ui/llmchat/panel.cc",
+        "annotated after apply\n",
+    )?;
+    scenario.checkout.commit_with_trailers(
+        "feat: llmchat from newer bos_build",
+        &[
+            (TRAILER_BASE, scenario.base.as_str()),
+            (TRAILER_ANNOTATED, "true"),
+        ],
+    )?;
+
+    let resolved = state::resolve(&StateContext::new(
+        scenario.checkout.path(),
+        &scenario.store_dir,
+    ))?;
+    let applied = resolved.applied.expect("older applied state");
+    assert_eq!(applied.store_rev, scenario.store_rev);
+    assert_eq!(applied.commit, scenario.apply_commit);
+    assert!(resolved.drift.is_clean());
+    Ok(())
+}
+
+#[test]
+fn missing_tree_recompute_ignores_store_false_patches() -> Result<()> {
+    let checkout = FixtureRepo::new()?;
+    checkout.write_file(
+        "chrome/VERSION",
+        "MAJOR=148\nMINOR=0\nBUILD=7204\nPATCH=1\n",
+    )?;
+    checkout.write_file("chrome/browser/ui/llmchat/panel.cc", "base\n")?;
+    checkout.write_file(
+        "chrome/browser/browseros/server/resources/bundle.js",
+        "base resource\n",
+    )?;
+    let base = checkout.commit("Chromium 148.0.7204.1")?;
+    let store = FixtureRepo::new()?;
+    let store_dir = seed_store(&store, &base)?;
+    store.write_file(
+        "chromium_patches/.features.yaml",
+        r#"version: "1.0"
+features:
+  llmchat:
+    description: "feat: llmchat"
+    files:
+      - chrome/browser/ui/llmchat/
+  build-resources:
+    description: "resource: bos_build outputs"
+    store: false
+    files:
+      - chrome/browser/browseros/server/resources/
+"#,
+    )?;
+
+    checkout.write_file("chrome/browser/ui/llmchat/panel.cc", "applied\n")?;
+    checkout.write_file(
+        "chrome/browser/browseros/server/resources/bundle.js",
+        "store-only resource\n",
+    )?;
+    checkout.git().run(&["add", "-A"])?;
+    let store_rev = commit_store_from_index(
+        &store,
+        &checkout,
+        &base,
+        &[
+            "chrome/browser/ui/llmchat/panel.cc",
+            "chrome/browser/browseros/server/resources/bundle.js",
+        ],
+        "store with ignored resource patch",
+    )?;
+    checkout.git().run(&[
+        "checkout",
+        &base,
+        "--",
+        "chrome/browser/browseros/server/resources/bundle.js",
+    ])?;
+    checkout.git().run(&["add", "-A"])?;
+    let expected_tree = checkout.git().run_str(&["write-tree"])?;
+    checkout.commit_with_trailers(
+        "feat: llmchat",
+        &[
+            (TRAILER_STORE_REV, store_rev.as_str()),
+            (TRAILER_BASE, base.as_str()),
+        ],
+    )?;
+
+    let resolved = state::resolve(&StateContext::new(checkout.path(), &store_dir))?;
+    assert_eq!(resolved.applied.expect("applied state").tree, expected_tree);
+    assert!(resolved.drift.is_clean());
     Ok(())
 }
 
