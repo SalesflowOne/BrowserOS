@@ -12,7 +12,8 @@ use bpatch::engine::apply::ApplyOptions;
 use bpatch::engine::lock::CheckoutLock;
 use bpatch::engine::progress;
 use bpatch::engine::state::{
-    self, StateContext, TRAILER_ANNOTATED, TRAILER_BASE, TRAILER_STORE_REV, TRAILER_TREE,
+    self, StateContext, TRAILER_ANNOTATED, TRAILER_BASE, TRAILER_STATE_ONLY, TRAILER_STORE_REV,
+    TRAILER_TREE,
 };
 use bpatch::process::Git;
 use fixtures::FixtureRepo;
@@ -862,6 +863,105 @@ fn hand_committed_target_tree_records_advanced_store_state() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn hand_committed_target_with_unrelated_managed_drift_refuses_apply() -> Result<()> {
+    let scenario = applied_rev1_scenario()?;
+    write_checkout_rev2(&scenario.checkout, false)?;
+    commit_store_from_index(
+        &scenario.store,
+        &scenario.checkout,
+        &scenario.base,
+        &[
+            "chrome/browser/ui/llmchat/panel.cc",
+            "chrome/browser/ui/llmchat/resize_util.cc",
+        ],
+        "store rev2",
+    )?;
+    scenario
+        .checkout
+        .write_file("chrome/BUILD.gn", "unrelated committed drift\n")?;
+    scenario.checkout.commit("hand applied target plus drift")?;
+    let head_before = scenario.checkout.git().run_str(&["rev-parse", "HEAD"])?;
+
+    let report = run_apply(&scenario.store_dir, &scenario.checkout, false);
+
+    match report {
+        ApplyReport::Drift { files, exit } => {
+            assert_eq!(exit, 3);
+            assert!(
+                files
+                    .iter()
+                    .any(|file| file.path == Path::new("chrome/BUILD.gn"))
+            );
+        }
+        other => panic!("expected unrelated drift refusal, got {other:?}"),
+    }
+    assert_eq!(
+        scenario.checkout.git().run_str(&["rev-parse", "HEAD"])?,
+        head_before
+    );
+    Ok(())
+}
+
+#[test]
+fn store_revision_without_managed_delta_records_state_once() -> Result<()> {
+    let scenario = applied_rev1_scenario()?;
+    let feature_head = scenario.checkout.git().run_str(&["rev-parse", "HEAD"])?;
+    scenario
+        .store
+        .write_file("docs/store-note.txt", "metadata-only store change\n")?;
+    let store_rev = scenario.store.commit("store metadata only")?;
+
+    let report = run_apply(&scenario.store_dir, &scenario.checkout, false);
+
+    match report {
+        ApplyReport::Applied {
+            files_changed,
+            commits,
+            exit,
+            ..
+        } => {
+            assert_eq!(files_changed, 0);
+            assert_eq!(commits.len(), 1);
+            assert_eq!(commits[0].feature, "(state)");
+            assert_eq!(commits[0].seq, 0);
+            assert_eq!(exit, 0);
+        }
+        other => panic!("expected state-only apply, got {other:?}"),
+    }
+    let state_head = scenario.checkout.git().run_str(&["rev-parse", "HEAD"])?;
+    assert_ne!(state_head, feature_head);
+    let git = scenario.checkout.git_adapter();
+    let trailers = state::parse_apply_trailers(&git.commit_trailers("HEAD")?)?
+        .expect("state-only apply trailers");
+    assert_eq!(trailers.store_rev, store_rev);
+    assert!(trailers.state_only);
+    assert!(
+        git.commit_trailers("HEAD")?
+            .iter()
+            .any(|trailer| trailer.key == TRAILER_STATE_ONLY && trailer.value == "true")
+    );
+
+    let resolved = state::resolve(&StateContext::new(
+        scenario.checkout.path(),
+        &scenario.store_dir,
+    ))?;
+    let applied = resolved.applied.expect("applied state");
+    assert_eq!(resolved.store.revs_ahead, Some(0));
+    assert_eq!(applied.feature_commit_count, 1);
+    assert_eq!(applied.last_subject, "feat: llmchat");
+
+    assert!(matches!(
+        run_apply(&scenario.store_dir, &scenario.checkout, false),
+        ApplyReport::Converged { .. }
+    ));
+    assert_eq!(
+        scenario.checkout.git().run_str(&["rev-parse", "HEAD"])?,
+        state_head
+    );
+    Ok(())
+}
+
 fn run_apply(store_dir: &Path, checkout: &FixtureRepo, pull: bool) -> ApplyReport {
     let mut progress = progress::noop();
     cli_apply::run(
@@ -1035,6 +1135,7 @@ fn assert_apply_trailers(
     assert_eq!(trailers.store_rev, store_rev);
     assert_eq!(trailers.base, base);
     assert_eq!(trailers.tree.as_deref(), tree);
+    assert!(!trailers.state_only);
     Ok(())
 }
 

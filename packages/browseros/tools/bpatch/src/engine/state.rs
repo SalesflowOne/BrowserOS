@@ -14,6 +14,8 @@ pub const TRAILER_BASE: &str = "Bpatch-Base";
 pub const TRAILER_TREE: &str = "Bpatch-Tree";
 /// Trailer key marking commits authored by `bpatch annotate`.
 pub const TRAILER_ANNOTATED: &str = "Bpatch-Annotated";
+/// Trailer key marking apply commits that only advance store bookkeeping.
+pub const TRAILER_STATE_ONLY: &str = "Bpatch-State-Only";
 
 const HISTORY_LIMIT: usize = 512;
 const UNASSIGNED_FEATURE: &str = "(unassigned)";
@@ -46,6 +48,8 @@ pub struct ApplyTrailers {
     pub base: String,
     /// Cached materialized checkout tree, when the commit still carries it.
     pub tree: Option<String>,
+    /// Whether the commit advances store state without changing managed files.
+    pub state_only: bool,
 }
 
 /// Parsed bpatch annotate trailers from a commit.
@@ -229,6 +233,7 @@ pub fn resolve(ctx: &StateContext) -> Result<ResolvedState> {
     let head_tree = checkout.tree_id("HEAD")?;
     let store_head = store_repo.head_rev()?;
     let latest_apply = find_latest_apply_commit(&checkout)?;
+    let latest_feature_subject = find_latest_feature_subject(&checkout)?;
     let latest_bpatch = find_latest_bpatch_commit(&checkout)?;
     let latest_bpatch_tree = latest_bpatch
         .as_ref()
@@ -255,7 +260,7 @@ pub fn resolve(ctx: &StateContext) -> Result<ResolvedState> {
                 store_rev: entry.trailers.store_rev,
                 commit: entry.commit,
                 tree,
-                last_subject: entry.subject,
+                last_subject: latest_feature_subject.unwrap_or(entry.subject),
             })
         })
         .transpose()?;
@@ -293,11 +298,13 @@ pub fn parse_apply_trailers(trailers: &[Trailer]) -> Result<Option<ApplyTrailers
     let mut store_rev = None;
     let mut base = None;
     let mut tree = None;
+    let mut state_only = false;
     for trailer in trailers {
         match trailer.key.as_str() {
             TRAILER_STORE_REV => store_rev = Some(trailer.value.clone()),
             TRAILER_BASE => base = Some(trailer.value.clone()),
             TRAILER_TREE => tree = Some(trailer.value.clone()),
+            TRAILER_STATE_ONLY => state_only = trailer.value.eq_ignore_ascii_case("true"),
             _ => {}
         }
     }
@@ -311,6 +318,7 @@ pub fn parse_apply_trailers(trailers: &[Trailer]) -> Result<Option<ApplyTrailers
         store_rev,
         base,
         tree,
+        state_only,
     }))
 }
 
@@ -361,6 +369,14 @@ pub fn format_apply_trailers(store_rev: &str, base: &str, tree: Option<&str>) ->
     out
 }
 
+/// Formats apply trailers for a commit that only advances store bookkeeping.
+pub fn format_state_apply_trailers(store_rev: &str, base: &str, tree: &str) -> String {
+    let mut out = format_apply_trailers(store_rev, base, Some(tree));
+    out.push_str(TRAILER_STATE_ONLY);
+    out.push_str(": true\n");
+    out
+}
+
 /// Formats the trailer block for commits created by `bpatch annotate`.
 pub fn format_annotate_trailers(base: &str) -> String {
     let mut out = String::new();
@@ -405,11 +421,24 @@ fn find_latest_bpatch_commit(git: &GitAdapter) -> Result<Option<BpatchTrailerCom
     Ok(None)
 }
 
+fn find_latest_feature_subject(git: &GitAdapter) -> Result<Option<String>> {
+    for commit in git.first_parent_commits(None, Some(HISTORY_LIMIT))? {
+        if parse_apply_trailers(&git.commit_trailers(&commit)?)?
+            .is_some_and(|trailers| !trailers.state_only)
+        {
+            return Ok(Some(git.commit_subject(&commit)?));
+        }
+    }
+    Ok(None)
+}
+
 fn feature_commit_count(git: &GitAdapter, base: &str) -> Result<usize> {
     let range = format!("{base}..HEAD");
     let mut count = 0;
     for commit in git.first_parent_commits(Some(&range), None)? {
-        if parse_apply_trailers(&git.commit_trailers(&commit)?)?.is_some() {
+        if parse_apply_trailers(&git.commit_trailers(&commit)?)?
+            .is_some_and(|trailers| !trailers.state_only)
+        {
             count += 1;
         }
     }
