@@ -170,8 +170,30 @@ def get_missing_required_browseros_server_binary_paths(
 def build_mini_installer(ctx: Context) -> bool:
     """Build the mini_installer.exe"""
     from ..compile import build_target
+
     log_info("Building mini_installer target...")
     return build_target(ctx, "mini_installer")
+
+
+def _codesigntool_command_prefix(codesigntool_path: Path) -> List[str]:
+    if codesigntool_path.suffix.lower() == ".bat":
+        return ["cmd", "/c", str(codesigntool_path)]
+    return [str(codesigntool_path)]
+
+
+def _redact_codesigntool_secrets(text: str, env: EnvConfig) -> str:
+    secrets = [
+        env.esigner_password,
+        env.esigner_totp_secret,
+        env.esigner_credential_id,
+    ]
+    for secret in sorted((secret for secret in secrets if secret), key=len, reverse=True):
+        text = text.replace(secret, "***")
+    return text
+
+
+def _format_redacted_command(cmd: List[str], env: EnvConfig) -> str:
+    return _redact_codesigntool_secrets(" ".join(cmd), env)
 
 
 def sign_with_codesigntool(
@@ -221,13 +243,12 @@ def sign_with_codesigntool(
             temp_output_dir = binary.parent / "signed_temp"
             temp_output_dir.mkdir(exist_ok=True)
 
-            cmd = [
-                str(codesigntool_path),
+            cmd = _codesigntool_command_prefix(codesigntool_path) + [
                 "sign",
                 "-username",
                 env.esigner_username,
                 "-password",
-                f'"{env.esigner_password}"',
+                env.esigner_password,
             ]
 
             if env.esigner_credential_id:
@@ -245,12 +266,11 @@ def sign_with_codesigntool(
                 ]
             )
 
-            cmd_str = " ".join(cmd)
-            log_info(f"Running: {cmd_str}")
+            log_info(f"Running: {_format_redacted_command(cmd, env)}")
 
             result = subprocess.run(
-                cmd_str,
-                shell=True,
+                cmd,
+                shell=False,
                 capture_output=True,
                 text=True,
                 cwd=str(codesigntool_path.parent),
@@ -259,11 +279,11 @@ def sign_with_codesigntool(
             if result.stdout:
                 for line in result.stdout.split("\n"):
                     if line.strip():
-                        log_info(line.strip())
+                        log_info(_redact_codesigntool_secrets(line.strip(), env))
             if result.stderr:
                 for line in result.stderr.split("\n"):
                     if line.strip() and "WARNING" not in line:
-                        log_error(line.strip())
+                        log_error(_redact_codesigntool_secrets(line.strip(), env))
 
             if result.stdout and "Error:" in result.stdout:
                 log_error(
@@ -303,7 +323,8 @@ def sign_with_codesigntool(
                 log_warning(f"Could not verify signature for {binary.name}")
 
         except Exception as e:
-            log_error(f"Failed to sign {binary.name}: {e}")
+            error = _redact_codesigntool_secrets(str(e), env)
+            log_error(f"Failed to sign {binary.name}: {error}")
             all_success = False
 
     return all_success
