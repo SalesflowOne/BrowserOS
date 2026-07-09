@@ -83,6 +83,26 @@ class CommandRedactionTest(unittest.TestCase):
 
         self.assertEqual(displayed, "signer echoed password=***")
 
+    def test_redacts_credentials_configured_outside_envconfig_properties(self):
+        credentials = {
+            "BROWSEROS_AGENT_V2_KEY": "FAKE_AGENT_PRIVATE_KEY_FOR_REDACTION_TEST",
+            "BROWSEROS_CONTROLLER_KEY": "FAKE_CONTROLLER_KEY_FOR_REDACTION_TEST",
+            "BUGREPORTER_KEY": "FAKE_BUGREPORTER_KEY_FOR_REDACTION_TEST",
+            "BROWSERCLAW_KEY": "FAKE_BROWSERCLAW_KEY_FOR_REDACTION_TEST",
+            "CLOUDFLARE_API_TOKEN": "FAKE_CLOUDFLARE_TOKEN_FOR_REDACTION_TEST",
+            "GH_TOKEN": "FAKE_GITHUB_TOKEN_FOR_REDACTION_TEST",
+            "POSTHOG_API_KEY": "FAKE_POSTHOG_KEY_FOR_REDACTION_TEST",
+            "SENTRY_AUTH_TOKEN": "FAKE_SENTRY_TOKEN_FOR_REDACTION_TEST",
+        }
+        message = "credentials: " + " ".join(credentials.values())
+
+        with mock.patch.dict(os.environ, credentials, clear=False):
+            displayed = utils.redact_sensitive_text(message)
+
+        for credential in credentials.values():
+            self.assertNotIn(credential, displayed)
+        self.assertEqual(displayed, "credentials: " + " ".join(["***"] * 8))
+
 
 class LoggingSinkRedactionTest(unittest.TestCase):
     def test_console_and_file_sinks_redact_configured_values(self):
@@ -164,6 +184,30 @@ class RunCommandRedactionTest(unittest.TestCase):
         self.assertIn("Command failed: fake-signer -password ***", logged)
         self.assertNotIn(FAKE_PASSWORD, str(raised.exception))
         self.assertEqual(raised.exception.cmd, "fake-signer -password ***")
+
+    def test_empty_env_redacts_values_from_the_inherited_process_environment(self):
+        command = ["fake-signer"]
+        process = _FakeProcess(f"echoed {FAKE_PASSWORD}\n")
+        file_messages = []
+        console_output = io.StringIO()
+
+        with (
+            mock.patch.dict(
+                os.environ,
+                {"ESIGNER_PASSWORD": FAKE_PASSWORD},
+                clear=False,
+            ),
+            mock.patch.object(utils.subprocess, "Popen", return_value=process),
+            mock.patch.object(utils, "_log_to_file", side_effect=file_messages.append),
+            mock.patch.object(utils, "log_info"),
+            redirect_stdout(console_output),
+        ):
+            result = utils.run_command(command, env={})
+
+        logged = "\n".join(file_messages) + console_output.getvalue()
+        self.assertNotIn(FAKE_PASSWORD, logged)
+        self.assertIn("echoed ***", logged)
+        self.assertEqual(result.stdout, f"echoed {FAKE_PASSWORD}")
 
 
 if __name__ == "__main__":

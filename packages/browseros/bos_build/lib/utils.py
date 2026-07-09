@@ -155,8 +155,9 @@ def run_command(
     check: bool = True,
 ) -> subprocess.CompletedProcess:
     """Run a command with real-time streaming output and full capture"""
+    process_env = env or os.environ
     secret_values = get_command_secret_values(cmd)
-    cmd_str = redact_command(cmd, env)
+    cmd_str = redact_command(cmd, process_env)
     _log_to_file(f"RUN_COMMAND: 🔧 Running: {cmd_str}")
     log_info(f"🔧 Running: {cmd_str}")
 
@@ -165,7 +166,7 @@ def run_command(
         process = subprocess.Popen(
             cmd,
             cwd=cwd,
-            env=env or os.environ,
+            env=process_env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,  # Merge stderr into stdout
             text=True,
@@ -182,7 +183,7 @@ def run_command(
         for line in iter(process.stdout.readline, ""):
             line = line.rstrip()
             if line:
-                safe_line = redact_sensitive_text(line, secret_values, env)
+                safe_line = redact_sensitive_text(line, secret_values, process_env)
                 print(safe_line)  # Print to console in real-time
                 _log_to_file(f"RUN_COMMAND: STDOUT: {safe_line}")  # Log to file
                 stdout_lines.append(line)
@@ -216,24 +217,26 @@ def run_command(
         if e.stdout:
             for line in e.stdout.strip().split("\n"):
                 if line.strip():
-                    safe_line = redact_sensitive_text(line, secret_values, env)
+                    safe_line = redact_sensitive_text(line, secret_values, process_env)
                     _log_to_file(f"RUN_COMMAND: STDOUT: {safe_line}")
 
         if e.stderr:
             for line in e.stderr.strip().split("\n"):
                 if line.strip():
-                    safe_line = redact_sensitive_text(line, secret_values, env)
+                    safe_line = redact_sensitive_text(line, secret_values, process_env)
                     _log_to_file(f"RUN_COMMAND: STDERR: {safe_line}")
 
         if check:
             log_error(f"Command failed: {cmd_str}")
             if e.stderr:
-                safe_error = redact_sensitive_text(e.stderr, secret_values, env)
+                safe_error = redact_sensitive_text(
+                    e.stderr, secret_values, process_env
+                )
                 log_error(f"Error: {safe_error}")
             raise
         return e
     except Exception as e:
-        safe_error = redact_sensitive_text(str(e), secret_values, env)
+        safe_error = redact_sensitive_text(str(e), secret_values, process_env)
         _log_to_file(f"RUN_COMMAND: ❌ Unexpected error: {safe_error}")
         if check:
             log_error(f"Unexpected error running command: {cmd_str}")
