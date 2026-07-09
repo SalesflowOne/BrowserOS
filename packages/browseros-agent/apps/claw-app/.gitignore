@@ -34,3 +34,6 @@ stats-*.json
 # GraphQL generated files
 generated/
 
+# Remotion render artefacts (published to GitHub Releases, never committed)
+onboarding-video/out/
+
