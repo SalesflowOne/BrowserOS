@@ -14,6 +14,21 @@ from typing import Optional
 from dotenv import load_dotenv
 
 
+# Keep this list beside EnvConfig's credential properties so logging code has a
+# single source of truth for values that must never reach build output.
+SENSITIVE_ENV_VARS: frozenset[str] = frozenset(
+    {
+        "ESIGNER_PASSWORD",
+        "ESIGNER_TOTP_SECRET",
+        "MACOS_KEYCHAIN_PASSWORD",
+        "PROD_MACOS_NOTARIZATION_PWD",
+        "R2_SECRET_ACCESS_KEY",
+        "SLACK_WEBHOOK_URL",
+        "SPARKLE_PRIVATE_KEY",
+    }
+)
+
+
 def _load_dotenv_file():
     """Load .env file from project root"""
     from .paths import get_package_root
