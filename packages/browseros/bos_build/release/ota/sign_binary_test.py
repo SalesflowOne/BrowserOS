@@ -6,6 +6,7 @@ import subprocess
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 from unittest import mock
 
 from ...lib.env import EnvConfig
@@ -51,13 +52,16 @@ class SignWindowsBinaryLoggingTest(unittest.TestCase):
             binary = root / "browseros_server.exe"
             _write_exe(tool)
             _write_exe(binary)
-            env = SimpleNamespace(
-                code_sign_tool_exe=str(tool),
-                code_sign_tool_path=None,
-                esigner_username="build@example.test",
-                esigner_password=FAKE_PASSWORD,
-                esigner_totp_secret=FAKE_TOTP,
-                esigner_credential_id="fake-credential-id",
+            env = cast(
+                EnvConfig,
+                SimpleNamespace(
+                    code_sign_tool_exe=str(tool),
+                    code_sign_tool_path=None,
+                    esigner_username="build@example.test",
+                    esigner_password=FAKE_PASSWORD,
+                    esigner_totp_secret=FAKE_TOTP,
+                    esigner_credential_id="fake-credential-id",
+                ),
             )
             result = subprocess.CompletedProcess(
                 "fake codesign command",

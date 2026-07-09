@@ -11,6 +11,7 @@ from unittest import mock
 
 from bos_build.core.context import Context
 from bos_build.core.products import get_product_descriptor
+from bos_build.lib.env import EnvConfig
 from . import windows
 from .windows import (
     WindowsSignModule,
@@ -165,13 +166,16 @@ class WindowsSignLoggingTest(unittest.TestCase):
             binary = root / "browser.exe"
             tool.write_bytes(b"tool")
             binary.write_bytes(b"unsigned")
-            env = SimpleNamespace(
-                code_sign_tool_exe=str(tool),
-                code_sign_tool_path=None,
-                esigner_username="build@example.test",
-                esigner_password=FAKE_PASSWORD,
-                esigner_totp_secret=FAKE_TOTP,
-                esigner_credential_id="fake-credential-id",
+            env = cast(
+                EnvConfig,
+                SimpleNamespace(
+                    code_sign_tool_exe=str(tool),
+                    code_sign_tool_path=None,
+                    esigner_username="build@example.test",
+                    esigner_password=FAKE_PASSWORD,
+                    esigner_totp_secret=FAKE_TOTP,
+                    esigner_credential_id="fake-credential-id",
+                ),
             )
 
             def fake_run(command, **kwargs):

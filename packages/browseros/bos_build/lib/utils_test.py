@@ -122,7 +122,9 @@ class RunCommandRedactionTest(unittest.TestCase):
         console_output = io.StringIO()
 
         with (
-            mock.patch.object(utils.subprocess, "Popen", return_value=process),
+            mock.patch.object(
+                utils.subprocess, "Popen", return_value=process
+            ) as popen,
             mock.patch.object(utils, "_log_to_file", side_effect=file_messages.append),
             mock.patch.object(utils, "log_info", side_effect=info_messages.append),
             redirect_stdout(console_output),
@@ -140,6 +142,7 @@ class RunCommandRedactionTest(unittest.TestCase):
             f"echoed {FAKE_PASSWORD} and {FAKE_TOTP}",
         )
         self.assertEqual(result.args, command)
+        self.assertEqual(popen.call_args.args[0], command)
 
     def test_failure_logs_never_repeat_the_raw_command(self):
         command = ["fake-signer", "-password", FAKE_PASSWORD]
@@ -152,13 +155,15 @@ class RunCommandRedactionTest(unittest.TestCase):
             mock.patch.object(utils, "_log_to_file", side_effect=file_messages.append),
             mock.patch.object(utils, "log_info"),
             mock.patch.object(utils, "log_error", side_effect=error_messages.append),
-            self.assertRaises(subprocess.CalledProcessError),
+            self.assertRaises(subprocess.CalledProcessError) as raised,
         ):
             utils.run_command(command)
 
         logged = "\n".join(file_messages + error_messages)
         self.assertNotIn(FAKE_PASSWORD, logged)
         self.assertIn("Command failed: fake-signer -password ***", logged)
+        self.assertNotIn(FAKE_PASSWORD, str(raised.exception))
+        self.assertEqual(raised.exception.cmd, "fake-signer -password ***")
 
 
 if __name__ == "__main__":

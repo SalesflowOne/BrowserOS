@@ -204,7 +204,7 @@ def run_command(
 
         if check and process.returncode != 0:
             raise subprocess.CalledProcessError(
-                process.returncode, cmd, result.stdout, result.stderr
+                process.returncode, cmd_str, result.stdout, result.stderr
             )
 
         return result
