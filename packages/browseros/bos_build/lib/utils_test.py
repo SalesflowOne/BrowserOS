@@ -2,7 +2,9 @@
 """Tests for command and logging redaction."""
 
 import io
+import json
 import os
+import shlex
 import subprocess
 import unittest
 from contextlib import redirect_stdout
@@ -107,6 +109,24 @@ class CommandRedactionTest(unittest.TestCase):
             self.assertNotIn(credential, displayed)
         self.assertEqual(displayed, "credentials: " + " ".join(["***"] * 8))
 
+    def test_redacts_common_escaped_and_quoted_secret_representations(self):
+        secret = "FAKE_SECRET_WITH_\"DOUBLE\"_AND_'SINGLE'_FOR_REDACTION_TEST"
+        representations = [
+            json.dumps(secret)[1:-1],
+            repr(secret),
+            shlex.quote(secret),
+            subprocess.list2cmdline([secret]),
+        ]
+
+        with mock.patch.dict(
+            os.environ,
+            {"ESIGNER_PASSWORD": secret},
+            clear=False,
+        ):
+            displayed = utils.redact_sensitive_text(" | ".join(representations))
+
+        self.assertEqual(displayed, "*** | *** | *** | ***")
+
 
 class LoggingSinkRedactionTest(unittest.TestCase):
     def test_console_and_file_sinks_redact_configured_values(self):
@@ -170,7 +190,7 @@ class RunCommandRedactionTest(unittest.TestCase):
 
     def test_failure_logs_never_repeat_the_raw_command(self):
         command = ["fake-signer", "-password", FAKE_PASSWORD]
-        process = _FakeProcess("", returncode=7)
+        process = _FakeProcess(f"tool echoed {FAKE_PASSWORD}\n", returncode=7)
         file_messages = []
         error_messages = []
 
@@ -189,6 +209,7 @@ class RunCommandRedactionTest(unittest.TestCase):
         self.assertNotIn(FAKE_PASSWORD, str(raised.exception))
         self.assertNotIn(FAKE_PASSWORD, repr(raised.exception))
         self.assertEqual(raised.exception.cmd, command)
+        self.assertEqual(raised.exception.output, f"tool echoed {FAKE_PASSWORD}")
 
     def test_empty_env_redacts_values_from_the_inherited_process_environment(self):
         command = ["fake-signer"]

@@ -5,6 +5,8 @@ Shared utilities for the build system
 
 import os
 import sys
+import json
+import shlex
 import subprocess
 import shutil
 from collections.abc import Iterable, Mapping, Sequence
@@ -56,16 +58,20 @@ class _RedactedCalledProcessError(subprocess.CalledProcessError):
         redacted_cmd: str,
         output: Optional[str] = None,
         stderr: Optional[str] = None,
+        redacted_output: Optional[str] = None,
+        redacted_stderr: Optional[str] = None,
     ) -> None:
         super().__init__(returncode, cmd, output, stderr)
         self.redacted_cmd = redacted_cmd
+        self.redacted_output = redacted_output
+        self.redacted_stderr = redacted_stderr
 
     def _display_exception(self) -> subprocess.CalledProcessError:
         return subprocess.CalledProcessError(
             self.returncode,
             self.redacted_cmd,
-            self.output,
-            self.stderr,
+            self.redacted_output,
+            self.redacted_stderr,
         )
 
     def __str__(self) -> str:
@@ -124,13 +130,18 @@ def redact_sensitive_text(
         for candidate in {value, _without_wrapping_quotes(value)}:
             if not candidate:
                 continue
-            normalized_values.add(candidate)
-            normalized_values.update(
-                line for line in candidate.splitlines() if line
-            )
-            normalized_values.add(
-                candidate.encode("unicode_escape").decode("ascii")
-            )
+            components = {candidate, *(line for line in candidate.splitlines() if line)}
+            for component in components:
+                normalized_values.update(
+                    {
+                        component,
+                        component.encode("unicode_escape").decode("ascii"),
+                        json.dumps(component)[1:-1],
+                        repr(component),
+                        shlex.quote(component),
+                        subprocess.list2cmdline([component]),
+                    }
+                )
 
     redacted = str(text)
     for value in sorted(normalized_values, key=len, reverse=True):
@@ -239,12 +250,20 @@ def run_command(
         )
 
         if check and process.returncode != 0:
+            safe_output = redact_sensitive_text(
+                result.stdout, secret_values, process_env
+            )
+            safe_stderr = redact_sensitive_text(
+                result.stderr, secret_values, process_env
+            )
             raise _RedactedCalledProcessError(
                 process.returncode,
                 cmd,
                 cmd_str,
                 result.stdout,
                 result.stderr,
+                safe_output,
+                safe_stderr,
             )
 
         return result
