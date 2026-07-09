@@ -2,6 +2,7 @@
 """Tests for Windows signing path discovery."""
 
 import unittest
+import subprocess
 from tempfile import TemporaryDirectory
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,12 +11,17 @@ from unittest import mock
 
 from bos_build.core.context import Context
 from bos_build.core.products import get_product_descriptor
+from . import windows
 from .windows import (
     WindowsSignModule,
     get_browseros_server_binary_paths,
     get_existing_browseros_server_binary_paths,
     get_missing_required_browseros_server_binary_paths,
 )
+
+
+FAKE_PASSWORD = "FAKE_WINDOWS_SIGNING_PASSWORD_FOR_REDACTION_TEST"
+FAKE_TOTP = "FAKE_WINDOWS_SIGNING_TOTP_FOR_REDACTION_TEST"
 
 
 class WindowsSignPathsTest(unittest.TestCase):
@@ -149,6 +155,63 @@ class WindowsSignPathsTest(unittest.TestCase):
             Context,
             SimpleNamespace(product=get_product_descriptor(product), env=mock.Mock()),
         )
+
+
+class WindowsSignLoggingTest(unittest.TestCase):
+    def test_logs_redacted_credentials_but_executes_original_command(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tool = root / "CodeSignTool.bat"
+            binary = root / "browser.exe"
+            tool.write_bytes(b"tool")
+            binary.write_bytes(b"unsigned")
+            env = SimpleNamespace(
+                code_sign_tool_exe=str(tool),
+                code_sign_tool_path=None,
+                esigner_username="build@example.test",
+                esigner_password=FAKE_PASSWORD,
+                esigner_totp_secret=FAKE_TOTP,
+                esigner_credential_id="fake-credential-id",
+            )
+
+            def fake_run(command, **kwargs):
+                if isinstance(command, str):
+                    signed_file = root / "signed_temp" / binary.name
+                    signed_file.write_bytes(b"signed")
+                    return subprocess.CompletedProcess(
+                        command,
+                        0,
+                        stdout=f"tool echoed {FAKE_PASSWORD}",
+                        stderr=f"diagnostic echoed {FAKE_TOTP}",
+                    )
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    stdout="Valid",
+                    stderr="",
+                )
+
+            with (
+                mock.patch.object(windows.subprocess, "run", side_effect=fake_run) as run,
+                mock.patch.object(windows, "log_info") as log_info,
+                mock.patch.object(windows, "log_error") as log_error,
+            ):
+                self.assertTrue(windows.sign_with_codesigntool([binary], env))
+
+        executed_command = run.call_args_list[0].args[0]
+        self.assertIn(f'-password "{FAKE_PASSWORD}"', executed_command)
+        self.assertIn(f"-totp_secret {FAKE_TOTP}", executed_command)
+        self.assertTrue(run.call_args_list[0].kwargs["shell"])
+
+        logged = "\n".join(
+            str(call.args[0]) for call in [*log_info.call_args_list, *log_error.call_args_list]
+        )
+        self.assertNotIn(FAKE_PASSWORD, logged)
+        self.assertNotIn(FAKE_TOTP, logged)
+        self.assertIn("-password ***", logged)
+        self.assertIn("-totp_secret ***", logged)
+        self.assertIn("tool echoed ***", logged)
+        self.assertIn("diagnostic echoed ***", logged)
 
 
 if __name__ == "__main__":
