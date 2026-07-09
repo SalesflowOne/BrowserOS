@@ -1,9 +1,9 @@
 diff --git a/chrome/browser/browseros/onboarding/browseros_onboarding_prefs.cc b/chrome/browser/browseros/onboarding/browseros_onboarding_prefs.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..3ed691ccd8724e630b36e6d02150d7e9c1a059b3
+index 0000000000000000000000000000000000000000..a403ca0c367402c1e47cf1a91f2cdcdc7569a6d6
 --- /dev/null
 +++ b/chrome/browser/browseros/onboarding/browseros_onboarding_prefs.cc
-@@ -0,0 +1,56 @@
+@@ -0,0 +1,52 @@
 +// Copyright 2026 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -49,11 +49,7 @@ index 0000000000000000000000000000000000000000..3ed691ccd8724e630b36e6d02150d7e9
 +}
 +
 +void NeutralizeUpstreamFirstRun() {
-+  // `kFirstRunFinished` is a Local State pref read by
-+  // FirstRunService::ShouldOpenFirstRun(). Setting it here means: BrowserOS
-+  // provides its own onboarding as the first-run experience, so Chromium's DICE
-+  // first-run is already finished and must not re-open itself when we launch a
-+  // browser after onboarding.
++  // BrowserOS owns first-run policy whether it skips or replaces onboarding.
 +  if (PrefService* local_state = g_browser_process->local_state()) {
 +    local_state->SetBoolean(::prefs::kFirstRunFinished, true);
 +  }
