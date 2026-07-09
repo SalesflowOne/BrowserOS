@@ -287,7 +287,6 @@ pub fn continue_session(
             target_tree: &final_tree,
             trailers: CommitTrailerMode::Apply {
                 store_rev: &session.store_rev,
-                store_tree: &final_tree,
             },
             subject_mode: SubjectMode::FeatureName,
             parent_commit: &session.parent_head,

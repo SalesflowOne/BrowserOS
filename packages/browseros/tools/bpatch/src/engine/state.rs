@@ -10,7 +10,7 @@ use crate::store::Store;
 pub const TRAILER_STORE_REV: &str = "Bpatch-Store-Rev";
 /// Trailer key carrying the chromium base commit used for convergence.
 pub const TRAILER_BASE: &str = "Bpatch-Base";
-/// Trailer key carrying the cached raw store target tree.
+/// Trailer key carrying the cached materialized checkout tree.
 pub const TRAILER_TREE: &str = "Bpatch-Tree";
 /// Trailer key marking commits authored by `bpatch annotate`.
 pub const TRAILER_ANNOTATED: &str = "Bpatch-Annotated";
@@ -42,9 +42,9 @@ impl StateContext {
 pub struct ApplyTrailers {
     /// Store repository commit applied to the checkout.
     pub store_rev: String,
-    /// Chromium base commit used to compute the applied tree.
+    /// Chromium base commit used to compute the applied checkout tree.
     pub base: String,
-    /// Cached raw store target tree, when the commit still carries it.
+    /// Cached materialized checkout tree, when the commit still carries it.
     pub tree: Option<String>,
 }
 
@@ -113,7 +113,7 @@ pub struct AppliedState {
     pub short_store_rev: String,
     /// Base revision recorded in the trailer commit.
     pub base: String,
-    /// Raw store target tree resolved from the trailer cache or recovery fallback.
+    /// Materialized checkout tree resolved from the trailer or recovery fallback.
     pub tree: String,
     /// Count of apply-authored feature commits since the base.
     pub feature_commit_count: usize,
@@ -126,7 +126,7 @@ pub struct AppliedState {
 pub enum DriftState {
     /// No committed or tracked uncommitted drift was found.
     Clean,
-    /// One or more files differ from the applied tree.
+    /// One or more files differ from the bpatch-authored drift anchor.
     Drifted {
         /// Drift entries grouped by source class.
         files: Vec<DriftFile>,
@@ -148,7 +148,7 @@ impl DriftState {
     }
 }
 
-/// One file that differs from the applied tree.
+/// One file that differs from the bpatch-authored drift anchor.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DriftFile {
     /// Repository-relative file path.

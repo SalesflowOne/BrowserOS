@@ -147,7 +147,7 @@ pub struct ApplyConflictFile {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ApplyDriftSource {
-    /// Drift is committed on top of the applied tree.
+    /// Drift is committed on top of the bpatch-authored drift anchor.
     Committed,
     /// Drift is in the index or worktree.
     Uncommitted,

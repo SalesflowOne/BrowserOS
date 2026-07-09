@@ -486,7 +486,12 @@ fn sim5_agent_base_bump_conflict_continue_repin_round_trips_store() -> Result<()
         Some(&scenario.store_dir),
         strs(&["apply", "--json"]),
     )?;
-    assert_eq!(parse_json(&converged.stdout)?["result"], "converged");
+    assert_eq!(
+        parse_json(&converged.stdout)?["result"],
+        "converged",
+        "{}",
+        converged.stdout
+    );
     Ok(())
 }
 

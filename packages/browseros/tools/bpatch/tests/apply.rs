@@ -15,7 +15,6 @@ use bpatch::engine::state::{
     self, StateContext, TRAILER_ANNOTATED, TRAILER_BASE, TRAILER_STORE_REV, TRAILER_TREE,
 };
 use bpatch::process::Git;
-use bpatch::store::Store;
 use fixtures::FixtureRepo;
 use serde_json::Value;
 
@@ -245,6 +244,53 @@ fn second_apply_is_idempotent_and_does_not_rewrite_index_or_worktree() -> Result
 }
 
 #[test]
+fn dirty_store_patch_applies_once_and_then_converges() -> Result<()> {
+    let scenario = applied_rev1_scenario()?;
+    scenario
+        .checkout
+        .write_file("chrome/browser/ui/llmchat/panel.cc", "dirty store panel\n")?;
+    scenario.checkout.git().run(&["add", "-A"])?;
+    let patch = scenario.checkout.git().run(&[
+        "diff",
+        "--binary",
+        "--cached",
+        &scenario.base,
+        "--",
+        "chrome/browser/ui/llmchat/panel.cc",
+    ])?;
+    scenario
+        .store
+        .write_file("chromium_patches/chrome/browser/ui/llmchat/panel.cc", patch)?;
+    scenario
+        .checkout
+        .git()
+        .run(&["reset", "--hard", &scenario.rev1_commit])?;
+
+    let first = run_apply(&scenario.store_dir, &scenario.checkout, false);
+    match first {
+        ApplyReport::Applied { files_changed, .. } => assert_eq!(files_changed, 1),
+        other => panic!("expected dirty store apply, got {other:?}"),
+    }
+    assert_eq!(
+        scenario
+            .checkout
+            .read_file("chrome/browser/ui/llmchat/panel.cc")?,
+        "dirty store panel\n"
+    );
+    let applied_head = scenario.checkout.git().run_str(&["rev-parse", "HEAD"])?;
+
+    assert!(matches!(
+        run_apply(&scenario.store_dir, &scenario.checkout, false),
+        ApplyReport::Converged { .. }
+    ));
+    assert_eq!(
+        scenario.checkout.git().run_str(&["rev-parse", "HEAD"])?,
+        applied_head
+    );
+    Ok(())
+}
+
+#[test]
 fn annotate_then_apply_writes_pending_store_delta_and_converges() -> Result<()> {
     let scenario = annotated_store_delta_scenario()?;
 
@@ -290,27 +336,12 @@ fn annotate_then_apply_writes_pending_store_delta_and_converges() -> Result<()> 
     );
     let applied_head = scenario.checkout.git().run_str(&["rev-parse", "HEAD"])?;
     assert_ne!(applied_head, scenario.annotate_commit);
-    let store = Store::load(&scenario.store_dir)?;
-    let patches = store
-        .patches()
-        .values()
-        .filter(|patch| store.stores_path(&patch.path))
-        .map(|patch| scenario.store_dir.join(&patch.path))
-        .collect::<Vec<_>>();
-    let expected_store_tree = scenario
-        .checkout
-        .git_adapter()
-        .build_tree_from_patches(&scenario.base, &patches)?;
-    assert_ne!(
-        expected_store_tree,
-        scenario.checkout.git_adapter().tree_id("HEAD")?
-    );
     assert_apply_trailers(
         &scenario.checkout.git_adapter(),
         "HEAD",
         &scenario.store.git().run_str(&["rev-parse", "HEAD"])?,
         &scenario.base,
-        Some(expected_store_tree.as_str()),
+        Some(scenario.checkout.git_adapter().tree_id("HEAD")?.as_str()),
     )?;
 
     let second = run_apply(&scenario.store_dir, &scenario.checkout, false);
@@ -318,6 +349,99 @@ fn annotate_then_apply_writes_pending_store_delta_and_converges() -> Result<()> 
     assert_eq!(
         scenario.checkout.git().run_str(&["rev-parse", "HEAD"])?,
         applied_head
+    );
+    scenario
+        .checkout
+        .write_file("chrome/BUILD.gn", "later store build\n")?;
+    scenario.checkout.git().run(&["add", "-A"])?;
+    let later_store_rev = commit_store_from_index(
+        &scenario.store,
+        &scenario.checkout,
+        &scenario.base,
+        &["chrome/BUILD.gn"],
+        "store later build",
+    )?;
+    scenario
+        .checkout
+        .git()
+        .run(&["reset", "--hard", &applied_head])?;
+
+    let third = run_apply(&scenario.store_dir, &scenario.checkout, false);
+    match third {
+        ApplyReport::Applied {
+            files_changed,
+            commits,
+            ..
+        } => {
+            assert_eq!(files_changed, 1);
+            assert_eq!(commits.len(), 1);
+            assert_eq!(commits[0].feature, "bootstrap");
+        }
+        other => panic!("expected later store apply, got {other:?}"),
+    }
+    assert_eq!(
+        scenario
+            .checkout
+            .read_file("chrome/browser/ui/llmchat/generated_bundle.js")?,
+        "annotated only\n"
+    );
+    assert_apply_trailers(
+        &scenario.checkout.git_adapter(),
+        "HEAD",
+        &later_store_rev,
+        &scenario.base,
+        Some(scenario.checkout.git_adapter().tree_id("HEAD")?.as_str()),
+    )?;
+    let later_head = scenario.checkout.git().run_str(&["rev-parse", "HEAD"])?;
+    assert!(matches!(
+        run_apply(&scenario.store_dir, &scenario.checkout, false),
+        ApplyReport::Converged { .. }
+    ));
+    assert_eq!(
+        scenario.checkout.git().run_str(&["rev-parse", "HEAD"])?,
+        later_head
+    );
+    Ok(())
+}
+
+#[test]
+fn legacy_materialized_tree_trailer_preserves_unpatched_feature_paths() -> Result<()> {
+    let checkout = FixtureRepo::new()?;
+    let base = write_base_checkout(&checkout)?;
+    let store = FixtureRepo::new()?;
+    let store_dir = seed_store(&store, &base)?;
+
+    checkout.write_file("chrome/browser/ui/llmchat/panel.cc", "applied panel\n")?;
+    checkout.write_file(
+        "chrome/browser/ui/llmchat/generated_bundle.js",
+        "preserved generated content\n",
+    )?;
+    checkout.git().run(&["add", "-A"])?;
+    let materialized_tree = checkout.git().run_str(&["write-tree"])?;
+    let store_rev = commit_store_from_index(
+        &store,
+        &checkout,
+        &base,
+        &["chrome/browser/ui/llmchat/panel.cc"],
+        "store applied",
+    )?;
+    checkout.commit_with_trailers(
+        "feat: llmchat",
+        &[
+            (TRAILER_STORE_REV, store_rev.as_str()),
+            (TRAILER_BASE, base.as_str()),
+            (TRAILER_TREE, materialized_tree.as_str()),
+        ],
+    )?;
+    let head_before = checkout.git().run_str(&["rev-parse", "HEAD"])?;
+
+    let report = run_apply(&store_dir, &checkout, false);
+
+    assert!(matches!(report, ApplyReport::Converged { .. }));
+    assert_eq!(checkout.git().run_str(&["rev-parse", "HEAD"])?, head_before);
+    assert_eq!(
+        checkout.read_file("chrome/browser/ui/llmchat/generated_bundle.js")?,
+        "preserved generated content\n"
     );
     Ok(())
 }
@@ -678,7 +802,7 @@ fn pull_fast_forwards_store_before_applying_and_json_uses_sim_fields() -> Result
 }
 
 #[test]
-fn hand_committed_target_tree_reports_converged_before_drift() -> Result<()> {
+fn hand_committed_target_tree_records_advanced_store_state() -> Result<()> {
     let scenario = applied_rev1_scenario()?;
     write_checkout_rev2(&scenario.checkout, false)?;
     let rev2_store = commit_store_from_index(
@@ -697,10 +821,12 @@ fn hand_committed_target_tree_reports_converged_before_drift() -> Result<()> {
     let report = run_apply(&scenario.store_dir, &scenario.checkout, false);
 
     match report {
-        ApplyReport::Converged {
+        ApplyReport::Applied {
             store_rev,
             files_changed,
+            commits,
             exit,
+            ..
         } => {
             assert_eq!(
                 store_rev,
@@ -710,13 +836,28 @@ fn hand_committed_target_tree_reports_converged_before_drift() -> Result<()> {
                     .run_str(&["rev-parse", "--short", &rev2_store])?
             );
             assert_eq!(files_changed, 0);
+            assert_eq!(commits.len(), 1);
+            assert_eq!(commits[0].feature, "llmchat");
             assert_eq!(exit, 0);
         }
-        other => panic!("expected converged report, got {other:?}"),
+        other => panic!("expected applied bookkeeping report, got {other:?}"),
     }
+    let applied_head = scenario.checkout.git().run_str(&["rev-parse", "HEAD"])?;
+    assert_ne!(applied_head, head_before);
+    assert_apply_trailers(
+        &scenario.checkout.git_adapter(),
+        "HEAD",
+        &rev2_store,
+        &scenario.base,
+        Some(scenario.checkout.git_adapter().tree_id("HEAD")?.as_str()),
+    )?;
+    assert!(matches!(
+        run_apply(&scenario.store_dir, &scenario.checkout, false),
+        ApplyReport::Converged { .. }
+    ));
     assert_eq!(
         scenario.checkout.git().run_str(&["rev-parse", "HEAD"])?,
-        head_before
+        applied_head
     );
     Ok(())
 }

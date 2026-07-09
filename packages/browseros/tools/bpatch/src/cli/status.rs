@@ -29,7 +29,7 @@ pub struct StatusReport {
     pub applied_store_rev: Option<String>,
     /// Short applied store revision, when present.
     pub applied_store_short_rev: Option<String>,
-    /// Raw store target tree cache or recovered tree, when present.
+    /// Materialized checkout tree cache or recovered tree, when present.
     pub applied_tree: Option<String>,
     /// Number of apply-authored feature commits since base.
     pub feature_commits: usize,
