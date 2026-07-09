@@ -480,6 +480,34 @@ fn hand_commit_after_annotate_still_refuses_apply() -> Result<()> {
 }
 
 #[test]
+fn hand_committed_exact_store_delta_after_annotate_still_refuses_apply() -> Result<()> {
+    let scenario = annotated_store_delta_scenario()?;
+    write_checkout_rev2(&scenario.checkout, false)?;
+    scenario.checkout.commit("hand applied exact store delta")?;
+    let head_before = scenario.checkout.git().run_str(&["rev-parse", "HEAD"])?;
+
+    let report = run_apply(&scenario.store_dir, &scenario.checkout, false);
+
+    match report {
+        ApplyReport::Drift { files, exit } => {
+            assert_eq!(exit, 3);
+            assert_eq!(files.len(), 2);
+            assert!(
+                files
+                    .iter()
+                    .all(|file| file.annotation == "modified since feat: llmchat from bos_build")
+            );
+        }
+        other => panic!("expected exact store delta drift refusal, got {other:?}"),
+    }
+    assert_eq!(
+        scenario.checkout.git().run_str(&["rev-parse", "HEAD"])?,
+        head_before
+    );
+    Ok(())
+}
+
+#[test]
 fn uncommitted_managed_edit_after_annotate_still_refuses_apply() -> Result<()> {
     let scenario = annotated_store_delta_scenario()?;
     scenario

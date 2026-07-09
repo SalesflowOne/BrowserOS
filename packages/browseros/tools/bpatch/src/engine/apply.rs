@@ -6,9 +6,9 @@ use anyhow::{Context, Result, anyhow, bail};
 
 use crate::engine::progress::ProgressEvent;
 use crate::engine::state::{
-    DriftFile, DriftSource, ResolvedState, StateContext, format_annotate_trailers,
-    format_apply_trailers, format_state_apply_trailers, parse_bpatch_authored_base,
-    unassigned_feature_name,
+    BpatchCommitKind, DriftFile, DriftSource, ResolvedState, StateContext,
+    format_annotate_trailers, format_apply_trailers, format_state_apply_trailers,
+    parse_bpatch_authored_base, unassigned_feature_name,
 };
 use crate::git::{GitAdapter, TreeDiffEntry};
 use crate::process::Git;
@@ -207,7 +207,10 @@ pub fn apply(
     let committed_drift_is_store_delta =
         committed_drift_covered_by_store_delta(state.drift.files(), &target.store_delta);
     let target_is_safe = state.drift.is_clean()
-        || (checkout_matches_target && !has_uncommitted_drift && committed_drift_is_store_delta);
+        || (state.drift_anchor_kind == Some(BpatchCommitKind::Apply)
+            && checkout_matches_target
+            && !has_uncommitted_drift
+            && committed_drift_is_store_delta);
     if checkout_matches_target
         && !store_revision_changed
         && (target.store_delta.is_empty() || applied_checkout_matches_head)

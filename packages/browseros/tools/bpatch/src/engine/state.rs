@@ -59,6 +59,15 @@ pub struct AnnotateTrailers {
     pub base: String,
 }
 
+/// Trailer kind of the commit used as the committed-drift anchor.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BpatchCommitKind {
+    /// Commit authored by `bpatch apply`.
+    Apply,
+    /// Commit authored by `bpatch annotate`.
+    Annotate,
+}
+
 /// Resolved checkout state derived from history and the store repo.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolvedState {
@@ -76,6 +85,8 @@ pub struct ResolvedState {
     pub store: StoreRepoState,
     /// Last apply-authored state, if this checkout has one.
     pub applied: Option<AppliedState>,
+    /// Kind of the newest bpatch-authored commit, when any.
+    pub drift_anchor_kind: Option<BpatchCommitKind>,
     /// Drift from the newest bpatch-authored commit tree.
     pub drift: DriftState,
 }
@@ -222,6 +233,7 @@ struct BpatchTrailerCommit {
     commit: String,
     base: String,
     subject: String,
+    kind: BpatchCommitKind,
 }
 
 /// Resolves trailer state, store freshness, base display, and checkout drift.
@@ -289,6 +301,7 @@ pub fn resolve(ctx: &StateContext) -> Result<ResolvedState> {
         base,
         store,
         applied,
+        drift_anchor_kind: latest_bpatch.as_ref().map(|entry| entry.kind),
         drift,
     })
 }
@@ -410,13 +423,20 @@ fn find_latest_apply_commit(git: &GitAdapter) -> Result<Option<TrailerCommit>> {
 
 fn find_latest_bpatch_commit(git: &GitAdapter) -> Result<Option<BpatchTrailerCommit>> {
     for commit in git.first_parent_commits(None, Some(HISTORY_LIMIT))? {
-        if let Some(base) = parse_bpatch_authored_base(&git.commit_trailers(&commit)?)? {
-            return Ok(Some(BpatchTrailerCommit {
-                subject: git.commit_subject(&commit)?,
-                commit,
-                base,
-            }));
-        }
+        let trailers = git.commit_trailers(&commit)?;
+        let (base, kind) = if let Some(apply) = parse_apply_trailers(&trailers)? {
+            (apply.base, BpatchCommitKind::Apply)
+        } else if let Some(annotate) = parse_annotate_trailers(&trailers)? {
+            (annotate.base, BpatchCommitKind::Annotate)
+        } else {
+            continue;
+        };
+        return Ok(Some(BpatchTrailerCommit {
+            subject: git.commit_subject(&commit)?,
+            commit,
+            base,
+            kind,
+        }));
     }
     Ok(None)
 }
