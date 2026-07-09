@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - feat/claw-server-bootstrap
+      - epic/claw-app-remotion-real-ui
     paths:
       - "packages/browseros-agent/**"
 
