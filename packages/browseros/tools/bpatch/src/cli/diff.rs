@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use serde::Serialize;
 
-use crate::engine::apply::build_apply_target_tree;
+use crate::engine::apply::build_apply_target_trees;
 use crate::engine::progress;
 use crate::engine::state::{StateContext, resolve, unassigned_feature_name};
 use crate::git::GitAdapter;
@@ -79,7 +79,7 @@ pub fn run(ctx: &StateContext) -> Result<DiffReport> {
     let state = resolve(ctx)?;
     let store = Store::load(&ctx.store_dir)?;
     let checkout = GitAdapter::new(&ctx.checkout);
-    let target_tree = build_apply_target_tree(
+    let target = build_apply_target_trees(
         &checkout,
         &ctx.store_dir,
         &store,
@@ -87,7 +87,7 @@ pub fn run(ctx: &StateContext) -> Result<DiffReport> {
         &mut progress::noop(),
     )?;
     let entries = checkout
-        .diff_tree_name_status(&state.head_tree, &target_tree)?
+        .diff_tree_name_status(&state.head_tree, &target.checkout_tree)?
         .into_iter()
         .filter(|entry| {
             entry

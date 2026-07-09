@@ -10,7 +10,7 @@ use crate::store::Store;
 pub const TRAILER_STORE_REV: &str = "Bpatch-Store-Rev";
 /// Trailer key carrying the chromium base commit used for convergence.
 pub const TRAILER_BASE: &str = "Bpatch-Base";
-/// Trailer key carrying the cached applied tree.
+/// Trailer key carrying the cached raw store target tree.
 pub const TRAILER_TREE: &str = "Bpatch-Tree";
 /// Trailer key marking commits authored by `bpatch annotate`.
 pub const TRAILER_ANNOTATED: &str = "Bpatch-Annotated";
@@ -44,7 +44,7 @@ pub struct ApplyTrailers {
     pub store_rev: String,
     /// Chromium base commit used to compute the applied tree.
     pub base: String,
-    /// Cached applied tree, when the commit still carries it.
+    /// Cached raw store target tree, when the commit still carries it.
     pub tree: Option<String>,
 }
 
@@ -113,7 +113,7 @@ pub struct AppliedState {
     pub short_store_rev: String,
     /// Base revision recorded in the trailer commit.
     pub base: String,
-    /// Applied tree resolved from the trailer cache or recovery fallback.
+    /// Raw store target tree resolved from the trailer cache or recovery fallback.
     pub tree: String,
     /// Count of apply-authored feature commits since the base.
     pub feature_commit_count: usize,

@@ -15,6 +15,7 @@ use bpatch::engine::state::{
     self, StateContext, TRAILER_ANNOTATED, TRAILER_BASE, TRAILER_STORE_REV, TRAILER_TREE,
 };
 use bpatch::process::Git;
+use bpatch::store::Store;
 use fixtures::FixtureRepo;
 use serde_json::Value;
 
@@ -278,17 +279,38 @@ fn annotate_then_apply_writes_pending_store_delta_and_converges() -> Result<()> 
     assert_eq!(
         scenario
             .checkout
+            .read_file("chrome/browser/ui/llmchat/generated_bundle.js")?,
+        "annotated only\n"
+    );
+    assert_eq!(
+        scenario
+            .checkout
             .read_file("chrome/browser/ui/llmchat/resize_util.cc")?,
         "resize\n"
     );
     let applied_head = scenario.checkout.git().run_str(&["rev-parse", "HEAD"])?;
     assert_ne!(applied_head, scenario.annotate_commit);
+    let store = Store::load(&scenario.store_dir)?;
+    let patches = store
+        .patches()
+        .values()
+        .filter(|patch| store.stores_path(&patch.path))
+        .map(|patch| scenario.store_dir.join(&patch.path))
+        .collect::<Vec<_>>();
+    let expected_store_tree = scenario
+        .checkout
+        .git_adapter()
+        .build_tree_from_patches(&scenario.base, &patches)?;
+    assert_ne!(
+        expected_store_tree,
+        scenario.checkout.git_adapter().tree_id("HEAD")?
+    );
     assert_apply_trailers(
         &scenario.checkout.git_adapter(),
         "HEAD",
         &scenario.store.git().run_str(&["rev-parse", "HEAD"])?,
         &scenario.base,
-        Some(scenario.checkout.git_adapter().tree_id("HEAD")?.as_str()),
+        Some(expected_store_tree.as_str()),
     )?;
 
     let second = run_apply(&scenario.store_dir, &scenario.checkout, false);
@@ -753,6 +775,10 @@ fn annotated_store_delta_scenario() -> Result<AnnotateScenario> {
 
     checkout.write_file("chrome/browser/ui/llmchat/panel.cc", "annotated panel\n")?;
     checkout.write_file("chrome/browser/ui/llmchat/panel.h", "annotated header\n")?;
+    checkout.write_file(
+        "chrome/browser/ui/llmchat/generated_bundle.js",
+        "annotated only\n",
+    )?;
     checkout.git().run(&["add", "-A"])?;
     commit_store_from_index(
         &store,

@@ -61,7 +61,7 @@ pub struct AppliedApply {
     pub files_changed: usize,
     /// Store-managed file count loaded from the store.
     pub store_managed_files: usize,
-    /// Final target tree carried by the batch's last commit.
+    /// Final checkout tree materialized by this apply.
     pub target_tree: String,
     /// Feature commits authored by this run.
     pub commits: Vec<AuthoredCommit>,
@@ -108,8 +108,11 @@ pub struct AuthorCommitsInput<'a> {
 /// Trailer style for commit-tree authored bpatch commits.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CommitTrailerMode<'a> {
-    /// Apply commits record the store revision and final target tree.
-    Apply { store_rev: &'a str },
+    /// Apply commits record the store revision and raw store target tree.
+    Apply {
+        store_rev: &'a str,
+        store_tree: &'a str,
+    },
     /// Annotate commits record only the base plus an annotation marker.
     Annotate,
 }
@@ -154,6 +157,11 @@ struct CommitGroup {
     files: Vec<TreeDiffEntry>,
 }
 
+pub(crate) struct ApplyTargetTrees {
+    pub checkout_tree: String,
+    pub store_tree: String,
+}
+
 /// Runs same-base convergence against the current store.
 pub fn apply(
     ctx: &StateContext,
@@ -174,7 +182,7 @@ pub fn apply(
     }
 
     let checkout = GitAdapter::new(&ctx.checkout);
-    let target_tree = build_apply_target_tree(&checkout, &ctx.store_dir, &store, &state, progress)?;
+    let target = build_apply_target_trees(&checkout, &ctx.store_dir, &store, &state, progress)?;
 
     checkout.refresh_index()?;
     let has_uncommitted_drift = state
@@ -182,11 +190,11 @@ pub fn apply(
         .files()
         .iter()
         .any(|file| matches!(file.source, DriftSource::Uncommitted));
-    if state.head_tree == target_tree && !has_uncommitted_drift {
+    if state.head_tree == target.checkout_tree && !has_uncommitted_drift {
         return Ok(ApplyOutcome::Converged(ConvergedApply {
             store_rev: state.store.head_rev,
             store_short_rev: state.store.short_head_rev,
-            target_tree,
+            target_tree: target.checkout_tree,
         }));
     }
 
@@ -196,7 +204,7 @@ pub fn apply(
         }));
     }
 
-    let delta = checkout.diff_tree_name_status(&state.head_tree, &target_tree)?;
+    let delta = checkout.diff_tree_name_status(&state.head_tree, &target.checkout_tree)?;
     let collisions = untracked_add_collisions(&checkout, &delta)?;
     if !collisions.is_empty() {
         return Ok(ApplyOutcome::Drift(DriftApply { files: collisions }));
@@ -208,9 +216,10 @@ pub fn apply(
             store: &store,
             base: &state.base.sha,
             applied_tree: &state.head_tree,
-            target_tree: &target_tree,
+            target_tree: &target.checkout_tree,
             trailers: CommitTrailerMode::Apply {
                 store_rev: &state.store.head_rev,
+                store_tree: &target.store_tree,
             },
             subject_mode: SubjectMode::FeatureName,
             parent_commit: &state.head_rev,
@@ -224,11 +233,11 @@ pub fn apply(
         total: Some(delta.len()),
     });
     checkout
-        .materialize_tree_delta(&state.head_tree, &target_tree)
+        .materialize_tree_delta(&state.head_tree, &target.checkout_tree)
         .with_context(|| {
             format!(
-                "materializing target tree failed; recover with `git read-tree -m -u {} {target_tree}`",
-                state.head_tree
+                "materializing target tree failed; recover with `git read-tree -m -u {} {}`",
+                state.head_tree, target.checkout_tree
             )
         })?;
     progress(ProgressEvent::End {
@@ -238,7 +247,7 @@ pub fn apply(
         &ctx.checkout,
         &state.head_rev,
         &chain.final_sha,
-        &target_tree,
+        &target.checkout_tree,
     )?;
 
     Ok(ApplyOutcome::Applied(AppliedApply {
@@ -253,7 +262,7 @@ pub fn apply(
             .keys()
             .filter(|path| store.stores_path(path))
             .count(),
-        target_tree,
+        target_tree: target.checkout_tree,
         commits: chain.commits,
     }))
 }
@@ -304,7 +313,10 @@ pub fn author_feature_commits(
         let index_info = index_info_for_group(&git, input.target_tree, &group.files)?;
         indexed.run_with_stdin(&["update-index", "--index-info"], index_info.as_bytes())?;
         let next_tree = indexed.run_str(&["write-tree"])?;
-        let tree_trailer = (index == last_index).then_some(input.target_tree);
+        let tree_trailer = match input.trailers {
+            CommitTrailerMode::Apply { store_tree, .. } if index == last_index => Some(store_tree),
+            _ => None,
+        };
         let message = commit_message(&group.subject, input.trailers, input.base, tree_trailer);
         let sha = git.process().run_with_stdin(
             &["commit-tree", &next_tree, "-p", &parent],
@@ -430,14 +442,14 @@ fn pull_store(store_dir: &Path, progress: &mut dyn FnMut(ProgressEvent<'_>)) -> 
     Ok(())
 }
 
-/// Builds the exact overlaid tree that apply would materialize for resolved state.
-pub(crate) fn build_apply_target_tree(
+/// Builds the raw store tree and exact overlaid checkout tree for an apply plan.
+pub(crate) fn build_apply_target_trees(
     git: &GitAdapter,
     store_dir: &Path,
     store: &Store,
     state: &ResolvedState,
     progress: &mut dyn FnMut(ProgressEvent<'_>),
-) -> Result<String> {
+) -> Result<ApplyTargetTrees> {
     let store_target_tree =
         build_store_target_tree(git, store_dir, store, &state.base.sha, progress)
             .context("building target tree from store patches")?;
@@ -451,7 +463,12 @@ pub(crate) fn build_apply_target_tree(
         .into_iter()
         .filter(|entry| stores_entry(store, entry))
         .collect::<Vec<_>>();
-    build_tree_from_source_entries(git, &state.head_tree, &store_target_tree, &store_delta)
+    let checkout_tree =
+        build_tree_from_source_entries(git, &state.head_tree, &store_target_tree, &store_delta)?;
+    Ok(ApplyTargetTrees {
+        checkout_tree,
+        store_tree: store_target_tree,
+    })
 }
 
 fn build_store_target_tree(
@@ -681,7 +698,7 @@ fn commit_message(
     message.push_str(subject);
     message.push_str("\n\n");
     match trailers {
-        CommitTrailerMode::Apply { store_rev } => {
+        CommitTrailerMode::Apply { store_rev, .. } => {
             message.push_str(&format_apply_trailers(store_rev, base, tree));
         }
         CommitTrailerMode::Annotate => {
