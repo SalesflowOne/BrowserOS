@@ -326,6 +326,52 @@ fn diff_groups_by_feature_and_reports_rebuild_scope() -> Result<()> {
 }
 
 #[test]
+fn diff_after_annotate_reports_only_head_to_apply_target() -> Result<()> {
+    let checkout = FixtureRepo::new()?;
+    let base = write_base_checkout(&checkout)?;
+    let store = FixtureRepo::new()?;
+    let store_dir = seed_store(&store, &base)?;
+
+    checkout.write_file("chrome/browser/ui/llmchat/panel.cc", "annotated panel\n")?;
+    checkout.write_file("chrome/browser/ui/llmchat/features.gni", "annotated gni\n")?;
+    checkout.git().run(&["add", "-A"])?;
+    commit_store_from_index(
+        &store,
+        &checkout,
+        &base,
+        &[
+            "chrome/browser/ui/llmchat/panel.cc",
+            "chrome/browser/ui/llmchat/features.gni",
+        ],
+        "store annotated state",
+    )?;
+    let annotate_commit = checkout.commit_with_trailers(
+        "feat: llmchat from bos_build",
+        &[(TRAILER_BASE, base.as_str()), (TRAILER_ANNOTATED, "true")],
+    )?;
+
+    checkout.write_file("chrome/browser/ui/llmchat/panel.cc", "store current\n")?;
+    checkout.git().run(&["add", "-A"])?;
+    commit_store_from_index(
+        &store,
+        &checkout,
+        &base,
+        &["chrome/browser/ui/llmchat/panel.cc"],
+        "store current",
+    )?;
+    checkout.git().run(&["reset", "--hard", &annotate_commit])?;
+
+    let report = diff::run(&StateContext::new(checkout.path(), &store_dir))?;
+    assert_eq!(report.files_changed, 1);
+    assert_eq!(report.groups.len(), 1);
+    assert_eq!(
+        report.groups[0].files[0].path,
+        PathBuf::from("chrome/browser/ui/llmchat/panel.cc")
+    );
+    Ok(())
+}
+
+#[test]
 fn amending_latest_feature_commit_to_drop_trailers_does_not_wedge_state() -> Result<()> {
     let scenario = applied_scenario(true)?;
     scenario

@@ -6,8 +6,8 @@ use anyhow::{Context, Result, anyhow, bail};
 
 use crate::engine::progress::ProgressEvent;
 use crate::engine::state::{
-    DriftFile, DriftSource, StateContext, format_annotate_trailers, format_apply_trailers,
-    parse_bpatch_authored_base, unassigned_feature_name,
+    DriftFile, DriftSource, ResolvedState, StateContext, format_annotate_trailers,
+    format_apply_trailers, parse_bpatch_authored_base, unassigned_feature_name,
 };
 use crate::git::{GitAdapter, TreeDiffEntry};
 use crate::process::Git;
@@ -174,25 +174,7 @@ pub fn apply(
     }
 
     let checkout = GitAdapter::new(&ctx.checkout);
-    let store_target_tree =
-        build_target_tree(&checkout, &ctx.store_dir, &store, &state.base.sha, progress)
-            .context("building target tree from store patches")?;
-    let applied_tree = state
-        .applied
-        .as_ref()
-        .map(|applied| applied.tree.as_str())
-        .unwrap_or(&state.base.sha);
-    let store_delta = checkout
-        .diff_tree_name_status(applied_tree, &store_target_tree)?
-        .into_iter()
-        .filter(|entry| stores_entry(&store, entry))
-        .collect::<Vec<_>>();
-    let target_tree = build_tree_from_source_entries(
-        &checkout,
-        &state.head_tree,
-        &store_target_tree,
-        &store_delta,
-    )?;
+    let target_tree = build_apply_target_tree(&checkout, &ctx.store_dir, &store, &state, progress)?;
 
     checkout.refresh_index()?;
     let has_uncommitted_drift = state
@@ -448,7 +430,31 @@ fn pull_store(store_dir: &Path, progress: &mut dyn FnMut(ProgressEvent<'_>)) -> 
     Ok(())
 }
 
-fn build_target_tree(
+/// Builds the exact overlaid tree that apply would materialize for resolved state.
+pub(crate) fn build_apply_target_tree(
+    git: &GitAdapter,
+    store_dir: &Path,
+    store: &Store,
+    state: &ResolvedState,
+    progress: &mut dyn FnMut(ProgressEvent<'_>),
+) -> Result<String> {
+    let store_target_tree =
+        build_store_target_tree(git, store_dir, store, &state.base.sha, progress)
+            .context("building target tree from store patches")?;
+    let applied_tree = state
+        .applied
+        .as_ref()
+        .map(|applied| applied.tree.as_str())
+        .unwrap_or(&state.base.sha);
+    let store_delta = git
+        .diff_tree_name_status(applied_tree, &store_target_tree)?
+        .into_iter()
+        .filter(|entry| stores_entry(store, entry))
+        .collect::<Vec<_>>();
+    build_tree_from_source_entries(git, &state.head_tree, &store_target_tree, &store_delta)
+}
+
+fn build_store_target_tree(
     git: &GitAdapter,
     store_dir: &Path,
     store: &Store,

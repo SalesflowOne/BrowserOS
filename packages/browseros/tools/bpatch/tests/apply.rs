@@ -11,7 +11,9 @@ use bpatch::cli::apply::{self as cli_apply, ApplyReport};
 use bpatch::engine::apply::ApplyOptions;
 use bpatch::engine::lock::CheckoutLock;
 use bpatch::engine::progress;
-use bpatch::engine::state::{self, StateContext, TRAILER_BASE, TRAILER_STORE_REV, TRAILER_TREE};
+use bpatch::engine::state::{
+    self, StateContext, TRAILER_ANNOTATED, TRAILER_BASE, TRAILER_STORE_REV, TRAILER_TREE,
+};
 use bpatch::process::Git;
 use fixtures::FixtureRepo;
 use serde_json::Value;
@@ -22,6 +24,14 @@ struct ApplyScenario {
     store_dir: PathBuf,
     base: String,
     rev1_commit: String,
+}
+
+struct AnnotateScenario {
+    checkout: FixtureRepo,
+    store: FixtureRepo,
+    store_dir: PathBuf,
+    base: String,
+    annotate_commit: String,
 }
 
 #[test]
@@ -229,6 +239,126 @@ fn second_apply_is_idempotent_and_does_not_rewrite_index_or_worktree() -> Result
     assert_eq!(
         fs::read(scenario.checkout.path().join(".git/index"))?,
         index
+    );
+    Ok(())
+}
+
+#[test]
+fn annotate_then_apply_writes_pending_store_delta_and_converges() -> Result<()> {
+    let scenario = annotated_store_delta_scenario()?;
+
+    let first = run_apply(&scenario.store_dir, &scenario.checkout, false);
+
+    match first {
+        ApplyReport::Applied {
+            previous_store_rev,
+            files_changed,
+            commits,
+            ..
+        } => {
+            assert!(previous_store_rev.is_none());
+            assert_eq!(files_changed, 2);
+            assert_eq!(commits.len(), 1);
+            assert_eq!(commits[0].feature, "llmchat");
+        }
+        other => panic!("expected applied report, got {other:?}"),
+    }
+    assert_eq!(
+        scenario
+            .checkout
+            .read_file("chrome/browser/ui/llmchat/panel.cc")?,
+        "current panel\n"
+    );
+    assert_eq!(
+        scenario
+            .checkout
+            .read_file("chrome/browser/ui/llmchat/panel.h")?,
+        "annotated header\n"
+    );
+    assert_eq!(
+        scenario
+            .checkout
+            .read_file("chrome/browser/ui/llmchat/resize_util.cc")?,
+        "resize\n"
+    );
+    let applied_head = scenario.checkout.git().run_str(&["rev-parse", "HEAD"])?;
+    assert_ne!(applied_head, scenario.annotate_commit);
+    assert_apply_trailers(
+        &scenario.checkout.git_adapter(),
+        "HEAD",
+        &scenario.store.git().run_str(&["rev-parse", "HEAD"])?,
+        &scenario.base,
+        Some(scenario.checkout.git_adapter().tree_id("HEAD")?.as_str()),
+    )?;
+
+    let second = run_apply(&scenario.store_dir, &scenario.checkout, false);
+    assert!(matches!(second, ApplyReport::Converged { .. }));
+    assert_eq!(
+        scenario.checkout.git().run_str(&["rev-parse", "HEAD"])?,
+        applied_head
+    );
+    Ok(())
+}
+
+#[test]
+fn hand_commit_after_annotate_still_refuses_apply() -> Result<()> {
+    let scenario = annotated_store_delta_scenario()?;
+    scenario
+        .checkout
+        .write_file("chrome/browser/ui/llmchat/panel.cc", "manual commit\n")?;
+    scenario.checkout.commit("manual edit")?;
+    let head_before = scenario.checkout.git().run_str(&["rev-parse", "HEAD"])?;
+
+    let report = run_apply(&scenario.store_dir, &scenario.checkout, false);
+
+    match &report {
+        ApplyReport::Drift { files, exit } => {
+            assert_eq!(*exit, 3);
+            assert_eq!(files.len(), 1);
+            assert_eq!(
+                files[0].annotation,
+                "modified since feat: llmchat from bos_build"
+            );
+        }
+        other => panic!("expected drift report, got {other:?}"),
+    }
+    let human = cli_apply::render_human(&report);
+    assert!(!human.contains("differs from applied state"));
+    assert!(human.contains("modified since feat: llmchat from bos_build"));
+    assert_eq!(
+        scenario.checkout.git().run_str(&["rev-parse", "HEAD"])?,
+        head_before
+    );
+    Ok(())
+}
+
+#[test]
+fn uncommitted_managed_edit_after_annotate_still_refuses_apply() -> Result<()> {
+    let scenario = annotated_store_delta_scenario()?;
+    scenario
+        .checkout
+        .write_file("chrome/browser/ui/llmchat/panel.cc", "uncommitted edit\n")?;
+    let head_before = scenario.checkout.git().run_str(&["rev-parse", "HEAD"])?;
+
+    let report = run_apply(&scenario.store_dir, &scenario.checkout, false);
+
+    match report {
+        ApplyReport::Drift { files, exit } => {
+            assert_eq!(exit, 3);
+            assert_eq!(files.len(), 1);
+            assert_eq!(files[0].annotation, "modified, uncommitted");
+        }
+        other => panic!("expected drift report, got {other:?}"),
+    }
+    assert_eq!(
+        scenario.checkout.git().run_str(&["rev-parse", "HEAD"])?,
+        head_before
+    );
+    assert_eq!(
+        scenario
+            .checkout
+            .read_file("chrome/browser/ui/llmchat/panel.cc")?,
+        "uncommitted edit\n"
     );
     Ok(())
 }
@@ -612,6 +742,52 @@ fn applied_rev1_scenario() -> Result<ApplyScenario> {
         store_dir,
         base,
         rev1_commit,
+    })
+}
+
+fn annotated_store_delta_scenario() -> Result<AnnotateScenario> {
+    let checkout = FixtureRepo::new()?;
+    let base = write_base_checkout(&checkout)?;
+    let store = FixtureRepo::new()?;
+    let store_dir = seed_store(&store, &base)?;
+
+    checkout.write_file("chrome/browser/ui/llmchat/panel.cc", "annotated panel\n")?;
+    checkout.write_file("chrome/browser/ui/llmchat/panel.h", "annotated header\n")?;
+    checkout.git().run(&["add", "-A"])?;
+    commit_store_from_index(
+        &store,
+        &checkout,
+        &base,
+        &[
+            "chrome/browser/ui/llmchat/panel.cc",
+            "chrome/browser/ui/llmchat/panel.h",
+        ],
+        "store annotated state",
+    )?;
+    let annotate_commit = checkout.commit_with_trailers(
+        "feat: llmchat from bos_build",
+        &[(TRAILER_BASE, base.as_str()), (TRAILER_ANNOTATED, "true")],
+    )?;
+
+    write_checkout_rev2(&checkout, false)?;
+    commit_store_from_index(
+        &store,
+        &checkout,
+        &base,
+        &[
+            "chrome/browser/ui/llmchat/panel.cc",
+            "chrome/browser/ui/llmchat/resize_util.cc",
+        ],
+        "store current",
+    )?;
+    checkout.git().run(&["reset", "--hard", &annotate_commit])?;
+
+    Ok(AnnotateScenario {
+        checkout,
+        store,
+        store_dir,
+        base,
+        annotate_commit,
     })
 }
 

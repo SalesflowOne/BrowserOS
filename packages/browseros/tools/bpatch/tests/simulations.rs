@@ -362,7 +362,7 @@ fn sim4_drift_refusal_prints_annotations_and_remedies() -> Result<()> {
     assert_eq!(out.code, 3);
     assert!(
         out.stdout
-            .contains("drift: working tree differs from applied state in 2 files:")
+            .contains("drift: working tree differs from its bpatch baseline in 2 files:")
     );
     assert!(out.stdout.contains("chrome/browser/ui/llmchat/panel.cc"));
     assert!(out.stdout.contains("(modified since feat: llmchat)"));

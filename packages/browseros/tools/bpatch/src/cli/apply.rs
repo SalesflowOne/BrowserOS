@@ -307,7 +307,7 @@ pub fn render_human(report: &ApplyReport) -> String {
         ApplyReport::Drift { files, .. } => {
             let mut out = String::new();
             out.push_str(&format!(
-                "drift: working tree differs from applied state in {} {}:\n",
+                "drift: working tree differs from its bpatch baseline in {} {}:\n",
                 files.len(),
                 files_label(files.len())
             ));
