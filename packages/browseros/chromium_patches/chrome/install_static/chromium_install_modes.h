@@ -1,5 +1,5 @@
 diff --git a/chrome/install_static/chromium_install_modes.h b/chrome/install_static/chromium_install_modes.h
-index ee62888f89705a08a95f130505ebfafb246f4bc2..d8ad4b44254610d6ceb28a824ce6d89c7a9398d9 100644
+index ee62888f89705a08a95f130505ebfafb246f4bc2..a0835e7f66dd12edeed11c672368f2d6e4de92a8 100644
 --- a/chrome/install_static/chromium_install_modes.h
 +++ b/chrome/install_static/chromium_install_modes.h
 @@ -10,6 +10,7 @@
@@ -46,7 +46,7 @@ index ee62888f89705a08a95f130505ebfafb246f4bc2..d8ad4b44254610d6ceb28a824ce6d89c
 +    .pdf_prog_id_prefix = L"BClawPDF",
 +    .pdf_prog_id_description = L"BrowserClaw PDF Document",
 +    .active_setup_guid = L"{E9E65674-914E-4A29-83A9-A98D407446EC}",
-+    .legacy_command_execute_clsid = L"{4472EEED-A982-4070-9C3A-543B16590A82}",
++    .legacy_command_execute_clsid = L"",
 +    .toast_activator_clsid = {0xD0A19C03,
 +                              0xEE25,
 +                              0x463B,
