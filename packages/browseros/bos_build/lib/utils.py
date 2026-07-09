@@ -46,6 +46,35 @@ SENSITIVE_COMMAND_FLAGS: frozenset[str] = frozenset(
 )
 
 
+class _RedactedCalledProcessError(subprocess.CalledProcessError):
+    """Keep raw failure metadata while making implicit display safe."""
+
+    def __init__(
+        self,
+        returncode: int,
+        cmd: Sequence[str],
+        redacted_cmd: str,
+        output: Optional[str] = None,
+        stderr: Optional[str] = None,
+    ) -> None:
+        super().__init__(returncode, cmd, output, stderr)
+        self.redacted_cmd = redacted_cmd
+
+    def _display_exception(self) -> subprocess.CalledProcessError:
+        return subprocess.CalledProcessError(
+            self.returncode,
+            self.redacted_cmd,
+            self.output,
+            self.stderr,
+        )
+
+    def __str__(self) -> str:
+        return str(self._display_exception())
+
+    def __repr__(self) -> str:
+        return repr(self._display_exception())
+
+
 def _without_wrapping_quotes(value: str) -> str:
     if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
         return value[1:-1]
@@ -92,10 +121,16 @@ def redact_sensitive_text(
         value = str(value)
         if not value:
             continue
-        normalized_values.add(value)
-        unquoted = _without_wrapping_quotes(value)
-        if unquoted:
-            normalized_values.add(unquoted)
+        for candidate in {value, _without_wrapping_quotes(value)}:
+            if not candidate:
+                continue
+            normalized_values.add(candidate)
+            normalized_values.update(
+                line for line in candidate.splitlines() if line
+            )
+            normalized_values.add(
+                candidate.encode("unicode_escape").decode("ascii")
+            )
 
     redacted = str(text)
     for value in sorted(normalized_values, key=len, reverse=True):
@@ -204,8 +239,12 @@ def run_command(
         )
 
         if check and process.returncode != 0:
-            raise subprocess.CalledProcessError(
-                process.returncode, cmd_str, result.stdout, result.stderr
+            raise _RedactedCalledProcessError(
+                process.returncode,
+                cmd,
+                cmd_str,
+                result.stdout,
+                result.stderr,
             )
 
         return result

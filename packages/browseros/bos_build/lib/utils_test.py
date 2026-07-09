@@ -14,6 +14,10 @@ from . import logger, utils
 FAKE_PASSWORD = "FAKE_ESIGNER_PASSWORD_FOR_REDACTION_TEST"
 FAKE_TOTP = "FAKE_ESIGNER_TOTP_FOR_REDACTION_TEST"
 FAKE_KEYCHAIN_PASSWORD = "FAKE_KEYCHAIN_PASSWORD_FOR_REDACTION_TEST"
+FAKE_PEM_PRIVATE_KEY = """-----BEGIN FAKE TEST PRIVATE KEY-----
+FAKE_PRIVATE_KEY_PAYLOAD_LINE_ONE_FOR_REDACTION_TEST
+FAKE_PRIVATE_KEY_PAYLOAD_LINE_TWO_FOR_REDACTION_TEST
+-----END FAKE TEST PRIVATE KEY-----"""
 
 
 class _FakeProcess:
@@ -183,7 +187,8 @@ class RunCommandRedactionTest(unittest.TestCase):
         self.assertNotIn(FAKE_PASSWORD, logged)
         self.assertIn("Command failed: fake-signer -password ***", logged)
         self.assertNotIn(FAKE_PASSWORD, str(raised.exception))
-        self.assertEqual(raised.exception.cmd, "fake-signer -password ***")
+        self.assertNotIn(FAKE_PASSWORD, repr(raised.exception))
+        self.assertEqual(raised.exception.cmd, command)
 
     def test_empty_env_redacts_values_from_the_inherited_process_environment(self):
         command = ["fake-signer"]
@@ -208,6 +213,29 @@ class RunCommandRedactionTest(unittest.TestCase):
         self.assertNotIn(FAKE_PASSWORD, logged)
         self.assertIn("echoed ***", logged)
         self.assertEqual(result.stdout, f"echoed {FAKE_PASSWORD}")
+
+    def test_streams_multiline_private_key_output_without_leaking_lines(self):
+        command = ["fake-extension-builder"]
+        process = _FakeProcess(f"{FAKE_PEM_PRIVATE_KEY}\n")
+        file_messages = []
+        console_output = io.StringIO()
+
+        with (
+            mock.patch.object(utils.subprocess, "Popen", return_value=process),
+            mock.patch.object(utils, "_log_to_file", side_effect=file_messages.append),
+            mock.patch.object(utils, "log_info"),
+            redirect_stdout(console_output),
+        ):
+            result = utils.run_command(
+                command,
+                env={"BROWSEROS_AGENT_V2_KEY": FAKE_PEM_PRIVATE_KEY},
+            )
+
+        logged = "\n".join(file_messages) + console_output.getvalue()
+        for line in FAKE_PEM_PRIVATE_KEY.splitlines():
+            self.assertNotIn(line, logged)
+        self.assertEqual(logged.count("***"), 8)
+        self.assertEqual(result.stdout, FAKE_PEM_PRIVATE_KEY)
 
 
 if __name__ == "__main__":
