@@ -29,6 +29,7 @@ REDACTION_MARKER = "***"
 SENSITIVE_COMMAND_FLAGS: frozenset[str] = frozenset(
     {
         "-p",
+        "-credential_id",
         "-password",
         "--password",
         "-passphrase",

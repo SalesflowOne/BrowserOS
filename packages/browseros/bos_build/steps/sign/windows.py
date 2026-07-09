@@ -169,8 +169,15 @@ def get_missing_required_browseros_server_binary_paths(
 def build_mini_installer(ctx: Context) -> bool:
     """Build the mini_installer.exe"""
     from ..compile import build_target
+
     log_info("Building mini_installer target...")
     return build_target(ctx, "mini_installer")
+
+
+def _codesigntool_command_prefix(codesigntool_path: Path) -> List[str]:
+    if codesigntool_path.suffix.lower() == ".bat":
+        return ["cmd", "/c", str(codesigntool_path)]
+    return [str(codesigntool_path)]
 
 
 def sign_with_codesigntool(
@@ -221,13 +228,12 @@ def sign_with_codesigntool(
             temp_output_dir = binary.parent / "signed_temp"
             temp_output_dir.mkdir(exist_ok=True)
 
-            cmd = [
-                str(codesigntool_path),
+            cmd = _codesigntool_command_prefix(codesigntool_path) + [
                 "sign",
                 "-username",
                 env.esigner_username,
                 "-password",
-                f'"{env.esigner_password}"',
+                env.esigner_password,
             ]
 
             if env.esigner_credential_id:
@@ -246,12 +252,11 @@ def sign_with_codesigntool(
             )
 
             secret_values = get_command_secret_values(cmd)
-            cmd_str = " ".join(cmd)
             log_info(f"Running: {redact_command(cmd)}")
 
             result = subprocess.run(
-                cmd_str,
-                shell=True,
+                cmd,
+                shell=False,
                 capture_output=True,
                 text=True,
                 cwd=str(codesigntool_path.parent),

@@ -186,7 +186,7 @@ class ProductUserDataDirPatchTest(unittest.TestCase):
                 'L"{0EF5669B-7FD7-4138-A91F-E466631ADE97}"',
             ),
             "legacy_command_execute_clsid": (
-                'L"{4472EEED-A982-4070-9C3A-543B16590A82}"',
+                'L""',
                 'L"{AFDDB293-0724-49E5-A4EC-1096BF6C84AF}"',
             ),
         }
@@ -225,7 +225,6 @@ class ProductUserDataDirPatchTest(unittest.TestCase):
         browserclaw, browseros = _product_identity_branches(install_modes)
         guid_fields = (
             "active_setup_guid",
-            "legacy_command_execute_clsid",
             "toast_activator_clsid",
             "elevator_clsid",
             "tracing_service_clsid",

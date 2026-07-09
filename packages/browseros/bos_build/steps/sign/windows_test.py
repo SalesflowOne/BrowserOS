@@ -2,7 +2,6 @@
 """Tests for Windows signing path discovery."""
 
 import unittest
-import subprocess
 from tempfile import TemporaryDirectory
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,19 +11,14 @@ from unittest import mock
 from bos_build.core.context import Context
 from bos_build.core.products import get_product_descriptor
 from bos_build.lib.env import EnvConfig
-from . import windows
+from . import windows as windows_module
 from .windows import (
     WindowsSignModule,
     get_browseros_server_binary_paths,
     get_existing_browseros_server_binary_paths,
     get_missing_required_browseros_server_binary_paths,
+    sign_with_codesigntool,
 )
-
-
-FAKE_PASSWORD = "FAKE_WINDOWS_SIGNING_PASSWORD_FOR_REDACTION_TEST"
-FAKE_TOTP = "FAKE_WINDOWS_SIGNING_TOTP_FOR_REDACTION_TEST"
-
-
 class WindowsSignPathsTest(unittest.TestCase):
     def test_browseros_and_claw_server_binaries_are_expected_for_signing(self):
         build_output_dir = Path("/tmp/out/Default")
@@ -158,64 +152,112 @@ class WindowsSignPathsTest(unittest.TestCase):
         )
 
 
-class WindowsSignLoggingTest(unittest.TestCase):
-    def test_logs_redacted_credentials_but_executes_original_command(self):
+class SignWithCodeSignToolInvocationTest(unittest.TestCase):
+    def test_bat_invocation_uses_argv_list_and_redacted_logs(self):
+        password = 'pa ss%"!^&word'
+        totp_secret = "totp%secret!^&"
+        credential_id = "credential id&123"
+
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
-            tool = root / "CodeSignTool.bat"
-            binary = root / "browser.exe"
-            tool.write_bytes(b"tool")
-            binary.write_bytes(b"unsigned")
-            env = cast(
-                EnvConfig,
-                SimpleNamespace(
-                    code_sign_tool_exe=str(tool),
-                    code_sign_tool_path=None,
-                    esigner_username="build@example.test",
-                    esigner_password=FAKE_PASSWORD,
-                    esigner_totp_secret=FAKE_TOTP,
-                    esigner_credential_id="fake-credential-id",
-                ),
-            )
+            tool_dir = root / "tool dir"
+            tool_dir.mkdir()
+            codesigntool = tool_dir / "CodeSignTool.bat"
+            codesigntool.write_text("@echo off\n")
 
-            def fake_run(command, **kwargs):
-                if isinstance(command, str):
-                    signed_file = root / "signed_temp" / binary.name
-                    signed_file.write_bytes(b"signed")
-                    return subprocess.CompletedProcess(
-                        command,
-                        0,
-                        stdout=f"tool echoed {FAKE_PASSWORD}",
-                        stderr=f"diagnostic echoed {FAKE_TOTP}",
-                    )
-                return subprocess.CompletedProcess(
-                    command,
-                    0,
-                    stdout="Valid",
-                    stderr="",
-                )
+            binary_dir = root / "bin dir"
+            binary_dir.mkdir()
+            binary = binary_dir / "browser.exe"
+            binary.write_bytes(b"binary")
+
+            env = SimpleNamespace(
+                code_sign_tool_exe=None,
+                code_sign_tool_path=str(tool_dir),
+                esigner_username="signer@example.com",
+                esigner_password=password,
+                esigner_totp_secret=totp_secret,
+                esigner_credential_id=credential_id,
+            )
+            sign_result = SimpleNamespace(
+                stdout=f"signed with {password} and {totp_secret}\n",
+                stderr=f"using {credential_id}\n",
+            )
+            verify_result = SimpleNamespace(stdout="Valid\n", stderr="")
+            info_logs: list[str] = []
+            error_logs: list[str] = []
 
             with (
-                mock.patch.object(windows.subprocess, "run", side_effect=fake_run) as run,
-                mock.patch.object(windows, "log_info") as log_info,
-                mock.patch.object(windows, "log_error") as log_error,
+                mock.patch.object(
+                    windows_module.subprocess,
+                    "run",
+                    side_effect=[sign_result, verify_result],
+                ) as run,
+                mock.patch.object(
+                    windows_module, "log_info", side_effect=info_logs.append
+                ),
+                mock.patch.object(
+                    windows_module, "log_success", side_effect=info_logs.append
+                ),
+                mock.patch.object(
+                    windows_module, "log_error", side_effect=error_logs.append
+                ),
             ):
-                self.assertTrue(windows.sign_with_codesigntool([binary], env))
+                self.assertTrue(sign_with_codesigntool([binary], cast(EnvConfig, env)))
 
-        executed_command = run.call_args_list[0].args[0]
-        self.assertIn(f'-password "{FAKE_PASSWORD}"', executed_command)
-        self.assertIn(f"-totp_secret {FAKE_TOTP}", executed_command)
-        self.assertTrue(run.call_args_list[0].kwargs["shell"])
+            sign_call = run.call_args_list[0]
+            sign_cmd = sign_call.args[0]
+            self.assertIsInstance(sign_cmd, list)
+            self.assertEqual(sign_cmd[:3], ["cmd", "/c", str(codesigntool)])
+            self.assertEqual(sign_call.kwargs["shell"], False)
+            self.assertEqual(sign_call.kwargs["cwd"], str(tool_dir))
+            self.assertEqual(sign_cmd[sign_cmd.index("-password") + 1], password)
+            self.assertNotIn(f'"{password}"', sign_cmd)
 
-        logged = "\n".join(
-            str(call.args[0]) for call in [*log_info.call_args_list, *log_error.call_args_list]
-        )
-        self.assertNotIn(FAKE_PASSWORD, logged)
-        self.assertNotIn(FAKE_TOTP, logged)
-        self.assertIn("-password ***", logged)
-        self.assertIn("-totp_secret ***", logged)
-        self.assertIn("tool echoed ***", logged)
-        self.assertIn("diagnostic echoed ***", logged)
+            running_logs = [line for line in info_logs if line.startswith("Running:")]
+            self.assertEqual(len(running_logs), 1)
+            self.assertIn("-password ***", running_logs[0])
+            self.assertIn("-totp_secret ***", running_logs[0])
+            self.assertIn("-credential_id ***", running_logs[0])
+
+            all_logs = "\n".join(info_logs + error_logs)
+            self.assertNotIn(password, all_logs)
+            self.assertNotIn(totp_secret, all_logs)
+            self.assertNotIn(credential_id, all_logs)
+
+    def test_code_sign_tool_exe_runs_directly_as_argv(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            codesigntool = root / "CodeSignTool.sh"
+            codesigntool.write_text("#!/bin/sh\n")
+            binary = root / "browser.exe"
+            binary.write_bytes(b"binary")
+
+            env = SimpleNamespace(
+                code_sign_tool_exe=str(codesigntool),
+                code_sign_tool_path=None,
+                esigner_username="signer@example.com",
+                esigner_password="password",
+                esigner_totp_secret="totp",
+                esigner_credential_id=None,
+            )
+            sign_result = SimpleNamespace(stdout="", stderr="")
+            verify_result = SimpleNamespace(stdout="Valid\n", stderr="")
+
+            with (
+                mock.patch.object(
+                    windows_module.subprocess,
+                    "run",
+                    side_effect=[sign_result, verify_result],
+                ) as run,
+                mock.patch.object(windows_module, "log_info"),
+                mock.patch.object(windows_module, "log_success"),
+                mock.patch.object(windows_module, "log_error"),
+            ):
+                self.assertTrue(sign_with_codesigntool([binary], cast(EnvConfig, env)))
+
+            sign_cmd = run.call_args_list[0].args[0]
+            self.assertEqual(sign_cmd[0], str(codesigntool))
+            self.assertNotEqual(sign_cmd[:3], ["cmd", "/c", str(codesigntool)])
 
 
 if __name__ == "__main__":
