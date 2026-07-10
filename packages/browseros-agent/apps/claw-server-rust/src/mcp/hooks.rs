@@ -364,7 +364,14 @@ impl ScreenshotPersister {
                 }
             }
         }
+        let page_id = result_page_id(result)
+            .or_else(|| extract_page_id(call.hooks.accepts_page_arg, &call.raw_args));
         if wrote {
+            // A tool-carried image counts as the page's visual anchor, so
+            // later read-only dispatches skip the fallback capture.
+            if let Some(page_id) = page_id {
+                session.mark_first_capture_done(PageId(page_id)).await;
+            }
             return;
         }
         // Fallback capture is an opt-out feature (CLAW_SCREENCAST_SCREENSHOT_FALLBACK);
@@ -375,8 +382,6 @@ impl ScreenshotPersister {
         let Some(browser) = &call.browser_session else {
             return;
         };
-        let page_id = result_page_id(result)
-            .or_else(|| extract_page_id(call.hooks.accepts_page_arg, &call.raw_args));
         let Some(page_id) = page_id else {
             return;
         };
@@ -929,6 +934,10 @@ mod tests {
 
         assert_eq!(app.state.screenshots.read("7").await?, b"jpeg");
         assert_eq!(app.state.screenshots.read("dispatch").await?, b"jpeg");
+        assert!(
+            session.has_first_capture(&PageId(1)).await,
+            "tool-carried image should count as the page's first capture"
+        );
         Ok(())
     }
 

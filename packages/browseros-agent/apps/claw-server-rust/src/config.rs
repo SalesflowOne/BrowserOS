@@ -216,11 +216,19 @@ fn read_positive_ms(env: &ConfigEnv, key: &str, fallback: u64) -> u64 {
     let Some(raw) = env.get(key) else {
         return fallback;
     };
-    raw.trim()
-        .parse::<u64>()
-        .ok()
-        .filter(|value| *value > 0)
-        .unwrap_or(fallback)
+    parse_positive_int_prefix(raw).unwrap_or(fallback)
+}
+
+/// Mirrors the TS server's `Number.parseInt(raw, 10)` env semantics: the
+/// leading integer prefix wins and trailing garbage is ignored ("500ms" is
+/// 500), while digit-less or non-positive values fall back.
+fn parse_positive_int_prefix(raw: &str) -> Option<u64> {
+    let trimmed = raw.trim_start();
+    let unsigned = trimmed.strip_prefix('+').unwrap_or(trimmed);
+    let end = unsigned
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(unsigned.len());
+    unsigned[..end].parse::<u64>().ok().filter(|value| *value > 0)
 }
 
 fn read_bool_default_true(env: &ConfigEnv, key: &str) -> bool {
@@ -345,15 +353,17 @@ mod tests {
             ),
             (
                 "0",
-                "500abc",
+                "0x10",
                 Duration::from_millis(300_000),
                 Duration::from_millis(60_000),
             ),
+            // Number.parseInt parity: integer prefix wins, trailing garbage
+            // ignored, surrounding whitespace tolerated.
             (
                 " 2500 ",
-                "45000",
+                "500ms",
                 Duration::from_millis(2500),
-                Duration::from_millis(45_000),
+                Duration::from_millis(500),
             ),
         ];
         for (idle_raw, sweep_raw, expected_idle, expected_sweep) in cases {

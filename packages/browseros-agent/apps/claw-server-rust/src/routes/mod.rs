@@ -65,33 +65,31 @@ pub fn router(state: AppState) -> Router<AppState> {
 /// against the loopback MCP endpoint always carries `origin` or
 /// `sec-fetch-site`; native MCP clients never do.
 async fn mcp_request_hygiene(req: Request, next: Next) -> Response {
+    // The nested /mcp service shadows the router's `/{*path}` preflight
+    // route, and the TS server's cors layer answers OPTIONS before its
+    // hygiene runs — mirror both so preflight stays 204 here too.
+    if *req.method() == Method::OPTIONS {
+        return StatusCode::NO_CONTENT.into_response();
+    }
     let headers = req.headers();
     if headers.contains_key(header::ORIGIN) || headers.contains_key("sec-fetch-site") {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(json!({ "error": "unsupported request" })),
-        )
-            .into_response();
+        return AppError::forbidden("unsupported request").into_response();
     }
-    let is_write = matches!(
-        *req.method(),
-        Method::POST | Method::PUT | Method::PATCH | Method::DELETE
-    );
-    if is_write {
-        let content_type = headers.get(header::CONTENT_TYPE);
+    let needs_json = match *req.method() {
+        Method::POST | Method::PUT | Method::PATCH => true,
         // rmcp's DELETE /mcp session teardown carries no body and no
         // content-type; the TS server never sees that shape (its clients
         // always send application/json), so exempt only that case.
-        let exempt_bodyless_delete = *req.method() == Method::DELETE && content_type.is_none();
-        let is_json = content_type
+        Method::DELETE => headers.contains_key(header::CONTENT_TYPE),
+        _ => false,
+    };
+    if needs_json {
+        let is_json = headers
+            .get(header::CONTENT_TYPE)
             .and_then(|value| value.to_str().ok())
             .is_some_and(|value| value.to_ascii_lowercase().contains("application/json"));
-        if !is_json && !exempt_bodyless_delete {
-            return (
-                StatusCode::UNSUPPORTED_MEDIA_TYPE,
-                Json(json!({ "error": "unsupported content type" })),
-            )
-                .into_response();
+        if !is_json {
+            return AppError::unsupported_media_type("unsupported content type").into_response();
         }
     }
     next.run(req).await
@@ -107,23 +105,14 @@ pub async fn request_context(req: Request, next: Next) -> Response {
         let mut response = next.run(req).await;
         // One structured line per failed request; sub-400 traffic stays
         // unlogged on purpose (claw-app polls several endpoints).
-        let status = response.status();
-        if status.as_u16() >= 500 {
-            tracing::error!(
-                %method,
-                %path,
-                status = status.as_u16(),
-                duration_ms = start.elapsed().as_millis() as u64,
-                "request failed"
-            );
-        } else if status.as_u16() >= 400 {
-            tracing::warn!(
-                %method,
-                %path,
-                status = status.as_u16(),
-                duration_ms = start.elapsed().as_millis() as u64,
-                "request failed"
-            );
+        let status = response.status().as_u16();
+        if status >= 400 {
+            let duration_ms = start.elapsed().as_millis() as u64;
+            if status >= 500 {
+                tracing::error!(%method, %path, status, duration_ms, "request failed");
+            } else {
+                tracing::warn!(%method, %path, status, duration_ms, "request failed");
+            }
         }
         let headers = response.headers_mut();
         headers.insert(

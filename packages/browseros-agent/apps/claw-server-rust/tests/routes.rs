@@ -357,6 +357,18 @@ async fn mcp_hygiene_rejects_browser_originated_requests() -> anyhow::Result<()>
         )])
         .await?;
     assert_eq!(status, StatusCode::OK);
+
+    // CORS preflight stays 204 like every other route (TS cors layer
+    // answers OPTIONS before hygiene runs).
+    let (status, _headers, _body) = request_json_with_headers(
+        &app.router,
+        "OPTIONS",
+        "/mcp",
+        None,
+        &[("origin", "http://evil.example")],
+    )
+    .await?;
+    assert_eq!(status, StatusCode::NO_CONTENT);
     Ok(())
 }
 
@@ -380,30 +392,7 @@ async fn mcp_hygiene_rejects_non_json_writes() -> anyhow::Result<()> {
 #[tokio::test]
 async fn mcp_initialize_list_guard_audit_and_delete() -> anyhow::Result<()> {
     let app = test_app().await?;
-    let initialize = json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "initialize",
-        "params": {
-            "protocolVersion": "2025-06-18",
-            "capabilities": {},
-            "clientInfo": { "name": "Codex", "version": "1.0" }
-        }
-    });
-    let (status, headers, body) =
-        request_json_with_headers(&app.router, "POST", "/mcp", Some(initialize), &[]).await?;
-    assert_eq!(status, StatusCode::OK, "initialize body: {body:?}");
-    assert_eq!(
-        body["result"]["serverInfo"]["name"],
-        "browseros-claw-server"
-    );
-    let session_id = headers
-        .get("mcp-session-id")
-        .and_then(|value| value.to_str().ok())
-        .ok_or_else(|| anyhow::anyhow!("missing mcp-session-id"))?
-        .to_string();
-    send_initialized(&app.router, &session_id).await?;
-    wait_for_session_registration(&app, &session_id).await?;
+    let session_id = initialize_mcp(&app).await?;
 
     let list = json!({
         "jsonrpc": "2.0",
@@ -497,20 +486,11 @@ async fn mcp_tabs_new_roundtrips_through_mock_cdp() -> anyhow::Result<()> {
     wait_for_cdp_connected(&app.router).await?;
     let session_id = initialize_mcp(&app).await?;
 
-    let tabs_new = json!({
-        "jsonrpc": "2.0",
-        "id": 10,
-        "method": "tools/call",
-        "params": {
-            "name": "tabs",
-            "arguments": { "action": "new", "url": "https://example.com" }
-        }
-    });
     let (status, _headers, body) = request_json_with_headers(
         &app.router,
         "POST",
         "/mcp",
-        Some(tabs_new),
+        Some(tabs_new_request(10)),
         &[("mcp-session-id", &session_id)],
     )
     .await?;
@@ -580,20 +560,11 @@ async fn screencast_fallback_flag_disables_fallback_screenshots() -> anyhow::Res
     wait_for_cdp_connected(&app.router).await?;
     let session_id = initialize_mcp(&app).await?;
 
-    let tabs_new = json!({
-        "jsonrpc": "2.0",
-        "id": 30,
-        "method": "tools/call",
-        "params": {
-            "name": "tabs",
-            "arguments": { "action": "new", "url": "https://example.com" }
-        }
-    });
     let (status, _headers, body) = request_json_with_headers(
         &app.router,
         "POST",
         "/mcp",
-        Some(tabs_new),
+        Some(tabs_new_request(30)),
         &[("mcp-session-id", &session_id)],
     )
     .await?;
@@ -635,20 +606,11 @@ async fn cancel_endpoint_aborts_in_flight_dispatch() -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("missing test session"))?;
     let agent_id = session.agent().agent_id().as_str().to_string();
 
-    let tabs_new = json!({
-        "jsonrpc": "2.0",
-        "id": 20,
-        "method": "tools/call",
-        "params": {
-            "name": "tabs",
-            "arguments": { "action": "new", "url": "https://example.com" }
-        }
-    });
     let (status, _headers, body) = request_json_with_headers(
         &app.router,
         "POST",
         "/mcp",
-        Some(tabs_new),
+        Some(tabs_new_request(20)),
         &[("mcp-session-id", &session_id)],
     )
     .await?;
@@ -804,6 +766,10 @@ async fn initialize_mcp(app: &TestApp) -> anyhow::Result<String> {
     let (status, headers, body) =
         request_json_with_headers(&app.router, "POST", "/mcp", Some(initialize), &[]).await?;
     assert_eq!(status, StatusCode::OK, "initialize body: {body:?}");
+    assert_eq!(
+        body["result"]["serverInfo"]["name"],
+        "browseros-claw-server"
+    );
     let session_id = headers
         .get("mcp-session-id")
         .and_then(|value| value.to_str().ok())
@@ -812,6 +778,18 @@ async fn initialize_mcp(app: &TestApp) -> anyhow::Result<String> {
     send_initialized(&app.router, &session_id).await?;
     wait_for_session_registration(app, &session_id).await?;
     Ok(session_id)
+}
+
+fn tabs_new_request(id: u64) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "method": "tools/call",
+        "params": {
+            "name": "tabs",
+            "arguments": { "action": "new", "url": "https://example.com" }
+        }
+    })
 }
 
 /// The initialized notification is acknowledged with 202 before the
