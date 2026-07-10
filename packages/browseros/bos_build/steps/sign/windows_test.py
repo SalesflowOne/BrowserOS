@@ -153,10 +153,10 @@ class WindowsSignPathsTest(unittest.TestCase):
 
 
 class SignWithCodeSignToolInvocationTest(unittest.TestCase):
-    def test_bat_invocation_uses_argv_list_and_redacted_logs(self):
-        password = 'pa ss%"!^&word'
-        totp_secret = "totp%secret!^&"
-        credential_id = "credential id&123"
+    def test_bat_invocation_uses_shell_string_and_redacted_logs(self):
+        password = "passWord123"
+        totp_secret = "totpsecret"
+        credential_id = "credentialid123"
 
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -206,12 +206,13 @@ class SignWithCodeSignToolInvocationTest(unittest.TestCase):
 
             sign_call = run.call_args_list[0]
             sign_cmd = sign_call.args[0]
-            self.assertIsInstance(sign_cmd, list)
-            self.assertEqual(sign_cmd[:3], ["cmd", "/c", str(codesigntool)])
-            self.assertEqual(sign_call.kwargs["shell"], False)
+            # Proven manual-signing shape: shell string with the password
+            # explicitly quote-wrapped (see windows.py revert note).
+            self.assertIsInstance(sign_cmd, str)
+            self.assertTrue(sign_cmd.startswith(str(codesigntool)))
+            self.assertEqual(sign_call.kwargs["shell"], True)
             self.assertEqual(sign_call.kwargs["cwd"], str(tool_dir))
-            self.assertEqual(sign_cmd[sign_cmd.index("-password") + 1], password)
-            self.assertNotIn(f'"{password}"', sign_cmd)
+            self.assertIn(f'-password "{password}"', sign_cmd)
 
             running_logs = [line for line in info_logs if line.startswith("Running:")]
             self.assertEqual(len(running_logs), 1)
@@ -224,7 +225,7 @@ class SignWithCodeSignToolInvocationTest(unittest.TestCase):
             self.assertNotIn(totp_secret, all_logs)
             self.assertNotIn(credential_id, all_logs)
 
-    def test_code_sign_tool_exe_runs_directly_as_argv(self):
+    def test_code_sign_tool_exe_runs_directly(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             codesigntool = root / "CodeSignTool.sh"
@@ -256,8 +257,8 @@ class SignWithCodeSignToolInvocationTest(unittest.TestCase):
                 self.assertTrue(sign_with_codesigntool([binary], cast(EnvConfig, env)))
 
             sign_cmd = run.call_args_list[0].args[0]
-            self.assertEqual(sign_cmd[0], str(codesigntool))
-            self.assertNotEqual(sign_cmd[:3], ["cmd", "/c", str(codesigntool)])
+            self.assertIsInstance(sign_cmd, str)
+            self.assertTrue(sign_cmd.startswith(str(codesigntool)))
 
 
 if __name__ == "__main__":

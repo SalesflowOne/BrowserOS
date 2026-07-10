@@ -174,12 +174,6 @@ def build_mini_installer(ctx: Context) -> bool:
     return build_target(ctx, "mini_installer")
 
 
-def _codesigntool_command_prefix(codesigntool_path: Path) -> List[str]:
-    if codesigntool_path.suffix.lower() == ".bat":
-        return ["cmd", "/c", str(codesigntool_path)]
-    return [str(codesigntool_path)]
-
-
 def sign_with_codesigntool(
     binaries: List[Path],
     env: Optional[EnvConfig] = None,
@@ -228,12 +222,18 @@ def sign_with_codesigntool(
             temp_output_dir = binary.parent / "signed_temp"
             temp_output_dir.mkdir(exist_ok=True)
 
-            cmd = _codesigntool_command_prefix(codesigntool_path) + [
+            # Proven invocation shape: shell string with the password
+            # explicitly quote-wrapped. The argv+`cmd /c` form (#1758)
+            # regressed signing on the working machine — cmd.exe does not
+            # honor MSVCRT list quoting, so unquoted metacharacters in the
+            # rotated password were mangled before reaching SSL.com.
+            cmd = [
+                str(codesigntool_path),
                 "sign",
                 "-username",
                 env.esigner_username,
                 "-password",
-                env.esigner_password,
+                f'"{env.esigner_password}"',
             ]
 
             if env.esigner_credential_id:
@@ -254,9 +254,10 @@ def sign_with_codesigntool(
             secret_values = get_command_secret_values(cmd)
             log_info(f"Running: {redact_command(cmd)}")
 
+            cmd_str = " ".join(cmd)
             result = subprocess.run(
-                cmd,
-                shell=False,
+                cmd_str,
+                shell=True,
                 capture_output=True,
                 text=True,
                 cwd=str(codesigntool_path.parent),
