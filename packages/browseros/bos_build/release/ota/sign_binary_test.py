@@ -10,6 +10,8 @@ from typing import cast
 from unittest import mock
 
 from ...lib.env import EnvConfig
+from ...products.browserclaw.product import BROWSERCLAW_SERVER_BUNDLE
+from ...products.browseros.product import BROWSEROS_SERVER_BUNDLE
 from . import sign_binary
 
 
@@ -23,10 +25,10 @@ def _write_exe(path: Path) -> None:
 
 
 class SignServerBundleWindowsTest(unittest.TestCase):
-    def test_signs_shipped_windows_binaries_without_third_party_cli_tools(self):
+    def _assert_signs_bundle_binary(self, bundle, binary_name):
         with tempfile.TemporaryDirectory() as tmp:
             resources = Path(tmp) / "resources"
-            _write_exe(resources / "bin" / "browseros_server.exe")
+            _write_exe(resources / "bin" / binary_name)
 
             signed = []
 
@@ -38,10 +40,36 @@ class SignServerBundleWindowsTest(unittest.TestCase):
                 sign_binary, "sign_windows_binary", side_effect=fake_sign
             ):
                 self.assertTrue(
-                    sign_binary.sign_server_bundle_windows(resources, EnvConfig())
+                    sign_binary.sign_server_bundle_windows(
+                        resources, EnvConfig(), bundle
+                    )
                 )
 
-            self.assertEqual(signed, ["browseros_server.exe"])
+            self.assertEqual(signed, [binary_name])
+
+    def test_signs_browseros_descriptor_binary(self):
+        self._assert_signs_bundle_binary(
+            BROWSEROS_SERVER_BUNDLE, "browseros_server.exe"
+        )
+
+    def test_signs_browserclaw_descriptor_binary(self):
+        self._assert_signs_bundle_binary(
+            BROWSERCLAW_SERVER_BUNDLE, "browseros-claw-server.exe"
+        )
+
+    def test_fails_when_browserclaw_descriptor_binary_is_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            resources = Path(tmp) / "resources"
+            _write_exe(resources / "bin" / "browseros_server.exe")
+
+            with mock.patch.object(sign_binary, "sign_windows_binary") as signer:
+                self.assertFalse(
+                    sign_binary.sign_server_bundle_windows(
+                        resources, EnvConfig(), BROWSERCLAW_SERVER_BUNDLE
+                    )
+                )
+
+            signer.assert_not_called()
 
 
 class SignWindowsBinaryLoggingTest(unittest.TestCase):
