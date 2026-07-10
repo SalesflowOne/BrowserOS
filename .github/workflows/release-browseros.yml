@@ -26,7 +26,7 @@ on:
       macos_arch:
         description: "macOS architecture to build"
         type: choice
-        default: arm64
+        default: universal
         options:
           - arm64
           - universal

@@ -126,7 +126,7 @@ gh workflow run release-browseros.yml \
   -f platforms=all \
   -f include_servers=true \
   -f sign_windows=true \
-  -f macos_arch=arm64 \
+  -f macos_arch=universal \
   -f upload_to_r2=true \
   -f extensions=alpha \
   -f extensions_version=<agent-extension-version> \
@@ -136,7 +136,7 @@ gh workflow run release-browserclaw.yml \
   -f platforms=all \
   -f include_servers=true \
   -f sign_windows=true \
-  -f macos_arch=arm64 \
+  -f macos_arch=universal \
   -f upload_to_r2=true \
   -f extensions=alpha \
   -f extensions_version=<browserclaw-extension-version> \
@@ -171,7 +171,7 @@ gh workflow run release-claw-server.yml -f version=0.0.3
 gh workflow run release-claw-server-rust.yml -f version=0.1.0
 gh workflow run release-linux.yml -f products=browseros -f upload_to_r2=true
 gh workflow run release-windows.yml -f products=browserclaw -f sign=false
-gh workflow run release-macos.yml -f products=all -f arch=arm64
+gh workflow run release-macos.yml -f products=all   # arch defaults to universal; pass -f arch=arm64 for a faster single-arch build
 ```
 
 ## Secrets And Variables
