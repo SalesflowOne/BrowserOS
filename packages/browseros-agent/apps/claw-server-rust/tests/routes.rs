@@ -34,6 +34,14 @@ async fn test_app() -> anyhow::Result<TestApp> {
 }
 
 async fn test_app_with_cdp_port(cdp_port: u16, start_browser: bool) -> anyhow::Result<TestApp> {
+    test_app_with_options(cdp_port, start_browser, true).await
+}
+
+async fn test_app_with_options(
+    cdp_port: u16,
+    start_browser: bool,
+    screencast_screenshot_fallback: bool,
+) -> anyhow::Result<TestApp> {
     let dir = tempfile::tempdir()?;
     let root = dir.path().join("browserclaw");
     let config = Arc::new(Config {
@@ -45,7 +53,7 @@ async fn test_app_with_cdp_port(cdp_port: u16, start_browser: bool) -> anyhow::R
         claw_dir: root,
         session_idle: Duration::from_secs(300),
         session_sweep_interval: Duration::from_secs(60),
-        screencast_screenshot_fallback: true,
+        screencast_screenshot_fallback,
         dev_mode: false,
         auth_token: None,
     });
@@ -125,6 +133,15 @@ async fn request_json_with_headers(
     let bytes = to_bytes(response.into_body(), usize::MAX).await?;
     let value = response_body_value(&headers, &bytes)?;
     Ok((status, headers, value))
+}
+
+async fn request_status(router: &Router, method: &str, uri: &str) -> anyhow::Result<StatusCode> {
+    let request = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header(header::HOST, "localhost")
+        .body(Body::empty())?;
+    Ok(router.clone().oneshot(request).await?.status())
 }
 
 fn response_body_value(headers: &HeaderMap, bytes: &[u8]) -> anyhow::Result<Value> {
@@ -290,44 +307,92 @@ async fn replay_tabs_keeps_first_live_session_per_agent_id() -> anyhow::Result<(
 }
 
 #[tokio::test]
+async fn cancel_with_no_active_dispatches_returns_ts_shaped_404() -> anyhow::Result<()> {
+    let app = test_app().await?;
+    let (status, body) =
+        request_json(&app.router, "POST", "/agents/idle-agent/cancel", None).await?;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        body,
+        json!({
+            "ok": false,
+            "cancelled": 0,
+            "reason": "no active dispatches for this agent"
+        })
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn mcp_hygiene_rejects_browser_originated_requests() -> anyhow::Result<()> {
+    let app = test_app().await?;
+
+    let (status, _headers, body) = request_json_with_headers(
+        &app.router,
+        "POST",
+        "/mcp",
+        Some(json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})),
+        &[("origin", "http://evil.example")],
+    )
+    .await?;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body, json!({ "error": "unsupported request" }));
+
+    let (status, _headers, body) = request_json_with_headers(
+        &app.router,
+        "GET",
+        "/mcp",
+        None,
+        &[("sec-fetch-site", "cross-site")],
+    )
+    .await?;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body, json!({ "error": "unsupported request" }));
+
+    // Hygiene applies to /mcp only: the same origin header is fine elsewhere.
+    let (status, _headers, _body) =
+        request_json_with_headers(&app.router, "GET", "/system/health", None, &[(
+            "origin",
+            "http://evil.example",
+        )])
+        .await?;
+    assert_eq!(status, StatusCode::OK);
+
+    // CORS preflight stays 204 like every other route (TS cors layer
+    // answers OPTIONS before hygiene runs).
+    let (status, _headers, _body) = request_json_with_headers(
+        &app.router,
+        "OPTIONS",
+        "/mcp",
+        None,
+        &[("origin", "http://evil.example")],
+    )
+    .await?;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    Ok(())
+}
+
+#[tokio::test]
+async fn mcp_hygiene_rejects_non_json_writes() -> anyhow::Result<()> {
+    let app = test_app().await?;
+    let request = Request::builder()
+        .method("POST")
+        .uri("/mcp")
+        .header(header::HOST, "localhost")
+        .header(header::CONTENT_TYPE, "text/plain")
+        .body(Body::from("hello"))?;
+    let response = app.router.clone().oneshot(request).await?;
+    assert_eq!(response.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    let bytes = to_bytes(response.into_body(), usize::MAX).await?;
+    let body: Value = serde_json::from_slice(&bytes)?;
+    assert_eq!(body, json!({ "error": "unsupported content type" }));
+    Ok(())
+}
+
+#[tokio::test]
 async fn mcp_initialize_list_guard_audit_and_delete() -> anyhow::Result<()> {
     let app = test_app().await?;
-    let initialize = json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "initialize",
-        "params": {
-            "protocolVersion": "2025-06-18",
-            "capabilities": {},
-            "clientInfo": { "name": "Codex", "version": "1.0" }
-        }
-    });
-    let (status, headers, body) =
-        request_json_with_headers(&app.router, "POST", "/mcp", Some(initialize), &[]).await?;
-    assert_eq!(status, StatusCode::OK, "initialize body: {body:?}");
-    assert_eq!(
-        body["result"]["serverInfo"]["name"],
-        "browseros-claw-server"
-    );
-    let session_id = headers
-        .get("mcp-session-id")
-        .and_then(|value| value.to_str().ok())
-        .ok_or_else(|| anyhow::anyhow!("missing mcp-session-id"))?
-        .to_string();
-    send_initialized(&app.router, &session_id).await?;
-    // Registration is async after the initialized notification; tools/call
-    // below hits the dispatch guard, which needs the session registered.
-    for _ in 0..50 {
-        if app
-            .state
-            .sessions
-            .contains(&SessionId::new(session_id.clone()))
-            .await
-        {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
+    let session_id = initialize_mcp(&app).await?;
 
     let list = json!({
         "jsonrpc": "2.0",
@@ -370,7 +435,7 @@ async fn mcp_initialize_list_guard_audit_and_delete() -> anyhow::Result<()> {
     )
     .await?;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["result"]["isError"], true);
+    assert_eq!(body["result"]["isError"], true, "navigate body: {body:?}");
     assert!(
         body["result"]["content"][0]["text"]
             .as_str()
@@ -421,20 +486,11 @@ async fn mcp_tabs_new_roundtrips_through_mock_cdp() -> anyhow::Result<()> {
     wait_for_cdp_connected(&app.router).await?;
     let session_id = initialize_mcp(&app).await?;
 
-    let tabs_new = json!({
-        "jsonrpc": "2.0",
-        "id": 10,
-        "method": "tools/call",
-        "params": {
-            "name": "tabs",
-            "arguments": { "action": "new", "url": "https://example.com" }
-        }
-    });
     let (status, _headers, body) = request_json_with_headers(
         &app.router,
         "POST",
         "/mcp",
-        Some(tabs_new),
+        Some(tabs_new_request(10)),
         &[("mcp-session-id", &session_id)],
     )
     .await?;
@@ -465,13 +521,72 @@ async fn mcp_tabs_new_roundtrips_through_mock_cdp() -> anyhow::Result<()> {
 
     let (status, dispatches) = request_json(&app.router, "GET", "/audit/dispatches", None).await?;
     assert_eq!(status, StatusCode::OK);
+    let rows = dispatches["rows"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("rows not array"))?;
     assert!(
-        dispatches["rows"]
-            .as_array()
-            .ok_or_else(|| anyhow::anyhow!("rows not array"))?
-            .iter()
+        rows.iter()
             .any(|row| row["toolName"] == "tabs" && row["dispatchId"].is_string())
     );
+
+    // Fallback screenshots default on: the tabs-new dispatch persisted a frame.
+    let mut screenshot_statuses = Vec::new();
+    for row in rows {
+        let dispatch_id = row["dispatchId"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("dispatchId not string"))?;
+        screenshot_statuses.push(
+            request_status(
+                &app.router,
+                "GET",
+                &format!("/audit/screenshot/{dispatch_id}"),
+            )
+            .await?,
+        );
+    }
+    assert!(
+        screenshot_statuses.contains(&StatusCode::OK),
+        "no dispatch had a persisted screenshot: {screenshot_statuses:?}"
+    );
+    drop(mock);
+    Ok(())
+}
+
+#[tokio::test]
+async fn screencast_fallback_flag_disables_fallback_screenshots() -> anyhow::Result<()> {
+    let mock = MockCdp::start().await?;
+    let app = test_app_with_options(mock.cdp_port, false, false).await?;
+    app.state.browser.connect_once_for_testing().await?;
+    wait_for_cdp_connected(&app.router).await?;
+    let session_id = initialize_mcp(&app).await?;
+
+    let (status, _headers, body) = request_json_with_headers(
+        &app.router,
+        "POST",
+        "/mcp",
+        Some(tabs_new_request(30)),
+        &[("mcp-session-id", &session_id)],
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["result"]["isError"], false, "tabs_new body: {body:?}");
+
+    let (status, dispatches) = request_json(&app.router, "GET", "/audit/dispatches", None).await?;
+    assert_eq!(status, StatusCode::OK);
+    let rows = dispatches["rows"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("rows not array"))?;
+    assert_eq!(rows.len(), 1);
+    let dispatch_id = rows[0]["dispatchId"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("dispatchId not string"))?;
+    let status = request_status(
+        &app.router,
+        "GET",
+        &format!("/audit/screenshot/{dispatch_id}"),
+    )
+    .await?;
+    assert_eq!(status, StatusCode::NOT_FOUND);
     drop(mock);
     Ok(())
 }
@@ -491,20 +606,11 @@ async fn cancel_endpoint_aborts_in_flight_dispatch() -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("missing test session"))?;
     let agent_id = session.agent().agent_id().as_str().to_string();
 
-    let tabs_new = json!({
-        "jsonrpc": "2.0",
-        "id": 20,
-        "method": "tools/call",
-        "params": {
-            "name": "tabs",
-            "arguments": { "action": "new", "url": "https://example.com" }
-        }
-    });
     let (status, _headers, body) = request_json_with_headers(
         &app.router,
         "POST",
         "/mcp",
-        Some(tabs_new),
+        Some(tabs_new_request(20)),
         &[("mcp-session-id", &session_id)],
     )
     .await?;
@@ -765,20 +871,44 @@ async fn initialize_mcp(app: &TestApp) -> anyhow::Result<String> {
     let (status, headers, body) =
         request_json_with_headers(&app.router, "POST", "/mcp", Some(initialize), &[]).await?;
     assert_eq!(status, StatusCode::OK, "initialize body: {body:?}");
+    assert_eq!(
+        body["result"]["serverInfo"]["name"],
+        "browseros-claw-server"
+    );
     let session_id = headers
         .get("mcp-session-id")
         .and_then(|value| value.to_str().ok())
         .map(str::to_string)
         .ok_or_else(|| anyhow::anyhow!("missing mcp-session-id"))?;
     send_initialized(&app.router, &session_id).await?;
+    wait_for_session_registration(app, &session_id).await?;
+    Ok(session_id)
+}
+
+fn tabs_new_request(id: u64) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "method": "tools/call",
+        "params": {
+            "name": "tabs",
+            "arguments": { "action": "new", "url": "https://example.com" }
+        }
+    })
+}
+
+/// The initialized notification is acknowledged with 202 before the
+/// session_started hook finishes registering the session, so a tools/call
+/// fired immediately after can race the registry. Tests wait it out.
+async fn wait_for_session_registration(app: &TestApp, session_id: &str) -> anyhow::Result<()> {
     for _ in 0..50 {
         if app
             .state
             .sessions
-            .contains(&SessionId::new(session_id.clone()))
+            .contains(&SessionId::new(session_id.to_string()))
             .await
         {
-            return Ok(session_id);
+            return Ok(());
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
