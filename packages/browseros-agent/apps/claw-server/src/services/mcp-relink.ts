@@ -3,11 +3,10 @@
  * Copyright 2025 BrowserOS
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * Choke-point relink for a managed MCP server. Every claw-server
- * write path (Connect button, profile install, profile reconcile,
- * boot URL migration) funnels through here so the transport rule
- * lives in one place. On failure, restores the previous link so a
- * partial write does not orphan the entry.
+ * Choke-point relink for a managed MCP server. Connect and profile
+ * install paths funnel through here; direct boot repair links call
+ * the exported transport-tag helper below. On failure, restores the
+ * previous link so a partial write does not orphan the entry.
  *
  * agent-mcp-manager 0.0.4-rc.3 omits Claude Code's required
  * `type: "http"` transport tag, so the shared add-only repair runs
@@ -70,7 +69,7 @@ export async function relinkManagedServer({
   }
 }
 
-async function tagClaudeCodeHttpEntry(
+export async function tagClaudeCodeHttpEntry(
   mgr: BoundApi,
   agent: AgentId,
   spec: McpServerSpec,

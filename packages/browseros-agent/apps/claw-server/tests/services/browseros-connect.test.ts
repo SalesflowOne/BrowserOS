@@ -18,6 +18,7 @@ import {
   disconnectBrowserosFromHarness,
   listBrowserosConnections,
 } from '../../src/services/browseros-connect'
+import { relinkManagedServer } from '../../src/services/mcp-relink'
 import { createStubMcpManager } from '../_helpers/stub-mcp-manager'
 
 const ORIGINAL_SERVER_PORT = env.serverPort
@@ -140,6 +141,7 @@ describe('connectBrowserosToHarness', () => {
     }
     expect(payload.server.spec.transport).toBe('http')
     expect(payload.server.spec.url).toBe('http://127.0.0.1:9200/mcp')
+    expect(stub.calls.some((call) => call.method === 'listLinks')).toBe(false)
   })
 
   it('falls back to the server bind port when no proxy port is configured', async () => {
@@ -185,32 +187,69 @@ describe('connectBrowserosToHarness', () => {
   })
 
   it('restores the previous BrowserClaw spec when the replacement link throws', async () => {
-    const stub = createStubMcpManager()
-    stub.seedServer({
-      name: 'BrowserClaw',
-      spec: { transport: 'http', url: 'http://127.0.0.1:8080/mcp' },
-    })
-    // First link call throws; the second (restore) succeeds via the
-    // default in-memory link behaviour.
-    let calls = 0
-    const originalLink = stub.link
-    stub.link = async (input) => {
-      calls++
-      if (calls === 1) throw new Error('replacement failed')
-      return originalLink(input)
+    const dir = await mkdtemp(join(tmpdir(), 'browserclaw-restore-'))
+    const configPath = join(dir, '.claude.json')
+    try {
+      const stub = createStubMcpManager()
+      stub.seedServer({
+        name: 'BrowserClaw',
+        spec: { transport: 'http', url: 'http://127.0.0.1:8080/mcp' },
+      })
+      let calls = 0
+      const originalLink = stub.link
+      stub.link = async (input) => {
+        calls++
+        if (calls === 1) throw new Error('replacement failed')
+        const result = await originalLink({ ...input, configPath })
+        if (input.server.spec.transport !== 'http') {
+          throw new Error('expected an HTTP BrowserClaw spec')
+        }
+        await writeFile(
+          configPath,
+          `${JSON.stringify({
+            mcpServers: {
+              BrowserClaw: { url: input.server.spec.url },
+            },
+          })}\n`,
+          'utf8',
+        )
+        return result
+      }
+      setMcpManagerForTesting(stub)
+
+      const result = await connectBrowserosToHarness('Claude Code')
+      expect(result.installed).toBe(false)
+      expect(result.message).toContain('replacement failed')
+      const servers = await stub.list()
+      const bc = servers.find((s) => s.name === 'BrowserClaw')
+      expect(bc?.spec).toMatchObject({
+        transport: 'http',
+        url: 'http://127.0.0.1:8080/mcp',
+      })
+      expect(JSON.parse(await readFile(configPath, 'utf8'))).toEqual({
+        mcpServers: {
+          BrowserClaw: {
+            url: 'http://127.0.0.1:8080/mcp',
+            type: 'http',
+          },
+        },
+      })
+    } finally {
+      await rm(dir, { recursive: true, force: true })
     }
-    setMcpManagerForTesting(stub)
-    const result = await connectBrowserosToHarness('Claude Code')
-    expect(result.installed).toBe(false)
-    expect(result.message).toContain('replacement failed')
-    // The manifest should still hold the previous spec after the
-    // restore. Verify by listing servers.
-    const servers = await stub.list()
-    const bc = servers.find((s) => s.name === 'BrowserClaw')
-    expect(bc?.spec).toMatchObject({
-      transport: 'http',
-      url: 'http://127.0.0.1:8080/mcp',
+  })
+})
+
+describe('relinkManagedServer transport tag guard', () => {
+  it('does not inspect config links for a Claude Code stdio relink', async () => {
+    const stub = createStubMcpManager()
+    await relinkManagedServer({
+      mgr: stub,
+      serverName: 'BrowserClaw',
+      agent: 'claude-code',
+      spec: { transport: 'stdio', command: 'npx', args: ['mcp-remote'] },
     })
+    expect(stub.calls.some((call) => call.method === 'listLinks')).toBe(false)
   })
 })
 
