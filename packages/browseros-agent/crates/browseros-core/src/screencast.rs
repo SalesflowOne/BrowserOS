@@ -72,11 +72,12 @@ pub async fn ack_frame(session: &ProtocolSession, frame_session_id: i64) -> Resu
     Ok(())
 }
 
-/// Parse `Page.screencastFrame` event params. The `session_id` inside is the
-/// ack cookie (integer), unrelated to the envelope target session id (string).
+/// Parse `Page.screencastFrame` event params, consuming them so the frame
+/// data string is moved, not copied. The `session_id` inside is the ack
+/// cookie (integer), unrelated to the envelope target session id (string).
 #[must_use]
-pub fn parse_frame_event(params: &Value) -> Option<ScreencastFrameEvent> {
-    serde_json::from_value(params.clone()).ok()
+pub fn parse_frame_event(params: Value) -> Option<ScreencastFrameEvent> {
+    serde_json::from_value(params).ok()
 }
 
 #[cfg(test)]
@@ -124,7 +125,7 @@ mod tests {
             },
             "sessionId": 7
         });
-        let event = parse_frame_event(&params);
+        let event = parse_frame_event(params.clone());
         let Some(event) = event else {
             panic!("expected frame event to parse: {params}");
         };
@@ -136,8 +137,8 @@ mod tests {
 
     #[test]
     fn frame_event_parse_rejects_garbage() {
-        assert!(parse_frame_event(&json!({ "data": 42 })).is_none());
-        assert!(parse_frame_event(&json!("not an object")).is_none());
-        assert!(parse_frame_event(&json!({})).is_none());
+        assert!(parse_frame_event(json!({ "data": 42 })).is_none());
+        assert!(parse_frame_event(json!("not an object")).is_none());
+        assert!(parse_frame_event(json!({})).is_none());
     }
 }

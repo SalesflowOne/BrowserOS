@@ -19,7 +19,7 @@ use std::{
     time::Duration,
 };
 use tokio::{
-    sync::{Mutex, broadcast},
+    sync::{Mutex, mpsc},
     task::JoinHandle,
     time::{MissedTickBehavior, interval},
 };
@@ -162,37 +162,39 @@ impl ScreencastService {
         let Some(session) = browser.session().await else {
             return;
         };
-        let events = session.cdp_events();
+        // Frames bypass the broadcast ring (they are large and high-rate;
+        // ring slots would retain them long after consumption) — the
+        // targeted channel frees each frame once handled, and CDP's ack
+        // backpressure caps in-flight frames at ~1 per cast.
+        let frames = session.cdp_events_targeted(SCREENCAST_FRAME_METHOD);
         let service = self.clone();
         *pump = Some(tokio::spawn(async move {
-            service.pump_frames(events).await;
+            service.pump_frames(frames).await;
         }));
     }
 
-    async fn pump_frames(self: Arc<Self>, mut events: broadcast::Receiver<CdpEvent>) {
+    async fn pump_frames(self: Arc<Self>, mut frames: mpsc::UnboundedReceiver<CdpEvent>) {
         loop {
             tokio::select! {
                 () = self.cancel.cancelled() => return,
-                received = events.recv() => match received {
-                    Ok(event) => {
-                        if event.method == SCREENCAST_FRAME_METHOD {
-                            self.handle_frame(event).await;
-                        }
-                    }
-                    Err(broadcast::error::RecvError::Lagged(skipped)) => {
-                        debug!(skipped, "screencast frame pump lagged; continuing");
-                    }
-                    Err(broadcast::error::RecvError::Closed) => return,
+                received = frames.recv() => match received {
+                    Some(event) => self.handle_frame(event).await,
+                    // Channel replaced or client gone; the supervisor
+                    // respawns the pump on its next tick.
+                    None => return,
                 }
             }
         }
     }
 
     async fn handle_frame(&self, event: CdpEvent) {
-        let Some(session_id) = event.session_id else {
+        let CdpEvent {
+            params, session_id, ..
+        } = event;
+        let Some(session_id) = session_id else {
             return;
         };
-        let Some(frame) = screencast::parse_frame_event(&event.params) else {
+        let Some(frame) = screencast::parse_frame_event(params) else {
             debug!(%session_id, "ignoring unparseable screencast frame");
             return;
         };
@@ -206,6 +208,15 @@ impl ScreencastService {
             (cast.page_id, cast.session.clone())
         };
         let (page_id, session) = owner;
+        // Ack from a detached task: a wedged ack send must not stall frame
+        // routing for the other casts. Per-session ordering is safe — CDP
+        // sends the next frame only after this ack lands.
+        let ack_id = frame.session_id;
+        tokio::spawn(async move {
+            if let Err(err) = screencast::ack_frame(&session, ack_id).await {
+                debug!(page_id, error = %err, "screencastFrameAck failed");
+            }
+        });
         self.store_frame(
             page_id,
             ScreencastFrame {
@@ -214,9 +225,6 @@ impl ScreencastService {
             },
         )
         .await;
-        if let Err(err) = screencast::ack_frame(&session, frame.session_id).await {
-            debug!(page_id, error = %err, "screencastFrameAck failed");
-        }
     }
 
     async fn supervise(&self, browser: &Arc<BrowserService>, tab_activity: &Arc<TabActivityService>) {
@@ -227,11 +235,16 @@ impl ScreencastService {
         };
         let now = now_epoch_ms();
         let idle = self.is_idle(now);
-        let (agent_pages, active_target_by_window) = if idle {
-            (Vec::new(), HashMap::new())
+        let topology = if idle {
+            Some((Vec::new(), HashMap::new()))
         } else {
             let records = tab_activity.snapshot().await;
             self.resolve_topology(&session, records).await
+        };
+        let Some((agent_pages, active_target_by_window)) = topology else {
+            // Transient CDP failure while listing pages: keep the running
+            // casts and retry next tick instead of tearing them all down.
+            return;
         };
         let running: Vec<RunningCast> = self
             .casts
@@ -257,15 +270,15 @@ impl ScreencastService {
         &self,
         session: &Arc<BrowserSession>,
         records: Vec<TabActivityRecord>,
-    ) -> (Vec<AgentPage>, HashMap<i64, String>) {
+    ) -> Option<(Vec<AgentPage>, HashMap<i64, String>)> {
         if records.is_empty() {
-            return (Vec::new(), HashMap::new());
+            return Some((Vec::new(), HashMap::new()));
         }
         let infos = match session.pages.list().await {
             Ok(infos) => infos,
             Err(err) => {
                 debug!(error = %err, "screencast page listing failed");
-                return (Vec::new(), HashMap::new());
+                return None;
             }
         };
         let window_by_page: HashMap<u32, i64> = infos
@@ -299,7 +312,7 @@ impl ScreencastService {
                 Err(err) => debug!(window_id, error = %err, "getActiveTab failed"),
             }
         }
-        (agent_pages, active_target_by_window)
+        Some((agent_pages, active_target_by_window))
     }
 
     async fn apply_plan(&self, session: &Arc<BrowserSession>, plan: TickPlan, now: i64) {
