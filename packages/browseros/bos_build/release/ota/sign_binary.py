@@ -417,10 +417,13 @@ def sign_server_bundle_windows(
     Symmetric with the macOS bundle's unknown-file guard.
     """
     bin_dir = resources_dir / "bin"
-    for path in expected_windows_binary_paths(bin_dir, bundle):
+    paths = expected_windows_binary_paths(bin_dir, bundle)
+    for path in paths:
         if not path.exists():
             log_error(f"Windows binary missing (cannot sign): {path}")
             return False
+
+    for path in paths:
         if not sign_windows_binary(path, env):
             return False
     return True

@@ -4,6 +4,7 @@
 import tempfile
 import subprocess
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -66,6 +67,26 @@ class SignServerBundleWindowsTest(unittest.TestCase):
                 self.assertFalse(
                     sign_binary.sign_server_bundle_windows(
                         resources, EnvConfig(), BROWSERCLAW_SERVER_BUNDLE
+                    )
+                )
+
+            signer.assert_not_called()
+
+    def test_preflights_all_descriptor_binaries_before_signing(self):
+        bundle = replace(
+            BROWSERCLAW_SERVER_BUNDLE,
+            windows_binaries=("browseros-claw-server.exe", "missing.exe"),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            resources = Path(tmp) / "resources"
+            _write_exe(resources / "bin" / "browseros-claw-server.exe")
+
+            with mock.patch.object(
+                sign_binary, "sign_windows_binary", return_value=True
+            ) as signer:
+                self.assertFalse(
+                    sign_binary.sign_server_bundle_windows(
+                        resources, EnvConfig(), bundle
                     )
                 )
 
