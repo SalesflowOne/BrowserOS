@@ -134,6 +134,7 @@ async fn agents_cancel(
 }
 
 async fn tabs_activity(State(state): State<AppState>) -> AppResult<Json<Value>> {
+    state.screencast.note_read();
     let profiles = state.agents.list_profiles().await?;
     let tabs = state.tab_activity.snapshot().await;
     let mut enriched = Vec::with_capacity(tabs.len());
