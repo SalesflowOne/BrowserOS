@@ -19,7 +19,7 @@ use tokio::{
     net::{TcpListener, TcpStream},
     task::JoinHandle,
 };
-use tokio_tungstenite::{accept_async, tungstenite::Message};
+use tokio_tungstenite::{WebSocketStream, accept_async, tungstenite::Message};
 use tower::ServiceExt;
 
 struct TestApp {
@@ -315,6 +315,19 @@ async fn mcp_initialize_list_guard_audit_and_delete() -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("missing mcp-session-id"))?
         .to_string();
     send_initialized(&app.router, &session_id).await?;
+    // Registration is async after the initialized notification; tools/call
+    // below hits the dispatch guard, which needs the session registered.
+    for _ in 0..50 {
+        if app
+            .state
+            .sessions
+            .contains(&SessionId::new(session_id.clone()))
+            .await
+        {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
 
     let list = json!({
         "jsonrpc": "2.0",
@@ -621,6 +634,111 @@ async fn tabs_activity_enriches_by_agent_id_only() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn tabs_activity_serves_pushed_screencast_frames_with_acks() -> anyhow::Result<()> {
+    let mock = MockCdp::start().await?;
+    mock.add_tab(1, "target-1", 1).await;
+    mock.add_tab(2, "target-2", 2).await;
+    let app = test_app_with_cdp_port(mock.cdp_port, false).await?;
+    app.state.browser.connect_once_for_testing().await?;
+    wait_for_cdp_connected(&app.router).await?;
+
+    for (page_id, target_id, agent_id) in [(1, "target-1", "agent-a"), (2, "target-2", "agent-b")] {
+        app.state
+            .tab_activity
+            .record_tool(RecordToolInput {
+                target_id: TargetId::from(target_id.to_string()),
+                page_id,
+                url: format!("https://example.com/{target_id}"),
+                title: target_id.to_string(),
+                agent_id: agent_id.to_string(),
+                slug: "codex".to_string(),
+                tool_name: "tabs".to_string(),
+            })
+            .await;
+    }
+
+    let screencast_task = app
+        .state
+        .screencast
+        .clone()
+        .start(app.state.browser.clone(), app.state.tab_activity.clone());
+
+    // Frame 2 for each target is only released by the mock after the server
+    // acks frame 1 with the right integer sessionId on the right target
+    // session — seeing cast2 frames proves the full route→store→ack loop
+    // for two concurrent screencasts.
+    let mut last_frames: Vec<(String, Option<Value>)> = Vec::new();
+    let mut done = false;
+    for _ in 0..100 {
+        let (status, body) = request_json(&app.router, "GET", "/tabs/activity", None).await?;
+        assert_eq!(status, StatusCode::OK);
+        let rows = body["tabs"]
+            .as_array()
+            .ok_or_else(|| anyhow::anyhow!("tabs not array"))?;
+        last_frames = rows
+            .iter()
+            .map(|row| {
+                (
+                    row["targetId"].as_str().unwrap_or_default().to_string(),
+                    (!row["screencast"].is_null()).then(|| row["screencast"].clone()),
+                )
+            })
+            .collect();
+        let frame_data = |target: &str| {
+            last_frames
+                .iter()
+                .find(|(target_id, _)| target_id == target)
+                .and_then(|(_, frame)| frame.as_ref())
+                .and_then(|frame| frame["jpegBase64"].as_str())
+                .map(str::to_string)
+        };
+        if frame_data("target-1").as_deref() == Some("cast2-target-1")
+            && frame_data("target-2").as_deref() == Some("cast2-target-2")
+        {
+            done = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(
+        done,
+        "pushed frames never reached /tabs/activity; last: {last_frames:?}"
+    );
+
+    for (_, frame) in &last_frames {
+        let frame = frame
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("missing screencast frame"))?;
+        assert!(frame["capturedAt"].as_i64().is_some_and(|at| at > 0));
+        let data = frame["jpegBase64"].as_str().unwrap_or_default();
+        assert!(
+            data.starts_with("cast2-"),
+            "unexpected frame payload: {data}"
+        );
+    }
+
+    let acks = mock.acks.lock().await.clone();
+    assert!(
+        acks.contains(&("session-target-1".to_string(), 1001)),
+        "missing ack for target-1 frame 1: {acks:?}"
+    );
+    assert!(
+        acks.contains(&("session-target-2".to_string(), 2001)),
+        "missing ack for target-2 frame 1: {acks:?}"
+    );
+    // The frame pushed on the foreign envelope session must never be
+    // stored or acked (its ack ids end in 9).
+    assert!(
+        acks.iter().all(|(_, ack_id)| ack_id % 1000 != 9),
+        "foreign-session frame was acked: {acks:?}"
+    );
+
+    screencast_task.abort();
+    drop(mock);
+    Ok(())
+}
+
 fn test_session(session_id: SessionId, agent_id: &str, slug: &str) -> Arc<Session> {
     Session::new(
         session_id,
@@ -700,23 +818,28 @@ async fn wait_for_cdp_connected(router: &Router) -> anyhow::Result<()> {
 
 struct MockCdp {
     cdp_port: u16,
+    tabs: Arc<tokio::sync::Mutex<Vec<MockTab>>>,
+    acks: Arc<tokio::sync::Mutex<Vec<(String, i64)>>>,
     tasks: Vec<JoinHandle<()>>,
 }
 
 impl MockCdp {
     async fn start() -> anyhow::Result<Self> {
         let tabs = Arc::new(tokio::sync::Mutex::new(Vec::<MockTab>::new()));
+        let acks = Arc::new(tokio::sync::Mutex::new(Vec::<(String, i64)>::new()));
         let ws_listener = TcpListener::bind("127.0.0.1:0").await?;
         let ws_addr = ws_listener.local_addr()?;
         let ws_tabs = tabs.clone();
+        let ws_acks = acks.clone();
         let ws_task = tokio::spawn(async move {
             loop {
                 let Ok((stream, _addr)) = ws_listener.accept().await else {
                     break;
                 };
                 let tabs = ws_tabs.clone();
+                let acks = ws_acks.clone();
                 tokio::spawn(async move {
-                    let _ = handle_mock_ws(stream, tabs).await;
+                    let _ = handle_mock_ws(stream, tabs, acks).await;
                 });
             }
         });
@@ -736,8 +859,21 @@ impl MockCdp {
 
         Ok(Self {
             cdp_port,
+            tabs,
+            acks,
             tasks: vec![ws_task, http_task],
         })
+    }
+
+    async fn add_tab(&self, tab_id: i64, target_id: &str, window_id: i64) {
+        self.tabs.lock().await.push(MockTab {
+            tab_id,
+            target_id: target_id.to_string(),
+            url: format!("https://example.com/{target_id}"),
+            title: format!("Tab {tab_id}"),
+            group_id: None,
+            window_id,
+        });
     }
 }
 
@@ -756,6 +892,7 @@ struct MockTab {
     url: String,
     title: String,
     group_id: Option<String>,
+    window_id: i64,
 }
 
 async fn handle_mock_http(mut stream: TcpStream, ws_port: u16) -> anyhow::Result<()> {
@@ -786,6 +923,7 @@ async fn handle_mock_http(mut stream: TcpStream, ws_port: u16) -> anyhow::Result
 async fn handle_mock_ws(
     stream: TcpStream,
     tabs: Arc<tokio::sync::Mutex<Vec<MockTab>>>,
+    acks: Arc<tokio::sync::Mutex<Vec<(String, i64)>>>,
 ) -> anyhow::Result<()> {
     let mut ws = accept_async(stream).await?;
     while let Some(message) = ws.next().await {
@@ -810,13 +948,96 @@ async fn handle_mock_ws(
             .and_then(Value::as_str)
             .ok_or_else(|| anyhow::anyhow!("missing CDP method"))?;
         let params = request.get("params").cloned().unwrap_or_else(|| json!({}));
-        let result = handle_mock_cdp_method(method, params, tabs.clone()).await;
+        let session = request
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let result = handle_mock_cdp_method(method, params.clone(), tabs.clone()).await;
         let response = match result {
             Ok(result) => json!({ "id": id, "result": result }),
             Err(message) => json!({ "id": id, "error": { "code": -32000, "message": message } }),
         };
         ws.send(Message::Text(response.to_string().into())).await?;
+        match method {
+            // A real browser pushes frames only after startScreencast; ours
+            // pushes one frame on a foreign session (must be dropped by the
+            // server) and then frame 1 on the requesting session.
+            "Page.startScreencast" => {
+                if let Some(session) = &session
+                    && let Some(tab) = find_tab_for_session(&tabs, session).await
+                {
+                    let base = tab.tab_id * 1000;
+                    send_screencast_frame(&mut ws, "session-bogus", "foreign", base + 9).await?;
+                    send_screencast_frame(
+                        &mut ws,
+                        session,
+                        &format!("cast1-{}", tab.target_id),
+                        base + 1,
+                    )
+                    .await?;
+                }
+            }
+            // Frame 2 is released only by a correct ack of frame 1 — the CDP
+            // backpressure contract the server must honor.
+            "Page.screencastFrameAck" => {
+                if let Some(session) = &session
+                    && let Some(ack_id) = params.get("sessionId").and_then(Value::as_i64)
+                {
+                    acks.lock().await.push((session.clone(), ack_id));
+                    if ack_id % 1000 == 1
+                        && let Some(tab) = find_tab_for_session(&tabs, session).await
+                    {
+                        send_screencast_frame(
+                            &mut ws,
+                            session,
+                            &format!("cast2-{}", tab.target_id),
+                            tab.tab_id * 1000 + 2,
+                        )
+                        .await?;
+                    }
+                }
+            }
+            _ => {}
+        }
     }
+    Ok(())
+}
+
+async fn find_tab_for_session(
+    tabs: &Arc<tokio::sync::Mutex<Vec<MockTab>>>,
+    session: &str,
+) -> Option<MockTab> {
+    let target_id = session.strip_prefix("session-")?;
+    tabs.lock()
+        .await
+        .iter()
+        .find(|tab| tab.target_id == target_id)
+        .cloned()
+}
+
+async fn send_screencast_frame(
+    ws: &mut WebSocketStream<TcpStream>,
+    session: &str,
+    data: &str,
+    ack_id: i64,
+) -> anyhow::Result<()> {
+    let event = json!({
+        "method": "Page.screencastFrame",
+        "params": {
+            "data": data,
+            "metadata": {
+                "offsetTop": 0.0,
+                "pageScaleFactor": 1.0,
+                "deviceWidth": 1280.0,
+                "deviceHeight": 800.0,
+                "scrollOffsetX": 0.0,
+                "scrollOffsetY": 0.0
+            },
+            "sessionId": ack_id
+        },
+        "sessionId": session
+    });
+    ws.send(Message::Text(event.to_string().into())).await?;
     Ok(())
 }
 
@@ -844,9 +1065,22 @@ async fn handle_mock_cdp_method(
                     .to_string(),
                 title: format!("Tab {tab_id}"),
                 group_id: None,
+                window_id: 1,
             };
             tabs.push(tab.clone());
             Ok(json!({ "tab": tab_json(&tab) }))
+        }
+        "Browser.getActiveTab" => {
+            let tabs = tabs.lock().await;
+            let window_id = params.get("windowId").and_then(Value::as_i64);
+            let tab = tabs
+                .iter()
+                .find(|tab| Some(tab.window_id) == window_id)
+                .cloned();
+            match tab {
+                Some(tab) => Ok(json!({ "tab": tab_json(&tab) })),
+                None => Ok(json!({})),
+            }
         }
         "Browser.getTabInfo" => {
             let tabs = tabs.lock().await;
@@ -923,7 +1157,7 @@ fn tab_json(tab: &MockTab) -> Value {
         "loadProgress": 1.0,
         "isPinned": false,
         "isHidden": false,
-        "windowId": 1,
+        "windowId": tab.window_id,
         "index": tab.tab_id - 1
     });
     if let (Value::Object(object), Some(group_id)) = (&mut value, &tab.group_id) {
