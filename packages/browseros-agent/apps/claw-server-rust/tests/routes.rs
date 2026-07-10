@@ -515,21 +515,15 @@ async fn mcp_initialize_with_elicitation_capability_stays_nonblocking() -> anyho
     assert_eq!(status, StatusCode::OK);
     assert!(body["result"]["tools"].as_array().is_some_and(|tools| !tools.is_empty()));
 
-    // The initialized notification is acked before the session-start hook
-    // completes, so poll like initialize_mcp does.
-    for _ in 0..50 {
-        if let Some(session) = app
-            .state
-            .sessions
-            .lookup(&SessionId::new(session_id.clone()))
-            .await
-        {
-            assert_eq!(session.session_label().await, None);
-            return Ok(());
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    Err(anyhow::anyhow!("session not minted"))
+    wait_for_session_registration(&app, &session_id).await?;
+    let session = app
+        .state
+        .sessions
+        .lookup(&SessionId::new(session_id.clone()))
+        .await
+        .ok_or_else(|| anyhow::anyhow!("session not minted"))?;
+    assert_eq!(session.session_label().await, None);
+    Ok(())
 }
 
 #[tokio::test]
