@@ -16,13 +16,13 @@ use axum::{
     body::Body,
     extract::{Path, Query, Request, State},
     http::{HeaderValue, Method, StatusCode, header},
-    middleware::Next,
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, options, post},
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::str::FromStr;
+use std::{str::FromStr, time::Instant};
 use tracing::{Instrument, info_span};
 use ulid::Ulid;
 
@@ -51,8 +51,50 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/audit/replay/{session_id}", get(replay_get))
         .route("/audit/replay/{session_id}/exists", get(replay_exists))
         .route("/replay/tabs", get(replay_tabs))
-        .nest_service("/mcp", streamable_http_service(state))
+        .nest_service(
+            "/mcp",
+            Router::new()
+                .fallback_service(streamable_http_service(state))
+                .layer(middleware::from_fn(mcp_request_hygiene)),
+        )
         .route("/{*path}", options(preflight))
+}
+
+/// Enforces the header conventions native MCP clients follow (parity with
+/// the TS server's mcp-request-hygiene middleware). A browser-page fetch
+/// against the loopback MCP endpoint always carries `origin` or
+/// `sec-fetch-site`; native MCP clients never do.
+async fn mcp_request_hygiene(req: Request, next: Next) -> Response {
+    let headers = req.headers();
+    if headers.contains_key(header::ORIGIN) || headers.contains_key("sec-fetch-site") {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "unsupported request" })),
+        )
+            .into_response();
+    }
+    let is_write = matches!(
+        *req.method(),
+        Method::POST | Method::PUT | Method::PATCH | Method::DELETE
+    );
+    if is_write {
+        let content_type = headers.get(header::CONTENT_TYPE);
+        // rmcp's DELETE /mcp session teardown carries no body and no
+        // content-type; the TS server never sees that shape (its clients
+        // always send application/json), so exempt only that case.
+        let exempt_bodyless_delete = *req.method() == Method::DELETE && content_type.is_none();
+        let is_json = content_type
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.to_ascii_lowercase().contains("application/json"));
+        if !is_json && !exempt_bodyless_delete {
+            return (
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                Json(json!({ "error": "unsupported content type" })),
+            )
+                .into_response();
+        }
+    }
+    next.run(req).await
 }
 
 pub async fn request_context(req: Request, next: Next) -> Response {
@@ -61,7 +103,28 @@ pub async fn request_context(req: Request, next: Next) -> Response {
     let path = req.uri().path().to_string();
     let span = info_span!("http_request", %request_id, %method, %path);
     async move {
+        let start = Instant::now();
         let mut response = next.run(req).await;
+        // One structured line per failed request; sub-400 traffic stays
+        // unlogged on purpose (claw-app polls several endpoints).
+        let status = response.status();
+        if status.as_u16() >= 500 {
+            tracing::error!(
+                %method,
+                %path,
+                status = status.as_u16(),
+                duration_ms = start.elapsed().as_millis() as u64,
+                "request failed"
+            );
+        } else if status.as_u16() >= 400 {
+            tracing::warn!(
+                %method,
+                %path,
+                status = status.as_u16(),
+                duration_ms = start.elapsed().as_millis() as u64,
+                "request failed"
+            );
+        }
         let headers = response.headers_mut();
         headers.insert(
             header::ACCESS_CONTROL_ALLOW_ORIGIN,
@@ -125,12 +188,23 @@ async fn system_url(State(state): State<AppState>) -> Json<Value> {
 async fn agents_cancel(
     State(state): State<AppState>,
     Path(agent_id): Path<String>,
-) -> AppResult<Json<Value>> {
+) -> Response {
     let cancelled = state.sessions.cancel_by_agent(&agent_id).await;
     if cancelled == 0 {
-        return Err(AppError::not_found("no active dispatches for this agent"));
+        // claw-app parses this 404 body as a CancelAgentResult (idle state,
+        // not a failure), so it must keep the TS shape, not `{"error":...}`.
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "ok": false,
+                "cancelled": 0,
+                "reason": "no active dispatches for this agent",
+            })),
+        )
+            .into_response();
     }
-    Ok(Json(json!({ "ok": true, "cancelled": cancelled })))
+    tracing::info!(%agent_id, cancelled, "cancelled in-flight dispatches for agent");
+    Json(json!({ "ok": true, "cancelled": cancelled })).into_response()
 }
 
 async fn tabs_activity(State(state): State<AppState>) -> AppResult<Json<Value>> {
@@ -339,6 +413,3 @@ fn validate_limit(limit: Option<i64>, cap: i64) -> AppResult<()> {
     }
     Ok(())
 }
-
-#[allow(dead_code)]
-fn _method(_: Method) {}

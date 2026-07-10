@@ -367,6 +367,11 @@ impl ScreenshotPersister {
         if wrote {
             return;
         }
+        // Fallback capture is an opt-out feature (CLAW_SCREENCAST_SCREENSHOT_FALLBACK);
+        // disabling it must not affect the explicit tool-image branch above.
+        if !state.config.screencast_screenshot_fallback {
+            return;
+        }
         let Some(browser) = &call.browser_session else {
             return;
         };
@@ -704,6 +709,12 @@ mod tests {
     }
 
     async fn test_state() -> anyhow::Result<TestState> {
+        test_state_with_fallback(true).await
+    }
+
+    async fn test_state_with_fallback(
+        screencast_screenshot_fallback: bool,
+    ) -> anyhow::Result<TestState> {
         let dir = tempfile::tempdir()?;
         let root = dir.path().join("browserclaw");
         let config = Arc::new(Config {
@@ -715,7 +726,7 @@ mod tests {
             claw_dir: root,
             session_idle: Duration::from_secs(300),
             session_sweep_interval: Duration::from_secs(60),
-            screencast_screenshot_fallback: true,
+            screencast_screenshot_fallback,
             dev_mode: false,
             auth_token: None,
         });
@@ -895,6 +906,29 @@ mod tests {
             app.state.sessions.owner_of_page(&PageId(4)).await,
             Some(second.agent().ownership_key())
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn persist_writes_explicit_tool_image_when_fallback_disabled() -> anyhow::Result<()> {
+        let app = test_state_with_fallback(false).await?;
+        let session = test_session("s1", "codex-a", "codex");
+        let call = page_call(1);
+        // "anBlZw==" is base64 for "jpeg".
+        let result = ToolResult::image("anBlZw==", "image/jpeg", json!({}));
+
+        ScreenshotPersister::persist(
+            &app.state,
+            &session,
+            &call,
+            &result,
+            AuditRecord { row_id: 7 },
+            output_files(),
+        )
+        .await;
+
+        assert_eq!(app.state.screenshots.read("7").await?, b"jpeg");
+        assert_eq!(app.state.screenshots.read("dispatch").await?, b"jpeg");
         Ok(())
     }
 
