@@ -5,6 +5,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { env } from '../../src/env'
 import {
   resetMcpManagerForTesting,
@@ -53,6 +56,77 @@ describe('connectBrowserosToHarness', () => {
     // rebuild, prior manifest). allowOverwrite skips the library's
     // ForeignEntryError safety net for this specific server name.
     expect(payload.allowOverwrite).toBe(true)
+  })
+
+  it('adds the Claude Code HTTP type without changing other user config', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'browserclaw-claude-code-'))
+    const configPath = join(dir, '.claude.json')
+    try {
+      const originalConfig = {
+        numStartups: 12,
+        mcpServers: {
+          context7: {
+            type: 'stdio',
+            command: 'npx',
+            args: ['-y', '@upstash/context7-mcp'],
+          },
+          granola: {
+            type: 'http',
+            url: 'https://mcp.granola.ai/mcp',
+          },
+        },
+      }
+      await writeFile(
+        configPath,
+        `${JSON.stringify(originalConfig, null, 2)}\n`,
+        'utf8',
+      )
+
+      const stub = createStubMcpManager()
+      const originalLink = stub.link
+      stub.link = async (input) => {
+        const result = await originalLink({ ...input, configPath })
+        if (input.server.spec.transport !== 'http') {
+          throw new Error('expected an HTTP BrowserClaw spec')
+        }
+        const config = JSON.parse(await readFile(configPath, 'utf8')) as {
+          numStartups: number
+          mcpServers: Record<string, unknown>
+        }
+        config.mcpServers[input.server.name] = {
+          url: input.server.spec.url,
+        }
+        await writeFile(
+          configPath,
+          `${JSON.stringify(config, null, 2)}\n`,
+          'utf8',
+        )
+        return result
+      }
+      setMcpManagerForTesting(stub)
+      env.proxyPort = 9000
+
+      await expect(
+        connectBrowserosToHarness('Claude Code'),
+      ).resolves.toMatchObject({ installed: true, agentId: 'claude-code' })
+
+      const first = await readFile(configPath, 'utf8')
+      expect(JSON.parse(first)).toEqual({
+        ...originalConfig,
+        mcpServers: {
+          ...originalConfig.mcpServers,
+          BrowserClaw: {
+            url: 'http://127.0.0.1:9000/mcp',
+            type: 'http',
+          },
+        },
+      })
+
+      await connectBrowserosToHarness('Claude Code')
+      await expect(readFile(configPath, 'utf8')).resolves.toBe(first)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 
   it('writes a direct HTTP spec for Codex (http-capable in the catalog)', async () => {

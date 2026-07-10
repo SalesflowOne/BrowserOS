@@ -9,17 +9,19 @@
  * lives in one place. On failure, restores the previous link so a
  * partial write does not orphan the entry.
  *
- * Since agent-mcp-manager 0.0.4 the library emits the Claude Code
- * `type: "http"` transport tag natively at the catalog layer, so
- * the post-write fixup that used to live here retired.
+ * agent-mcp-manager 0.0.4-rc.3 omits Claude Code's required
+ * `type: "http"` transport tag, so the shared add-only repair runs
+ * immediately after the managed write.
  */
 
+import { ensureClaudeCodeHttpTransportTag } from '@browseros/shared/mcp/claude-code-transport-tag'
 import type {
   AgentId,
   BoundApi,
   LinkPlanSummary,
   McpServerSpec,
 } from 'agent-mcp-manager'
+import { logger } from '../lib/logger'
 
 interface RelinkManagedServerOptions {
   mgr: BoundApi
@@ -39,11 +41,13 @@ export async function relinkManagedServer({
 }: RelinkManagedServerOptions): Promise<LinkPlanSummary> {
   const previousSpec = await findExistingSpec(mgr, serverName)
   try {
-    return await mgr.link({
+    const result = await mgr.link({
       server: { name: serverName, spec },
       agent,
       ...(allowOverwrite ? { allowOverwrite } : {}),
     })
+    await tagClaudeCodeHttpEntry(mgr, agent, spec, serverName)
+    return result
   } catch (err) {
     if (previousSpec) {
       try {
@@ -52,6 +56,7 @@ export async function relinkManagedServer({
           agent,
           ...(allowOverwrite ? { allowOverwrite } : {}),
         })
+        await tagClaudeCodeHttpEntry(mgr, agent, previousSpec, serverName)
       } catch (restoreErr) {
         const relinkMessage = err instanceof Error ? err.message : String(err)
         const restoreMessage =
@@ -62,6 +67,43 @@ export async function relinkManagedServer({
       }
     }
     throw err
+  }
+}
+
+async function tagClaudeCodeHttpEntry(
+  mgr: BoundApi,
+  agent: AgentId,
+  spec: McpServerSpec,
+  serverName: string,
+): Promise<void> {
+  if (agent !== 'claude-code' || spec.transport !== 'http') return
+
+  try {
+    const links = await mgr.listLinks({
+      serverNames: [serverName],
+      agents: [agent],
+    })
+    const configPath = links.find(
+      (link) => link.serverName === serverName && link.agent === agent,
+    )?.configPath
+    if (!configPath) {
+      logger.warn('Claude Code MCP link path missing; skipped transport tag', {
+        serverName,
+      })
+      return
+    }
+    await ensureClaudeCodeHttpTransportTag({
+      configPath,
+      serverName,
+      expectedUrl: spec.url,
+      onlyIfMissing: true,
+      logger,
+    })
+  } catch (err) {
+    logger.warn('Failed to locate Claude Code MCP config for transport tag', {
+      serverName,
+      error: err instanceof Error ? err.message : String(err),
+    })
   }
 }
 
