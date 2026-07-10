@@ -95,11 +95,11 @@ pub enum ElicitNameOutcome {
 /// Runs the elicitation retry table and returns the normalized label.
 pub async fn elicit_session_name<F, Fut>(mut elicit: F) -> Option<String>
 where
-    F: FnMut(u32) -> Fut,
+    F: FnMut() -> Fut,
     Fut: Future<Output = ElicitNameOutcome>,
 {
     for attempt in 0..2 {
-        match elicit(attempt).await {
+        match elicit().await {
             ElicitNameOutcome::Accepted(raw) => {
                 let name = normalize_small_name(&raw);
                 return if name.is_empty() { None } else { Some(name) };
@@ -227,7 +227,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn accepted_name_is_normalized() {
-        let name = elicit_session_name(|_| {
+        let name = elicit_session_name(|| {
             std::future::ready(ElicitNameOutcome::Accepted("Invoice Processing".to_string()))
         })
         .await;
@@ -237,7 +237,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn accepted_name_normalizing_to_empty_is_dropped() {
         let mut calls = 0;
-        let name = elicit_session_name(|_| {
+        let name = elicit_session_name(|| {
             calls += 1;
             std::future::ready(ElicitNameOutcome::Accepted("!!!".to_string()))
         })
@@ -249,7 +249,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn timeout_never_retries() {
         let mut calls = 0;
-        let name = elicit_session_name(|_| {
+        let name = elicit_session_name(|| {
             calls += 1;
             std::future::ready(ElicitNameOutcome::TimedOut)
         })
@@ -261,7 +261,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn decline_never_retries() {
         let mut calls = 0;
-        let name = elicit_session_name(|_| {
+        let name = elicit_session_name(|| {
             calls += 1;
             std::future::ready(ElicitNameOutcome::NoName)
         })
@@ -273,9 +273,9 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn transport_failure_retries_once_then_accepts() {
         let mut calls = 0;
-        let name = elicit_session_name(|attempt| {
+        let name = elicit_session_name(|| {
             calls += 1;
-            std::future::ready(if attempt == 0 {
+            std::future::ready(if calls == 1 {
                 ElicitNameOutcome::Failed("no stream yet".to_string())
             } else {
                 ElicitNameOutcome::Accepted("flight search".to_string())
@@ -289,7 +289,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn two_transport_failures_give_up() {
         let mut calls = 0;
-        let name = elicit_session_name(|_| {
+        let name = elicit_session_name(|| {
             calls += 1;
             std::future::ready(ElicitNameOutcome::Failed("still no stream".to_string()))
         })
