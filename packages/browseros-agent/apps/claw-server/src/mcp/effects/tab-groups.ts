@@ -143,7 +143,11 @@ export async function collapseAgentTabGroup(input: {
       })
       return
     }
-    ownershipStore.updateGroup(input.key, { collapsed: true })
+    // The ref may have been replaced while the update was in flight;
+    // only stamp the state if it still describes the group we updated.
+    if (ownershipStore.groupOf(input.key)?.id === group.id) {
+      ownershipStore.updateGroup(input.key, { collapsed: true })
+    }
   } catch (error) {
     logger.warn('agent tab group collapse threw', {
       key: input.key,
@@ -276,7 +280,9 @@ async function expandGroup(
       })
       return
     }
-    ownershipStore.updateGroup(key, { collapsed: false })
+    if (ownershipStore.groupOf(key)?.id === group.id) {
+      ownershipStore.updateGroup(key, { collapsed: false })
+    }
   } catch (error) {
     logger.warn('agent tab group expand threw', {
       key,
