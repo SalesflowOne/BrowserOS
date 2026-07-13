@@ -38,6 +38,7 @@ mock.module('./sidePanelOpenStateStorage', () => ({
 
 let openSidePanel: typeof import('./toggleSidePanel').openSidePanel
 let toggleSidePanel: typeof import('./toggleSidePanel').toggleSidePanel
+let initializeSidePanelOptions: typeof import('./toggleSidePanel').initializeSidePanelOptions
 let registerSidePanelOpenStateListeners: typeof import('./toggleSidePanel').registerSidePanelOpenStateListeners
 let refreshSidePanelRuntimeState: typeof import('./toggleSidePanel').refreshSidePanelRuntimeState
 let setSidePanelPerWindowPreference: typeof import('./toggleSidePanel').setSidePanelPerWindowPreference
@@ -46,6 +47,7 @@ beforeAll(async () => {
   const module = await import('./toggleSidePanel')
   openSidePanel = module.openSidePanel
   toggleSidePanel = module.toggleSidePanel
+  initializeSidePanelOptions = module.initializeSidePanelOptions
   registerSidePanelOpenStateListeners =
     module.registerSidePanelOpenStateListeners
   refreshSidePanelRuntimeState = module.refreshSidePanelRuntimeState
@@ -231,6 +233,40 @@ describe('side panel scope routing', () => {
       { enabled: true, path: 'sidepanel.html' },
       { enabled: false },
     ])
+  })
+
+  it('initializes Chrome options from the stored scope during installation', async () => {
+    storedSidePanelPerWindow = true
+
+    await initializeSidePanelOptions()
+
+    expect(setOptionsCalls).toEqual([{ enabled: true, path: 'sidepanel.html' }])
+  })
+
+  it('initializes Chrome options with tab scope when storage fails', async () => {
+    getSidePanelPerWindowOverride = async () => {
+      throw new Error('storage unavailable')
+    }
+
+    await initializeSidePanelOptions()
+
+    expect(setOptionsCalls).toEqual([{ enabled: false }])
+  })
+
+  it('keeps a newer explicit setting over stale installation state', async () => {
+    let resolveStoredValue: (perWindow: boolean) => void = () => {}
+    getSidePanelPerWindowOverride = async () =>
+      new Promise<boolean>((resolve) => {
+        resolveStoredValue = resolve
+      })
+
+    const initializePromise = initializeSidePanelOptions()
+    await Promise.resolve()
+    await setSidePanelPerWindowPreference(true)
+    resolveStoredValue(false)
+    await initializePromise
+
+    expect(setOptionsCalls).toEqual([{ enabled: true, path: 'sidepanel.html' }])
   })
 
   it('keeps a newer explicit setting change over a stale refresh result', async () => {

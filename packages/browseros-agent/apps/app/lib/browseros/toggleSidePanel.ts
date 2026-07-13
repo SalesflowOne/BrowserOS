@@ -50,14 +50,25 @@ function cacheSidePanelPerWindowPreference(
   }
 }
 
+async function readSidePanelScopePreference(): Promise<boolean> {
+  try {
+    return await sidePanelPerWindowStorage.getValue()
+  } catch {
+    return false
+  }
+}
+
+/** Establishes Chrome's initial side panel options during extension installation. */
+export async function initializeSidePanelOptions(): Promise<void> {
+  const epoch = sidePanelScopePreferenceEpoch
+  const perWindow = await readSidePanelScopePreference()
+  await applySidePanelPerWindowPreference(perWindow, epoch)
+}
+
 async function loadSidePanelScopePreference(): Promise<void> {
   const epoch = sidePanelScopePreferenceEpoch
-  try {
-    const perWindow = await sidePanelPerWindowStorage.getValue()
-    cacheSidePanelPerWindowPreference(perWindow, epoch)
-  } catch {
-    cacheSidePanelPerWindowPreference(false, epoch)
-  }
+  const perWindow = await readSidePanelScopePreference()
+  cacheSidePanelPerWindowPreference(perWindow, epoch)
 }
 
 async function loadWindowSidePanelOpenState(): Promise<void> {
