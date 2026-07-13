@@ -1,0 +1,287 @@
+/**
+ * @license
+ * Copyright 2026 BrowserOS
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
+import { BROWSER_TOOLS } from '@browseros/browser-mcp/registry'
+import { agentKeyFromSlug } from '../../src/domain/agent-key'
+import { ownershipStore } from '../../src/domain/ownership'
+import type { ClientIdentity } from '../../src/lib/mcp-session'
+
+interface FakeResult {
+  isError: boolean
+  content: Array<{ type: 'text'; text: string }>
+  structuredContent?: unknown
+}
+
+interface CallEntry {
+  args: Record<string, unknown>
+  signal?: AbortSignal
+}
+
+const calls: CallEntry[] = []
+const queued: Array<FakeResult | Promise<FakeResult>> = []
+
+const realFramework = await import('@browseros/browser-mcp/tools/framework')
+mock.module('@browseros/browser-mcp/tools/framework', () => ({
+  ...realFramework,
+  executeTool: async (
+    _tool: unknown,
+    args: Record<string, unknown>,
+    context: { signal?: AbortSignal },
+  ) => {
+    calls.push({ args, signal: context.signal })
+    const result = queued.shift()
+    if (!result) throw new Error('tab-groups-effect: no queued result')
+    return result
+  },
+}))
+
+const {
+  applyAgentTabGroupTitle,
+  applyTabGroups,
+  ensureAgentTabGroup,
+  resetTabGroupEffectsForTesting,
+} = await import('../../src/mcp/effects/tab-groups')
+
+const tabsTool = BROWSER_TOOLS.find((tool) => tool.name === 'tabs')
+if (!tabsTool) throw new Error('tabs tool missing')
+
+const fakeSession = {} as never
+const key = agentKeyFromSlug('claude-code')
+
+function identity(sessionLabel: string | null = null): ClientIdentity {
+  return {
+    sessionId: 'sid-1',
+    clientName: 'claude-code',
+    clientVersion: '1.0.0',
+    clientTitle: null,
+    sessionLabel,
+    firstSeenAt: 1,
+  }
+}
+
+function ok(structuredContent?: unknown): FakeResult {
+  return {
+    isError: false,
+    content: [{ type: 'text', text: 'ok' }],
+    structuredContent,
+  }
+}
+
+function err(text: string): FakeResult {
+  return { isError: true, content: [{ type: 'text', text }] }
+}
+
+function queue(...results: Array<FakeResult | Promise<FakeResult>>): void {
+  queued.push(...results)
+}
+
+function setGroup(collapsed = false): void {
+  ownershipStore.setGroup(key, {
+    id: 'G1',
+    windowId: 1,
+    color: 'red',
+    title: 'claude-code',
+    titleExplicit: false,
+    collapsed,
+  })
+}
+
+beforeEach(() => {
+  calls.length = 0
+  queued.length = 0
+  ownershipStore.clear()
+  resetTabGroupEffectsForTesting()
+})
+
+afterEach(() => {
+  queued.length = 0
+  ownershipStore.clear()
+  resetTabGroupEffectsForTesting()
+})
+
+describe('durable tab group effect', () => {
+  it('single-flights racing creates and adds the waiting page afterward', async () => {
+    let release: ((result: FakeResult) => void) | undefined
+    const createResult = new Promise<FakeResult>((resolve) => {
+      release = resolve
+    })
+    queue(createResult, ok(), ok())
+
+    const first = ensureAgentTabGroup({
+      key,
+      identity: identity(),
+      pageId: 1,
+      session: fakeSession,
+      defaultTabGroupId: null,
+    })
+    const second = ensureAgentTabGroup({
+      key,
+      identity: identity(),
+      pageId: 2,
+      session: fakeSession,
+      defaultTabGroupId: null,
+    })
+    release?.(ok({ group: { groupId: 'G1', windowId: 1 } }))
+    await Promise.all([first, second])
+
+    const rootCreates = calls.filter(
+      (call) =>
+        call.args.action === 'create' && call.args.groupId === undefined,
+    )
+    expect(rootCreates).toHaveLength(1)
+    expect(calls.at(-1)?.args).toEqual({
+      action: 'create',
+      groupId: 'G1',
+      pages: [2],
+    })
+  })
+
+  it('shares a caught create failure across racing awaiters', async () => {
+    let release: ((result: FakeResult) => void) | undefined
+    const createResult = new Promise<FakeResult>((resolve) => {
+      release = resolve
+    })
+    queue(createResult)
+    const inputs = [1, 2].map((pageId) =>
+      ensureAgentTabGroup({
+        key,
+        identity: identity(),
+        pageId,
+        session: fakeSession,
+        defaultTabGroupId: null,
+      }),
+    )
+    release?.(err('manager down'))
+
+    await expect(Promise.all(inputs)).resolves.toEqual([undefined, undefined])
+    expect(calls).toHaveLength(1)
+    expect(ownershipStore.groupOf(key)).toBeNull()
+  })
+
+  it('uses its own timeout signal instead of the aborted client signal', async () => {
+    queue(ok({ group: { groupId: 'G1', windowId: 1 } }), ok())
+    const client = new AbortController()
+    client.abort()
+
+    applyTabGroups({
+      call: {
+        tool: tabsTool,
+        args: { action: 'new' },
+        sessionId: 'sid-1',
+        requestId: 1,
+        identity: identity(),
+        key,
+        agent: { agentId: 'claude-code-abc123', slug: 'claude-code' },
+        agentLabel: 'claude-code',
+        session: fakeSession,
+        signal: client.signal,
+        defaultTabGroupId: null,
+        flags: { newPage: true, closePage: false, listTabs: false },
+      },
+      result: {
+        content: [{ type: 'text', text: 'ok' }],
+        structuredContent: { page: 1 },
+      },
+      cancelled: false,
+      durationMs: 1,
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(calls[0]?.signal).toBeInstanceOf(AbortSignal)
+    expect(calls[0]?.signal).not.toBe(client.signal)
+    expect(calls[0]?.signal?.aborted).toBe(false)
+  })
+
+  it('clears a deleted group and recreates it on the next tabs new', async () => {
+    setGroup()
+    queue(err('group not found'))
+    await ensureAgentTabGroup({
+      key,
+      identity: identity(),
+      pageId: 2,
+      session: fakeSession,
+      defaultTabGroupId: null,
+    })
+    expect(ownershipStore.groupOf(key)).toBeNull()
+
+    queue(ok({ group: { groupId: 'G2', windowId: 1 } }), ok())
+    await ensureAgentTabGroup({
+      key,
+      identity: identity(),
+      pageId: 3,
+      session: fakeSession,
+      defaultTabGroupId: null,
+    })
+    expect(ownershipStore.groupOf(key)?.id).toBe('G2')
+  })
+
+  it('keeps a created group when the color lock fails', async () => {
+    queue(ok({ group: { groupId: 'G1', windowId: 1 } }), err('color rejected'))
+    await ensureAgentTabGroup({
+      key,
+      identity: identity(),
+      pageId: 1,
+      session: fakeSession,
+      defaultTabGroupId: null,
+    })
+    expect(ownershipStore.groupOf(key)?.id).toBe('G1')
+  })
+
+  it('applies a late title with the group timeout and durable state', async () => {
+    setGroup()
+    queue(ok())
+    await applyAgentTabGroupTitle({
+      key,
+      title: 'claude/invoice-processing',
+      session: fakeSession,
+    })
+
+    expect(calls[0]?.args).toEqual({
+      action: 'update',
+      groupId: 'G1',
+      title: 'claude/invoice-processing',
+    })
+    expect(calls[0]?.signal).toBeInstanceOf(AbortSignal)
+    expect(ownershipStore.groupOf(key)).toMatchObject({
+      title: 'claude/invoice-processing',
+      titleExplicit: true,
+    })
+  })
+
+  it('expands a collapsed group after any successful dispatch', async () => {
+    setGroup(true)
+    queue(ok())
+    applyTabGroups({
+      call: {
+        tool: tabsTool,
+        args: { action: 'list' },
+        sessionId: 'sid-1',
+        requestId: 1,
+        identity: identity(),
+        key,
+        agent: { agentId: 'claude-code-abc123', slug: 'claude-code' },
+        agentLabel: 'claude-code',
+        session: fakeSession,
+        defaultTabGroupId: 'G1',
+        flags: { newPage: false, closePage: false, listTabs: true },
+      },
+      result: { content: [{ type: 'text', text: 'ok' }] },
+      cancelled: false,
+      durationMs: 1,
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(calls[0]?.args).toEqual({
+      action: 'update',
+      groupId: 'G1',
+      collapsed: false,
+    })
+    expect(ownershipStore.groupOf(key)?.collapsed).toBe(false)
+  })
+})

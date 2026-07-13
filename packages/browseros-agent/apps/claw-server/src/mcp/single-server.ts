@@ -18,9 +18,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 import { env } from '../env'
-import { tabGroupTracker } from '../lib/agent-tab-groups'
-import { agentTabs } from '../lib/agent-tabs'
-import { getBrowserSession } from '../lib/browser-session'
 import { logger } from '../lib/logger'
 import {
   agentIdentityFromClient,
@@ -31,7 +28,6 @@ import {
   recordSessionEnd,
   recordSessionStart,
 } from '../services/session-events'
-import { closeAgentTabGroupForAgent } from '../services/tab-group-ops'
 import { VERSION } from '../version'
 import { registerBrowserToolsForSingleServer } from './dispatch'
 import { requestSessionNaming } from './session-naming'
@@ -108,7 +104,6 @@ function buildSession(): Session {
       },
     })
     const { agentId, slug } = agentIdentityFromClient(identity)
-    tabGroupTracker.incrementSession(agentId)
     const agentLabel =
       identity.clientTitle && identity.clientTitle.length > 0
         ? identity.clientTitle
@@ -154,29 +149,6 @@ function cleanupSessionState(sessionId: string): void {
   // path and against the reentrant callback below).
   const session = sessions.get(sessionId)
   if (!session) return
-  // Read identity BEFORE dropping it so the cleanup hook can resolve
-  // the agentId for the tab-group close.
-  const identity = identityService.getIdentity(sessionId)
-  if (identity) {
-    const { agentId } = agentIdentityFromClient(identity)
-    const browserSession = getBrowserSession()
-    if (browserSession) {
-      // Decrements the tracker AND fires the CDP close on the
-      // BrowserOS side. Returns immediately if refCount > 0.
-      void closeAgentTabGroupForAgent({
-        agentId,
-        session: browserSession,
-      })
-    } else {
-      // No live browser session. Still decrement so the ref count
-      // stays accurate; the CDP close is moot because there is no
-      // browser to dispatch to.
-      tabGroupTracker.decrementSession(agentId)
-    }
-    // Drop this session-scoped ownership bucket. Symmetric with the
-    // tab-group tracker cleanup.
-    agentTabs.forgetAgent(agentId)
-  }
   sessions.delete(sessionId)
   identityService.dropSession(sessionId)
   recordSessionEnd({ sessionId, kind: 'closed' })

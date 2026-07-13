@@ -7,7 +7,7 @@ import {
   McpError,
 } from '@modelcontextprotocol/sdk/types.js'
 import {
-  agentIdentityFromClient,
+  agentKeyFromClient,
   createIdentityService,
 } from '../../src/lib/mcp-session'
 import {
@@ -65,7 +65,7 @@ function setup() {
     clientInfo: { name: 'Claude Code', version: '1.0.0' },
   })
   const applyCalls: Array<{
-    agentId: string
+    key: string
     title: string
     session: unknown
   }> = []
@@ -110,7 +110,7 @@ describe('requestSessionNaming', () => {
     )
     expect(applyCalls).toEqual([
       {
-        agentId: agentIdentityFromClient(identity).agentId,
+        key: agentKeyFromClient(identity),
         title: 'claude/invoice-processing',
         session: { fake: true },
       },
@@ -290,7 +290,7 @@ describe('maybeRequestSessionNaming', () => {
     )
     expect(applyCalls).toEqual([
       {
-        agentId: agentIdentityFromClient(identity).agentId,
+        key: agentKeyFromClient(identity),
         title: 'claude/invoice-processing',
         session: { fake: true },
       },

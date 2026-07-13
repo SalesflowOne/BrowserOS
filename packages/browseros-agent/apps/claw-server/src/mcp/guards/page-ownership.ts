@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import { agentTabs } from '../../lib/agent-tabs'
+import { ownershipStore } from '../../domain/ownership'
 import { logger } from '../../lib/logger'
 import { TOOLS_WITH_PAGE } from '../../lib/tab-activity'
 import type { ToolGuard } from '../dispatch'
@@ -17,7 +17,8 @@ export const guardPageOwnership: ToolGuard = (call) => {
     typeof page !== 'number' ||
     !Number.isInteger(page) ||
     page < 1 ||
-    !call.agent
+    !call.agent ||
+    !call.key
   ) {
     return null
   }
@@ -25,11 +26,12 @@ export const guardPageOwnership: ToolGuard = (call) => {
   // Cross-agent page guard. Reject dispatches whose `page` arg points at a
   // tab this agent does not own so an agent can only touch tabs it opened via
   // `tabs new`. This fires before executeTool; unknown identities fail open.
-  if (agentTabs.ownedBy(call.agent.agentId).has(page)) return null
+  if (ownershipStore.pagesOf(call.key).has(page)) return null
 
   logger.warn('cockpit v2 rejected foreign-page dispatch', {
     tool: call.tool.name,
     sessionId: call.sessionId || undefined,
+    key: call.key,
     agentId: call.agent.agentId,
     page,
   })

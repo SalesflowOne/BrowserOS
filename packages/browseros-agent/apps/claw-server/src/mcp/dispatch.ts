@@ -15,10 +15,13 @@ import {
 } from '@browseros/browser-mcp/tools/framework'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { ZodRawShape } from 'zod'
+import type { AgentKey } from '../domain/agent-key'
+import { ownershipStore } from '../domain/ownership'
 import { getBrowserSession } from '../lib/browser-session'
 import { logger } from '../lib/logger'
 import {
   agentIdentityFromClient,
+  agentKeyFromClient,
   type ClientIdentity,
 } from '../lib/mcp-session'
 import {
@@ -45,10 +48,12 @@ export interface ToolCall {
   sessionId: string
   requestId: unknown
   identity: ClientIdentity | null
+  key: AgentKey | null
   agent: { agentId: string; slug: string } | null
   agentLabel: string | null
   session: BrowserSession | null
   signal?: AbortSignal
+  defaultTabGroupId: string | null
   flags: { newPage: boolean; closePage: boolean; listTabs: boolean }
 }
 
@@ -161,6 +166,10 @@ function buildToolCall(
 ): ToolCall {
   const identity = resolveIdentity(extra?.sessionId)
   const agent = identity ? agentIdentityFromClient(identity) : null
+  const key = identity ? agentKeyFromClient(identity) : null
+  const defaultTabGroupId = key
+    ? (ownershipStore.groupOf(key)?.id ?? null)
+    : null
   const action =
     tool.name === 'tabs'
       ? ((args as { action?: unknown } | null | undefined)?.action ?? 'list')
@@ -171,6 +180,7 @@ function buildToolCall(
     sessionId: extra?.sessionId ?? '',
     requestId: extra?.requestId,
     identity,
+    key,
     agent,
     agentLabel: identity
       ? identity.clientTitle && identity.clientTitle.length > 0
@@ -181,6 +191,7 @@ function buildToolCall(
       : null,
     session: getBrowserSession(),
     signal: extra?.signal,
+    defaultTabGroupId,
     flags: {
       newPage: action === 'new',
       closePage: action === 'close',
@@ -232,6 +243,7 @@ async function executeWithCancellation(
     result = await executeTool(call.tool, call.args, {
       session: call.session,
       signal,
+      defaultTabGroupId: call.defaultTabGroupId ?? undefined,
     })
   } catch (error) {
     if (userCancel.signal.aborted) {

@@ -7,9 +7,8 @@
  * Pre-fix, sessions stayed in the in-memory map forever unless the
  * client sent an explicit `DELETE /mcp`; codex and most other
  * clients do not, so `agent_session_ends` never got a row and the
- * agent's tab group leaked. The sweeper here writes the same end
- * row and fires the same tab-group close that the explicit DELETE
- * path always did, on the same `IDLE_TIMEOUT_MS` boundary that
+ * session state leaked. The sweeper writes the same end
+ * row as the explicit DELETE path, on the same timeout boundary that
  * `services/tasks.ts:deriveStatus` already used at read time.
  *
  * `sweepIdleSessions(now)` is exported so tests can drive a
@@ -21,11 +20,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { eq } from 'drizzle-orm'
 import { env } from '../../src/env'
-import { tabGroupTracker } from '../../src/lib/agent-tab-groups'
-import {
-  agentIdentityFromClient,
-  identityService,
-} from '../../src/lib/mcp-session'
+import { identityService } from '../../src/lib/mcp-session'
 import {
   getSessionRefsForTesting,
   resetSingleMcpInstanceForTesting,
@@ -57,8 +52,7 @@ async function connect(clientName: string) {
   if (!sessionId) throw new Error('no session id assigned')
   const identity = identityService.getIdentity(sessionId)
   if (!identity) throw new Error('no identity registered')
-  const { agentId } = agentIdentityFromClient(identity)
-  return { client, sessionId, agentId }
+  return { client, sessionId }
 }
 
 function endRowsFor(sessionId: string): Array<{ kind: string }> {
@@ -76,13 +70,11 @@ describe('sweepIdleSessions', () => {
     setAuditDbForTesting()
     resetSingleMcpInstanceForTesting()
     identityService.clear()
-    tabGroupTracker.reset()
     env.sessionIdleMs = 50
   })
   afterEach(() => {
     resetSingleMcpInstanceForTesting()
     identityService.clear()
-    tabGroupTracker.reset()
     env.sessionIdleMs = ORIGINAL_IDLE
     resetAuditDbForTesting()
   })
@@ -127,17 +119,6 @@ describe('sweepIdleSessions', () => {
       // gated on `sessions.has(sessionId)` so no double-write.
       expect(sweepIdleSessions(Date.now())).toEqual([])
       expect(endRowsFor(sessionId)).toHaveLength(1)
-      await client.close()
-    }
-  })
-
-  test('reaping decrements the tab-group tracker so the agent group can be closed', async () => {
-    {
-      const { agentId, client, sessionId } = await connect('codex-mcp-client')
-      expect(tabGroupTracker.getByAgentId(agentId)).not.toBeNull()
-      setLastActivityForTesting(sessionId, Date.now() - 10_000)
-      sweepIdleSessions(Date.now())
-      expect(tabGroupTracker.getByAgentId(agentId)).toBeNull()
       await client.close()
     }
   })

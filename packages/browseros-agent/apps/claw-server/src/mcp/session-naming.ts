@@ -11,10 +11,12 @@ import {
   ErrorCode,
   McpError,
 } from '@modelcontextprotocol/sdk/types.js'
+import type { AgentKey } from '../domain/agent-key'
 import { getBrowserSession } from '../lib/browser-session'
 import { logger } from '../lib/logger'
 import {
   agentIdentityFromClient,
+  agentKeyFromClient,
   buildSessionGroupTitle,
   buildSessionNamePrompt,
   type ClientIdentity,
@@ -24,7 +26,7 @@ import {
   normalizeSmallName,
   sessionNameRequestedSchema,
 } from '../lib/mcp-session'
-import { applyAgentTabGroupTitle } from '../services/tab-group-ops'
+import { applyAgentTabGroupTitle } from './effects/tab-groups'
 
 const ELICITATION_TIMEOUT_MS = 120_000
 const ELICITATION_RETRY_DELAY_MS = 2_000
@@ -61,7 +63,7 @@ export interface MaybeRequestSessionNamingInput
 }
 
 interface ResolvedNamingIdentity {
-  agentId: string
+  key: AgentKey
   prefix: string
 }
 
@@ -153,8 +155,11 @@ function resolveIdentity(
   const identity: ClientIdentity | null =
     deps.identityService.getIdentity(sessionId)
   if (!identity) return null
-  const { agentId, slug } = agentIdentityFromClient(identity)
-  return { agentId, prefix: clientPrefixFromSlug(slug) }
+  const { slug } = agentIdentityFromClient(identity)
+  return {
+    key: agentKeyFromClient(identity),
+    prefix: clientPrefixFromSlug(slug),
+  }
 }
 
 async function finishSessionNaming(
@@ -178,7 +183,7 @@ async function finishSessionNaming(
 
   deps.identityService.setSessionLabel(input.sessionId, smallName)
   await deps.applyTitle({
-    agentId: identity.agentId,
+    key: identity.key,
     title: buildSessionGroupTitle(identity.prefix, smallName),
     session: deps.getBrowserSession(),
   })

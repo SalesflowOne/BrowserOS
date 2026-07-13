@@ -18,9 +18,11 @@ function call(args: Record<string, unknown>): ToolCall {
     sessionId: '',
     requestId: undefined,
     identity: null,
+    key: null,
     agent: null,
     agentLabel: null,
     session: null,
+    defaultTabGroupId: null,
     flags: { newPage: false, closePage: false, listTabs: false },
   }
 }
