@@ -26,6 +26,7 @@ import { setBrowserSession } from './lib/browser-session'
 import { getClawServerDir } from './lib/browserclaw-dir'
 import { logger } from './lib/logger'
 import { migrateMcpUrls } from './lib/migrate-mcp-urls'
+import { writeRuntimeFile } from './lib/runtime-file'
 import { setLocalServerUrl } from './local-server-url'
 import { createServer } from './server'
 import { runIntegrityScan } from './services/integrity-scan'
@@ -55,6 +56,11 @@ async function start(): Promise<void> {
   const url = `http://${httpServer.hostname}:${httpServer.port}`
   setLocalServerUrl(url)
   logger.info('claw-server listening', { url })
+  // Publish the running URL to <CONFIG_DIR>/runtime.json so external
+  // discovery (the Claude Desktop extension) can read the port without
+  // scanning, log-tailing, or waiting for a harness link to populate
+  // the mcp-manager manifest.
+  await writeRuntimeFile(url)
 
   // Self-heal loop 1: diff manifest vs. on-disk agent configs and
   // relink any drifted / missing entries from the manifest-stored
