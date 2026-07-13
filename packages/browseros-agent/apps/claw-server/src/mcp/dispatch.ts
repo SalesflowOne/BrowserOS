@@ -218,7 +218,7 @@ async function dispatchToolCall(
   effects: readonly NamedToolEffect[],
 ): Promise<ToolResult> {
   const rejection = runGuards(call)
-  if (rejection) return rejection
+  if (rejection) return wireResult(rejection)
   const connectedCall = call as ConnectedToolCall
 
   if (ARBITRARY_SCRIPT_TOOLS.has(call.tool.name)) {
@@ -238,10 +238,13 @@ async function dispatchToolCall(
     })
   }
   const result = runEffects({ call, ...outcome }, effects)
+  return wireResult(result)
+}
+
+function wireResult(result: ToolResult): ToolResult {
   return {
     content: result.content,
     isError: result.isError,
-    structuredContent: result.structuredContent,
   }
 }
 

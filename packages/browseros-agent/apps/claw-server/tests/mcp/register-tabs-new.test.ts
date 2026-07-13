@@ -147,6 +147,7 @@ describe('MCP dispatch: tabs new registry write', () => {
       arguments: { action: 'new', url: 'https://example.com/' },
     })
     expect(result.isError).toBeFalsy()
+    expect(result.structuredContent).toBeUndefined()
     const identity = identityService.getIdentity(transport.sessionId as string)
     if (!identity) throw new Error('missing identity')
     const { agentId, slug } = agentIdentityFromClient(identity)

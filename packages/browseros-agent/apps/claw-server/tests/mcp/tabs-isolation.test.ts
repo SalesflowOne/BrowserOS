@@ -8,8 +8,7 @@
  * executeTool, then asserts:
  *
  *   - `tabs new` populates the ledger; the follow-up `tabs list`
- *     returns only the newly-opened page (in both text and
- *     structured channels).
+ *     renders ownership in text while structured data stays internal.
  *   - Same-name sessions share durable ownership; different names remain isolated.
  *   - `tabs close` drops the page from the ledger.
  *   - A page-targeted dispatch with a foreign `page` id is rejected
@@ -18,6 +17,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
+import { existsSync } from 'node:fs'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 
@@ -73,6 +73,14 @@ function ok(structured?: unknown): FakeResult {
   }
 }
 
+async function waitFor(predicate: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (predicate()) return
+    await Bun.sleep(2)
+  }
+  throw new Error('condition was not reached')
+}
+
 const { setBrowserSession } = await import('../../src/lib/browser-session')
 const { ownershipStore } = await import('../../src/domain/ownership')
 const { tabActivityRegistry } = await import('../../src/lib/tab-activity')
@@ -89,6 +97,14 @@ const {
 const { env } = await import('../../src/env')
 const { setAuditDbForTesting, resetAuditDbForTesting } = await import(
   '../../src/modules/db/db'
+)
+const { listDispatches } = await import('../../src/services/audit-log')
+const { screencastCache } = await import('../../src/services/screencast-cache')
+const { clearFirstCapturesForTesting, screenshotPath } = await import(
+  '../../src/services/screenshots'
+)
+const { withTempBrowserClawDir } = await import(
+  '../_helpers/temp-browserclaw-dir'
 )
 const app = (await import('../../src/server')).default
 
@@ -132,9 +148,7 @@ async function connect(clientName: string) {
 interface TabsListResult {
   isError?: boolean
   content?: Array<{ type: string; text?: string }>
-  structuredContent?: {
-    pages?: Array<{ page: number; url?: string; title?: string }>
-  }
+  structuredContent?: unknown
 }
 
 const ORIGINAL_IDLE = env.sessionIdleMs
@@ -149,6 +163,8 @@ describe('per-agent tabs isolation', () => {
     ownershipStore.clear()
     resetTabGroupEffectsForTesting()
     tabActivityRegistry.clear()
+    screencastCache.resetForTesting()
+    clearFirstCapturesForTesting()
     env.sessionIdleMs = 50
   })
   afterEach(() => {
@@ -158,9 +174,66 @@ describe('per-agent tabs isolation', () => {
     ownershipStore.clear()
     resetTabGroupEffectsForTesting()
     tabActivityRegistry.clear()
+    screencastCache.resetForTesting()
+    clearFirstCapturesForTesting()
     setBrowserSession(null)
     env.sessionIdleMs = ORIGINAL_IDLE
     resetAuditDbForTesting()
+  })
+
+  it('strips the wire result after audit, screenshot, ownership, and grouping effects', async () => {
+    await withTempBrowserClawDir(async () => {
+      stubSessionForPage(7, 'target-7')
+      const jpegBase64 = Buffer.from('cached-jpeg').toString('base64')
+      screencastCache.set(7, {
+        jpegBase64,
+        capturedAt: Date.now(),
+        byteLength: Buffer.from(jpegBase64, 'base64').length,
+      })
+      queue(
+        ok({ page: 7 }),
+        ok({ group: { groupId: 'G1', windowId: 42 } }),
+        ok(),
+      )
+      const { client, key, sessionId } = await connect('claude-code')
+
+      const result = await client.callTool({
+        name: 'tabs',
+        arguments: { action: 'new', url: 'https://example.com/' },
+      })
+
+      expect(result.structuredContent).toBeUndefined()
+      expect([...ownershipStore.pagesOf(key)]).toEqual([7])
+      await waitFor(() => ownershipStore.groupOf(key)?.id === 'G1')
+      const rows = listDispatches({ sessionId }).rows
+      expect(rows).toHaveLength(1)
+      const row = rows[0]
+      if (!row) throw new Error('missing audit row')
+      expect(JSON.parse(row.resultMeta).structuredKeys).toEqual(['page'])
+      await waitFor(() => existsSync(screenshotPath(row.id)))
+      expect(existsSync(screenshotPath(row.id))).toBe(true)
+
+      await client.close()
+    })
+  })
+
+  it('strips schema-shaped run output while preserving its text', async () => {
+    setBrowserSession({ pages: { getInfo: () => undefined } } as never)
+    queue({
+      isError: false,
+      content: [{ type: 'text', text: 'ok\nreturn: 42' }],
+      structuredContent: { ok: true, value: 42, logs: [] },
+    })
+    const { client } = await connect('claude-code')
+
+    const result = await client.callTool({
+      name: 'run',
+      arguments: { code: 'return 42' },
+    })
+
+    expect(result.structuredContent).toBeUndefined()
+    expect(result.content).toEqual([{ type: 'text', text: 'ok\nreturn: 42' }])
+    await client.close()
   })
 
   it('tabs new populates the ledger; follow-up tabs list groups your tab and the user tab separately', async () => {
@@ -191,24 +264,7 @@ describe('per-agent tabs isolation', () => {
       arguments: { action: 'list' },
     })) as TabsListResult
     expect(listResult.isError).toBeFalsy()
-    expect(listResult.structuredContent?.pages).toEqual([
-      {
-        page: 7,
-        url: 'https://news.google.com/',
-        title: 'News',
-        ownership: 'mine',
-        ownerAgentId: key,
-        ownerLabel: null,
-      },
-      {
-        page: 42,
-        url: 'https://operator.example/',
-        title: "Op's tab",
-        ownership: 'user',
-        ownerAgentId: null,
-        ownerLabel: null,
-      },
-    ])
+    expect(listResult.structuredContent).toBeUndefined()
     const text = (
       listResult.content as Array<{ type: string; text?: string }>
     )?.[0]?.text
@@ -269,21 +325,7 @@ describe('per-agent tabs isolation', () => {
       name: 'tabs',
       arguments: { action: 'list' },
     })) as TabsListResult
-    expect(listA.structuredContent?.pages).toEqual([
-      {
-        ...opTabs[0],
-        ownership: 'mine',
-        ownerAgentId: a.key,
-        ownerLabel: null,
-      },
-      {
-        ...opTabs[1],
-        ownership: 'other-agent',
-        ownerAgentId: b.key,
-        ownerLabel: 'cursor',
-      },
-      { ...opTabs[2], ownership: 'user', ownerAgentId: null, ownerLabel: null },
-    ])
+    expect(listA.structuredContent).toBeUndefined()
     const textA = (listA.content as Array<{ type: string; text?: string }>)?.[0]
       ?.text
     expect(textA).toContain('Your tabs:')
@@ -296,21 +338,11 @@ describe('per-agent tabs isolation', () => {
       name: 'tabs',
       arguments: { action: 'list' },
     })) as TabsListResult
-    expect(listB.structuredContent?.pages).toEqual([
-      {
-        ...opTabs[0],
-        ownership: 'other-agent',
-        ownerAgentId: a.key,
-        ownerLabel: 'claude-code',
-      },
-      {
-        ...opTabs[1],
-        ownership: 'mine',
-        ownerAgentId: b.key,
-        ownerLabel: null,
-      },
-      { ...opTabs[2], ownership: 'user', ownerAgentId: null, ownerLabel: null },
-    ])
+    expect(listB.structuredContent).toBeUndefined()
+    const textB = (listB.content as Array<{ type: string; text?: string }>)?.[0]
+      ?.text
+    expect(textB).toContain('Your tabs:')
+    expect(textB).toContain(', owned by claude-code')
 
     await a.client.close()
     await b.client.close()
@@ -347,16 +379,7 @@ describe('per-agent tabs isolation', () => {
       name: 'tabs',
       arguments: { action: 'list' },
     })) as TabsListResult
-    expect(listB.structuredContent?.pages).toEqual([
-      {
-        page: 1,
-        url: 'https://a.example/',
-        title: 'A',
-        ownership: 'mine',
-        ownerAgentId: a.key,
-        ownerLabel: null,
-      },
-    ])
+    expect(listB.structuredContent).toBeUndefined()
     const textB = (listB.content as Array<{ type: string; text?: string }>)?.[0]
       ?.text
     expect(textB).toContain('Your tabs:')
@@ -396,16 +419,7 @@ describe('per-agent tabs isolation', () => {
       name: 'tabs',
       arguments: { action: 'list' },
     })) as TabsListResult
-    expect(list.structuredContent?.pages).toEqual([
-      {
-        page: 100,
-        url: 'https://only-operator.example/',
-        title: 'Op',
-        ownership: 'user',
-        ownerAgentId: null,
-        ownerLabel: null,
-      },
-    ])
+    expect(list.structuredContent).toBeUndefined()
     const text = (list.content as Array<{ type: string; text?: string }>)?.[0]
       ?.text
     expect(text).toContain("User's tabs:")
@@ -427,7 +441,7 @@ describe('per-agent tabs isolation', () => {
       name: 'tabs',
       arguments: { action: 'list' },
     })) as TabsListResult
-    expect(list.structuredContent?.pages).toEqual([])
+    expect(list.structuredContent).toBeUndefined()
     expect(
       (list.content as Array<{ type: string; text?: string }>)?.[0]?.text,
     ).toBe('(no open pages)')
@@ -452,11 +466,11 @@ describe('per-agent tabs isolation', () => {
     })) as TabsListResult
     expect([...ownershipStore.pagesOf(key)]).toEqual([7])
     expect(ownershipStore.ownerOf(8)).toBeNull()
-    expect(list.structuredContent?.pages?.[0]).toMatchObject({
-      page: 7,
-      ownership: 'mine',
-      ownerAgentId: key,
-    })
+    expect(list.structuredContent).toBeUndefined()
+    const text = (list.content as Array<{ type: string; text?: string }>)?.[0]
+      ?.text
+    expect(text).toContain('Your tabs:')
+    expect(text).toContain('[7] https://live.example/ (Live)')
     await client.close()
   })
 
@@ -629,24 +643,7 @@ describe('per-agent tabs isolation', () => {
       name: 'tabs',
       arguments: { action: 'list' },
     })) as TabsListResult
-    expect(list.structuredContent?.pages).toEqual([
-      {
-        page: 7,
-        url: 'https://x.com/',
-        title: 'Stale',
-        ownership: 'mine',
-        ownerAgentId: first.key,
-        ownerLabel: null,
-      },
-      {
-        page: 99,
-        url: 'https://operator.example/',
-        title: 'Op',
-        ownership: 'user',
-        ownerAgentId: null,
-        ownerLabel: null,
-      },
-    ])
+    expect(list.structuredContent).toBeUndefined()
     const text = (list.content as Array<{ type: string; text?: string }>)?.[0]
       ?.text
     expect(text).toContain("User's tabs:")
