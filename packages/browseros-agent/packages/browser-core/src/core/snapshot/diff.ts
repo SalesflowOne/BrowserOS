@@ -153,7 +153,11 @@ function findChangedWindow(before: string[], after: string[]): ChangedWindow {
 }
 
 function exceedsLcsBudget(beforeLength: number, afterLength: number): boolean {
-  return beforeLength > 0 && afterLength > MAX_LCS_CELLS / beforeLength
+  return (
+    beforeLength > 0 &&
+    afterLength > 0 &&
+    beforeLength + 1 > MAX_LCS_CELLS / (afterLength + 1)
+  )
 }
 
 function appendDiffLines(

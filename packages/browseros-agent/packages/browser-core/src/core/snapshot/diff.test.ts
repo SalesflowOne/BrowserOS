@@ -85,7 +85,7 @@ describe('diffSnapshots', () => {
   test('bails out before allocating an over-budget LCS table', () => {
     const before = [
       '- shared start',
-      ...Array.from({ length: 2_001 }, (_, i) => `- before ${i}`),
+      ...Array.from({ length: 2_000 }, (_, i) => `- before ${i}`),
       '- shared end',
     ].join('\n')
     const after = [
@@ -98,14 +98,48 @@ describe('diffSnapshots', () => {
 
     expect(d).toEqual({
       text: [
-        'Snapshot changed substantially: 2003 lines before, 2002 lines after.',
+        'Snapshot changed substantially: 2002 lines before, 2002 lines after.',
         'Line-level diff skipped because the changed region exceeds the 4000000-cell comparison limit. Take a fresh snapshot for the current state.',
       ].join('\n'),
       added: 2_000,
-      removed: 2_001,
+      removed: 2_000,
       changed: true,
     })
     expect(d.text.length).toBeLessThan(250)
+  })
+
+  test('runs LCS when the padded table is exactly at the cell budget', () => {
+    const before = Array.from(
+      { length: 1_999 },
+      (_, i) => `- before boundary ${i}`,
+    ).join('\n')
+    const after = Array.from(
+      { length: 1_999 },
+      (_, i) => `- after boundary ${i}`,
+    ).join('\n')
+
+    const d = diffSnapshots(before, after)
+
+    expect(d.added).toBe(1_999)
+    expect(d.removed).toBe(1_999)
+    expect(d.text).not.toContain('changed substantially')
+  })
+
+  test('includes padded cells when budgeting asymmetric LCS tables', () => {
+    const before = Array.from(
+      { length: 1_000 },
+      (_, i) => `- asymmetric before ${i}`,
+    ).join('\n')
+    const after = Array.from(
+      { length: 3_997 },
+      (_, i) => `- asymmetric after ${i}`,
+    ).join('\n')
+
+    const d = withoutLcsTableAllocation(() => diffSnapshots(before, after))
+
+    expect(d.added).toBe(3_997)
+    expect(d.removed).toBe(1_000)
+    expect(d.text).toContain('changed substantially')
   })
 
   test('handles empty and one-sided snapshots without an LCS table', () => {
