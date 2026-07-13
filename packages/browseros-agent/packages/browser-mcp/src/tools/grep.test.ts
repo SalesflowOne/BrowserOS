@@ -148,6 +148,27 @@ describe('grep tool', () => {
     })
   })
 
+  it('does not preserve ref-like suffixes that exceed the line budget', async () => {
+    await withBrowserosDir(async () => {
+      const oversizedSuffix = ` [ref=e${'1'.repeat(1_000)}]`
+      const line = `needle ${'x'.repeat(6_000)}${oversizedSuffix}`
+      const result = await executeTool(
+        grep,
+        { page: 4, pattern: 'needle', over: 'ax' },
+        { session: sessionWithSnapshot(line) },
+      )
+      const data = result.structuredContent as { matches: string[] } | undefined
+      const renderedLine = data?.matches[0] ?? ''
+
+      expect(result.isError).toBeFalsy()
+      expect(renderedLine.length).toBeLessThanOrEqual(
+        TOOL_LIMITS.GREP_MATCH_LINE_MAX_CHARS,
+      )
+      expect(renderedLine).toEndWith('... [truncated]')
+      expect(renderedLine).not.toContain(oversizedSuffix)
+    })
+  })
+
   it('keeps clamped matches inline when spilling fails', async () => {
     await withOutputWriteFailure(async () => {
       const tail = 'tail-marker'
