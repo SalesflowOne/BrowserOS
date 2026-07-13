@@ -79,6 +79,47 @@ describe('createConversationUploadScheduler', () => {
 
     expect(uploads).toEqual([['first'], ['latest']])
   })
+
+  it('does not queue the active snapshot a second time', async () => {
+    const uploads: string[][] = []
+    const uploadStarted = Promise.withResolvers<void>()
+    const releaseUpload = Promise.withResolvers<void>()
+    const schedule = createConversationUploadScheduler(
+      async (conversations) => {
+        uploads.push(conversations.map((conversation) => conversation.id))
+        uploadStarted.resolve()
+        await releaseUpload.promise
+      },
+      { delayMs: 5 },
+    )
+
+    schedule([conversation('active')])
+    await uploadStarted.promise
+    schedule([conversation('active')])
+    releaseUpload.resolve()
+    await Bun.sleep(20)
+
+    expect(uploads).toEqual([['active']])
+  })
+
+  it('deduplicates completed snapshots within one account', async () => {
+    const uploads: string[][] = []
+    const schedule = createConversationUploadScheduler(
+      async (conversations) => {
+        uploads.push(conversations.map((conversation) => conversation.id))
+      },
+      { delayMs: 5 },
+    )
+
+    schedule([conversation('local')], 'user-a')
+    await Bun.sleep(20)
+    schedule([conversation('local')], 'user-a')
+    await Bun.sleep(20)
+    schedule([conversation('local')], 'user-b')
+    await Bun.sleep(20)
+
+    expect(uploads).toEqual([['local'], ['local']])
+  })
 })
 
 function conversation(id: string): Conversation {

@@ -26,7 +26,10 @@ export function useConversations() {
 
   useEffect(() => {
     // An empty snapshot cancels work queued before logout or local deletion.
-    scheduleConversationUpload(sessionInfo.user?.id ? conversations : [])
+    scheduleConversationUpload(
+      sessionInfo.user?.id ? conversations : [],
+      sessionInfo.user?.id ?? null,
+    )
   }, [sessionInfo.user?.id, conversations])
 
   useEffect(() => {

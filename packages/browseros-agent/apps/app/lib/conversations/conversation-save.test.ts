@@ -42,6 +42,15 @@ describe('planConversationSave', () => {
     expect(plan?.conversations[0].messages).toEqual(messages)
   })
 
+  it('detects changes inside structured terminal tool output', () => {
+    const current = [conversation('active', [assistantToolMessage('old')])]
+    const messages = [assistantToolMessage('new')]
+
+    const plan = planConversationSave(current, 'active', messages, 200)
+
+    expect(plan?.conversations[0].messages).toEqual(messages)
+  })
+
   it('returns no update for an identical cloned snapshot', () => {
     const current = [
       conversation('active', [userMessage(), assistantMessage()]),
@@ -68,6 +77,19 @@ describe('planConversationSave', () => {
       current[0],
     ])
     expect(plan?.removedConversationIds).toEqual([])
+  })
+
+  it('advances the revision timestamp when the clock value repeats', () => {
+    const current = [conversation('active', [assistantMessage('old')], 200)]
+
+    const plan = planConversationSave(
+      current,
+      'active',
+      [assistantMessage('new')],
+      200,
+    )
+
+    expect(plan?.conversations[0].lastMessagedAt).toBe(201)
   })
 
   it('caps new saves at 50 conversations and returns every trimmed id', () => {
@@ -113,5 +135,22 @@ function assistantMessage(text = 'Working'): UIMessage {
     id: 'assistant-active',
     role: 'assistant',
     parts: [{ type: 'text', text, state: 'streaming' }],
+  }
+}
+
+function assistantToolMessage(text: string): UIMessage {
+  return {
+    id: 'assistant-active',
+    role: 'assistant',
+    parts: [
+      {
+        type: 'dynamic-tool',
+        toolName: 'read',
+        toolCallId: 'tool-call',
+        state: 'output-available',
+        input: {},
+        output: { content: [{ type: 'text', text }] },
+      },
+    ],
   }
 }
