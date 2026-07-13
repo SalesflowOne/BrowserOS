@@ -19,6 +19,22 @@ describe('createConversationUploadScheduler', () => {
     expect(uploads).toEqual([['newest']])
   })
 
+  it('cancels a pending snapshot when the current list becomes empty', async () => {
+    const uploads: string[][] = []
+    const schedule = createConversationUploadScheduler(
+      async (conversations) => {
+        uploads.push(conversations.map((conversation) => conversation.id))
+      },
+      { delayMs: 5 },
+    )
+
+    schedule([conversation('deleted-before-upload')])
+    schedule([])
+    await Bun.sleep(20)
+
+    expect(uploads).toEqual([])
+  })
+
   it('waits for an active upload and keeps only the newest pending snapshot', async () => {
     const uploads: string[][] = []
     const firstUploadStarted = Promise.withResolvers<void>()

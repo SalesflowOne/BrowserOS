@@ -42,9 +42,13 @@ export function createConversationUploadScheduler(
   }
 
   return (conversations: Conversation[]) => {
-    pendingConversations = conversations
     if (timeout !== undefined) clearTimeout(timeout)
     timeout = undefined
+    if (conversations.length === 0) {
+      pendingConversations = undefined
+      return
+    }
+    pendingConversations = conversations
     armTimeout()
   }
 }

@@ -25,10 +25,8 @@ export function useConversations() {
   const { sessionInfo } = useSessionInfo()
 
   useEffect(() => {
-    // user is logged in, could sync conversations from server here
-    if (sessionInfo.user?.id && conversations.length > 0) {
-      scheduleConversationUpload(conversations)
-    }
+    // An empty snapshot cancels work queued before logout or local deletion.
+    scheduleConversationUpload(sessionInfo.user?.id ? conversations : [])
   }, [sessionInfo.user?.id, conversations])
 
   useEffect(() => {

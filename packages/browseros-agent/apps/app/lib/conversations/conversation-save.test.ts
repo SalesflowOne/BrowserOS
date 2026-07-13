@@ -30,6 +30,18 @@ describe('planConversationSave', () => {
     expect(plan?.conversations[0].messages).toEqual(messages)
   })
 
+  it('detects equal-length changes inside terminal text', () => {
+    const edge = 'x'.repeat(16)
+    const current = [
+      conversation('active', [assistantMessage(`${edge}old${edge}`)]),
+    ]
+    const messages = [assistantMessage(`${edge}new${edge}`)]
+
+    const plan = planConversationSave(current, 'active', messages, 200)
+
+    expect(plan?.conversations[0].messages).toEqual(messages)
+  })
+
   it('returns no update for an identical cloned snapshot', () => {
     const current = [
       conversation('active', [userMessage(), assistantMessage()]),
