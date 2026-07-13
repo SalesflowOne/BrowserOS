@@ -33,15 +33,27 @@ function Harness({
   phase,
   state = readyState(),
   formValues = {},
+  unpicked = false,
 }: {
   phase: ImportPhase
   state?: BrowserOSOnboardingState
   formValues?: Partial<OnboardingFormValues>
+  unpicked?: boolean
 }) {
   const form = useForm<OnboardingFormValues>({
     resolver: onboardingFormResolver,
     defaultValues: { ...onboardingFormDefaults, ...formValues },
   })
+  // Reproduces the error OnboardingV2 sets on itself: its sources effect calls
+  // setValue('selectedSourceId', '', { shouldValidate: true }), and the resolver
+  // rejects the empty id. Seeding it here is the only way to get a form error
+  // into a server render — nothing else validates (no events, no effects).
+  if (unpicked) {
+    form.setError('selectedSourceId', {
+      type: 'required',
+      message: 'Pick a profile.',
+    })
+  }
   return (
     <Form {...form}>
       <ImportStep
@@ -60,10 +72,16 @@ function render(
   phase: ImportPhase,
   state: BrowserOSOnboardingState = readyState(),
   formValues: Partial<OnboardingFormValues> = {},
+  unpicked = false,
 ): string {
   return renderToStaticMarkup(
     <MemoryRouter>
-      <Harness phase={phase} state={state} formValues={formValues} />
+      <Harness
+        phase={phase}
+        state={state}
+        formValues={formValues}
+        unpicked={unpicked}
+      />
     </MemoryRouter>,
   )
 }
@@ -345,5 +363,31 @@ describe('ImportStep', () => {
 
     expect(html).toContain('Continue')
     expect(html).not.toContain('Skip for now')
+  })
+
+  it('does not blame the user when there is no profile to pick', () => {
+    const html = render('picker', readyState({ sources: [] }), {}, true)
+
+    expect(html).toContain('No profiles found.')
+    expect(html).not.toContain('data-slot="form-message"')
+  })
+
+  it('does not blame the user while profiles are still being detected', () => {
+    const html = render(
+      'picker',
+      readyState({ status: 'detecting', sources: [] }),
+      {},
+      true,
+    )
+
+    expect(html).toContain('Looking for profiles')
+    expect(html).not.toContain('data-slot="form-message"')
+  })
+
+  it('still asks for a pick when profiles are there to pick from', () => {
+    const html = render('picker', readyState(), {}, true)
+
+    expect(html).toContain('data-slot="form-message"')
+    expect(html).toContain('Pick a profile.')
   })
 })

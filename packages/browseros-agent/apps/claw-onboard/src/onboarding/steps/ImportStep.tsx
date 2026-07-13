@@ -175,10 +175,11 @@ export function ImportStep({
                     No profiles found.
                   </div>
                 )}
-                {/* With nothing to pick and a skip on offer, "Pick a profile."
-                    is noise the user did not cause: OnboardingV2 clears
-                    selectedSourceId with shouldValidate when sources is empty. */}
-                {!hasNoProfiles && <FormMessage />}
+                {/* Only ask for a pick when there is one to make. With no
+                    sources the error is self-inflicted and unactionable:
+                    OnboardingV2 clears selectedSourceId with shouldValidate
+                    whenever the list is empty, including while detecting. */}
+                {state.sources.length > 0 && <FormMessage />}
               </FormItem>
             )}
           />
