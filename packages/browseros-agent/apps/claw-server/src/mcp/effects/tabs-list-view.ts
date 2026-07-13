@@ -24,6 +24,9 @@ export const applyTabsListView: ToolEffect = ({ call, result }) => {
   for (const page of pages ?? []) {
     if (typeof page.page === 'number') livePageIds.add(page.page)
   }
+  // Prune assumes the tabs list is the UNFILTERED full page set (it is
+  // today — pages.list()); if listing ever grows filtering, prune must
+  // move off this snapshot or it will drop live claims.
   ownershipStore.prune(livePageIds)
   const deps = buildOwnershipDeps(
     call.identity,
