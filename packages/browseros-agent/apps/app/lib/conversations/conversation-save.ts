@@ -5,18 +5,16 @@ const MAX_CONVERSATIONS = 50
 const STRING_SAMPLE_SIZE = 16
 const MAX_FINGERPRINT_DEPTH = 3
 
-interface ConversationSavePlan {
-  conversations: Conversation[]
-  removedConversationIds: string[]
-}
-
 /** Builds the next bounded conversation list, or returns null when the append-only chat snapshot has not advanced. */
 export function planConversationSave(
   current: Conversation[],
   id: string,
   messages: UIMessage[],
   lastMessagedAt = Date.now(),
-): ConversationSavePlan | null {
+): {
+  conversations: Conversation[]
+  removedConversationIds: string[]
+} | null {
   const existingIndex = current.findIndex(
     (conversation) => conversation.id === id,
   )

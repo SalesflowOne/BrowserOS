@@ -2,15 +2,13 @@ import type { Conversation } from './conversationStorage'
 
 const DEFAULT_UPLOAD_DEBOUNCE_MS = 1000
 
-interface ConversationUploadSchedulerOptions {
-  delayMs?: number
-  onError?: (error: unknown) => void
-}
-
 /** Creates a newest-wins debounce that never runs more than one conversation upload at a time. */
 export function createConversationUploadScheduler(
   upload: (conversations: Conversation[]) => Promise<void>,
-  options: ConversationUploadSchedulerOptions = {},
+  options: {
+    delayMs?: number
+    onError?: (error: unknown) => void
+  } = {},
 ) {
   const { delayMs = DEFAULT_UPLOAD_DEBOUNCE_MS, onError = () => undefined } =
     options
