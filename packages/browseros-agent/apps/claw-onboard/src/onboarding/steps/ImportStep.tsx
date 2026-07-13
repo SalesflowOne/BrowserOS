@@ -69,6 +69,7 @@ export function ImportStep({
     selectedSource?.browserName ||
     'source'
   const isDetecting = state.status === 'detecting'
+  const hasNoProfiles = !isDetecting && state.sources.length === 0
   const hasSupportedItems = (selectedSource?.supportedItems.length ?? 0) > 0
   const isPickerValid =
     Boolean(selectedSource) &&
@@ -169,12 +170,15 @@ export function ImportStep({
                     }}
                   />
                 ))}
-                {!isDetecting && state.sources.length === 0 && (
+                {hasNoProfiles && (
                   <div className="rounded-xl border border-border-2 bg-card p-4 text-[12.5px] text-ink-2">
                     No profiles found.
                   </div>
                 )}
-                <FormMessage />
+                {/* With nothing to pick and a skip on offer, "Pick a profile."
+                    is noise the user did not cause: OnboardingV2 clears
+                    selectedSourceId with shouldValidate when sources is empty. */}
+                {!hasNoProfiles && <FormMessage />}
               </FormItem>
             )}
           />
@@ -191,15 +195,25 @@ export function ImportStep({
             </div>
           )}
           <MacKeychainNotice />
-          <Button
-            type="button"
-            size="lg"
-            onClick={onImport}
-            disabled={!isPickerValid}
-          >
-            <Download className="size-4" />
-            {importButtonLabel}
-          </Button>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              type="button"
+              size="lg"
+              onClick={onImport}
+              disabled={!isPickerValid}
+            >
+              <Download className="size-4" />
+              {importButtonLabel}
+            </Button>
+            <Button
+              type="button"
+              size="lg"
+              variant="ghost"
+              onClick={onContinue}
+            >
+              Skip for now
+            </Button>
+          </div>
         </>
       )}
 
@@ -237,6 +251,14 @@ export function ImportStep({
             <Button type="button" size="lg" variant="ghost" onClick={onRefresh}>
               <RefreshCw className="size-4" />
               Refresh profiles
+            </Button>
+            <Button
+              type="button"
+              size="lg"
+              variant="ghost"
+              onClick={onContinue}
+            >
+              Skip for now
             </Button>
           </div>
         </>

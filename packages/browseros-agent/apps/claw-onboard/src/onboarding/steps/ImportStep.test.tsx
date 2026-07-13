@@ -77,6 +77,25 @@ function checklistRowFor(html: string, label: string): string {
   return html.slice(rowStart, rowEnd + '</label>'.length)
 }
 
+// The empty picker renders a disabled import CTA next to an enabled skip, so
+// `disabled` assertions have to be scoped to one button's own markup. Labels can
+// also appear outside buttons ("Pick a profile" is a prefix of the "Pick a
+// profile to import" heading), so skip matches that aren't inside a button.
+function buttonMarkupFor(html: string, label: string): string {
+  for (
+    let labelIndex = html.indexOf(label);
+    labelIndex !== -1;
+    labelIndex = html.indexOf(label, labelIndex + 1)
+  ) {
+    const buttonStart = html.lastIndexOf('<button', labelIndex)
+    const buttonEnd = html.indexOf('</button>', labelIndex)
+    if (buttonStart === -1 || buttonEnd === -1) continue
+    if (html.indexOf('</button>', buttonStart) !== buttonEnd) continue
+    return html.slice(buttonStart, buttonEnd + '</button>'.length)
+  }
+  return ''
+}
+
 describe('ImportStep', () => {
   it('renders the picker, the Keychain notice, and an Import button in picker phase', () => {
     const html = render('picker')
@@ -277,5 +296,54 @@ describe('ImportStep', () => {
     expect(html).toContain('Imported 0 items from Work')
     expect(html).toContain('No completed items reported')
     expect(html).not.toContain('History, Bookmarks')
+  })
+
+  it('leaves an enabled way forward when no profiles are found', () => {
+    const html = render('picker', readyState({ sources: [] }))
+    const skip = buttonMarkupFor(html, 'Skip for now')
+
+    expect(html).toContain('No profiles found.')
+    expect(buttonMarkupFor(html, 'Pick a profile')).toContain('disabled=""')
+    expect(skip).toContain('Skip for now')
+    expect(skip).not.toContain('disabled=""')
+  })
+
+  it('keeps the skip available when profiles are present', () => {
+    const skip = buttonMarkupFor(render('picker'), 'Skip for now')
+
+    expect(skip).toContain('Skip for now')
+    expect(skip).not.toContain('disabled=""')
+  })
+
+  it('keeps the skip enabled while profiles are still being detected', () => {
+    const html = render('picker', readyState({ status: 'detecting' }))
+    const skip = buttonMarkupFor(html, 'Skip for now')
+
+    expect(html).toContain('Looking for profiles')
+    expect(skip).toContain('Skip for now')
+    expect(skip).not.toContain('disabled=""')
+  })
+
+  it('offers a skip out of a failed import', () => {
+    const html = render('failed', readyState({ status: 'failed', sources: [] }))
+    const skip = buttonMarkupFor(html, 'Skip for now')
+
+    expect(html).toContain('Try again')
+    expect(html).toContain('Refresh profiles')
+    expect(skip).toContain('Skip for now')
+    expect(skip).not.toContain('disabled=""')
+  })
+
+  it('does not offer a skip while an import is running', () => {
+    const html = render('importing', readyState({ status: 'importing' }))
+
+    expect(html).not.toContain('Skip for now')
+  })
+
+  it('does not offer a skip once the import has succeeded', () => {
+    const html = render('imported', readyState({ status: 'succeeded' }))
+
+    expect(html).toContain('Continue')
+    expect(html).not.toContain('Skip for now')
   })
 })
