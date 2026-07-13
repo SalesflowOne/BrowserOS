@@ -237,21 +237,6 @@ export function cancelSessionNaming(sessionId: string): void {
   controller?.abort()
 }
 
-/** Requests and applies a user-facing name for an initialized MCP session. */
-export async function requestSessionNaming(
-  input: RequestSessionNamingInput,
-  deps: RequestSessionNamingDeps = defaultDeps,
-): Promise<void> {
-  if (!input.server.getClientCapabilities()?.elicitation) return
-
-  const identity = resolveIdentity(deps, input.sessionId)
-  if (!identity) return
-
-  const options = { timeout: ELICITATION_TIMEOUT_MS }
-  const firstAttempt = startElicitation(input.server, identity.prefix, options)
-  await finishSessionNaming(input, identity, options, deps, firstAttempt)
-}
-
 /** Clears process-wide session naming state between tests. */
 export function resetSessionNamingForTests(): void {
   for (const controller of pendingBySessionId.values()) controller.abort()

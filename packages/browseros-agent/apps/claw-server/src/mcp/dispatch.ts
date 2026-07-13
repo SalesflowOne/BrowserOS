@@ -32,6 +32,7 @@ import { cancellationErrorResult } from './cancellation-result'
 import { composeAbortSignals, dispatchErrorText } from './dispatch-util'
 import { applyAudit } from './effects/audit'
 import { applyOwnershipClaims } from './effects/ownership-claims'
+import { createSessionNamingEffect } from './effects/session-naming'
 import { applyTabActivity } from './effects/tab-activity'
 import { applyTabGroups } from './effects/tab-groups'
 import { applyTabsListView } from './effects/tabs-list-view'
@@ -39,6 +40,7 @@ import { guardBrowserConnected } from './guards/browser-connected'
 import { guardNavigateScheme } from './guards/navigate-scheme'
 import { guardPageOwnership } from './guards/page-ownership'
 import { asRegister, type ToolResult } from './register-fn'
+import type { SessionNamingServer } from './session-naming'
 
 const ARBITRARY_SCRIPT_TOOLS = new Set(['run', 'evaluate'])
 
@@ -79,7 +81,7 @@ const GUARDS: readonly ToolGuard[] = [
   guardPageOwnership,
 ]
 
-const EFFECTS: readonly NamedToolEffect[] = [
+const BASE_EFFECTS: readonly NamedToolEffect[] = [
   { name: 'ownership-claims', run: applyOwnershipClaims },
   { name: 'tabs-list-view', run: applyTabsListView },
   { name: 'audit', run: applyAudit },
@@ -102,7 +104,7 @@ export function runGuards(
 /** Runs effects in order, retaining the latest result when an effect fails. */
 export function runEffects(
   context: ToolEffectContext,
-  effects: readonly NamedToolEffect[] = EFFECTS,
+  effects: readonly NamedToolEffect[] = BASE_EFFECTS,
   warn = logger.warn,
 ): ToolResult {
   let result = context.result
@@ -125,8 +127,16 @@ export function runEffects(
 export function registerBrowserToolsForSingleServer(
   server: McpServer,
   resolveIdentity: (sessionId: string | undefined) => ClientIdentity | null,
+  options: { sessionNamingServer: SessionNamingServer },
 ): void {
   const register = asRegister(server)
+  const effects: readonly NamedToolEffect[] = [
+    ...BASE_EFFECTS,
+    {
+      name: 'session-naming',
+      run: createSessionNamingEffect(options.sessionNamingServer),
+    },
+  ]
   for (const tool of BROWSER_TOOLS) {
     register(
       tool.name,
@@ -139,7 +149,10 @@ export function registerBrowserToolsForSingleServer(
         }),
       },
       (args, extra) =>
-        dispatchToolCall(buildToolCall(tool, args, extra, resolveIdentity)),
+        dispatchToolCall(
+          buildToolCall(tool, args, extra, resolveIdentity),
+          effects,
+        ),
     )
   }
 }
@@ -200,7 +213,10 @@ function buildToolCall(
   }
 }
 
-async function dispatchToolCall(call: ToolCall): Promise<ToolResult> {
+async function dispatchToolCall(
+  call: ToolCall,
+  effects: readonly NamedToolEffect[],
+): Promise<ToolResult> {
   const rejection = runGuards(call)
   if (rejection) return rejection
   const connectedCall = call as ConnectedToolCall
@@ -221,7 +237,7 @@ async function dispatchToolCall(call: ToolCall): Promise<ToolResult> {
       error: dispatchErrorText(outcome.result.content),
     })
   }
-  const result = runEffects({ call, ...outcome })
+  const result = runEffects({ call, ...outcome }, effects)
   return {
     content: result.content,
     isError: result.isError,

@@ -17,23 +17,30 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
+import { ownershipStore } from '../domain/ownership'
 import { env } from '../env'
+import { getBrowserSession } from '../lib/browser-session'
 import { logger } from '../lib/logger'
 import {
   agentIdentityFromClient,
+  agentKeyFromClient,
   type ClientIdentity,
   identityService,
 } from '../lib/mcp-session'
+import { dispatchCancellation } from '../services/dispatch-cancellation'
+import { dropFirstCaptures } from '../services/screenshots'
 import {
   recordSessionEnd,
   recordSessionStart,
 } from '../services/session-events'
 import { VERSION } from '../version'
 import { registerBrowserToolsForSingleServer } from './dispatch'
-import { requestSessionNaming } from './session-naming'
+import { collapseAgentTabGroup } from './effects/tab-groups'
+import { cancelSessionNaming } from './session-naming'
 
 const SERVER_NAME = 'browseros-claw-server'
 const SERVER_TITLE = 'BrowserOS'
+const SESSION_ENDED_REASON = 'MCP session ended'
 
 interface Session {
   server: McpServer
@@ -62,11 +69,13 @@ function buildSession(): Session {
     version: VERSION,
   })
 
-  registerBrowserToolsForSingleServer(server, resolveIdentity)
+  registerBrowserToolsForSingleServer(server, resolveIdentity, {
+    sessionNamingServer: server.server,
+  })
 
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: () => crypto.randomUUID(),
-    enableJsonResponse: true,
+    enableJsonResponse: false,
     onsessionclosed(sessionId) {
       cleanupSessionState(sessionId)
     },
@@ -118,14 +127,6 @@ function buildSession(): Session {
       clientName: identity.clientName,
       clientVersion: identity.clientVersion,
     })
-    void requestSessionNaming({ server: server.server, sessionId }).catch(
-      (err) => {
-        logger.warn('mcp session naming failed unexpectedly', {
-          sessionId,
-          error: err instanceof Error ? err.message : String(err),
-        })
-      },
-    )
     logger.info('cockpit v2 mcp session opened', {
       sessionId,
       clientName: clientInfo?.name ?? '',
@@ -149,7 +150,12 @@ function cleanupSessionState(sessionId: string): void {
   // path and against the reentrant callback below).
   const session = sessions.get(sessionId)
   if (!session) return
+  const identity = identityService.getIdentity(sessionId)
+  const agent = identity ? agentIdentityFromClient(identity) : null
+  const key = identity ? agentKeyFromClient(identity) : null
   sessions.delete(sessionId)
+  dispatchCancellation.cancelBySession(sessionId, SESSION_ENDED_REASON)
+  cancelSessionNaming(sessionId)
   identityService.dropSession(sessionId)
   recordSessionEnd({ sessionId, kind: 'closed' })
   // Close the transport + server AFTER the map delete so any
@@ -173,6 +179,19 @@ function cleanupSessionState(sessionId: string): void {
       error: err instanceof Error ? err.message : String(err),
     })
   })
+  if (agent) dropFirstCaptures(agent.agentId)
+  if (
+    key &&
+    ownershipStore.groupOf(key) &&
+    !identityService
+      .list()
+      .some((candidate) => agentKeyFromClient(candidate) === key)
+  ) {
+    const browserSession = getBrowserSession()
+    if (browserSession) {
+      void collapseAgentTabGroup({ key, session: browserSession })
+    }
+  }
   logger.info('cockpit v2 mcp session closed', { sessionId })
 }
 

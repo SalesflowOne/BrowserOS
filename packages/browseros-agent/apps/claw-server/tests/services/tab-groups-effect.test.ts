@@ -43,6 +43,7 @@ mock.module('@browseros/browser-mcp/tools/framework', () => ({
 const {
   applyAgentTabGroupTitle,
   applyTabGroups,
+  collapseAgentTabGroup,
   ensureAgentTabGroup,
   resetTabGroupEffectsForTesting,
 } = await import('../../src/mcp/effects/tab-groups')
@@ -310,5 +311,20 @@ describe('durable tab group effect', () => {
       collapsed: false,
     })
     expect(ownershipStore.groupOf(key)?.collapsed).toBe(false)
+  })
+
+  it('collapses a live group with the group timeout', async () => {
+    setGroup()
+    queue(ok())
+
+    await collapseAgentTabGroup({ key, session: fakeSession })
+
+    expect(calls[0]?.args).toEqual({
+      action: 'update',
+      groupId: 'G1',
+      collapsed: true,
+    })
+    expect(calls[0]?.signal).toBeInstanceOf(AbortSignal)
+    expect(ownershipStore.groupOf(key)?.collapsed).toBe(true)
   })
 })

@@ -1,10 +1,8 @@
 import { afterEach, describe, expect, it } from 'bun:test'
-import {
-  type ClientCapabilities,
-  type ElicitRequestFormParams,
-  type ElicitResult,
-  ErrorCode,
-  McpError,
+import type {
+  ClientCapabilities,
+  ElicitRequestFormParams,
+  ElicitResult,
 } from '@modelcontextprotocol/sdk/types.js'
 import {
   agentKeyFromClient,
@@ -14,7 +12,6 @@ import {
   cancelSessionNaming,
   maybeRequestSessionNaming,
   type RequestSessionNamingDeps,
-  requestSessionNaming,
   resetSessionNamingForTests,
   type SessionNamingServer,
 } from '../../src/mcp/session-naming'
@@ -82,95 +79,6 @@ function setup() {
   }
   return { applyCalls, delays, deps, identity, identityService }
 }
-
-describe('requestSessionNaming', () => {
-  it('does not elicit when the client lacks elicitation capability', async () => {
-    const { deps } = setup()
-    const server = fakeServer({ capabilities: {} })
-    await requestSessionNaming({ server, sessionId: 'sid-1' }, deps)
-    expect(server.calls).toEqual([])
-  })
-
-  it('stores accepted names and applies the tab-group title', async () => {
-    const { applyCalls, deps, identity, identityService } = setup()
-    const server = fakeServer({
-      capabilities: { elicitation: {} },
-      results: [
-        {
-          action: 'accept',
-          content: { name: 'Invoice Processing' },
-        },
-      ],
-    })
-
-    await requestSessionNaming({ server, sessionId: 'sid-1' }, deps)
-
-    expect(identityService.getIdentity('sid-1')?.sessionLabel).toBe(
-      'invoice-processing',
-    )
-    expect(applyCalls).toEqual([
-      {
-        key: agentKeyFromClient(identity),
-        title: 'claude/invoice-processing',
-        session: { fake: true },
-      },
-    ])
-    expect(server.calls[0]?.params.message).toContain(
-      'Tabs will be grouped as claude/<name>',
-    )
-    expect(server.calls[0]?.params.requestedSchema.required).toEqual(['name'])
-  })
-
-  it('ignores accepted names that normalize to empty', async () => {
-    const { applyCalls, deps, identityService } = setup()
-    const server = fakeServer({
-      capabilities: { elicitation: {} },
-      results: [{ action: 'accept', content: { name: '!!!' } }],
-    })
-    await requestSessionNaming({ server, sessionId: 'sid-1' }, deps)
-    expect(identityService.getIdentity('sid-1')?.sessionLabel).toBeNull()
-    expect(applyCalls).toEqual([])
-  })
-
-  it('ignores decline and cancel results', async () => {
-    for (const action of ['decline', 'cancel'] as const) {
-      const { applyCalls, deps, identityService } = setup()
-      const server = fakeServer({
-        capabilities: { elicitation: {} },
-        results: [{ action }],
-      })
-      await requestSessionNaming({ server, sessionId: 'sid-1' }, deps)
-      expect(identityService.getIdentity('sid-1')?.sessionLabel).toBeNull()
-      expect(applyCalls).toEqual([])
-    }
-  })
-
-  it('resolves after two elicitation failures without applying a title', async () => {
-    const { applyCalls, delays, deps, identityService } = setup()
-    const server = fakeServer({
-      capabilities: { elicitation: {} },
-      results: [new Error('no stream yet'), new Error('still no stream')],
-    })
-    await requestSessionNaming({ server, sessionId: 'sid-1' }, deps)
-    expect(server.calls).toHaveLength(2)
-    expect(delays).toEqual([2_000])
-    expect(identityService.getIdentity('sid-1')?.sessionLabel).toBeNull()
-    expect(applyCalls).toEqual([])
-  })
-
-  it('does not retry when the user ignores the elicitation prompt', async () => {
-    const { applyCalls, delays, deps, identityService } = setup()
-    const server = fakeServer({
-      capabilities: { elicitation: {} },
-      results: [new McpError(ErrorCode.RequestTimeout, 'timeout')],
-    })
-    await requestSessionNaming({ server, sessionId: 'sid-1' }, deps)
-    expect(server.calls).toHaveLength(1)
-    expect(delays).toEqual([])
-    expect(identityService.getIdentity('sid-1')?.sessionLabel).toBeNull()
-    expect(applyCalls).toEqual([])
-  })
-})
 
 describe('maybeRequestSessionNaming', () => {
   it('issues elicitation synchronously with the originating request id', async () => {

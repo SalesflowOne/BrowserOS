@@ -584,14 +584,18 @@ describe('per-agent tabs isolation', () => {
     expect(ownershipStore.groupOf(first.key)?.id).toBe('G')
 
     // Reap the session.
+    queue(ok())
     setLastActivityForTesting(first.sessionId, Date.now() - 10_000)
     sweepIdleSessions(Date.now())
+    await Promise.resolve()
     expect([...ownershipStore.pagesOf(first.key)]).toEqual([7])
     expect(ownershipStore.groupOf(first.key)?.id).toBe('G')
+    expect(ownershipStore.groupOf(first.key)?.collapsed).toBe(true)
     expect(calls.some((call) => call.args.action === 'close')).toBe(false)
 
     queue(
       ok({ snapshot: true }),
+      ok(),
       ok({
         pages: [
           { page: 7, url: 'https://x.com/', title: 'Stale' },
@@ -606,6 +610,16 @@ describe('per-agent tabs isolation', () => {
       arguments: { page: 7 },
     })
     expect(snapshot.isError).toBeFalsy()
+    await Promise.resolve()
+    expect(ownershipStore.groupOf(first.key)?.collapsed).toBe(false)
+    expect(
+      calls.some(
+        (call) =>
+          call.toolName === 'tab_groups' &&
+          call.args.action === 'update' &&
+          call.args.collapsed === false,
+      ),
+    ).toBe(true)
     const list = (await second.client.callTool({
       name: 'tabs',
       arguments: { action: 'list' },

@@ -119,6 +119,38 @@ export async function applyAgentTabGroupTitle(
   }
 }
 
+/** Collapses the durable group after its final live session ends. */
+export async function collapseAgentTabGroup(input: {
+  key: AgentKey
+  session: BrowserSession
+}): Promise<void> {
+  const group = ownershipStore.groupOf(input.key)
+  if (!group || group.collapsed) return
+
+  try {
+    const result = await dispatchGroup(input.session, {
+      action: 'update',
+      groupId: group.id,
+      collapsed: true,
+    })
+    if (result.isError) {
+      logger.warn('agent tab group collapse failed', {
+        key: input.key,
+        groupId: group.id,
+        error: firstText(result),
+      })
+      return
+    }
+    ownershipStore.updateGroup(input.key, { collapsed: true })
+  } catch (error) {
+    logger.warn('agent tab group collapse threw', {
+      key: input.key,
+      groupId: group.id,
+      error: errorText(error),
+    })
+  }
+}
+
 /** Applies post-dispatch group creation and expansion without blocking the call. */
 export const applyTabGroups: ToolEffect = ({ call, result }) => {
   if (result.isError || !call.key || !call.identity || !call.session) {
