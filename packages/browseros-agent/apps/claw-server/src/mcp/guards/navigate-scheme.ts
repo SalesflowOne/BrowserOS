@@ -15,7 +15,8 @@ export const guardNavigateScheme: ToolGuard = (call: ToolCall) => {
   const url = (call.args as { url?: unknown } | null | undefined)?.url
   if (typeof url !== 'string' || url.length === 0) return null
 
-  const scheme = url.slice(0, url.indexOf(':') + 1).toLowerCase()
+  const trimmedUrl = url.trim()
+  const scheme = trimmedUrl.slice(0, trimmedUrl.indexOf(':') + 1).toLowerCase()
   if (!NAVIGATE_BLOCKED_SCHEMES.has(scheme)) return null
 
   logger.warn('cockpit v2 tool dispatch rejected', {

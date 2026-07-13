@@ -160,7 +160,7 @@ export function registerBrowserToolsForSingleServer(
 interface DispatchExtra {
   signal?: AbortSignal
   sessionId?: string
-  requestId?: unknown
+  requestId?: string | number
 }
 
 interface ExecutionOutcome {

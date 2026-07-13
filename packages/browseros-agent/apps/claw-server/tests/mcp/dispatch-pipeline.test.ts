@@ -38,6 +38,16 @@ describe('dispatch pipeline', () => {
     })
   })
 
+  it('rejects a blocked navigate scheme after leading whitespace', () => {
+    const result = runGuards(call({ url: '  javascript:alert(1)' }))
+
+    expect(result?.isError).toBe(true)
+    expect(result?.content[0]).toEqual({
+      type: 'text',
+      text: 'navigate refuses javascript: URLs; only http(s) is allowed',
+    })
+  })
+
   it('isolates a throwing effect and returns the tool result', () => {
     const result = {
       content: [{ type: 'text' as const, text: 'ok' }],
