@@ -99,10 +99,12 @@ describe('formatDiffResult', () => {
 
     expect(result.text).toContain('Snapshot changed substantially')
     expect(result.text).toContain('Take a fresh snapshot for the current state')
+    expect(result.text).not.toContain('UNTRUSTED_PAGE_CONTENT')
     expect(result.structured).toEqual({
       changed: true,
       added: 2_000,
       removed: 2_001,
+      lineDiffSkipped: true,
     })
     expect(result.structured).not.toHaveProperty('truncated')
     expect(result.structured).not.toHaveProperty('path')

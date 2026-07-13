@@ -99,11 +99,12 @@ describe('diffSnapshots', () => {
     expect(d).toEqual({
       text: [
         'Snapshot changed substantially: 2002 lines before, 2002 lines after.',
-        'Line-level diff skipped because the changed region exceeds the 4000000-cell comparison limit. Take a fresh snapshot for the current state.',
+        'Line-level diff skipped because the changed region exceeds the 4000000-cell comparison limit.',
       ].join('\n'),
       added: 2_000,
       removed: 2_000,
       changed: true,
+      lineDiffSkipped: true,
     })
     expect(d.text.length).toBeLessThan(250)
   })
@@ -139,6 +140,7 @@ describe('diffSnapshots', () => {
 
     expect(d.added).toBe(3_997)
     expect(d.removed).toBe(1_000)
+    expect(d.lineDiffSkipped).toBe(true)
     expect(d.text).toContain('changed substantially')
   })
 

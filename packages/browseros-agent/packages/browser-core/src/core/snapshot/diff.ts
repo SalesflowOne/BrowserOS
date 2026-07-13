@@ -7,6 +7,8 @@ export interface SnapshotDiff {
   added: number
   removed: number
   changed: boolean
+  /** Counts are changed-window sizes because the line-level comparison was skipped. */
+  lineDiffSkipped?: true
   urlChanged?: true
   beforeUrl?: string
   afterUrl?: string
@@ -58,11 +60,12 @@ export function diffSnapshots(
     return {
       text: [
         `Snapshot changed substantially: ${beforeLines.length} lines before, ${afterLines.length} lines after.`,
-        `Line-level diff skipped because the changed region exceeds the ${MAX_LCS_CELLS}-cell comparison limit. Take a fresh snapshot for the current state.`,
+        `Line-level diff skipped because the changed region exceeds the ${MAX_LCS_CELLS}-cell comparison limit.`,
       ].join('\n'),
       added: addedWindowLines,
       removed: removedWindowLines,
       changed: true,
+      lineDiffSkipped: true,
     }
   }
 
