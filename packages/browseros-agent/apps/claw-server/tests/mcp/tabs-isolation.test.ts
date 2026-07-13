@@ -490,7 +490,12 @@ describe('per-agent tabs isolation', () => {
       pages: {
         getInfo: (id: number) =>
           id === 1 || id === 2
-            ? { targetId: `t${id}`, url: 'https://x.com/', title: 'X' }
+            ? {
+                targetId: `t${id}`,
+                url: 'https://x.com/',
+                title: 'X',
+                groupId: id === 2 ? 'G' : undefined,
+              }
             : undefined,
       },
       // biome-ignore lint/suspicious/noExplicitAny: test stub
