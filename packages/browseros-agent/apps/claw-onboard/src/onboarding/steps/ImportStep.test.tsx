@@ -14,9 +14,20 @@ import {
   type OnboardingFormValues,
   onboardingFormDefaults,
   onboardingFormResolver,
+  onboardingFormSchema,
 } from '../onboarding-v2.schemas'
 import type { ImportPhase } from '../onboarding-v2.types'
 import { ImportStep } from './ImportStep'
+
+// Take the message from the resolver rather than restating it, so these tests
+// track the production copy instead of a string they hardcoded themselves.
+const unpickedResult = onboardingFormSchema.safeParse({
+  selectedSourceId: '',
+  selectedItems: [],
+})
+const PICK_PROFILE_MESSAGE = unpickedResult.success
+  ? ''
+  : (unpickedResult.error.issues[0]?.message ?? '')
 
 function readyState(
   overrides: Partial<BrowserOSOnboardingState> = {},
@@ -51,7 +62,7 @@ function Harness({
   if (unpicked) {
     form.setError('selectedSourceId', {
       type: 'required',
-      message: 'Pick a profile.',
+      message: PICK_PROFILE_MESSAGE,
     })
   }
   return (
@@ -387,7 +398,8 @@ describe('ImportStep', () => {
   it('still asks for a pick when profiles are there to pick from', () => {
     const html = render('picker', readyState(), {}, true)
 
+    expect(PICK_PROFILE_MESSAGE).not.toBe('')
     expect(html).toContain('data-slot="form-message"')
-    expect(html).toContain('Pick a profile.')
+    expect(html).toContain(PICK_PROFILE_MESSAGE)
   })
 })
