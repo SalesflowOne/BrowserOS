@@ -21,7 +21,7 @@ export type SidePanelToggleResult = {
   opened: boolean
 }
 
-/** Applies the cached side panel scope and keeps Chromium's global panel options in sync. */
+/** Applies an explicit side panel scope change to Chrome and the worker cache. */
 export async function setSidePanelPerWindowPreference(
   perWindow: boolean,
 ): Promise<void> {
@@ -38,17 +38,25 @@ async function applySidePanelPerWindowPreference(
   await chrome.sidePanel.setOptions(
     perWindow ? { enabled: true, path: SIDEPANEL_PATH } : { enabled: false },
   )
-  if (epoch !== sidePanelScopePreferenceEpoch) return
-  sidePanelPerWindow = perWindow
+  cacheSidePanelPerWindowPreference(perWindow, epoch)
+}
+
+function cacheSidePanelPerWindowPreference(
+  perWindow: boolean,
+  epoch: number,
+): void {
+  if (epoch === sidePanelScopePreferenceEpoch) {
+    sidePanelPerWindow = perWindow
+  }
 }
 
 async function loadSidePanelScopePreference(): Promise<void> {
   const epoch = sidePanelScopePreferenceEpoch
   try {
     const perWindow = await sidePanelPerWindowStorage.getValue()
-    await applySidePanelPerWindowPreference(perWindow, epoch)
+    cacheSidePanelPerWindowPreference(perWindow, epoch)
   } catch {
-    await applySidePanelPerWindowPreference(false, epoch)
+    cacheSidePanelPerWindowPreference(false, epoch)
   }
 }
 

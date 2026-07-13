@@ -124,6 +124,7 @@ describe('side panel scope routing', () => {
     const result = await toggleSidePanel({ tabId: 7, windowId: 3 })
 
     expect(result).toEqual({ opened: false })
+    expect(setOptionsCalls).toEqual([])
     expect(closeCalls).toEqual([{ windowId: 3 }])
     expect(openCalls).toEqual([])
   })
@@ -198,11 +199,38 @@ describe('side panel scope routing', () => {
     storedSidePanelPerWindow = true
 
     await refreshSidePanelRuntimeState()
+    expect(setOptionsCalls).toEqual([])
+
     const result = await toggleSidePanel({ tabId: 7, windowId: 3 })
 
     expect(result).toEqual({ opened: true })
     expect(openCalls).toEqual([{ windowId: 3 }])
     expect(browserosToggleCalls).toEqual([])
+  })
+
+  it('falls back to tab scope without changing Chrome options when storage fails', async () => {
+    getSidePanelPerWindowOverride = async () => {
+      throw new Error('storage unavailable')
+    }
+
+    await refreshSidePanelRuntimeState()
+    expect(setOptionsCalls).toEqual([])
+
+    const result = await toggleSidePanel({ tabId: 7, windowId: 3 })
+
+    expect(result).toEqual({ opened: true })
+    expect(browserosToggleCalls).toEqual([{ tabId: 7 }])
+    expect(openCalls).toEqual([])
+  })
+
+  it('applies Chrome options for explicit scope changes', async () => {
+    await setSidePanelPerWindowPreference(true)
+    await setSidePanelPerWindowPreference(false)
+
+    expect(setOptionsCalls).toEqual([
+      { enabled: true, path: 'sidepanel.html' },
+      { enabled: false },
+    ])
   })
 
   it('keeps a newer explicit setting change over a stale refresh result', async () => {
@@ -218,6 +246,7 @@ describe('side panel scope routing', () => {
     resolveStoredValue(false)
     await refreshPromise
 
+    expect(setOptionsCalls).toEqual([{ enabled: true, path: 'sidepanel.html' }])
     const result = await toggleSidePanel({ tabId: 7, windowId: 3 })
 
     expect(result).toEqual({ opened: true })
