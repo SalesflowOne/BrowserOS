@@ -4,12 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import {
-  type ClientCapabilities,
-  type ElicitRequestFormParams,
-  type ElicitResult,
-  ErrorCode,
-  McpError,
+import type {
+  ClientCapabilities,
+  ElicitRequestFormParams,
+  ElicitResult,
 } from '@modelcontextprotocol/sdk/types.js'
 import type { AgentKey } from '../domain/agent-key'
 import { getBrowserSession } from '../lib/browser-session'
@@ -29,7 +27,6 @@ import {
 import { applyAgentTabGroupTitle } from './effects/tab-groups'
 
 const ELICITATION_TIMEOUT_MS = 120_000
-const ELICITATION_RETRY_DELAY_MS = 2_000
 
 interface SessionNamingRequestOptions {
   timeout: number
@@ -49,7 +46,6 @@ export interface RequestSessionNamingDeps {
   identityService: Pick<IdentityService, 'getIdentity' | 'setSessionLabel'>
   getBrowserSession: typeof getBrowserSession
   applyTitle: typeof applyAgentTabGroupTitle
-  delay: (ms: number) => Promise<void>
 }
 
 export interface RequestSessionNamingInput {
@@ -70,17 +66,13 @@ interface ResolvedNamingIdentity {
 const firedSessionIds = new Set<string>()
 const pendingBySessionId = new Map<string, AbortController>()
 
-function defaultDelay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
 const defaultDeps: RequestSessionNamingDeps = {
   identityService,
   getBrowserSession,
   applyTitle: applyAgentTabGroupTitle,
-  delay: defaultDelay,
 }
 
+/** Issues the SDK call synchronously while its response stream is still open. */
 function startElicitation(
   server: SessionNamingServer,
   prefix: string,
@@ -104,32 +96,14 @@ function isAbort(error: unknown, signal?: AbortSignal): boolean {
   )
 }
 
-async function elicitWithRetry(
-  server: SessionNamingServer,
-  prefix: string,
-  options: SessionNamingRequestOptions,
-  delay: (ms: number) => Promise<void>,
+async function awaitElicitation(
   firstAttempt: Promise<ElicitResult>,
+  signal?: AbortSignal,
 ): Promise<ElicitResult | null> {
   try {
     return await firstAttempt
   } catch (error) {
-    if (isAbort(error, options.signal)) return null
-    if (error instanceof McpError && error.code === ErrorCode.RequestTimeout) {
-      logger.info('mcp session naming elicitation unavailable', {
-        error: error.message,
-      })
-      return null
-    }
-    await delay(ELICITATION_RETRY_DELAY_MS)
-  }
-
-  if (options.signal?.aborted) return null
-
-  try {
-    return await startElicitation(server, prefix, options)
-  } catch (error) {
-    if (isAbort(error, options.signal)) return null
+    if (isAbort(error, signal)) return null
     logger.info('mcp session naming elicitation unavailable', {
       error: error instanceof Error ? error.message : String(error),
     })
@@ -162,6 +136,7 @@ function resolveIdentity(
   }
 }
 
+/** Normalizes and applies a completed session-name elicitation. */
 async function finishSessionNaming(
   input: RequestSessionNamingInput,
   identity: ResolvedNamingIdentity,
@@ -169,13 +144,7 @@ async function finishSessionNaming(
   deps: RequestSessionNamingDeps,
   firstAttempt: Promise<ElicitResult>,
 ): Promise<void> {
-  const result = await elicitWithRetry(
-    input.server,
-    identity.prefix,
-    options,
-    deps.delay,
-    firstAttempt,
-  )
+  const result = await awaitElicitation(firstAttempt, options.signal)
   if (!result || options.signal?.aborted) return
 
   const smallName = resolveLabel(result)
@@ -195,9 +164,9 @@ export function maybeRequestSessionNaming(
   deps: RequestSessionNamingDeps = defaultDeps,
 ): Promise<void> {
   if (firedSessionIds.has(input.sessionId)) return Promise.resolve()
-  firedSessionIds.add(input.sessionId)
 
   if (!input.server.getClientCapabilities()?.elicitation) {
+    firedSessionIds.add(input.sessionId)
     logger.info('mcp client lacks elicitation capability', {
       sessionId: input.sessionId,
     })
@@ -206,6 +175,7 @@ export function maybeRequestSessionNaming(
 
   const identity = resolveIdentity(deps, input.sessionId)
   if (!identity) return Promise.resolve()
+  firedSessionIds.add(input.sessionId)
 
   const controller = new AbortController()
   pendingBySessionId.set(input.sessionId, controller)

@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it } from 'bun:test'
-import type {
-  ClientCapabilities,
-  ElicitRequestFormParams,
-  ElicitResult,
+import {
+  type ClientCapabilities,
+  type ElicitRequestFormParams,
+  type ElicitResult,
+  ErrorCode,
+  McpError,
 } from '@modelcontextprotocol/sdk/types.js'
 import {
   agentKeyFromClient,
@@ -66,18 +68,14 @@ function setup() {
     title: string
     session: unknown
   }> = []
-  const delays: number[] = []
   const deps: RequestSessionNamingDeps = {
     identityService,
     getBrowserSession: () => ({ fake: true }) as never,
     applyTitle: async (input) => {
       applyCalls.push(input)
     },
-    delay: async (ms) => {
-      delays.push(ms)
-    },
   }
-  return { applyCalls, delays, deps, identity, identityService }
+  return { applyCalls, deps, identity, identityService }
 }
 
 describe('maybeRequestSessionNaming', () => {
@@ -151,8 +149,69 @@ describe('maybeRequestSessionNaming', () => {
     expect(server.calls).toEqual([])
   })
 
+  it('does not consume the session shot before identity resolves', async () => {
+    const { deps, identityService } = setup()
+    identityService.dropSession('sid-1')
+    const server = fakeServer({
+      capabilities: { elicitation: {} },
+      results: [{ action: 'cancel' }],
+    })
+
+    await maybeRequestSessionNaming(
+      { server, sessionId: 'sid-1', requestId: 1 },
+      deps,
+    )
+    expect(server.calls).toEqual([])
+
+    identityService.registerInitialize({
+      sessionId: 'sid-1',
+      clientInfo: { name: 'Claude Code', version: '1.0.0' },
+    })
+    await maybeRequestSessionNaming(
+      { server, sessionId: 'sid-1', requestId: 2 },
+      deps,
+    )
+
+    expect(server.calls).toHaveLength(1)
+    expect(server.calls[0]?.options.relatedRequestId).toBe(2)
+  })
+
+  it('does not retry when elicitation fails', async () => {
+    const { applyCalls, deps, identityService } = setup()
+    const server = fakeServer({
+      capabilities: { elicitation: {} },
+      results: [new Error('request stream closed')],
+    })
+
+    await maybeRequestSessionNaming(
+      { server, sessionId: 'sid-1', requestId: 1 },
+      deps,
+    )
+
+    expect(server.calls).toHaveLength(1)
+    expect(identityService.getIdentity('sid-1')?.sessionLabel).toBeNull()
+    expect(applyCalls).toEqual([])
+  })
+
+  it('does not retry when elicitation times out', async () => {
+    const { applyCalls, deps, identityService } = setup()
+    const server = fakeServer({
+      capabilities: { elicitation: {} },
+      results: [new McpError(ErrorCode.RequestTimeout, 'timeout')],
+    })
+
+    await maybeRequestSessionNaming(
+      { server, sessionId: 'sid-1', requestId: 1 },
+      deps,
+    )
+
+    expect(server.calls).toHaveLength(1)
+    expect(identityService.getIdentity('sid-1')?.sessionLabel).toBeNull()
+    expect(applyCalls).toEqual([])
+  })
+
   it('cancels a pending elicitation without retrying or applying a name', async () => {
-    const { applyCalls, delays, deps, identityService } = setup()
+    const { applyCalls, deps, identityService } = setup()
     const calls: ElicitCall[] = []
     const server: SessionNamingServer = {
       getClientCapabilities: () => ({ elicitation: {} }),
@@ -176,7 +235,6 @@ describe('maybeRequestSessionNaming', () => {
     await naming
 
     expect(calls).toHaveLength(1)
-    expect(delays).toEqual([])
     expect(identityService.getIdentity('sid-1')?.sessionLabel).toBeNull()
     expect(applyCalls).toEqual([])
   })
