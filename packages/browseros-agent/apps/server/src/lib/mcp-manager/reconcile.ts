@@ -6,33 +6,39 @@
  * Boot-time URL drift detector. When BrowserOS restarts on a
  * different port (port collision, bun reload, etc.) every agent
  * config that previously linked to BrowserOS still points at the
- * stale URL. The reconciler reads the manifest, compares the
- * recorded URL on each managed server entry against the just-bound
- * URL, and if they differ, replays unlink + link for every
- * previously-linked agent with the new URL.
+ * stale URL. The reconciler reads the manifest, compares the recorded
+ * URL on each managed server entry against the just-bound URL, and if
+ * they differ, re-links every previously-linked agent with the new
+ * URL.
  *
  * Two manifest entries are managed independently:
- *   - `browseros` — HTTP spec for HTTP-native agents
- *   - `browseros-stdio` — stdio spec wrapping `npx mcp-remote <url>`
+ *   - `browseros` (HTTP spec for HTTP-native agents)
+ *   - `browseros-stdio` (stdio spec wrapping `npx mcp-remote <url>`)
  *
- * The reconciler is fire-and-forget at boot. Per-agent failures
- * (e.g. permission denied on someone's config directory) get
- * warn-logged so a single broken agent cannot block the others.
+ * Since 0.0.4, `link()` upserts the manifest spec and rewrites the
+ * agent config in one call, so a single overwrite-link per still-
+ * linked agent replaces the old remove + add + link dance (no window
+ * where an agent is transiently disconnected). The Claude Code HTTP
+ * `type` field is emitted by the catalog layer, so no post-write
+ * fixup runs here.
+ *
+ * The reconciler is fire-and-forget at boot. Per-agent failures (e.g.
+ * permission denied on someone's config directory) get warn-logged so
+ * a single broken agent cannot block the others.
  */
 
 import type {
-  InstalledServer,
+  BoundApi,
+  ManifestServerEntry,
   McpHttpSpec,
-  McpManager,
   McpStdioSpec,
-} from 'agent-mcp-manager'
+} from '@browseros/agent-mcp-manager'
 import { logger } from '../logger'
 import {
   BROWSEROS_MCP_SERVER_NAME,
   BROWSEROS_MCP_STDIO_SERVER_NAME,
   getMcpManager,
 } from './manager'
-import { ensureClaudeCodeHttpTransportTag } from './transport-tag'
 import type { McpAgentId, ReconcileResult } from './types'
 
 export interface ReconcileUrlInput {
@@ -42,11 +48,13 @@ export interface ReconcileUrlInput {
 
 /**
  * Extracts the embedded BrowserOS URL from a managed entry so the
- * reconciler can short-circuit when nothing drifted. Returns null
- * for shapes we don't recognise (e.g. user-edited spec).
+ * reconciler can short-circuit when nothing drifted. Returns null for
+ * shapes we don't recognise (e.g. user-edited spec).
  */
-function recordedUrl(server: InstalledServer): string | null {
-  if (server.spec.transport === 'http') return server.spec.url
+function recordedUrl(server: ManifestServerEntry): string | null {
+  if (server.spec.transport === 'http' || server.spec.transport === 'sse') {
+    return server.spec.url
+  }
   if (server.spec.transport === 'stdio') {
     if (server.spec.command !== 'npx') return null
     const args = server.spec.args ?? []
@@ -58,7 +66,7 @@ function recordedUrl(server: InstalledServer): string | null {
 }
 
 /**
- * Rebuilds a server entry with a fresh URL while preserving its
+ * Rebuilds a server spec with a fresh URL while preserving its
  * transport flavour. Called per managed name when the URL drifted.
  */
 function rebuildSpec(
@@ -76,71 +84,25 @@ function rebuildSpec(
 }
 
 /**
- * Wipe stale entry from the manifest + every linked agent's config,
- * then add the fresh entry. `remove` and `add` are non-atomic: if
- * `add` throws after `remove` succeeded, every linked agent has just
- * been silently disconnected. On that path we best-effort restore
- * the old spec so the user is no worse off than before.
- *
- * Returns `true` when the rewrite succeeded and the caller should
- * proceed to re-link, `false` when it failed (rollback attempted).
- */
-async function rewriteServerEntry(
-  mgr: McpManager,
-  existing: InstalledServer,
-  currentUrl: string,
-): Promise<boolean> {
-  let removed = false
-  try {
-    await mgr.remove({ serverName: existing.name, unlinkFirst: true })
-    removed = true
-    await mgr.add({
-      name: existing.name,
-      spec: rebuildSpec(existing.name, currentUrl),
-    })
-    return true
-  } catch (err) {
-    logger.warn('MCP manager failed to rewrite server entry', {
-      serverName: existing.name,
-      error: err instanceof Error ? err.message : String(err),
-    })
-    if (!removed) return false
-    try {
-      await mgr.add({ name: existing.name, spec: existing.spec })
-      logger.warn('MCP manager restored previous spec after add failure', {
-        serverName: existing.name,
-      })
-    } catch (restoreErr) {
-      logger.warn('MCP manager failed to restore previous spec', {
-        serverName: existing.name,
-        error:
-          restoreErr instanceof Error ? restoreErr.message : String(restoreErr),
-      })
-    }
-    return false
-  }
-}
-
-/**
- * Relinks each previously-linked agent against the freshly-rewritten
- * server entry. Per-agent failures get warn-logged so a single broken
- * config cannot block the others.
+ * Re-links each previously-linked agent against the freshly-rebuilt
+ * spec. `link` upserts, so the manifest entry advances to the new URL
+ * as each agent's config is rewritten. Per-agent failures get warn-
+ * logged so a single broken config cannot block the others.
  */
 async function relinkAgents(
-  mgr: McpManager,
+  mgr: BoundApi,
   serverName: string,
+  spec: McpHttpSpec | McpStdioSpec,
   agents: McpAgentId[],
 ): Promise<McpAgentId[]> {
   const relinked: McpAgentId[] = []
   for (const agent of agents) {
     try {
-      const link = await mgr.link({ serverName, agent })
-      if (agent === 'claude-code') {
-        await ensureClaudeCodeHttpTransportTagForLink(
-          serverName,
-          link.configPath,
-        )
-      }
+      await mgr.link({
+        server: { name: serverName, spec },
+        agent,
+        allowOverwrite: true,
+      })
       relinked.push(agent)
     } catch (err) {
       logger.warn('MCP manager failed to relink agent after URL drift', {
@@ -153,19 +115,11 @@ async function relinkAgents(
   return relinked
 }
 
-async function ensureClaudeCodeHttpTransportTagForLink(
-  serverName: string,
-  configPath: string | undefined,
-): Promise<void> {
-  if (serverName !== BROWSEROS_MCP_SERVER_NAME || !configPath) return
-  await ensureClaudeCodeHttpTransportTag({ configPath, serverName })
-}
-
 export async function reconcileUrl(
   input: ReconcileUrlInput,
 ): Promise<ReconcileResult> {
   const mgr = getMcpManager()
-  const servers = await mgr.listServers()
+  const servers = await mgr.list()
   const managedNames = [
     BROWSEROS_MCP_SERVER_NAME,
     BROWSEROS_MCP_STDIO_SERVER_NAME,
@@ -180,9 +134,8 @@ export async function reconcileUrl(
 
     didAnything = true
     const previouslyLinked = Object.keys(existing.links) as McpAgentId[]
-    const ok = await rewriteServerEntry(mgr, existing, input.currentUrl)
-    if (!ok) continue
-    affected.push(...(await relinkAgents(mgr, name, previouslyLinked)))
+    const spec = rebuildSpec(name, input.currentUrl)
+    affected.push(...(await relinkAgents(mgr, name, spec, previouslyLinked)))
   }
 
   if (!didAnything) {
