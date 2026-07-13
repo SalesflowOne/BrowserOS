@@ -17,27 +17,31 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
+import { ownershipStore } from '../domain/ownership'
 import { env } from '../env'
-import { tabGroupTracker } from '../lib/agent-tab-groups'
-import { agentTabs } from '../lib/agent-tabs'
 import { getBrowserSession } from '../lib/browser-session'
 import { logger } from '../lib/logger'
 import {
   agentIdentityFromClient,
+  agentKeyFromClient,
   type ClientIdentity,
   identityService,
+  slugifyClientName,
 } from '../lib/mcp-session'
+import { dispatchCancellation } from '../services/dispatch-cancellation'
+import { dropFirstCaptures } from '../services/screenshots'
 import {
   recordSessionEnd,
   recordSessionStart,
 } from '../services/session-events'
-import { closeAgentTabGroupForAgent } from '../services/tab-group-ops'
 import { VERSION } from '../version'
-import { registerBrowserToolsForSingleServer } from './register'
-import { requestSessionNaming } from './session-naming'
+import { registerBrowserToolsForSingleServer } from './dispatch'
+import { collapseAgentTabGroup } from './effects/tab-groups'
+import { cancelSessionNaming } from './session-naming'
 
 const SERVER_NAME = 'browseros-claw-server'
 const SERVER_TITLE = 'BrowserOS'
+const SESSION_ENDED_REASON = 'MCP session ended'
 
 interface Session {
   server: McpServer
@@ -66,11 +70,13 @@ function buildSession(): Session {
     version: VERSION,
   })
 
-  registerBrowserToolsForSingleServer(server, resolveIdentity)
+  registerBrowserToolsForSingleServer(server, resolveIdentity, {
+    sessionNamingServer: server.server,
+  })
 
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: () => crypto.randomUUID(),
-    enableJsonResponse: true,
+    enableJsonResponse: false,
     onsessionclosed(sessionId) {
       cleanupSessionState(sessionId)
     },
@@ -108,7 +114,6 @@ function buildSession(): Session {
       },
     })
     const { agentId, slug } = agentIdentityFromClient(identity)
-    tabGroupTracker.incrementSession(agentId)
     const agentLabel =
       identity.clientTitle && identity.clientTitle.length > 0
         ? identity.clientTitle
@@ -123,14 +128,6 @@ function buildSession(): Session {
       clientName: identity.clientName,
       clientVersion: identity.clientVersion,
     })
-    void requestSessionNaming({ server: server.server, sessionId }).catch(
-      (err) => {
-        logger.warn('mcp session naming failed unexpectedly', {
-          sessionId,
-          error: err instanceof Error ? err.message : String(err),
-        })
-      },
-    )
     logger.info('cockpit v2 mcp session opened', {
       sessionId,
       clientName: clientInfo?.name ?? '',
@@ -154,30 +151,15 @@ function cleanupSessionState(sessionId: string): void {
   // path and against the reentrant callback below).
   const session = sessions.get(sessionId)
   if (!session) return
-  // Read identity BEFORE dropping it so the cleanup hook can resolve
-  // the agentId for the tab-group close.
   const identity = identityService.getIdentity(sessionId)
-  if (identity) {
-    const { agentId } = agentIdentityFromClient(identity)
-    const browserSession = getBrowserSession()
-    if (browserSession) {
-      // Decrements the tracker AND fires the CDP close on the
-      // BrowserOS side. Returns immediately if refCount > 0.
-      void closeAgentTabGroupForAgent({
-        agentId,
-        session: browserSession,
-      })
-    } else {
-      // No live browser session. Still decrement so the ref count
-      // stays accurate; the CDP close is moot because there is no
-      // browser to dispatch to.
-      tabGroupTracker.decrementSession(agentId)
-    }
-    // Drop this session-scoped ownership bucket. Symmetric with the
-    // tab-group tracker cleanup.
-    agentTabs.forgetAgent(agentId)
-  }
+  const agent = identity ? agentIdentityFromClient(identity) : null
+  const key = identity ? agentKeyFromClient(identity) : null
+  const usesFallbackKey = identity
+    ? slugifyClientName(identity.clientName).length === 0
+    : false
   sessions.delete(sessionId)
+  dispatchCancellation.cancelBySession(sessionId, SESSION_ENDED_REASON)
+  cancelSessionNaming(sessionId)
   identityService.dropSession(sessionId)
   recordSessionEnd({ sessionId, kind: 'closed' })
   // Close the transport + server AFTER the map delete so any
@@ -201,6 +183,19 @@ function cleanupSessionState(sessionId: string): void {
       error: err instanceof Error ? err.message : String(err),
     })
   })
+  if (agent) dropFirstCaptures(agent.agentId)
+  if (key) {
+    const keyStillLive = identityService
+      .list()
+      .some((candidate) => agentKeyFromClient(candidate) === key)
+    if (!keyStillLive) {
+      const browserSession = getBrowserSession()
+      if (ownershipStore.groupOf(key) && browserSession) {
+        void collapseAgentTabGroup({ key, session: browserSession })
+      }
+      if (usesFallbackKey) ownershipStore.forget(key)
+    }
+  }
   logger.info('cockpit v2 mcp session closed', { sessionId })
 }
 
