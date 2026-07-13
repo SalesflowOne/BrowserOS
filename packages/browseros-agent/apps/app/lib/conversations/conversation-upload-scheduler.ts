@@ -41,7 +41,8 @@ export function createConversationUploadScheduler(
     }
   }
 
-  return (conversations: Conversation[]) => {
+  return (conversations: Conversation[] | undefined) => {
+    if (conversations === undefined) return
     if (timeout !== undefined) clearTimeout(timeout)
     timeout = undefined
     if (conversations.length === 0) {

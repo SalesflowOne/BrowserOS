@@ -35,6 +35,22 @@ describe('createConversationUploadScheduler', () => {
     expect(uploads).toEqual([])
   })
 
+  it('keeps pending work when another caller has not hydrated yet', async () => {
+    const uploads: string[][] = []
+    const schedule = createConversationUploadScheduler(
+      async (conversations) => {
+        uploads.push(conversations.map((conversation) => conversation.id))
+      },
+      { delayMs: 5 },
+    )
+
+    schedule([conversation('hydrated')])
+    schedule(undefined)
+    await Bun.sleep(20)
+
+    expect(uploads).toEqual([['hydrated']])
+  })
+
   it('waits for an active upload and keeps only the newest pending snapshot', async () => {
     const uploads: string[][] = []
     const firstUploadStarted = Promise.withResolvers<void>()

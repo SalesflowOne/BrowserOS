@@ -20,7 +20,7 @@ const scheduleConversationUpload = createConversationUploadScheduler(
 )
 
 export function useConversations() {
-  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [conversations, setConversations] = useState<Conversation[]>()
 
   const { sessionInfo } = useSessionInfo()
 
@@ -55,11 +55,11 @@ export function useConversations() {
   }
 
   const getConversation = (id: string) => {
-    return conversations.find((c) => c.id === id)
+    return conversations?.find((c) => c.id === id)
   }
 
   return {
-    conversations,
+    conversations: conversations ?? [],
     removeConversation,
     saveConversation,
     getConversation,
