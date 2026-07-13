@@ -13,9 +13,11 @@ import { createIdentityService } from './identity'
 
 export const identityService = createIdentityService()
 
+export type { AgentKey } from '../../domain/agent-key'
 export type { ClientIdentity, IdentityService } from './identity'
 export {
   agentIdentityFromClient,
+  agentKeyFromClient,
   createIdentityService,
 } from './identity'
 export {
