@@ -33,7 +33,7 @@ import {
 } from '../services/session-events'
 import { closeAgentTabGroupForAgent } from '../services/tab-group-ops'
 import { VERSION } from '../version'
-import { registerBrowserToolsForSingleServer } from './register'
+import { registerBrowserToolsForSingleServer } from './dispatch'
 import { requestSessionNaming } from './session-naming'
 
 const SERVER_NAME = 'browseros-claw-server'
