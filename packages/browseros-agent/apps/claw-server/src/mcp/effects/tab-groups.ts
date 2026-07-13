@@ -157,17 +157,31 @@ export const applyTabGroups: ToolEffect = ({ call, result }) => {
     return undefined
   }
 
-  void expandGroup(call.key, call.session)
-  if (!call.flags.newPage) return undefined
+  if (!call.flags.newPage) {
+    void expandGroup(call.key, call.session)
+    return undefined
+  }
   const pageId = (result.structuredContent as { page?: number } | undefined)
     ?.page
-  if (typeof pageId !== 'number') return undefined
+  if (typeof pageId !== 'number') {
+    void expandGroup(call.key, call.session)
+    return undefined
+  }
+  let defaultTabGroupId = call.defaultTabGroupId
+  if (
+    defaultTabGroupId &&
+    call.session.pages.getInfo(pageId)?.groupId !== defaultTabGroupId
+  ) {
+    ownershipStore.clearGroup(call.key)
+    defaultTabGroupId = null
+  }
+  void expandGroup(call.key, call.session)
   void ensureAgentTabGroup({
     key: call.key,
     identity: call.identity,
     pageId,
     session: call.session,
-    defaultTabGroupId: call.defaultTabGroupId,
+    defaultTabGroupId,
   })
   return undefined
 }

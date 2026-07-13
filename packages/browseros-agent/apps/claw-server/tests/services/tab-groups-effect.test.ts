@@ -94,6 +94,14 @@ function setGroup(collapsed = false): void {
   })
 }
 
+function sessionWithPageGroup(groupId?: string): never {
+  return {
+    pages: {
+      getInfo: () => ({ groupId }),
+    },
+  } as never
+}
+
 beforeEach(() => {
   calls.length = 0
   queued.length = 0
@@ -246,6 +254,70 @@ describe('durable tab group effect', () => {
     })
     expect(calls).toHaveLength(0)
     expect(ownershipStore.groupOf(key)?.id).toBe('G1')
+  })
+
+  it('keeps a verified default group without dispatching group ops', async () => {
+    setGroup()
+    applyTabGroups({
+      call: {
+        tool: tabsTool,
+        args: { action: 'new' },
+        sessionId: 'sid-1',
+        requestId: 1,
+        identity: identity(),
+        key,
+        agent: { agentId: 'claude-code-abc123', slug: 'claude-code' },
+        agentLabel: 'claude-code',
+        session: sessionWithPageGroup('G1'),
+        defaultTabGroupId: 'G1',
+        flags: { newPage: true, closePage: false, listTabs: false },
+      },
+      result: {
+        content: [{ type: 'text', text: 'ok' }],
+        structuredContent: { page: 2 },
+      },
+      cancelled: false,
+      durationMs: 1,
+    })
+    await Promise.resolve()
+
+    expect(calls).toHaveLength(0)
+    expect(ownershipStore.groupOf(key)?.id).toBe('G1')
+  })
+
+  it('recreates the group when the new page missed the default group', async () => {
+    setGroup()
+    queue(ok({ group: { groupId: 'G2', windowId: 1 } }), ok())
+    applyTabGroups({
+      call: {
+        tool: tabsTool,
+        args: { action: 'new' },
+        sessionId: 'sid-1',
+        requestId: 1,
+        identity: identity(),
+        key,
+        agent: { agentId: 'claude-code-abc123', slug: 'claude-code' },
+        agentLabel: 'claude-code',
+        session: sessionWithPageGroup('deleted-group'),
+        defaultTabGroupId: 'G1',
+        flags: { newPage: true, closePage: false, listTabs: false },
+      },
+      result: {
+        content: [{ type: 'text', text: 'ok' }],
+        structuredContent: { page: 2 },
+      },
+      cancelled: false,
+      durationMs: 1,
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(calls[0]?.args).toEqual({
+      action: 'create',
+      pages: [2],
+      title: 'claude-code',
+    })
+    expect(ownershipStore.groupOf(key)?.id).toBe('G2')
   })
 
   it('keeps a created group when the color lock fails', async () => {
