@@ -88,7 +88,7 @@ describe('migrateMcpUrls', () => {
     })
   })
 
-  test('counts a failed harness relink and continues with the others', async () => {
+  test('rolls back a partial relink so the next boot retries every harness', async () => {
     await withTempBrowserClawDir(async () => {
       const stub = createStubMcpManager()
       const oldUrl = 'http://127.0.0.1:8080/mcp'
@@ -108,19 +108,30 @@ describe('migrateMcpUrls', () => {
         agent: 'cursor',
       })
       const originalLink = stub.link
+      let failClaude = true
       stub.link = async (input) => {
-        if (input.agent === 'claude-code') throw new Error('config locked')
+        if (failClaude && input.agent === 'claude-code') {
+          throw new Error('config locked')
+        }
         return originalLink(input)
       }
       setMcpManagerForTesting(stub)
       stub.reset()
 
-      const result = await migrateMcpUrls(newUrl)
+      const firstResult = await migrateMcpUrls(newUrl)
 
-      expect(result).toEqual({ migrated: 1, skipped: 0, failed: 1 })
-      expect(stub.calls.filter((c) => c.method === 'link')).toHaveLength(1)
-      const servers = await stub.list()
-      const bc = servers.find((s) => s.name === 'BrowserClaw')
+      expect(firstResult).toEqual({ migrated: 0, skipped: 0, failed: 1 })
+      let servers = await stub.list()
+      let bc = servers.find((s) => s.name === 'BrowserClaw')
+      expect(bc?.spec).toMatchObject({ transport: 'http', url: oldUrl })
+
+      failClaude = false
+      stub.reset()
+      const secondResult = await migrateMcpUrls(newUrl)
+
+      expect(secondResult).toEqual({ migrated: 2, skipped: 0, failed: 0 })
+      servers = await stub.list()
+      bc = servers.find((s) => s.name === 'BrowserClaw')
       expect(bc?.spec).toMatchObject({ transport: 'http', url: newUrl })
     })
   })

@@ -16,7 +16,11 @@
  * idempotent once the shared spec already contains `targetMcpUrl`.
  */
 
-import type { BoundApi, McpServerSpec } from '@browseros/agent-mcp-manager'
+import type {
+  AgentId,
+  BoundApi,
+  McpServerSpec,
+} from '@browseros/agent-mcp-manager'
 import { BROWSEROS_MCP_SERVER_NAME } from '../shared/mcp-url'
 import { logger } from './logger'
 import { getMcpManager } from './mcp-manager'
@@ -47,10 +51,22 @@ export async function migrateMcpUrls(
   }
 
   const nextSpec = rewriteSpecUrl(server.spec, targetMcpUrl)
-  for (const agent of Object.keys(server.links)) {
+  const migratedAgents: AgentId[] = []
+  for (const agent of Object.keys(server.links) as AgentId[]) {
     const ok = await relinkOne(mgr, nextSpec, agent, currentUrl, targetMcpUrl)
-    if (ok) counters.migrated++
+    if (ok) migratedAgents.push(agent)
     else counters.failed++
+  }
+  if (counters.failed === 0) {
+    counters.migrated = migratedAgents.length
+  } else {
+    counters.failed += await rollbackPartialMigration(
+      mgr,
+      server.spec,
+      migratedAgents,
+      targetMcpUrl,
+      currentUrl,
+    )
   }
   return counters
 }
@@ -71,15 +87,14 @@ async function safeList(
 async function relinkOne(
   mgr: BoundApi,
   nextSpec: McpServerSpec,
-  agent: string,
+  agent: AgentId,
   fromUrl: string,
   toUrl: string,
 ): Promise<boolean> {
   try {
     await mgr.link({
       server: { name: BROWSEROS_MCP_SERVER_NAME, spec: nextSpec },
-      // biome-ignore lint/suspicious/noExplicitAny: manifest keys are catalog AgentIds behind the manager's opaque list type
-      agent: agent as any,
+      agent,
       allowOverwrite: true,
     })
     logger.info('mcpUrl migration: relinked', {
@@ -97,6 +112,39 @@ async function relinkOne(
     })
     return false
   }
+}
+
+async function rollbackPartialMigration(
+  mgr: BoundApi,
+  originalSpec: McpServerSpec,
+  migratedAgents: AgentId[],
+  fromUrl: string,
+  toUrl: string,
+): Promise<number> {
+  let failed = 0
+  for (const agent of migratedAgents) {
+    try {
+      await mgr.link({
+        server: { name: BROWSEROS_MCP_SERVER_NAME, spec: originalSpec },
+        agent,
+        allowOverwrite: true,
+      })
+      logger.info('mcpUrl migration: rolled back partial relink', {
+        serverName: BROWSEROS_MCP_SERVER_NAME,
+        agent,
+        from: fromUrl,
+        to: toUrl,
+      })
+    } catch (err) {
+      failed++
+      logger.warn('mcpUrl migration: partial relink rollback failed', {
+        serverName: BROWSEROS_MCP_SERVER_NAME,
+        agent,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
+  return failed
 }
 
 function extractSpecUrl(spec: McpServerSpec): string | null {
