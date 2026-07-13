@@ -60,7 +60,14 @@ async function start(): Promise<void> {
   // discovery (the Claude Desktop extension) can read the port without
   // scanning, log-tailing, or waiting for a harness link to populate
   // the mcp-manager manifest.
-  await writeRuntimeFile(url)
+  //
+  // Intentionally NOT awaited: writeRuntimeFile owns its own error
+  // handling (logs a warning on failure, never throws). Awaiting here
+  // would gate the integrity scan, browser bootstrap, and MCP URL
+  // migration on a best-effort disk write that can hang on a stalled
+  // network / FUSE / container-mounted filesystem even though the
+  // socket is already bound and serving.
+  void writeRuntimeFile(url)
 
   // Self-heal loop 1: diff manifest vs. on-disk agent configs and
   // relink any drifted / missing entries from the manifest-stored
