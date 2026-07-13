@@ -65,7 +65,23 @@ export async function migrateMcpUrls(
 
   const nextSpec = rewriteSpecUrl(server.spec, targetMcpUrl)
   for (const agent of Object.keys(server.links) as AgentId[]) {
-    const ok = await relinkOne(mgr, nextSpec, agent, currentUrl, targetMcpUrl)
+    const configPath = server.links[agent]?.configPath
+    if (!configPath) {
+      counters.failed++
+      logger.warn('mcpUrl migration: link has no recorded config path', {
+        serverName: BROWSEROS_MCP_SERVER_NAME,
+        agent,
+      })
+      continue
+    }
+    const ok = await relinkOne(
+      mgr,
+      nextSpec,
+      agent,
+      configPath,
+      currentUrl,
+      targetMcpUrl,
+    )
     if (ok) counters.migrated++
     else counters.failed++
   }
@@ -92,6 +108,7 @@ async function relinkOne(
   mgr: BoundApi,
   nextSpec: McpServerSpec,
   agent: AgentId,
+  configPath: string,
   fromUrl: string,
   toUrl: string,
 ): Promise<boolean> {
@@ -99,6 +116,7 @@ async function relinkOne(
     await mgr.link({
       server: { name: BROWSEROS_MCP_SERVER_NAME, spec: nextSpec },
       agent,
+      configPath,
       allowOverwrite: true,
     })
     logger.info('mcpUrl migration: relinked', {

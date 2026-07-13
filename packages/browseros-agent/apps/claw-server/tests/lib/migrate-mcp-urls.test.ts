@@ -88,6 +88,34 @@ describe('migrateMcpUrls', () => {
     })
   })
 
+  test('relinks the exact config path recorded in the manifest', async () => {
+    await withTempBrowserClawDir(async () => {
+      const stub = createStubMcpManager()
+      const configPath = '/tmp/custom-claude-mcp.json'
+      await stub.link({
+        server: {
+          name: 'BrowserClaw',
+          spec: { transport: 'http', url: 'http://127.0.0.1:8080/mcp' },
+        },
+        agent: 'claude-code',
+        configPath,
+      })
+      setMcpManagerForTesting(stub)
+      stub.reset()
+
+      const result = await migrateMcpUrls('http://127.0.0.1:9200/mcp')
+
+      expect(result).toEqual({ migrated: 1, skipped: 0, failed: 0 })
+      const relink = stub.calls.find((call) => call.method === 'link')
+      expect(relink?.payload).toMatchObject({
+        agent: 'claude-code',
+        configPath,
+      })
+      const [server] = await stub.list()
+      expect(server?.links['claude-code']?.configPath).toBe(configPath)
+    })
+  })
+
   test('keeps a pending marker so the next boot retries every harness', async () => {
     await withTempBrowserClawDir(async () => {
       const stub = createStubMcpManager()
