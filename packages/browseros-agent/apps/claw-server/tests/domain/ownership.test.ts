@@ -126,6 +126,32 @@ describe('OwnershipStore', () => {
     expect(store.size()).toBe(0)
   })
 
+  it('forgets an entry and its reverse page claims', () => {
+    const store = createOwnershipStore()
+    store.claimPage(codex, 1)
+    store.claimPage(codex, 2)
+    store.setGroup(codex, group())
+
+    store.forget(codex)
+
+    expect(store.size()).toBe(0)
+    expect(store.pagesOf(codex)).toEqual(new Set())
+    expect(store.ownerOf(1)).toBeNull()
+    expect(store.ownerOf(2)).toBeNull()
+    expect(store.groupOf(codex)).toBeNull()
+  })
+
+  it('does not clear a newer reverse owner when forgetting an old claimant', () => {
+    const store = createOwnershipStore()
+    store.claimPage(codex, 1)
+    store.claimPage(claude, 1)
+
+    store.forget(codex)
+
+    expect(store.ownerOf(1)).toBe(claude)
+    expect(store.pagesOf(claude)).toEqual(new Set([1]))
+  })
+
   it('clears all state', () => {
     const store = createOwnershipStore()
     store.claimPage(codex, 1)

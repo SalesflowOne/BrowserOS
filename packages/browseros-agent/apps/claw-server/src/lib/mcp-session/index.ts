@@ -19,6 +19,7 @@ export {
   agentIdentityFromClient,
   agentKeyFromClient,
   createIdentityService,
+  slugifyClientName,
 } from './identity'
 export {
   buildSessionGroupTitle,

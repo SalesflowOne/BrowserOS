@@ -26,6 +26,7 @@ import {
   agentKeyFromClient,
   type ClientIdentity,
   identityService,
+  slugifyClientName,
 } from '../lib/mcp-session'
 import { dispatchCancellation } from '../services/dispatch-cancellation'
 import { dropFirstCaptures } from '../services/screenshots'
@@ -153,6 +154,9 @@ function cleanupSessionState(sessionId: string): void {
   const identity = identityService.getIdentity(sessionId)
   const agent = identity ? agentIdentityFromClient(identity) : null
   const key = identity ? agentKeyFromClient(identity) : null
+  const usesFallbackKey = identity
+    ? slugifyClientName(identity.clientName).length === 0
+    : false
   sessions.delete(sessionId)
   dispatchCancellation.cancelBySession(sessionId, SESSION_ENDED_REASON)
   cancelSessionNaming(sessionId)
@@ -180,16 +184,16 @@ function cleanupSessionState(sessionId: string): void {
     })
   })
   if (agent) dropFirstCaptures(agent.agentId)
-  if (
-    key &&
-    ownershipStore.groupOf(key) &&
-    !identityService
+  if (key) {
+    const keyStillLive = identityService
       .list()
       .some((candidate) => agentKeyFromClient(candidate) === key)
-  ) {
-    const browserSession = getBrowserSession()
-    if (browserSession) {
-      void collapseAgentTabGroup({ key, session: browserSession })
+    if (!keyStillLive) {
+      const browserSession = getBrowserSession()
+      if (ownershipStore.groupOf(key) && browserSession) {
+        void collapseAgentTabGroup({ key, session: browserSession })
+      }
+      if (usesFallbackKey) ownershipStore.forget(key)
     }
   }
   logger.info('cockpit v2 mcp session closed', { sessionId })

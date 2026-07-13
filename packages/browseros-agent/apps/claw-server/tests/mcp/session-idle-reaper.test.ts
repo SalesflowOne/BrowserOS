@@ -237,6 +237,42 @@ describe('sweepIdleSessions', () => {
     expect(groupCalls[0]?.signal).toBeInstanceOf(AbortSignal)
     expect(groupCalls.some((call) => call.args.action === 'close')).toBe(false)
     expect(ownershipStore.groupOf(key)?.collapsed).toBe(true)
+    expect(ownershipStore.size()).toBe(1)
+    await client.close()
+  })
+
+  test('reap collapses then forgets fallback-keyed ownership', async () => {
+    const initialSize = ownershipStore.size()
+    const { client, sessionId } = await connect('!!!')
+    const identity = identityService.getIdentity(sessionId)
+    if (!identity) throw new Error('identity missing')
+    const key = agentKeyFromClient(identity)
+    ownershipStore.claimPage(key, 7)
+    ownershipStore.setGroup(key, {
+      id: 'G-fallback',
+      windowId: 1,
+      color: 'red',
+      title: key,
+      titleExplicit: false,
+      collapsed: false,
+    })
+    setBrowserSession({} as never)
+
+    setLastActivityForTesting(sessionId, Date.now() - 10_000)
+    expect(sweepIdleSessions(Date.now())).toEqual([sessionId])
+    await Promise.resolve()
+
+    expect(groupCalls).toHaveLength(1)
+    expect(groupCalls[0]?.args).toEqual({
+      action: 'update',
+      groupId: 'G-fallback',
+      collapsed: true,
+    })
+    expect(groupCalls.some((call) => call.args.action === 'close')).toBe(false)
+    expect(ownershipStore.size()).toBe(initialSize)
+    expect(ownershipStore.pagesOf(key)).toEqual(new Set())
+    expect(ownershipStore.ownerOf(7)).toBeNull()
+    expect(ownershipStore.groupOf(key)).toBeNull()
     await client.close()
   })
 

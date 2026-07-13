@@ -32,6 +32,7 @@ export interface OwnershipStore {
   clearGroup(key: AgentKey): void
   updateGroup(key: AgentKey, patch: GroupPatch): void
   prune(livePageIds: ReadonlySet<number>): void
+  forget(key: AgentKey): void
   size(): number
   clear(): void
 }
@@ -95,6 +96,14 @@ export function createOwnershipStore(): OwnershipStore {
       for (const pageId of owners.keys()) {
         if (!livePageIds.has(pageId)) owners.delete(pageId)
       }
+    },
+    forget(key) {
+      const state = records.get(key)
+      if (!state) return
+      for (const pageId of state.pages) {
+        if (owners.get(pageId) === key) owners.delete(pageId)
+      }
+      records.delete(key)
     },
     size() {
       return records.size
