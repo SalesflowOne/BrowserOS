@@ -385,6 +385,47 @@ describe('durable tab group effect', () => {
     expect(ownershipStore.groupOf(key)?.collapsed).toBe(false)
   })
 
+  it('keeps the group ref when an expand update fails', async () => {
+    setGroup(true)
+    queue(err('opaque BrowserOS CDP failure'))
+    applyTabGroups({
+      call: {
+        tool: tabsTool,
+        args: { action: 'list' },
+        sessionId: 'sid-1',
+        requestId: 1,
+        identity: identity(),
+        key,
+        agent: { agentId: 'claude-code-abc123', slug: 'claude-code' },
+        agentLabel: 'claude-code',
+        session: fakeSession,
+        defaultTabGroupId: 'G1',
+        flags: { newPage: false, closePage: false, listTabs: true },
+      },
+      result: { content: [{ type: 'text', text: 'ok' }] },
+      cancelled: false,
+      durationMs: 1,
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(ownershipStore.groupOf(key)?.id).toBe('G1')
+    expect(ownershipStore.groupOf(key)?.collapsed).toBe(true)
+  })
+
+  it('keeps the group ref when a late title update fails', async () => {
+    setGroup()
+    queue(err('opaque BrowserOS CDP failure'))
+
+    await applyAgentTabGroupTitle({
+      key,
+      title: 'claude/renamed',
+      session: fakeSession,
+    })
+
+    expect(ownershipStore.groupOf(key)?.id).toBe('G1')
+  })
+
   it('collapses a live group with the group timeout', async () => {
     setGroup()
     queue(ok())

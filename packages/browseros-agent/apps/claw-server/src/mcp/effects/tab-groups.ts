@@ -104,7 +104,9 @@ export async function applyAgentTabGroupTitle(
       title: input.title,
     })
     if (!result.isError) return
-    ownershipStore.clearGroup(input.key)
+    // Update failures may be transient; the membership verify on the
+    // next tabs new is the authoritative gone-group signal, so keep
+    // the ref instead of risking a duplicate group.
     logger.warn('agent tab group title update failed', {
       key: input.key,
       groupId: group.id,
@@ -264,7 +266,9 @@ async function expandGroup(
       collapsed: false,
     })
     if (result.isError) {
-      ownershipStore.clearGroup(key)
+      // Keep the ref: expand runs on every dispatch, so a transient
+      // failure clearing it would spawn a duplicate group; the tabs-new
+      // membership verify repairs a genuinely deleted group.
       logger.warn('agent tab group expand failed', {
         key,
         groupId: group.id,
@@ -322,7 +326,6 @@ async function applyCreationLateTitle(
       title,
     })
     if (result.isError) {
-      ownershipStore.clearGroup(key)
       logger.warn('agent tab group late title apply failed', {
         key,
         groupId,
