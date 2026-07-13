@@ -12,18 +12,23 @@
  * current connection model and are deliberately ignored.
  *
  * Failures are isolated per harness so one unwritable config does not
- * prevent the remaining links from advancing. The migration is
- * idempotent once the shared spec already contains `targetMcpUrl`.
+ * prevent the remaining links from advancing. A durable pending marker
+ * is written before the first relink and cleared only after all links
+ * succeed, so a crash or partial failure is retried on the next boot.
  */
 
+import { access, unlink, writeFile } from 'node:fs/promises'
 import type {
   AgentId,
   BoundApi,
   McpServerSpec,
 } from '@browseros/agent-mcp-manager'
 import { BROWSEROS_MCP_SERVER_NAME } from '../shared/mcp-url'
+import { resolveClawServerPath } from './browserclaw-dir'
 import { logger } from './logger'
 import { getMcpManager } from './mcp-manager'
+
+const MIGRATION_PENDING_FILE = 'mcp-url-migration.pending'
 
 interface MigrationCounters {
   migrated: number
@@ -44,29 +49,28 @@ export async function migrateMcpUrls(
   )
   if (!server) return counters
 
+  const hasPendingMigration = await pendingMigrationExists()
   const currentUrl = extractSpecUrl(server.spec)
-  if (currentUrl === null || currentUrl === targetMcpUrl) {
+  if (
+    currentUrl === null ||
+    (currentUrl === targetMcpUrl && !hasPendingMigration)
+  ) {
     counters.skipped++
+    return counters
+  }
+  if (!(await writePendingMarker(targetMcpUrl))) {
+    counters.failed++
     return counters
   }
 
   const nextSpec = rewriteSpecUrl(server.spec, targetMcpUrl)
-  const migratedAgents: AgentId[] = []
   for (const agent of Object.keys(server.links) as AgentId[]) {
     const ok = await relinkOne(mgr, nextSpec, agent, currentUrl, targetMcpUrl)
-    if (ok) migratedAgents.push(agent)
+    if (ok) counters.migrated++
     else counters.failed++
   }
-  if (counters.failed === 0) {
-    counters.migrated = migratedAgents.length
-  } else {
-    counters.failed += await rollbackPartialMigration(
-      mgr,
-      server.spec,
-      migratedAgents,
-      targetMcpUrl,
-      currentUrl,
-    )
+  if (counters.failed === 0 && !(await clearPendingMarker())) {
+    counters.failed++
   }
   return counters
 }
@@ -114,39 +118,6 @@ async function relinkOne(
   }
 }
 
-async function rollbackPartialMigration(
-  mgr: BoundApi,
-  originalSpec: McpServerSpec,
-  migratedAgents: AgentId[],
-  fromUrl: string,
-  toUrl: string,
-): Promise<number> {
-  let failed = 0
-  for (const agent of migratedAgents) {
-    try {
-      await mgr.link({
-        server: { name: BROWSEROS_MCP_SERVER_NAME, spec: originalSpec },
-        agent,
-        allowOverwrite: true,
-      })
-      logger.info('mcpUrl migration: rolled back partial relink', {
-        serverName: BROWSEROS_MCP_SERVER_NAME,
-        agent,
-        from: fromUrl,
-        to: toUrl,
-      })
-    } catch (err) {
-      failed++
-      logger.warn('mcpUrl migration: partial relink rollback failed', {
-        serverName: BROWSEROS_MCP_SERVER_NAME,
-        agent,
-        error: err instanceof Error ? err.message : String(err),
-      })
-    }
-  }
-  return failed
-}
-
 function extractSpecUrl(spec: McpServerSpec): string | null {
   if (spec.transport === 'http' || spec.transport === 'sse') return spec.url
   if (spec.transport === 'stdio') {
@@ -168,4 +139,55 @@ function rewriteSpecUrl(spec: McpServerSpec, newUrl: string): McpServerSpec {
   const nextArgs = args.slice()
   nextArgs[firstUrlIdx] = newUrl
   return { ...spec, args: nextArgs }
+}
+
+async function pendingMigrationExists(): Promise<boolean> {
+  try {
+    await access(resolveClawServerPath(MIGRATION_PENDING_FILE))
+    return true
+  } catch (err) {
+    if (isFsError(err, 'ENOENT')) return false
+    logger.warn('mcpUrl migration: pending marker check failed', {
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return true
+  }
+}
+
+async function writePendingMarker(targetMcpUrl: string): Promise<boolean> {
+  try {
+    await writeFile(
+      resolveClawServerPath(MIGRATION_PENDING_FILE),
+      `${targetMcpUrl}\n`,
+      { encoding: 'utf8', mode: 0o600 },
+    )
+    return true
+  } catch (err) {
+    logger.warn('mcpUrl migration: could not write pending marker', {
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return false
+  }
+}
+
+async function clearPendingMarker(): Promise<boolean> {
+  try {
+    await unlink(resolveClawServerPath(MIGRATION_PENDING_FILE))
+    return true
+  } catch (err) {
+    if (isFsError(err, 'ENOENT')) return true
+    logger.warn('mcpUrl migration: could not clear pending marker', {
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return false
+  }
+}
+
+function isFsError(err: unknown, code: string): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    (err as { code?: unknown }).code === code
+  )
 }

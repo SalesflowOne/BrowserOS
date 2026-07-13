@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, test } from 'bun:test'
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { setMcpManagerForTesting } from '../../src/lib/mcp-manager'
 import { migrateMcpUrls } from '../../src/lib/migrate-mcp-urls'
@@ -88,7 +88,7 @@ describe('migrateMcpUrls', () => {
     })
   })
 
-  test('rolls back a partial relink so the next boot retries every harness', async () => {
+  test('keeps a pending marker so the next boot retries every harness', async () => {
     await withTempBrowserClawDir(async () => {
       const stub = createStubMcpManager()
       const oldUrl = 'http://127.0.0.1:8080/mcp'
@@ -120,10 +120,10 @@ describe('migrateMcpUrls', () => {
 
       const firstResult = await migrateMcpUrls(newUrl)
 
-      expect(firstResult).toEqual({ migrated: 0, skipped: 0, failed: 1 })
+      expect(firstResult).toEqual({ migrated: 1, skipped: 0, failed: 1 })
       let servers = await stub.list()
       let bc = servers.find((s) => s.name === 'BrowserClaw')
-      expect(bc?.spec).toMatchObject({ transport: 'http', url: oldUrl })
+      expect(bc?.spec).toMatchObject({ transport: 'http', url: newUrl })
 
       failClaude = false
       stub.reset()
@@ -133,6 +133,34 @@ describe('migrateMcpUrls', () => {
       servers = await stub.list()
       bc = servers.find((s) => s.name === 'BrowserClaw')
       expect(bc?.spec).toMatchObject({ transport: 'http', url: newUrl })
+    })
+  })
+
+  test('replays every link when a prior run was interrupted', async () => {
+    await withTempBrowserClawDir(async (root) => {
+      const pendingFile = join(root, 'mcp-url-migration.pending')
+      await writeFile(pendingFile, 'interrupted', 'utf8')
+      const stub = createStubMcpManager()
+      const url = 'http://127.0.0.1:9200/mcp'
+      await stub.link({
+        server: { name: 'BrowserClaw', spec: { transport: 'http', url } },
+        agent: 'claude-code',
+      })
+      await stub.link({
+        server: { name: 'BrowserClaw', spec: { transport: 'http', url } },
+        agent: 'cursor',
+      })
+      setMcpManagerForTesting(stub)
+      stub.reset()
+
+      const result = await migrateMcpUrls(url)
+
+      expect(result).toEqual({ migrated: 2, skipped: 0, failed: 0 })
+      expect(stub.calls.filter((c) => c.method === 'link')).toHaveLength(2)
+      const pendingStillExists = await stat(pendingFile)
+        .then(() => true)
+        .catch(() => false)
+      expect(pendingStillExists).toBe(false)
     })
   })
 
