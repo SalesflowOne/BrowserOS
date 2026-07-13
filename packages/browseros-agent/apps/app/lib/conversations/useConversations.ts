@@ -2,9 +2,22 @@ import type { UIMessage } from 'ai'
 import { useEffect, useState } from 'react'
 import { useSessionInfo } from '../auth/sessionStorage'
 import { removeConversationExecutionHistory } from '../execution-history/storage'
+import { sentry } from '../sentry/sentry'
 import { planConversationSave } from './conversation-save'
+import { createConversationUploadScheduler } from './conversation-upload-scheduler'
 import { type Conversation, conversationStorage } from './conversationStorage'
 import { uploadConversationsToGraphql } from './uploadConversationsToGraphql'
+
+const scheduleConversationUpload = createConversationUploadScheduler(
+  uploadConversationsToGraphql,
+  {
+    onError: (error) => {
+      sentry.captureException(error, {
+        extra: { message: 'Failed to upload local conversations' },
+      })
+    },
+  },
+)
 
 export function useConversations() {
   const [conversations, setConversations] = useState<Conversation[]>([])
@@ -14,7 +27,7 @@ export function useConversations() {
   useEffect(() => {
     // user is logged in, could sync conversations from server here
     if (sessionInfo.user?.id && conversations.length > 0) {
-      uploadConversationsToGraphql(conversations)
+      scheduleConversationUpload(conversations)
     }
   }, [sessionInfo.user?.id, conversations])
 
