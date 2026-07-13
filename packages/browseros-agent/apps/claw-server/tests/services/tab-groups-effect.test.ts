@@ -22,7 +22,7 @@ interface CallEntry {
 }
 
 const calls: CallEntry[] = []
-const queued: Array<FakeResult | Promise<FakeResult>> = []
+const queued: Array<FakeResult | Error | Promise<FakeResult>> = []
 
 const realFramework = await import('@browseros/browser-mcp/tools/framework')
 mock.module('@browseros/browser-mcp/tools/framework', () => ({
@@ -35,6 +35,7 @@ mock.module('@browseros/browser-mcp/tools/framework', () => ({
     calls.push({ args, signal: context.signal })
     const result = queued.shift()
     if (!result) throw new Error('tab-groups-effect: no queued result')
+    if (result instanceof Error) throw result
     return result
   },
 }))
@@ -75,7 +76,9 @@ function err(text: string): FakeResult {
   return { isError: true, content: [{ type: 'text', text }] }
 }
 
-function queue(...results: Array<FakeResult | Promise<FakeResult>>): void {
+function queue(
+  ...results: Array<FakeResult | Error | Promise<FakeResult>>
+): void {
   queued.push(...results)
 }
 
@@ -197,9 +200,9 @@ describe('durable tab group effect', () => {
     expect(calls[0]?.signal?.aborted).toBe(false)
   })
 
-  it('clears a deleted group and recreates it on the next tabs new', async () => {
+  it('clears the group on any tool-reported add failure and recreates it', async () => {
     setGroup()
-    queue(err('group not found'))
+    queue(err('opaque BrowserOS CDP failure'))
     await ensureAgentTabGroup({
       key,
       identity: identity(),
@@ -218,6 +221,30 @@ describe('durable tab group effect', () => {
       defaultTabGroupId: null,
     })
     expect(ownershipStore.groupOf(key)?.id).toBe('G2')
+  })
+
+  it('keeps the group on a thrown timeout and does not recreate it', async () => {
+    setGroup()
+    queue(new DOMException('operation timed out', 'TimeoutError'))
+    await ensureAgentTabGroup({
+      key,
+      identity: identity(),
+      pageId: 2,
+      session: fakeSession,
+      defaultTabGroupId: null,
+    })
+    expect(ownershipStore.groupOf(key)?.id).toBe('G1')
+
+    calls.length = 0
+    await ensureAgentTabGroup({
+      key,
+      identity: identity(),
+      pageId: 3,
+      session: fakeSession,
+      defaultTabGroupId: 'G1',
+    })
+    expect(calls).toHaveLength(0)
+    expect(ownershipStore.groupOf(key)?.id).toBe('G1')
   })
 
   it('keeps a created group when the color lock fails', async () => {

@@ -104,14 +104,13 @@ export async function applyAgentTabGroupTitle(
       title: input.title,
     })
     if (!result.isError) return
-    recoverDeletedGroup(input.key, result)
+    ownershipStore.clearGroup(input.key)
     logger.warn('agent tab group title update failed', {
       key: input.key,
       groupId: group.id,
       error: firstText(result),
     })
   } catch (error) {
-    recoverDeletedGroup(input.key, error)
     logger.warn('agent tab group title update threw', {
       key: input.key,
       groupId: group.id,
@@ -191,14 +190,13 @@ async function addPageToGroup(
       pages: [input.pageId],
     })
     if (!result.isError) return
-    recoverDeletedGroup(input.key, result)
+    ownershipStore.clearGroup(input.key)
     logger.warn('agent tab group add failed', {
       key: input.key,
       groupId,
       error: firstText(result),
     })
   } catch (error) {
-    recoverDeletedGroup(input.key, error)
     logger.warn('agent tab group add threw', {
       key: input.key,
       groupId,
@@ -220,7 +218,7 @@ async function expandGroup(
       collapsed: false,
     })
     if (result.isError) {
-      recoverDeletedGroup(key, result)
+      ownershipStore.clearGroup(key)
       logger.warn('agent tab group expand failed', {
         key,
         groupId: group.id,
@@ -230,7 +228,6 @@ async function expandGroup(
     }
     ownershipStore.updateGroup(key, { collapsed: false })
   } catch (error) {
-    recoverDeletedGroup(key, error)
     logger.warn('agent tab group expand threw', {
       key,
       groupId: group.id,
@@ -279,6 +276,7 @@ async function applyCreationLateTitle(
       title,
     })
     if (result.isError) {
+      ownershipStore.clearGroup(key)
       logger.warn('agent tab group late title apply failed', {
         key,
         groupId,
@@ -330,19 +328,6 @@ function resultGroup(result: ToolResult): {
     id: typeof group?.groupId === 'string' ? group.groupId : null,
     windowId: typeof group?.windowId === 'number' ? group.windowId : null,
     collapsed: group?.collapsed === true,
-  }
-}
-
-function recoverDeletedGroup(key: AgentKey, error: unknown): void {
-  const text = errorText(error).toLowerCase()
-  if (
-    text.includes('not found') ||
-    text.includes('no tab group') ||
-    text.includes('unknown group') ||
-    text.includes('does not exist') ||
-    text.includes('invalid group')
-  ) {
-    ownershipStore.clearGroup(key)
   }
 }
 
