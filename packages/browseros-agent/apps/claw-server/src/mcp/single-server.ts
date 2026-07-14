@@ -37,10 +37,14 @@ import {
 import { VERSION } from '../version'
 import { registerBrowserToolsForSingleServer } from './dispatch'
 import { collapseAgentTabGroup } from './effects/tab-groups'
+import { BROWSERCLAW_MCP_INSTRUCTIONS } from './mcp-prompt'
 import { cancelSessionNaming } from './session-naming'
 
-const SERVER_NAME = 'browseros-claw-server'
-const SERVER_TITLE = 'BrowserOS'
+const SERVER_NAME = 'browserclaw'
+const SERVER_TITLE = 'BrowserClaw'
+const SERVER_DESCRIPTION =
+  "The browser for agents — a dedicated real browser signed into the user's accounts, set up specifically for agents to use."
+const SERVER_WEBSITE_URL = 'https://docs.browseros.com/browserclaw'
 const SESSION_ENDED_REASON = 'MCP session ended'
 
 interface Session {
@@ -64,11 +68,16 @@ function resolveIdentity(sessionId: string | undefined): ClientIdentity | null {
 }
 
 function buildSession(): Session {
-  const server = new McpServer({
-    name: SERVER_NAME,
-    title: SERVER_TITLE,
-    version: VERSION,
-  })
+  const server = new McpServer(
+    {
+      name: SERVER_NAME,
+      title: SERVER_TITLE,
+      version: VERSION,
+      description: SERVER_DESCRIPTION,
+      websiteUrl: SERVER_WEBSITE_URL,
+    },
+    { instructions: BROWSERCLAW_MCP_INSTRUCTIONS },
+  )
 
   registerBrowserToolsForSingleServer(server, resolveIdentity, {
     sessionNamingServer: server.server,

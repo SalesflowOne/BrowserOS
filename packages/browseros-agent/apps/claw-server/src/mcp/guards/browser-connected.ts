@@ -20,7 +20,7 @@ export const guardBrowserConnected: ToolGuard = (call) => {
     content: [
       {
         type: 'text',
-        text: 'browser session not connected; the cockpit runtime has not been wired to a live Chromium yet',
+        text: 'browser session not connected; the agent browser is not running or paired. Tell the user to start BrowserClaw and check the cockpit connection status; do not fall back to another browser tool.',
       },
     ],
     isError: true,
