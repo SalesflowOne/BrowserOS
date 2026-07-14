@@ -320,9 +320,7 @@ jobs:
     with:
       version: ${{ needs.preflight.outputs.extensions_version }}
       extension: browserclaw
-      channel: ${{ inputs.extensions }}
       branch: ${{ github.ref_name }}
-      publish_manifest: false
     secrets: inherit
 
   stage_updates:
