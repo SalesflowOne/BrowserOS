@@ -28,6 +28,10 @@ export const MCPSettingsPage: FC = () => {
       setUrlLoading(false)
 
       setToolsLoading(true)
+      // Invalidate the previous tools before refetching. On a server
+      // restart the port (and thus the tool set) can change, so stale
+      // tools must not linger, and must not survive a failed refetch.
+      setTools([])
       const result = await sendServerMessage('fetchMcpTools', undefined)
       if (result.error) {
         setToolsError(result.error)
