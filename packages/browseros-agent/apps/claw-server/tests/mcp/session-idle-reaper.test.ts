@@ -8,7 +8,10 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { eq } from 'drizzle-orm'
-import { agentSessionEnds } from '../../src/modules/db/schema/schema'
+import {
+  agentSessionEnds,
+  agentSessionStarts,
+} from '../../src/modules/db/schema/schema'
 
 interface GroupCall {
   toolName: string
@@ -123,6 +126,14 @@ function endRowsFor(
     .all()
 }
 
+function startRowsFor(sessionId: string): Array<{ agentId: string }> {
+  return getAuditDb()
+    .select({ agentId: agentSessionStarts.agentId })
+    .from(agentSessionStarts)
+    .where(eq(agentSessionStarts.sessionId, sessionId))
+    .all()
+}
+
 function seedOwnership(
   key: ReturnType<typeof identityService.list>[number]['key'],
 ): void {
@@ -179,6 +190,18 @@ describe('MCP session lifecycle', () => {
   test('uses 30 minute idle and 2 hour retention defaults', () => {
     expect(ORIGINAL_IDLE).toBe(30 * 60 * 1_000)
     expect(ORIGINAL_RETENTION).toBe(2 * 60 * 60 * 1_000)
+  })
+
+  test('duplicate initialized notifications keep one identity and start row', async () => {
+    const { client, sessionId, identity } = await connect()
+    const refs = getSessionRefsForTesting(sessionId)
+    if (!refs) throw new Error('missing session refs')
+
+    refs.server.server.oninitialized?.()
+
+    expect(identityService.getIdentity(sessionId)).toBe(identity)
+    expect(startRowsFor(sessionId)).toEqual([{ agentId: identity.key }])
+    await client.close()
   })
 
   test('idle teardown collapses and retains ownership without closing', async () => {

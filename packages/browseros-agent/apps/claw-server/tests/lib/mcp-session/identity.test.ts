@@ -77,6 +77,24 @@ describe('IdentityService', () => {
     expect(second.slug).toBe(first.slug)
   })
 
+  it('returns the original identity for duplicate initialization', () => {
+    const draws = [0, 0, 0.5, 0.5]
+    const svc = setup({ random: () => draws.shift() ?? 0.5 })
+    const first = svc.registerInitialize({
+      sessionId: 's1',
+      clientInfo: { name: 'Claude Code', version: '1.0.0' },
+    })
+    const duplicate = svc.registerInitialize({
+      sessionId: 's1',
+      clientInfo: { name: 'Different Client', version: '2.0.0' },
+    })
+
+    expect(duplicate).toBe(first)
+    expect(duplicate.key).toBe('claude-code-agile-alpaca')
+    expect(duplicate.clientVersion).toBe('1.0.0')
+    expect(svc.list()).toEqual([first])
+  })
+
   it('keeps ended keys reserved until retention cleanup forgets them', () => {
     let now = 1_000
     const svc = setup({ now: () => now })

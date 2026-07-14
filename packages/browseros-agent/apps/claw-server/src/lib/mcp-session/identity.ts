@@ -65,6 +65,9 @@ export function createIdentityService(
 
   return {
     registerInitialize(input) {
+      const existing = records.get(input.sessionId)
+      if (existing) return existing
+
       const clientName = input.clientInfo.name?.trim() ?? ''
       const slug = slugifyClientName(clientName) || 'agent'
       const generatedLabel = generateFunName({

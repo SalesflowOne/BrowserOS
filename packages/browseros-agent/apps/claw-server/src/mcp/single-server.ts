@@ -110,6 +110,7 @@ function buildSession(): Session {
   server.server.oninitialized = () => {
     const sessionId = transport.sessionId
     if (!sessionId) return
+    if (identityService.getIdentity(sessionId)) return
     const clientInfo = server.server.getClientVersion()
     const identity = identityService.registerInitialize({
       sessionId,

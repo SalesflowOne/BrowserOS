@@ -510,4 +510,23 @@ describe('durable tab group effect', () => {
     expect(calls[0]?.args).toEqual({ action: 'close', groupId: 'G1' })
     expect(calls[0]?.signal).toBeInstanceOf(AbortSignal)
   })
+
+  it('treats a close error as success when the group is already gone', async () => {
+    setGroup()
+    queue(err('Tab group not found'), ok({ groups: [], count: 0 }))
+
+    expect(await closeAgentTabGroup({ key, session: fakeSession })).toBe(true)
+
+    expect(calls.map((call) => call.args)).toEqual([
+      { action: 'close', groupId: 'G1' },
+      { action: 'list' },
+    ])
+  })
+
+  it('keeps a close failure retryable when group absence is unknown', async () => {
+    setGroup()
+    queue(err('transient close failure'), err('transient list failure'))
+
+    expect(await closeAgentTabGroup({ key, session: fakeSession })).toBe(false)
+  })
 })

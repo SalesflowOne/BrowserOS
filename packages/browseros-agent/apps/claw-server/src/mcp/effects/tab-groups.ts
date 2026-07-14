@@ -191,6 +191,7 @@ export async function closeAgentTabGroup(input: {
       groupId: group.id,
     })
     if (!result.isError) return true
+    if ((await groupExists(input.session, group.id)) === false) return true
     logger.warn('agent tab group close failed', {
       key: input.key,
       groupId: group.id,
@@ -198,12 +199,32 @@ export async function closeAgentTabGroup(input: {
     })
     return false
   } catch (error) {
+    if ((await groupExists(input.session, group.id)) === false) return true
     logger.warn('agent tab group close threw', {
       key: input.key,
       groupId: group.id,
       error: errorText(error),
     })
     return false
+  }
+}
+
+async function groupExists(
+  session: BrowserSession,
+  groupId: string,
+): Promise<boolean | null> {
+  try {
+    const result = await dispatchGroup(session, { action: 'list' })
+    if (result.isError) return null
+    const groups = (
+      result.structuredContent as
+        | { groups?: Array<{ groupId?: unknown }> }
+        | undefined
+    )?.groups
+    if (!Array.isArray(groups)) return null
+    return groups.some((candidate) => candidate.groupId === groupId)
+  } catch {
+    return null
   }
 }
 
