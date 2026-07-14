@@ -11,6 +11,7 @@ import {
   installInto,
   reconcileUrl,
   resetMcpManagerForTesting,
+  selfHealMcpLinks,
   setMcpManagerForTesting,
 } from '../../../src/lib/mcp-manager'
 import { callsOf, createStubMcpManager } from '../../_helpers/stub-mcp-manager'
@@ -57,6 +58,20 @@ function restoreEnv(previous: {
   }
 }
 
+function linkUrls(stub: ReturnType<typeof createStubMcpManager>): {
+  agents: string[]
+  urls: string[]
+} {
+  const calls = callsOf(stub, 'link') as Array<{
+    server: { spec: { url?: string } }
+    agent: string
+  }>
+  return {
+    agents: calls.map((c) => c.agent),
+    urls: calls.map((c) => c.server.spec.url ?? ''),
+  }
+}
+
 beforeEach(() => {
   resetMcpManagerForTesting()
 })
@@ -66,7 +81,7 @@ afterEach(() => {
 })
 
 describe('reconcileUrl', () => {
-  it('returns noop when no browseros entry exists in the manifest', async () => {
+  it('returns noop when nothing is linked', async () => {
     const stub = createStubMcpManager()
     setMcpManagerForTesting(stub)
 
@@ -78,24 +93,7 @@ describe('reconcileUrl', () => {
     expect(callsOf(stub, 'link')).toHaveLength(0)
   })
 
-  it('returns noop when the manifest url already matches the running url', async () => {
-    const stub = createStubMcpManager()
-    stub.seedServer(
-      'browseros',
-      { transport: 'http', url: 'http://127.0.0.1:9100/mcp' },
-      [{ agent: 'claude-code' }],
-    )
-    setMcpManagerForTesting(stub)
-
-    const result = await reconcileUrl({
-      currentUrl: 'http://127.0.0.1:9100/mcp',
-    })
-
-    expect(result).toEqual({ action: 'noop', affectedAgents: [] })
-    expect(callsOf(stub, 'link')).toHaveLength(0)
-  })
-
-  it('re-links every linked agent with the new url when the url drifted', async () => {
+  it('re-links every present curated agent to the current url', async () => {
     const stub = createStubMcpManager()
     stub.seedServer(
       'browseros',
@@ -110,17 +108,66 @@ describe('reconcileUrl', () => {
 
     expect(result.action).toBe('updated')
     expect(result.affectedAgents.sort()).toEqual(['claude-code', 'cursor'])
-    const linkCalls = callsOf(stub, 'link') as Array<{
-      server: { spec: { url?: string } }
-      agent: string
-    }>
-    expect(linkCalls.map((l) => l.agent).sort()).toEqual([
-      'claude-code',
-      'cursor',
-    ])
-    for (const call of linkCalls) {
-      expect(call.server.spec.url).toBe('http://127.0.0.1:9105/mcp')
-    }
+    const { agents, urls } = linkUrls(stub)
+    expect(agents.sort()).toEqual(['claude-code', 'cursor'])
+    expect(new Set(urls)).toEqual(new Set(['http://127.0.0.1:9105/mcp']))
+  })
+
+  it('heals a stale entry even when the shared manifest url already matches (masking regression)', async () => {
+    // The manifest spec reads the current url, but one agent's config
+    // could still be stale from a prior partial-write failure. Reconcile
+    // must NOT short-circuit on the shared manifest url; it relinks
+    // every present entry so the stale one is repaired.
+    const stub = createStubMcpManager()
+    stub.seedServer(
+      'browseros',
+      { transport: 'http', url: 'http://127.0.0.1:9105/mcp' },
+      [{ agent: 'claude-code' }],
+    )
+    setMcpManagerForTesting(stub)
+
+    const result = await reconcileUrl({
+      currentUrl: 'http://127.0.0.1:9105/mcp',
+    })
+
+    expect(result.affectedAgents).toEqual(['claude-code'])
+    expect(linkUrls(stub).urls).toEqual(['http://127.0.0.1:9105/mcp'])
+  })
+
+  it('leaves user-removed (drifted) entries alone so they are not resurrected', async () => {
+    const stub = createStubMcpManager({
+      rescanDriftedAgents: new Set(['cursor']),
+    })
+    stub.seedServer(
+      'browseros',
+      { transport: 'http', url: 'http://127.0.0.1:9100/mcp' },
+      [{ agent: 'claude-code' }, { agent: 'cursor' }],
+    )
+    setMcpManagerForTesting(stub)
+
+    const result = await reconcileUrl({
+      currentUrl: 'http://127.0.0.1:9105/mcp',
+    })
+
+    expect(result.affectedAgents).toEqual(['claude-code'])
+    expect(linkUrls(stub).agents).toEqual(['claude-code'])
+  })
+
+  it('does not touch non-curated agents (cleanup owns those)', async () => {
+    const stub = createStubMcpManager()
+    stub.seedServer(
+      'browseros',
+      { transport: 'http', url: 'http://127.0.0.1:9100/mcp' },
+      [{ agent: 'claude-code' }, { agent: 'gemini' }],
+    )
+    setMcpManagerForTesting(stub)
+
+    const result = await reconcileUrl({
+      currentUrl: 'http://127.0.0.1:9105/mcp',
+    })
+
+    expect(result.affectedAgents).toEqual(['claude-code'])
+    expect(linkUrls(stub).agents).toEqual(['claude-code'])
   })
 
   it('keeps the claude-code http type field after URL drift', async () => {
@@ -172,5 +219,46 @@ describe('reconcileUrl', () => {
 
     expect(result.action).toBe('updated')
     expect(result.affectedAgents).toEqual(['claude-code'])
+  })
+})
+
+describe('selfHealMcpLinks', () => {
+  it('cleans up non-curated links and then repairs curated urls', async () => {
+    const stub = createStubMcpManager()
+    stub.seedServer(
+      'browseros',
+      { transport: 'http', url: 'http://127.0.0.1:9100/mcp' },
+      [{ agent: 'claude-code' }, { agent: 'gemini' }],
+    )
+    setMcpManagerForTesting(stub)
+
+    const result = await selfHealMcpLinks({
+      currentUrl: 'http://127.0.0.1:9105/mcp',
+    })
+
+    // gemini disconnected by cleanup...
+    const disconnects = callsOf(stub, 'disconnect') as Array<{ agent: string }>
+    expect(disconnects.some((d) => d.agent === 'gemini')).toBe(true)
+    expect(disconnects.some((d) => d.agent === 'claude-code')).toBe(false)
+    // ...claude-code relinked by reconcile.
+    expect(result.affectedAgents).toEqual(['claude-code'])
+    expect(linkUrls(stub).agents).toEqual(['claude-code'])
+  })
+
+  it('still cleans up when no url is provided, skipping the reconcile', async () => {
+    const stub = createStubMcpManager()
+    stub.seedServer(
+      'browseros',
+      { transport: 'http', url: 'http://127.0.0.1:9100/mcp' },
+      [{ agent: 'claude-code' }, { agent: 'gemini' }],
+    )
+    setMcpManagerForTesting(stub)
+
+    const result = await selfHealMcpLinks({})
+
+    expect(result).toEqual({ action: 'noop', affectedAgents: [] })
+    const disconnects = callsOf(stub, 'disconnect') as Array<{ agent: string }>
+    expect(disconnects.some((d) => d.agent === 'gemini')).toBe(true)
+    expect(callsOf(stub, 'link')).toHaveLength(0)
   })
 })

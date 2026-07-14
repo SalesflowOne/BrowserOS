@@ -60,7 +60,7 @@ export type DetectInstalledAgentsFn = () => Promise<AgentInfo[]>
  *
  * Both remain reachable via the manual setup snippet on the same page.
  */
-const CURATED_AGENTS: readonly AgentId[] = [
+export const CURATED_AGENTS: readonly AgentId[] = [
   'claude-code',
   'codex',
   'cursor',
@@ -291,4 +291,59 @@ export function humaniseInstallError(err: unknown): {
   }
   const message = err instanceof Error ? err.message : String(err)
   return { message, status: 500 }
+}
+
+/**
+ * Startup self-heal. Disconnects BrowserOS from any agent that is no
+ * longer part of the curated surface, e.g. a Gemini or Claude Desktop
+ * link created by an earlier build before those were dropped. Leaving
+ * them linked would strand a BrowserOS entry in a config the panel can
+ * no longer show a disconnect row for. Runs non-blocking at boot;
+ * per-agent failures are swallowed so one bad config cannot block the
+ * rest. Returns the agents that were actually unlinked.
+ */
+export async function cleanupNonCuratedLinks(): Promise<AgentId[]> {
+  const mgr = getMcpManager()
+  const curated = new Set<string>(CURATED_AGENTS)
+  let links: Awaited<ReturnType<typeof mgr.listLinks>>
+  try {
+    links = await mgr.listLinks({ serverNames: [...BROWSEROS_SERVER_NAMES] })
+  } catch (err) {
+    logger.warn('MCP manager: could not list links for non-curated cleanup', {
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return []
+  }
+  const stale = [
+    ...new Set(links.map((l) => l.agent).filter((a) => !curated.has(a))),
+  ]
+  const removed: AgentId[] = []
+  for (const agent of stale) {
+    let didRemove = false
+    for (const serverName of BROWSEROS_SERVER_NAMES) {
+      try {
+        const summary = await mgr.disconnect({
+          serverName,
+          agent,
+          removeIfLast: true,
+        })
+        if (summary.unlinked) didRemove = true
+      } catch (err) {
+        if (err instanceof ForeignEntryError) continue
+        if (err instanceof ServerNotFoundError) continue
+        logger.warn('MCP manager: failed to clean up non-curated link', {
+          agent,
+          serverName,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
+    }
+    if (didRemove) removed.push(agent)
+  }
+  if (removed.length > 0) {
+    logger.info('MCP manager cleaned up non-curated agent links', {
+      agents: removed,
+    })
+  }
+  return removed
 }
