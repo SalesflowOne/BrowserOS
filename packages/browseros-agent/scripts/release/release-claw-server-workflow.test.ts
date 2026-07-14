@@ -47,14 +47,24 @@ describe('release-claw-server workflow', () => {
     expect(workflow).toContain('publish_ota:')
   })
 
-  it('forwards optional Claw PostHog values into production builds', () => {
-    expect(workflow).toMatch(/CLAW_POSTHOG_KEY:\n\s+required: false/)
+  it('requires the Claw PostHog key and keeps the host optional', () => {
+    expect(workflow).toMatch(/CLAW_POSTHOG_KEY:\n\s+required: true/)
     expect(workflow).toMatch(/CLAW_POSTHOG_HOST:\n\s+required: false/)
     expect(workflow).toContain(
       `CLAW_POSTHOG_KEY: ${'$'}{{ secrets.CLAW_POSTHOG_KEY }}`,
     )
     expect(workflow).toContain(
       `CLAW_POSTHOG_HOST: ${'$'}{{ secrets.CLAW_POSTHOG_HOST }}`,
+    )
+
+    const preflightStart = workflow.indexOf(
+      '- name: Preflight required secrets',
+    )
+    const preflightEnd = workflow.indexOf('- name: Setup Bun', preflightStart)
+    expect(preflightStart).toBeGreaterThanOrEqual(0)
+    expect(preflightEnd).toBeGreaterThan(preflightStart)
+    expect(workflow.slice(preflightStart, preflightEnd)).toMatch(
+      /required=\([\s\S]*CLAW_POSTHOG_KEY/,
     )
   })
 
