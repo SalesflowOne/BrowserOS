@@ -20,6 +20,7 @@
  * dispatch on a foreign page. This annotator only affects visibility.
  */
 
+import type { AgentKey } from '../domain/agent-key'
 import type { OwnershipStore } from '../domain/ownership'
 import {
   agentKeyFromClient,
@@ -144,6 +145,8 @@ export function buildOwnershipDeps(
     callerKey,
     resolveOwner: (pageId) => ownershipStore.ownerOf(pageId),
     labelForKey: (key) =>
-      labelCache.get(key) ?? ownershipStore.groupOf(key)?.title ?? null,
+      labelCache.get(key) ??
+      ownershipStore.groupOf(key as AgentKey)?.title ??
+      null,
   }
 }
