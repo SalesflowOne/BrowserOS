@@ -7,6 +7,7 @@ const SECTION_ORDER: readonly EnvSection[] = [
   'server',
   'build',
   'upload',
+  'sign',
 ]
 
 /** Generates the root env example text from the ordered registry. */

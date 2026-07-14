@@ -50,10 +50,9 @@ function readBoolFlagDefaultTrue(name: string): boolean {
   return normalised !== '0' && normalised !== 'false'
 }
 
-/** Trimmed string env read, or undefined when unset/blank. */
-function readString(name: string): string | undefined {
-  // biome-ignore lint/style/noProcessEnv: env.ts is the sanctioned env-reader for the package
-  const raw = process.env[name]?.trim()
+/** Trims a string value, returning undefined when it is unset or blank. */
+function trimmedString(value: string | undefined): string | undefined {
+  const raw = value?.trim()
   return raw && raw.length > 0 ? raw : undefined
 }
 
@@ -92,8 +91,11 @@ export const env = {
   // defaults to PostHog US Cloud. `analyticsEnabledByEnv` is an
   // operator kill-switch (set CLAW_ANALYTICS_ENABLED=0 to force off);
   // the per-install user opt-out lives in the analytics state file.
-  posthogKey: readString('CLAW_POSTHOG_KEY'),
-  posthogHost: readString('CLAW_POSTHOG_HOST') ?? 'https://us.i.posthog.com',
+  // biome-ignore lint/style/noProcessEnv: static access allows production builds to inline the key
+  posthogKey: trimmedString(process.env.CLAW_POSTHOG_KEY),
+  posthogHost:
+    // biome-ignore lint/style/noProcessEnv: static access allows production builds to inline the host
+    trimmedString(process.env.CLAW_POSTHOG_HOST) ?? 'https://us.i.posthog.com',
   analyticsEnabledByEnv: readBoolFlagDefaultTrue('CLAW_ANALYTICS_ENABLED'),
 }
 

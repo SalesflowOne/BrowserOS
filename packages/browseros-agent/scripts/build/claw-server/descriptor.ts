@@ -2,7 +2,11 @@ import type { BuildProductDescriptor } from '@browseros/build-server-tools'
 
 export const CLAW_SERVER_BUNDLE_ENTRYPOINT = 'apps/claw-server/src/main.ts'
 
-const INLINED_ENV_VARS = ['NODE_ENV'] as const
+const INLINED_ENV_VARS = [
+  'CLAW_POSTHOG_KEY',
+  'CLAW_POSTHOG_HOST',
+  'NODE_ENV',
+] as const
 const PRODUCTION_INLINE_ENV = {
   NODE_ENV: 'production',
 }

@@ -72,6 +72,10 @@ on:
         required: false
       VITE_PUBLIC_POSTHOG_HOST:
         required: false
+      VITE_CLAW_POSTHOG_KEY:
+        required: false
+      VITE_CLAW_POSTHOG_HOST:
+        required: false
 
 concurrency:
   group: release-extensions
@@ -134,6 +138,8 @@ jobs:
           SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
           VITE_PUBLIC_POSTHOG_KEY: ${{ secrets.VITE_PUBLIC_POSTHOG_KEY }}
           VITE_PUBLIC_POSTHOG_HOST: ${{ secrets.VITE_PUBLIC_POSTHOG_HOST }}
+          VITE_CLAW_POSTHOG_KEY: ${{ secrets.VITE_CLAW_POSTHOG_KEY }}
+          VITE_CLAW_POSTHOG_HOST: ${{ secrets.VITE_CLAW_POSTHOG_HOST }}
           VITE_PUBLIC_BROWSEROS_API: https://api.browseros.com
           NODE_ENV: production
         # Args are quoted at execution time (never baked into a command

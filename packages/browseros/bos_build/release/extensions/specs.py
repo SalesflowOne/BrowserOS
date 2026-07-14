@@ -124,7 +124,11 @@ EXTENSION_SPECS: Tuple[ExtensionSpec, ...] = (
         manifest_path="apps/claw-app/package.json",
         extension_id=BROWSERCLAW_EXTENSION_ID,
         signing_key_env="BROWSERCLAW_KEY",
-        env=("NODE_ENV",),
+        env=(
+            "VITE_CLAW_POSTHOG_KEY",
+            "VITE_CLAW_POSTHOG_HOST",
+            "NODE_ENV",
+        ),
         env_dir="apps/claw-app",
     ),
 )

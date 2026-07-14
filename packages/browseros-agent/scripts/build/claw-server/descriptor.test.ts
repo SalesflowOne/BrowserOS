@@ -10,10 +10,16 @@ import { clawServerBuildProduct } from './descriptor'
 describe('claw server build descriptor', () => {
   let tempRoot: string | null = null
   let originalNodeEnv: string | undefined
+  let originalPosthogKey: string | undefined
+  let originalPosthogHost: string | undefined
 
   beforeEach(() => {
     originalNodeEnv = process.env.NODE_ENV
+    originalPosthogKey = process.env.CLAW_POSTHOG_KEY
+    originalPosthogHost = process.env.CLAW_POSTHOG_HOST
     delete process.env.NODE_ENV
+    delete process.env.CLAW_POSTHOG_KEY
+    delete process.env.CLAW_POSTHOG_HOST
   })
 
   afterEach(async () => {
@@ -21,6 +27,16 @@ describe('claw server build descriptor', () => {
       delete process.env.NODE_ENV
     } else {
       process.env.NODE_ENV = originalNodeEnv
+    }
+    if (originalPosthogKey === undefined) {
+      delete process.env.CLAW_POSTHOG_KEY
+    } else {
+      process.env.CLAW_POSTHOG_KEY = originalPosthogKey
+    }
+    if (originalPosthogHost === undefined) {
+      delete process.env.CLAW_POSTHOG_HOST
+    } else {
+      process.env.CLAW_POSTHOG_HOST = originalPosthogHost
     }
 
     if (tempRoot) {
@@ -56,6 +72,34 @@ describe('claw server build descriptor', () => {
     })
 
     expect(config.envVars.NODE_ENV).toBe('production')
+  })
+
+  it('inlines optional Claw PostHog values from the production env', async () => {
+    const rootDir = await writeClawPackageRoot(
+      [
+        'CLAW_POSTHOG_KEY=phc_claw_test',
+        'CLAW_POSTHOG_HOST=https://eu.i.posthog.com',
+      ].join('\n'),
+    )
+
+    const config = loadBuildConfig(rootDir, clawServerBuildProduct)
+
+    expect(config.envVars.CLAW_POSTHOG_KEY).toBe('phc_claw_test')
+    expect(config.envVars.CLAW_POSTHOG_HOST).toBe('https://eu.i.posthog.com')
+  })
+
+  it('keeps Claw PostHog values optional and absent from CI defaults', async () => {
+    const rootDir = await writeClawPackageRoot()
+
+    const config = loadBuildConfig(rootDir, clawServerBuildProduct, {
+      ci: true,
+    })
+
+    expect(clawServerBuildProduct.env.requiredInlineEnvKeys).not.toContain(
+      'CLAW_POSTHOG_KEY',
+    )
+    expect(config.envVars.CLAW_POSTHOG_KEY).toBeUndefined()
+    expect(config.envVars.CLAW_POSTHOG_HOST).toBeUndefined()
   })
 
   async function writeClawPackageRoot(envContent?: string): Promise<string> {

@@ -7,7 +7,7 @@ const testsRoot = resolve(projectRoot, 'tests')
 const cleanupScript = resolve(testsRoot, '__helpers__/cleanup.sh')
 const testPreloadPath = './tests/__helpers__/test-env.ts'
 const preferredDirectoryGroups = ['agent', 'api', 'tools', 'browser']
-const ignoredDirectories = new Set(['__fixtures__', '__helpers__'])
+const ignoredDirectories = new Set(['__fixtures__', '__helpers__', '_helpers'])
 const rootGroupExclusions = new Set(['server.integration.test.ts'])
 const testFilePattern = /\.(test|spec)\.[cm]?[jt]sx?$/
 
