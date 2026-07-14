@@ -122,6 +122,14 @@ ALLOWLIST: tuple[SecretSpec, ...] = (
         ("release-browseros.yml", "release-server.yml", "release-extensions.yml"),
     ),  # Server and extension release analytics key.
     SecretSpec(
+        "CLAW_POSTHOG_KEY",
+        ("release-claw-server.yml",),
+    ),  # Optional Claw server analytics key.
+    SecretSpec(
+        "CLAW_POSTHOG_HOST",
+        ("release-claw-server.yml",),
+    ),  # Optional Claw server analytics host.
+    SecretSpec(
         "SENTRY_DSN",
         ("release-browseros.yml", "release-server.yml"),
     ),  # BrowserOS server inline Sentry DSN.
@@ -227,6 +235,14 @@ ALLOWLIST: tuple[SecretSpec, ...] = (
         "VITE_PUBLIC_POSTHOG_HOST",
         ("release-extensions.yml",),
     ),  # Extension build-time PostHog host.
+    SecretSpec(
+        "VITE_CLAW_POSTHOG_KEY",
+        ("release-extensions.yml",),
+    ),  # Optional BrowserClaw build-time analytics key.
+    SecretSpec(
+        "VITE_CLAW_POSTHOG_HOST",
+        ("release-extensions.yml",),
+    ),  # Optional BrowserClaw build-time analytics host.
 )
 
 KNOWN_AUTOMATIC_SECRETS = frozenset({"GITHUB_TOKEN"})
@@ -239,7 +255,14 @@ KNOWN_EXTERNAL_SECRETS = frozenset(
     }
 )
 KNOWN_OPTIONAL_SECRETS = frozenset(
-    {"AGENT_RUNNER_JWT_SECRET", "ESIGNER_CREDENTIAL_ID"}
+    {
+        "AGENT_RUNNER_JWT_SECRET",
+        "CLAW_POSTHOG_HOST",
+        "CLAW_POSTHOG_KEY",
+        "ESIGNER_CREDENTIAL_ID",
+        "VITE_CLAW_POSTHOG_HOST",
+        "VITE_CLAW_POSTHOG_KEY",
+    }
 )
 
 

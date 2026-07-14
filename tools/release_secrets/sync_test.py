@@ -2,12 +2,15 @@ import unittest
 
 from tools.release_secrets.sync import (
     ALLOWLIST,
+    KNOWN_OPTIONAL_SECRETS,
+    REPO_ROOT,
     RELEASE_WORKFLOW_FILES,
     DotenvParseError,
     build_check_result,
     build_plan,
     parse_dotenv_text,
     scan_secret_refs_from_text,
+    scan_workflow_secret_refs,
     verify_dotenv_round_trip,
 )
 
@@ -92,6 +95,28 @@ class WorkflowSecretScannerTest(unittest.TestCase):
             },
             consumers,
         )
+
+    def test_claw_posthog_workflow_secrets_are_allowlisted_and_optional(self):
+        expected_consumers = {
+            "CLAW_POSTHOG_KEY": ("release-claw-server.yml",),
+            "CLAW_POSTHOG_HOST": ("release-claw-server.yml",),
+            "VITE_CLAW_POSTHOG_KEY": ("release-extensions.yml",),
+            "VITE_CLAW_POSTHOG_HOST": ("release-extensions.yml",),
+        }
+        referenced = scan_workflow_secret_refs(REPO_ROOT)
+        allowlisted = {
+            spec.name: spec.consumers
+            for spec in ALLOWLIST
+            if spec.name in expected_consumers
+        }
+
+        self.assertEqual(set(expected_consumers), referenced & set(expected_consumers))
+        self.assertEqual(expected_consumers, allowlisted)
+        self.assertTrue(set(expected_consumers) <= KNOWN_OPTIONAL_SECRETS)
+
+        result = build_check_result(set(expected_consumers), set())
+        self.assertEqual(sorted(expected_consumers), result.optional)
+        self.assertEqual([], result.missing_required)
 
 
 class SecretPlanTest(unittest.TestCase):
