@@ -32,6 +32,7 @@ live.
 | Release BrowserOS or BrowserClaw | `gh workflow run release-browseros.yml` |
 | Make a staged release live | `browseros release publish`, then `browseros release appcast --publish` |
 | Release an extension CRX | `gh workflow run release-extensions.yml` |
+| Update extension feeds | `gh workflow run release-extension-feeds.yml` |
 | Grab today's signed mac build | Download the `nightly-browseros` / `nightly-browserclaw` prerelease |
 | Check the patch stack | `browseros dev doctor` |
 
@@ -221,26 +222,36 @@ Four extensions ship as signed CRXs: `agent`, `controller`, `bugreporter`,
 `browserclaw`. `agent` and `browserclaw` build from this repo; the other two are
 cloned from external repos. All four version independently of the browser.
 
-The usual path is the workflow:
+CRX release and feed updates are separate workflows. Release the binary first:
 
 ```bash
 gh workflow run release-extensions.yml \
   -f version=0.0.118 \
-  -f extension=agent \
-  -f channel=alpha \
-  -f publish_manifest=false   # dry run; true writes the feeds
+  -f extension=agent
 ```
 
-The per-product release orchestrators call this same workflow with
-`publish_manifest=false`, so a browser release uploads the CRX but never touches
-live manifests.
+Then inspect a feed dry run or publish it explicitly:
+
+```bash
+gh workflow run release-extension-feeds.yml \
+  -f channel=alpha \
+  -f pins='agent=0.0.118,bugreporter=54.0.0.0'
+
+gh workflow run release-extension-feeds.yml \
+  -f channel=alpha \
+  -f pins=agent=0.0.118 \
+  -f publish=true
+```
+
+Pins are optional; extensions not set carry over from the live manifests. The
+per-product release orchestrators upload the selected CRX and separately stage
+feed previews, but never publish live extension manifests.
 
 Locally there are two commands, and the difference matters:
 
 ```bash
-# Build, pack, sign, upload the CRX, then regenerate the feeds.
+# Build, pack, sign, and upload the CRX only.
 browseros ext release --version 0.0.118 --name agent
-browseros ext release --version 0.0.118 --name agent --publish-manifest
 
 # Feeds only, no CRX build. Pin versions; anything unset carries over from live.
 browseros release extensions --channel alpha --set agent=0.0.118
