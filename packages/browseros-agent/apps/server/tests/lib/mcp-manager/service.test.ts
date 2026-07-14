@@ -13,6 +13,7 @@ import {
   ServerNotFoundError,
 } from '@browseros/agent-mcp-manager'
 import {
+  cleanupNonCuratedLinks,
   installInto,
   listAgents,
   resetMcpManagerForTesting,
@@ -349,5 +350,47 @@ describe('uninstallFrom', () => {
     const out = await uninstallFrom('claude-code')
     expect(out.success).toBe(false)
     expect(out.message).toContain('user-edited')
+  })
+})
+
+describe('cleanupNonCuratedLinks', () => {
+  it('disconnects agents no longer in the curated surface and leaves curated ones', async () => {
+    const stub = createStubMcpManager()
+    stub.seedServer(
+      'browseros',
+      { transport: 'http', url: 'http://127.0.0.1:9100/mcp' },
+      [{ agent: 'claude-code' }, { agent: 'gemini' }],
+    )
+    stub.seedServer(
+      'browseros-stdio',
+      { transport: 'stdio', command: 'npx', args: ['mcp-remote', 'x'] },
+      [{ agent: 'claude-desktop' }],
+    )
+    setMcpManagerForTesting(stub)
+
+    const removed = await cleanupNonCuratedLinks()
+    expect(removed.sort()).toEqual(['claude-desktop', 'gemini'])
+
+    const disconnects = callsOf(stub, 'disconnect') as Array<{ agent: string }>
+    expect(disconnects.some((d) => d.agent === 'claude-code')).toBe(false)
+    // Curated agent survives; the stale ones are gone from the manifest.
+    const links = await stub.listLinks()
+    expect((links as Array<{ agent: string }>).map((l) => l.agent)).toEqual([
+      'claude-code',
+    ])
+  })
+
+  it('is a no-op when only curated agents are linked', async () => {
+    const stub = createStubMcpManager()
+    stub.seedServer(
+      'browseros',
+      { transport: 'http', url: 'http://127.0.0.1:9100/mcp' },
+      [{ agent: 'claude-code' }, { agent: 'cursor' }],
+    )
+    setMcpManagerForTesting(stub)
+
+    const removed = await cleanupNonCuratedLinks()
+    expect(removed).toEqual([])
+    expect(callsOf(stub, 'disconnect')).toHaveLength(0)
   })
 })

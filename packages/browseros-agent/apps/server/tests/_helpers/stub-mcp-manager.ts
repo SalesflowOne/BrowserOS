@@ -38,6 +38,14 @@ export interface StubOptions {
   removeThrowsByServer?: Map<string, Error>
   /** Throw an error from `link` for these agent ids. */
   linkThrowsByAgent?: Set<string>
+  /**
+   * Agent ids `rescan` reports as drifted (manifest link exists but the
+   * on-disk entry is gone) rather than verified. Models a user who hand
+   * removed the entry.
+   */
+  rescanDriftedAgents?: Set<string>
+  /** Agent ids `rescan` reports as missing (config file gone). */
+  rescanMissingAgents?: Set<string>
 }
 
 export interface SeedLink {
@@ -57,6 +65,8 @@ export function createStubMcpManager(
   const manifest = new Map<string, ManifestServerEntry>()
   const removeThrows = options.removeThrowsByServer ?? new Map<string, Error>()
   const linkThrows = options.linkThrowsByAgent ?? new Set<string>()
+  const rescanDrifted = options.rescanDriftedAgents ?? new Set<string>()
+  const rescanMissing = options.rescanMissingAgents ?? new Set<string>()
 
   const stub: StubMcpManager = {
     calls,
@@ -188,7 +198,44 @@ export function createStubMcpManager(
     },
     async rescan(input) {
       calls.push({ method: 'rescan', payload: input ?? {} })
-      return { verified: [], drifted: [], missing: [] }
+      const agentFilter = input?.agents
+      const verified: Array<{
+        serverName: string
+        agent: string
+        configPath: string
+      }> = []
+      const drifted: Array<{
+        serverName: string
+        agent: string
+        scope: string
+        configPath: string
+        reason: string
+      }> = []
+      const missing: typeof drifted = []
+      for (const entry of manifest.values()) {
+        for (const [agent, link] of Object.entries(entry.links)) {
+          if (!link) continue
+          if (agentFilter && !agentFilter.includes(agent as never)) continue
+          const base = {
+            serverName: entry.name,
+            agent,
+            scope: 'system',
+            configPath: link.configPath,
+          }
+          if (rescanMissing.has(agent)) {
+            missing.push({ ...base, reason: 'config file does not exist' })
+          } else if (rescanDrifted.has(agent)) {
+            drifted.push({ ...base, reason: 'no matching entry on disk' })
+          } else {
+            verified.push({
+              serverName: entry.name,
+              agent,
+              configPath: link.configPath,
+            })
+          }
+        }
+      }
+      return { verified, drifted, missing } as never
     },
     async isInstalled(input) {
       calls.push({ method: 'isInstalled', payload: input })
