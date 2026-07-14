@@ -38,6 +38,12 @@ describe('test groups', () => {
     expect(listAllGroups()).toContain('lib')
   })
 
+  it('excludes helper-only directories from the group list', () => {
+    expect(listAllGroups()).not.toContain('_helpers')
+    expect(listAllGroups()).not.toContain('__helpers__')
+    expect(listAllGroups()).not.toContain('__fixtures__')
+  })
+
   it('runs available integration tests in the integration group', () => {
     expect(getAtomicGroupTargets('integration')).toEqual([
       './tests/server.integration.test.ts',
