@@ -26,7 +26,6 @@ import {
   agentKeyFromClient,
   type ClientIdentity,
   identityService,
-  slugifyClientName,
 } from '../lib/mcp-session'
 import { dispatchCancellation } from '../services/dispatch-cancellation'
 import { dropFirstCaptures } from '../services/screenshots'
@@ -38,7 +37,6 @@ import { VERSION } from '../version'
 import { registerBrowserToolsForSingleServer } from './dispatch'
 import { collapseAgentTabGroup } from './effects/tab-groups'
 import { BROWSERCLAW_MCP_INSTRUCTIONS } from './mcp-prompt'
-import { cancelSessionNaming } from './session-naming'
 
 const SERVER_NAME = 'browserclaw'
 const SERVER_TITLE = 'BrowserClaw'
@@ -79,9 +77,7 @@ function buildSession(): Session {
     { instructions: BROWSERCLAW_MCP_INSTRUCTIONS },
   )
 
-  registerBrowserToolsForSingleServer(server, resolveIdentity, {
-    sessionNamingServer: server.server,
-  })
+  registerBrowserToolsForSingleServer(server, resolveIdentity)
 
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: () => crypto.randomUUID(),
@@ -163,13 +159,9 @@ function cleanupSessionState(sessionId: string): void {
   const identity = identityService.getIdentity(sessionId)
   const agent = identity ? agentIdentityFromClient(identity) : null
   const key = identity ? agentKeyFromClient(identity) : null
-  const usesFallbackKey = identity
-    ? slugifyClientName(identity.clientName).length === 0
-    : false
   sessions.delete(sessionId)
   dispatchCancellation.cancelBySession(sessionId, SESSION_ENDED_REASON)
-  cancelSessionNaming(sessionId)
-  identityService.dropSession(sessionId)
+  identityService.endSession(sessionId)
   recordSessionEnd({ sessionId, kind: 'closed' })
   // Close the transport + server AFTER the map delete so any
   // reentrant onsessionclosed callback that the transport fires
@@ -202,7 +194,6 @@ function cleanupSessionState(sessionId: string): void {
       if (ownershipStore.groupOf(key) && browserSession) {
         void collapseAgentTabGroup({ key, session: browserSession })
       }
-      if (usesFallbackKey) ownershipStore.forget(key)
     }
   }
   logger.info('cockpit v2 mcp session closed', { sessionId })

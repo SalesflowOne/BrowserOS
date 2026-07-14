@@ -193,8 +193,8 @@ export const applyTabGroups: ToolEffect = ({ call, result }) => {
 }
 
 async function createGroup(input: EnsureAgentTabGroupInput): Promise<void> {
-  const creationTitle = desiredTitle(input.identity, input.key)
-  const color = colorForSlug(input.key)
+  const creationTitle = desiredTitle(input.identity)
+  const color = colorForSlug(input.identity.slug)
   const result = await dispatchGroup(input.session, {
     action: 'create',
     pages: [input.pageId],
@@ -209,12 +209,12 @@ async function createGroup(input: EnsureAgentTabGroupInput): Promise<void> {
     windowId: group.windowId,
     color,
     title: creationTitle,
-    titleExplicit: input.identity.sessionLabel !== null,
+    titleExplicit: true,
     collapsed: group.collapsed,
   })
 
   await lockGroupColor(input.key, group.id, color, input.session)
-  const latestTitle = desiredTitle(input.identity, input.key)
+  const latestTitle = desiredTitle(input.identity)
   if (latestTitle !== creationTitle) {
     await applyCreationLateTitle(
       input.key,
@@ -359,11 +359,10 @@ function dispatchGroup(
   })
 }
 
-function desiredTitle(identity: ClientIdentity, key: AgentKey): string {
-  if (!identity.sessionLabel) return key
+function desiredTitle(identity: ClientIdentity): string {
   return buildSessionGroupTitle(
-    clientPrefixFromSlug(key),
-    identity.sessionLabel,
+    clientPrefixFromSlug(identity.slug),
+    identity.label,
   )
 }
 

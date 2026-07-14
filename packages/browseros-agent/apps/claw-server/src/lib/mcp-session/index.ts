@@ -28,8 +28,6 @@ export {
 } from './identity'
 export {
   buildSessionGroupTitle,
-  buildSessionNamePrompt,
   clientPrefixFromSlug,
   normalizeSmallName,
-  sessionNameRequestedSchema,
 } from './naming'
