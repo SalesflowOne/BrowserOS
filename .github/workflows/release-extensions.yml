@@ -183,24 +183,12 @@ jobs:
           RELEASE_TAG="extensions/v$VERSION"
           TITLE="Extensions - v$VERSION"
           NOTES_FILE="/tmp/extension-release-notes.md"
-          ASSET_DIR="packages/browseros/build/extensions/dist"
-          mapfile -t crx_assets < <(find "$ASSET_DIR" -maxdepth 1 -type f -name '*.crx' | sort)
-          if [ "${#crx_assets[@]}" -eq 0 ]; then
-            echo "::error::No CRX assets found in $ASSET_DIR"
-            exit 1
-          fi
 
           {
             echo "# $TITLE"
             echo
             echo "- Extension selection: \`$EXTENSION\`"
             echo "- Version: \`$VERSION\`"
-            echo
-            echo "## CRX downloads"
-            for crx in "${crx_assets[@]}"; do
-              filename=$(basename "$crx")
-              echo "- [\`$filename\`](https://cdn.browseros.com/extensions/$filename)"
-            done
           } > "$NOTES_FILE"
 
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
