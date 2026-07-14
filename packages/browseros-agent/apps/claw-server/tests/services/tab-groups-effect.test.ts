@@ -43,6 +43,7 @@ mock.module('@browseros/browser-mcp/tools/framework', () => ({
 const {
   applyAgentTabGroupTitle,
   applyTabGroups,
+  closeAgentTabGroup,
   collapseAgentTabGroup,
   ensureAgentTabGroup,
   resetTabGroupEffectsForTesting,
@@ -52,15 +53,18 @@ const tabsTool = BROWSER_TOOLS.find((tool) => tool.name === 'tabs')
 if (!tabsTool) throw new Error('tabs tool missing')
 
 const fakeSession = {} as never
-const key = agentKeyFromSlug('claude-code')
+const key = agentKeyFromSlug('claude-code-swift-otter')
 
-function identity(sessionLabel: string | null = null): ClientIdentity {
+function identity(label = 'swift-otter'): ClientIdentity {
   return {
     sessionId: 'sid-1',
     clientName: 'claude-code',
     clientVersion: '1.0.0',
     clientTitle: null,
-    sessionLabel,
+    slug: 'claude-code',
+    key,
+    generatedLabel: 'swift-otter',
+    label,
     firstSeenAt: 1,
   }
 }
@@ -88,8 +92,7 @@ function setGroup(collapsed = false): void {
     id: 'G1',
     windowId: 1,
     color: 'red',
-    title: 'claude-code',
-    titleExplicit: false,
+    title: 'claude/swift-otter',
     collapsed,
   })
 }
@@ -315,7 +318,7 @@ describe('durable tab group effect', () => {
     expect(calls[0]?.args).toEqual({
       action: 'create',
       pages: [2],
-      title: 'claude-code',
+      title: 'claude/swift-otter',
     })
     expect(ownershipStore.groupOf(key)?.id).toBe('G2')
   })
@@ -332,7 +335,7 @@ describe('durable tab group effect', () => {
     expect(ownershipStore.groupOf(key)?.id).toBe('G1')
   })
 
-  it('applies a late title with the group timeout and durable state', async () => {
+  it('applies a renamed title with the group timeout and durable state', async () => {
     setGroup()
     queue(ok())
     await applyAgentTabGroupTitle({
@@ -347,9 +350,37 @@ describe('durable tab group effect', () => {
       title: 'claude/invoice-processing',
     })
     expect(calls[0]?.signal).toBeInstanceOf(AbortSignal)
+    expect(ownershipStore.groupOf(key)?.title).toBe('claude/invoice-processing')
+  })
+
+  it('creates once with the born title and does not run late-title reconciliation', async () => {
+    let release: ((result: FakeResult) => void) | undefined
+    const createResult = new Promise<FakeResult>((resolve) => {
+      release = resolve
+    })
+    const sessionIdentity = identity()
+    queue(createResult, ok())
+
+    const creating = ensureAgentTabGroup({
+      key,
+      identity: sessionIdentity,
+      pageId: 1,
+      session: fakeSession,
+      defaultTabGroupId: null,
+    })
+    sessionIdentity.label = 'invoice-processing'
+    release?.(ok({ group: { groupId: 'G1', windowId: 1 } }))
+    await creating
+
+    expect(calls).toHaveLength(2)
+    expect(calls[0]?.args).toEqual({
+      action: 'create',
+      pages: [1],
+      title: 'claude/swift-otter',
+    })
     expect(ownershipStore.groupOf(key)).toMatchObject({
-      title: 'claude/invoice-processing',
-      titleExplicit: true,
+      title: 'claude/swift-otter',
+      color: 'red',
     })
   })
 
@@ -439,5 +470,15 @@ describe('durable tab group effect', () => {
     })
     expect(calls[0]?.signal).toBeInstanceOf(AbortSignal)
     expect(ownershipStore.groupOf(key)?.collapsed).toBe(true)
+  })
+
+  it('closes a live group and all of its current members', async () => {
+    setGroup()
+    queue(ok())
+
+    await closeAgentTabGroup({ key, session: fakeSession })
+
+    expect(calls[0]?.args).toEqual({ action: 'close', groupId: 'G1' })
+    expect(calls[0]?.signal).toBeInstanceOf(AbortSignal)
   })
 })

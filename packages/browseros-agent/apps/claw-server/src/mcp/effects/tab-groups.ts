@@ -84,17 +84,14 @@ export async function ensureAgentTabGroup(
   await create
 }
 
-/** Stores a late title and applies it to a live durable group. */
+/** Stores a renamed title and applies it to a live group. */
 export async function applyAgentTabGroupTitle(
   input: ApplyAgentTabGroupTitleInput,
 ): Promise<void> {
   await inflightCreates.get(input.key)
   const group = ownershipStore.groupOf(input.key)
   if (!group) return
-  ownershipStore.updateGroup(input.key, {
-    title: input.title,
-    titleExplicit: true,
-  })
+  ownershipStore.updateGroup(input.key, { title: input.title })
   if (!input.session) return
 
   try {
@@ -157,6 +154,34 @@ export async function collapseAgentTabGroup(input: {
   }
 }
 
+/** Closes a retained group and every tab still inside it. */
+export async function closeAgentTabGroup(input: {
+  key: AgentKey
+  session: BrowserSession
+}): Promise<void> {
+  const group = ownershipStore.groupOf(input.key)
+  if (!group) return
+
+  try {
+    const result = await dispatchGroup(input.session, {
+      action: 'close',
+      groupId: group.id,
+    })
+    if (!result.isError) return
+    logger.warn('agent tab group close failed', {
+      key: input.key,
+      groupId: group.id,
+      error: firstText(result),
+    })
+  } catch (error) {
+    logger.warn('agent tab group close threw', {
+      key: input.key,
+      groupId: group.id,
+      error: errorText(error),
+    })
+  }
+}
+
 /** Applies post-dispatch group creation and expansion without blocking the call. */
 export const applyTabGroups: ToolEffect = ({ call, result }) => {
   if (result.isError || !call.key || !call.identity || !call.session) {
@@ -209,20 +234,10 @@ async function createGroup(input: EnsureAgentTabGroupInput): Promise<void> {
     windowId: group.windowId,
     color,
     title: creationTitle,
-    titleExplicit: true,
     collapsed: group.collapsed,
   })
 
   await lockGroupColor(input.key, group.id, color, input.session)
-  const latestTitle = desiredTitle(input.identity)
-  if (latestTitle !== creationTitle) {
-    await applyCreationLateTitle(
-      input.key,
-      group.id,
-      latestTitle,
-      input.session,
-    )
-  }
   logger.info('agent tab group created', {
     key: input.key,
     groupId: group.id,
@@ -312,36 +327,6 @@ async function lockGroupColor(
     })
   } catch (error) {
     logger.warn('agent tab group color lock threw', {
-      key,
-      groupId,
-      error: errorText(error),
-    })
-  }
-}
-
-async function applyCreationLateTitle(
-  key: AgentKey,
-  groupId: string,
-  title: string,
-  session: BrowserSession,
-): Promise<void> {
-  try {
-    const result = await dispatchGroup(session, {
-      action: 'update',
-      groupId,
-      title,
-    })
-    if (result.isError) {
-      logger.warn('agent tab group late title apply failed', {
-        key,
-        groupId,
-        error: firstText(result),
-      })
-      return
-    }
-    ownershipStore.updateGroup(key, { title, titleExplicit: true })
-  } catch (error) {
-    logger.warn('agent tab group late title apply threw', {
       key,
       groupId,
       error: errorText(error),
