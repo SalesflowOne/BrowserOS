@@ -29,6 +29,10 @@ describe('ENV_REGISTRY', () => {
       'BROWSEROS_USER_DATA_DIR',
       'BROWSEROS_CLAW_CDP_PORT',
       'BROWSERCLAW_DIR',
+      'CLAW_POSTHOG_KEY',
+      'CLAW_POSTHOG_HOST',
+      'VITE_CLAW_POSTHOG_KEY',
+      'VITE_CLAW_POSTHOG_HOST',
       'BROWSEROS_CONFIG_URL',
       'BROWSEROS_TRUSTED_ORIGINS',
       'POSTHOG_API_KEY',
@@ -42,6 +46,10 @@ describe('ENV_REGISTRY', () => {
       'R2_ACCESS_KEY_ID',
       'R2_SECRET_ACCESS_KEY',
       'R2_BUCKET',
+      'ESIGNER_USERNAME',
+      'ESIGNER_PASSWORD',
+      'ESIGNER_TOTP_SECRET',
+      'ESIGNER_CREDENTIAL_ID',
     ])
     expect(ENV_REGISTRY.map((spec) => spec.key)).not.toContain(
       'R2_UPLOAD_PREFIX',
@@ -49,6 +57,67 @@ describe('ENV_REGISTRY', () => {
     expect(ENV_REGISTRY.map((spec) => spec.key)).not.toContain(
       'R2_DOWNLOAD_PREFIX',
     )
+  })
+
+  test('registers optional Claw analytics and production eSigner inputs', () => {
+    const specs = Object.fromEntries(
+      ENV_REGISTRY.map((spec) => [spec.key, spec]),
+    )
+
+    expect(specs.CLAW_POSTHOG_KEY).toMatchObject({
+      section: 'claw',
+      secret: true,
+      modes: {
+        development: { value: '' },
+        production: { value: '' },
+      },
+    })
+    expect(specs.CLAW_POSTHOG_HOST).toMatchObject({
+      section: 'claw',
+      secret: false,
+      modes: {
+        development: {
+          value: 'https://us.i.posthog.com',
+          commented: true,
+        },
+      },
+    })
+    expect(specs.VITE_CLAW_POSTHOG_KEY).toMatchObject({
+      section: 'claw',
+      secret: true,
+      modes: { development: { value: '' } },
+    })
+    expect(specs.VITE_CLAW_POSTHOG_HOST).toMatchObject({
+      section: 'claw',
+      secret: false,
+      modes: {
+        development: {
+          value: 'https://us.i.posthog.com',
+          commented: true,
+        },
+      },
+    })
+
+    expect(specs.ESIGNER_USERNAME).toMatchObject({
+      section: 'sign',
+      secret: false,
+      modes: { production: { value: '' } },
+    })
+    expect(specs.ESIGNER_PASSWORD).toMatchObject({
+      section: 'sign',
+      secret: true,
+      modes: { production: { value: '' } },
+    })
+    expect(specs.ESIGNER_TOTP_SECRET).toMatchObject({
+      section: 'sign',
+      secret: true,
+      modes: { production: { value: '' } },
+    })
+    expect(specs.ESIGNER_CREDENTIAL_ID).toMatchObject({
+      section: 'sign',
+      secret: false,
+      modes: { production: { value: '' } },
+    })
   })
 })
 
@@ -59,6 +128,32 @@ describe('generateEnvExample', () => {
     )
     expect(generateEnvExample('production')).toBe(
       generateEnvExample('production'),
+    )
+  })
+
+  test('renders Claw analytics by mode and eSigner inputs for production', () => {
+    const development = generateEnvExample('development')
+    const production = generateEnvExample('production')
+
+    expect(development).toContain('\nCLAW_POSTHOG_KEY=\n')
+    expect(development).toContain(
+      '\n# CLAW_POSTHOG_HOST=https://us.i.posthog.com\n',
+    )
+    expect(development).toContain('\nVITE_CLAW_POSTHOG_KEY=\n')
+    expect(development).toContain(
+      '\n# VITE_CLAW_POSTHOG_HOST=https://us.i.posthog.com\n',
+    )
+
+    expect(production).toContain('\nCLAW_POSTHOG_KEY=\n')
+    expect(production).not.toContain('CLAW_POSTHOG_HOST')
+    expect(production).not.toContain('VITE_CLAW_POSTHOG')
+    expect(production).toContain('\n# --- sign ---\n')
+    expect(production).toContain('\nESIGNER_USERNAME=\n')
+    expect(production).toContain('\nESIGNER_PASSWORD=\n')
+    expect(production).toContain('\nESIGNER_TOTP_SECRET=\n')
+    expect(production).toContain('\nESIGNER_CREDENTIAL_ID=\n')
+    expect(production.indexOf('# --- sign ---')).toBeGreaterThan(
+      production.indexOf('# --- upload ---'),
     )
   })
 
