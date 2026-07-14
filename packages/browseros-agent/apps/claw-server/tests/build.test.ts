@@ -173,6 +173,9 @@ describe('claw server build', () => {
 
   it('archives CI builds without R2 credentials', async () => {
     rmSync(zipPath, { force: true })
+    const inlinedPosthogKey = 'phc_claw_binary_inline_evidence_42'
+    const env = buildEnv(UNNEEDED_SERVER_AND_R2_ENV_KEYS)
+    env.CLAW_POSTHOG_KEY = inlinedPosthogKey
 
     const build = Bun.spawn(
       ['bun', buildScript, `--target=${target.id}`, '--ci'],
@@ -180,7 +183,7 @@ describe('claw server build', () => {
         cwd: rootDir,
         stdout: 'pipe',
         stderr: 'pipe',
-        env: buildEnv(UNNEEDED_SERVER_AND_R2_ENV_KEYS),
+        env,
       },
     )
     const buildExit = await build.exited
@@ -197,6 +200,10 @@ describe('claw server build', () => {
     assert.ok(
       existsSync(migrationJournalPath),
       `Expected packaged migrations at ${migrationJournalPath}`,
+    )
+    assert.ok(
+      readFileSync(binaryPath).includes(Buffer.from(inlinedPosthogKey)),
+      'Expected the production Claw binary to contain its inlined PostHog key',
     )
   }, 300_000)
 

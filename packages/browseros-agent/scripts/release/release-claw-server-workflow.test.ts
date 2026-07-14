@@ -47,6 +47,17 @@ describe('release-claw-server workflow', () => {
     expect(workflow).toContain('publish_ota:')
   })
 
+  it('forwards optional Claw PostHog values into production builds', () => {
+    expect(workflow).toMatch(/CLAW_POSTHOG_KEY:\n\s+required: false/)
+    expect(workflow).toMatch(/CLAW_POSTHOG_HOST:\n\s+required: false/)
+    expect(workflow).toContain(
+      `CLAW_POSTHOG_KEY: ${'$'}{{ secrets.CLAW_POSTHOG_KEY }}`,
+    )
+    expect(workflow).toContain(
+      `CLAW_POSTHOG_HOST: ${'$'}{{ secrets.CLAW_POSTHOG_HOST }}`,
+    )
+  })
+
   it('publishes claw-server and claw-onboard resources to their consumer prefixes', () => {
     expect(clawServerBuildProduct.env.defaultR2UploadPrefix).toBe(
       'claw-server/prod-resources',
