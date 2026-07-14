@@ -123,7 +123,11 @@ ALLOWLIST: tuple[SecretSpec, ...] = (
     ),  # Server and extension release analytics key.
     SecretSpec(
         "CLAW_POSTHOG_KEY",
-        ("release-browserclaw.yml", "release-claw-server.yml"),
+        (
+            "nightly-browserclaw.yml",
+            "release-browserclaw.yml",
+            "release-claw-server.yml",
+        ),
     ),  # Required Claw server production analytics key.
     SecretSpec(
         "CLAW_POSTHOG_HOST",

@@ -99,6 +99,7 @@ class WorkflowSecretScannerTest(unittest.TestCase):
     def test_claw_posthog_keys_are_required_and_hosts_are_optional(self):
         expected_consumers = {
             "CLAW_POSTHOG_KEY": (
+                "nightly-browserclaw.yml",
                 "release-browserclaw.yml",
                 "release-claw-server.yml",
             ),

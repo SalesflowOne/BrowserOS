@@ -10,6 +10,10 @@ const workflow = readFileSync(
   resolve(repoRoot, '.github/workflows/release-claw-server.yml'),
   'utf8',
 )
+const nightlyWorkflow = readFileSync(
+  resolve(repoRoot, '.github/workflows/nightly-browserclaw.yml'),
+  'utf8',
+)
 const shellVersionPlaceholder = '$' + '{VERSION}'
 const shellTargetPlaceholder = '$' + '{target}'
 const shellServerAssetsPlaceholder = '$' + '{server_assets[@]}'
@@ -57,14 +61,30 @@ describe('release-claw-server workflow', () => {
       `CLAW_POSTHOG_HOST: ${'$'}{{ secrets.CLAW_POSTHOG_HOST }}`,
     )
 
-    const preflightStart = workflow.indexOf(
-      '- name: Preflight required secrets',
-    )
-    const preflightEnd = workflow.indexOf('- name: Setup Bun', preflightStart)
+    const preflightStart = workflow.indexOf('  preflight:')
+    const preflightEnd = workflow.indexOf('  release:', preflightStart)
     expect(preflightStart).toBeGreaterThanOrEqual(0)
     expect(preflightEnd).toBeGreaterThan(preflightStart)
-    expect(workflow.slice(preflightStart, preflightEnd)).toMatch(
-      /required=\([\s\S]*CLAW_POSTHOG_KEY/,
+    const preflight = workflow.slice(preflightStart, preflightEnd)
+    expect(preflight).toMatch(/required=\([\s\S]*CLAW_POSTHOG_KEY/)
+    expect(preflight).toContain('- name: Preflight required secrets')
+
+    const releaseStart = preflightEnd
+    const releaseEnd = workflow.indexOf('  build-publish:', releaseStart)
+    expect(workflow.slice(releaseStart, releaseEnd)).toContain(
+      'needs: preflight',
+    )
+  })
+
+  it('uses production key validation for published BrowserClaw nightlies', () => {
+    expect(nightlyWorkflow).toContain(
+      `CLAW_POSTHOG_KEY: ${'$'}{{ secrets.CLAW_POSTHOG_KEY }}`,
+    )
+    expect(nightlyWorkflow).toContain(
+      'bun scripts/build/claw-server.ts --target=darwin-arm64 --no-upload',
+    )
+    expect(nightlyWorkflow).not.toContain(
+      'bun scripts/build/claw-server.ts --target=darwin-arm64 --ci',
     )
   })
 

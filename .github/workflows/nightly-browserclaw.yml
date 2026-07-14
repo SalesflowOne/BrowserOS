@@ -138,6 +138,7 @@ jobs:
       - name: Stage BrowserClaw nightly resources
         env:
           BROWSEROS_REPO: ${{ steps.build_inputs.outputs.browseros_repo }}
+          CLAW_POSTHOG_KEY: ${{ secrets.CLAW_POSTHOG_KEY }}
         run: |
           set -euo pipefail
           agent_root="$BROWSEROS_REPO/packages/browseros-agent"
@@ -146,7 +147,7 @@ jobs:
           cd "$agent_root"
           bun ci
           bun scripts/build/server.ts --target=darwin-arm64 --ci
-          bun scripts/build/claw-server.ts --target=darwin-arm64 --ci
+          bun scripts/build/claw-server.ts --target=darwin-arm64 --no-upload
           bun scripts/build/claw-onboard.ts --ci
           # Rust alternative: run scripts/build/claw-server-rust-local.sh here
           # and flip copy_resources.yaml/download_resources.yaml.
