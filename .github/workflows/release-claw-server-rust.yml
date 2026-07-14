@@ -200,7 +200,7 @@ jobs:
           ref: ${{ needs.release.outputs.release_sha }}
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@v8.2.0
+        uses: astral-sh/setup-uv@v8.3.2
 
       - name: Setup Python
         shell: bash
