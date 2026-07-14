@@ -17,25 +17,26 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
+import type { AgentKey } from '../domain/agent-key'
 import { ownershipStore } from '../domain/ownership'
 import { env } from '../env'
 import { getBrowserSession } from '../lib/browser-session'
 import { logger } from '../lib/logger'
 import {
   agentIdentityFromClient,
-  agentKeyFromClient,
   type ClientIdentity,
   identityService,
 } from '../lib/mcp-session'
 import { dispatchCancellation } from '../services/dispatch-cancellation'
 import { dropFirstCaptures } from '../services/screenshots'
 import {
+  type RecordSessionEndInput,
   recordSessionEnd,
   recordSessionStart,
 } from '../services/session-events'
 import { VERSION } from '../version'
 import { registerBrowserToolsForSingleServer } from './dispatch'
-import { collapseAgentTabGroup } from './effects/tab-groups'
+import { closeAgentTabGroup, collapseAgentTabGroup } from './effects/tab-groups'
 import { BROWSERCLAW_MCP_INSTRUCTIONS } from './mcp-prompt'
 
 const SERVER_NAME = 'browserclaw'
@@ -58,6 +59,7 @@ interface Session {
 }
 
 const sessions = new Map<string, Session>()
+const reapingKeys = new Set<AgentKey>()
 let sweeperHandle: ReturnType<typeof setInterval> | null = null
 
 function resolveIdentity(sessionId: string | undefined): ClientIdentity | null {
@@ -94,8 +96,7 @@ function buildSession(): Session {
       error: err instanceof Error ? err.message : String(err),
     })
     if (!sessionId) return
-    recordSessionEnd({
-      sessionId,
+    cleanupSessionState(sessionId, {
       kind: 'errored',
       reason: err instanceof Error ? err.message : String(err),
     })
@@ -148,7 +149,10 @@ function buildSession(): Session {
  * Idempotent: if the session is already gone from the map, return
  * without firing side effects so repeated sweeps are safe.
  */
-function cleanupSessionState(sessionId: string): void {
+function cleanupSessionState(
+  sessionId: string,
+  end: Omit<RecordSessionEndInput, 'sessionId'> = { kind: 'closed' },
+): void {
   // Grab the ref BEFORE the map delete so we can close the transport
   // + server AFTER the map is empty. Idempotent guard: if the
   // session is already gone, return without firing side effects
@@ -157,12 +161,11 @@ function cleanupSessionState(sessionId: string): void {
   const session = sessions.get(sessionId)
   if (!session) return
   const identity = identityService.getIdentity(sessionId)
-  const agent = identity ? agentIdentityFromClient(identity) : null
-  const key = identity ? agentKeyFromClient(identity) : null
+  const key = identity?.key ?? null
   sessions.delete(sessionId)
   dispatchCancellation.cancelBySession(sessionId, SESSION_ENDED_REASON)
   identityService.endSession(sessionId)
-  recordSessionEnd({ sessionId, kind: 'closed' })
+  recordSessionEnd({ sessionId, ...end })
   // Close the transport + server AFTER the map delete so any
   // reentrant onsessionclosed callback that the transport fires
   // from inside its own close() sees the now-empty map and no-ops
@@ -184,16 +187,10 @@ function cleanupSessionState(sessionId: string): void {
       error: err instanceof Error ? err.message : String(err),
     })
   })
-  if (agent) dropFirstCaptures(agent.agentId)
   if (key) {
-    const keyStillLive = identityService
-      .list()
-      .some((candidate) => agentKeyFromClient(candidate) === key)
-    if (!keyStillLive) {
-      const browserSession = getBrowserSession()
-      if (ownershipStore.groupOf(key) && browserSession) {
-        void collapseAgentTabGroup({ key, session: browserSession })
-      }
+    const browserSession = getBrowserSession()
+    if (ownershipStore.groupOf(key) && browserSession) {
+      void collapseAgentTabGroup({ key, session: browserSession })
     }
   }
   logger.info('cockpit v2 mcp session closed', { sessionId })
@@ -219,7 +216,36 @@ export function sweepIdleSessions(now: number): string[] {
     logger.info('sweeping idle mcp sessions', { count: idle.length })
   }
   for (const sessionId of idle) cleanupSessionState(sessionId)
+  void reapRetainedSessions(now)
   return idle
+}
+
+/** Closes and forgets ended sessions whose retention window elapsed. */
+export async function reapRetainedSessions(now: number): Promise<AgentKey[]> {
+  const expired = identityService
+    .listRetained()
+    .filter(
+      ({ key, endedAt }) =>
+        now - endedAt >= env.sessionRetentionMs && !reapingKeys.has(key),
+    )
+  for (const { key } of expired) reapingKeys.add(key)
+
+  await Promise.all(
+    expired.map(async ({ key }) => {
+      try {
+        const browserSession = getBrowserSession()
+        if (browserSession) {
+          await closeAgentTabGroup({ key, session: browserSession })
+        }
+      } finally {
+        ownershipStore.forget(key)
+        dropFirstCaptures(key)
+        identityService.forgetRetained(key)
+        reapingKeys.delete(key)
+      }
+    }),
+  )
+  return expired.map(({ key }) => key)
 }
 
 function ensureSweeperStarted(): void {
@@ -298,6 +324,7 @@ export async function handleSingleMcpRequest(
 export function resetSingleMcpInstanceForTesting(): void {
   stopSweeper()
   sessions.clear()
+  reapingKeys.clear()
 }
 
 /**
