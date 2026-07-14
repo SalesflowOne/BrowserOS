@@ -311,11 +311,13 @@ Thank you to all our supporters!
 
 <!-- [![Star History Chart](https://api.star-history.com/svg?repos=browseros-ai/BrowserOS&type=Date)](https://www.star-history.com/#browseros-ai/BrowserOS&Date) -->
 
-Founders — [@nv_sonti](https://x.com/intent/user?screen_name=nv_sonti) and [@ThatNithin](https://x.com/intent/user?screen_name=ThatNithin):
+Team — Nikhil ([@nv_sonti](https://x.com/intent/user?screen_name=nv_sonti)), Nithin ([@ThatNithin](https://x.com/intent/user?screen_name=ThatNithin)) and Dani ([@dani_akash_](https://x.com/intent/user?screen_name=dani_akash_)):
 
 [![Twitter Follow](https://img.shields.io/twitter/follow/nv_sonti?style=social)](https://x.com/intent/user?screen_name=nv_sonti)
 &emsp;&emsp;&emsp;
 [![Twitter Follow](https://img.shields.io/twitter/follow/ThatNithin?style=social)](https://x.com/intent/user?screen_name=ThatNithin)
+&emsp;&emsp;&emsp;
+[![Twitter Follow](https://img.shields.io/twitter/follow/dani_akash_?style=social)](https://x.com/intent/user?screen_name=dani_akash_)
 
 <p align="center">
 Built with ❤️ from San Francisco
