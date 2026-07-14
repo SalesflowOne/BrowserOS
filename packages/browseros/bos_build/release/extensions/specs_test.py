@@ -104,6 +104,18 @@ class SpecTableTest(unittest.TestCase):
             self.assertTrue(spec.manifest_path.endswith("package.json"), name)
             self.assertTrue(spec.env_dir)
 
+    def test_browserclaw_forwards_posthog_env_to_claw_app(self):
+        browserclaw = spec_by_name("browserclaw")
+        self.assertEqual(
+            browserclaw.env,
+            (
+                "VITE_CLAW_POSTHOG_KEY",
+                "VITE_CLAW_POSTHOG_HOST",
+                "NODE_ENV",
+            ),
+        )
+        self.assertEqual(browserclaw.env_dir, "apps/claw-app")
+
     def test_in_repo_manifest_paths_exist_in_working_tree(self):
         monorepo_root = get_package_root().parent.parent
         for name in ("agent", "browserclaw"):
