@@ -45,10 +45,10 @@ export const MCPServerHeader: FC<MCPServerHeaderProps> = ({
 
   const handleRestart = async () => {
     setIsRestarting(true)
+    const { getBrowserOSAdapter } = await import('@/lib/browseros/adapter')
+    const { BROWSEROS_PREFS } = await import('@/lib/browseros/prefs')
+    const adapter = getBrowserOSAdapter()
     try {
-      const { getBrowserOSAdapter } = await import('@/lib/browseros/adapter')
-      const { BROWSEROS_PREFS } = await import('@/lib/browseros/prefs')
-      const adapter = getBrowserOSAdapter()
       await adapter.setPref(BROWSEROS_PREFS.RESTART_SERVER, true)
 
       const healthy = await waitForServerHealth()
@@ -64,6 +64,16 @@ export const MCPServerHeader: FC<MCPServerHeaderProps> = ({
         err instanceof Error ? err.message : 'Failed to restart server',
       )
     } finally {
+      // Reset the one-shot request flag once the restart has been
+      // serviced. The browser's restart watcher is level-triggered:
+      // left true, it shuts the server down, sees the flag still set on
+      // the fresh process, and shuts it down again in an endless bounce.
+      // Cleared here on every path so a timed-out restart can't latch it.
+      try {
+        await adapter.setPref(BROWSEROS_PREFS.RESTART_SERVER, false)
+      } catch {
+        // Best-effort; nothing useful to surface if the pref write fails.
+      }
       setIsRestarting(false)
     }
   }
