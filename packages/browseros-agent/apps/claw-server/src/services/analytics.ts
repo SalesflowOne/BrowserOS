@@ -87,7 +87,7 @@ function analyticsPath(): string {
   return join(getClawServerDir(), ANALYTICS_FILE)
 }
 
-function persistState(next: AnalyticsState): void {
+function persistState(next: AnalyticsState): boolean {
   const dir = getClawServerDir()
   const path = analyticsPath()
   const tmp = `${path}.tmp`
@@ -95,10 +95,12 @@ function persistState(next: AnalyticsState): void {
     mkdirSync(dir, { recursive: true })
     writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`, 'utf8')
     renameSync(tmp, path)
+    return true
   } catch (err) {
     logger.warn('analytics state write failed', {
       error: err instanceof Error ? err.message : String(err),
     })
+    return false
   }
 }
 
@@ -259,18 +261,65 @@ export function captureEvent(
   }
 }
 
+export interface TelemetryState {
+  distinctId: string
+  /** Effective: whether the SERVER is actually sending (key + kill-switch + consent). */
+  enabled: boolean
+  /** The user's consent choice. What the cockpit toggle reflects and both surfaces gate on. */
+  consent: boolean
+}
+
 /**
- * The anonymous id + EFFECTIVE enabled flag surfaced to the cockpit UI.
- * `enabled` reflects whether telemetry is actually active (key present,
- * kill-switch on, user not opted out), so the UI never shows telemetry
- * as on while every capture is a no-op. Loads state but never
- * constructs a network client.
+ * The anonymous id, the EFFECTIVE enabled flag, and the raw consent
+ * flag surfaced to the cockpit UI. `enabled` reflects whether the
+ * server is actively sending (so the UI never shows telemetry on while
+ * every capture is a no-op); `consent` is the user's choice, which the
+ * toggle binds to and the extension gates its own capture on. Loads
+ * state but never constructs a network client.
  */
-export function getTelemetryState(): AnalyticsState {
+export function getTelemetryState(): TelemetryState {
   ensureState()
   return {
     distinctId: state?.distinctId ?? '',
     enabled: effectiveEnabled(state),
+    consent: state?.enabled ?? false,
+  }
+}
+
+/**
+ * Persists the user's consent choice (the cockpit opt-out toggle) and
+ * re-evaluates the client so a turn-off stops sending immediately and a
+ * turn-on can re-init on the next capture. Returns the updated state.
+ */
+export function setTelemetryConsent(consent: boolean): TelemetryState {
+  ensureState()
+  const next: AnalyticsState = {
+    distinctId: state?.distinctId ?? randomUUID(),
+    enabled: consent,
+  }
+  // Write to disk BEFORE flipping in-memory state, and surface a failed
+  // write at error level: a swallowed failure could stop telemetry for
+  // this process yet silently revert to the old on-disk choice on the
+  // next restart. We still apply in-memory so the choice holds for this
+  // session, but the durability gap is no longer hidden.
+  if (!persistState(next)) {
+    logger.error(
+      'analytics consent write failed; choice may not survive a restart',
+      { consent },
+    )
+  }
+  state = next
+  // Force re-evaluation on the next capture; drop any live client so a
+  // withdrawn consent stops sending right away.
+  clientInitialised = false
+  if (client) {
+    void client.shutdown().catch(() => {})
+    client = null
+  }
+  return {
+    distinctId: next.distinctId,
+    enabled: effectiveEnabled(next),
+    consent: next.enabled,
   }
 }
 
