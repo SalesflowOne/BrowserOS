@@ -56,6 +56,10 @@ describe('QuickSetupSection', () => {
     const html = render()
 
     expect(html).toContain('Claude Desktop')
+    // The mcp-remote wrapper shells out to npx, so the instructions must
+    // call out the Node / npx prerequisite.
+    expect(html).toContain('Install Node')
+    expect(html).toContain('environment path')
     expect(html).toContain('Add this block to')
     expect(html).toContain('claude_desktop_config.json')
     expect(html).toContain('&quot;command&quot;: &quot;npx&quot;')

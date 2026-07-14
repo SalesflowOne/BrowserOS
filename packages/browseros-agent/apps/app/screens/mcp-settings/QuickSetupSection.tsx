@@ -60,7 +60,11 @@ const clients: ClientConfig[] = [
     kind: 'config',
     action: (
       <>
-        Add this block to{' '}
+        Install Node and make sure{' '}
+        <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">
+          npx
+        </code>{' '}
+        is in your environment path. Add this block to{' '}
         <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">
           claude_desktop_config.json
         </code>
