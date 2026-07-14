@@ -46,6 +46,7 @@ interface ApplyAgentTabGroupTitleInput {
 }
 
 const inflightCreates = new Map<AgentKey, Promise<void>>()
+const inflightCollapses = new Map<AgentKey, Promise<boolean>>()
 
 /** Creates or joins the durable group for a newly opened page. */
 export async function ensureAgentTabGroup(
@@ -122,9 +123,27 @@ export async function applyAgentTabGroupTitle(
 export async function collapseAgentTabGroup(input: {
   key: AgentKey
   session: BrowserSession
-}): Promise<void> {
+}): Promise<boolean> {
+  const existingCollapse = inflightCollapses.get(input.key)
+  if (existingCollapse) return existingCollapse
+
+  let collapse: Promise<boolean>
+  collapse = collapseGroup(input).finally(() => {
+    if (inflightCollapses.get(input.key) === collapse) {
+      inflightCollapses.delete(input.key)
+    }
+  })
+  inflightCollapses.set(input.key, collapse)
+  return collapse
+}
+
+async function collapseGroup(input: {
+  key: AgentKey
+  session: BrowserSession
+}): Promise<boolean> {
+  await inflightCreates.get(input.key)
   const group = ownershipStore.groupOf(input.key)
-  if (!group || group.collapsed) return
+  if (!group || group.collapsed) return true
 
   try {
     const result = await dispatchGroup(input.session, {
@@ -138,19 +157,21 @@ export async function collapseAgentTabGroup(input: {
         groupId: group.id,
         error: firstText(result),
       })
-      return
+      return false
     }
     // The ref may have been replaced while the update was in flight;
     // only stamp the state if it still describes the group we updated.
     if (ownershipStore.groupOf(input.key)?.id === group.id) {
       ownershipStore.updateGroup(input.key, { collapsed: true })
     }
+    return true
   } catch (error) {
     logger.warn('agent tab group collapse threw', {
       key: input.key,
       groupId: group.id,
       error: errorText(error),
     })
+    return false
   }
 }
 
@@ -158,27 +179,31 @@ export async function collapseAgentTabGroup(input: {
 export async function closeAgentTabGroup(input: {
   key: AgentKey
   session: BrowserSession
-}): Promise<void> {
+}): Promise<boolean> {
+  await inflightCreates.get(input.key)
+  await inflightCollapses.get(input.key)
   const group = ownershipStore.groupOf(input.key)
-  if (!group) return
+  if (!group) return true
 
   try {
     const result = await dispatchGroup(input.session, {
       action: 'close',
       groupId: group.id,
     })
-    if (!result.isError) return
+    if (!result.isError) return true
     logger.warn('agent tab group close failed', {
       key: input.key,
       groupId: group.id,
       error: firstText(result),
     })
+    return false
   } catch (error) {
     logger.warn('agent tab group close threw', {
       key: input.key,
       groupId: group.id,
       error: errorText(error),
     })
+    return false
   }
 }
 
@@ -391,4 +416,5 @@ function errorText(error: unknown): string {
 /** Clears only in-flight orchestration state between tests. */
 export function resetTabGroupEffectsForTesting(): void {
   inflightCreates.clear()
+  inflightCollapses.clear()
 }

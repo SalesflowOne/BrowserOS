@@ -22,7 +22,6 @@ function call(value: ClientIdentity): ToolCall {
     tool: { name: 'tabs' } as never,
     args: { action: 'new' },
     sessionId: value.sessionId,
-    requestId: undefined,
     identity: value,
     key: value.key,
     agent: { agentId: value.key, slug: value.slug },

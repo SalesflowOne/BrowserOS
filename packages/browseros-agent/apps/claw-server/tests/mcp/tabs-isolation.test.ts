@@ -608,7 +608,7 @@ describe('per-agent tabs isolation', () => {
     queue(ok())
     setLastActivityForTesting(first.sessionId, Date.now() - 10_000)
     sweepIdleSessions(Date.now())
-    await Promise.resolve()
+    await Bun.sleep(0)
     expect([...ownershipStore.pagesOf(first.key)]).toEqual([7])
     expect(ownershipStore.groupOf(first.key)?.id).toBe('G')
     expect(ownershipStore.groupOf(first.key)?.collapsed).toBe(true)

@@ -18,7 +18,6 @@ function call(): ToolCall {
     tool: { name: 'snapshot' } as never,
     args: { page: 12 },
     sessionId: 's1',
-    requestId: 1,
     identity: null,
     key: callerKey,
     agent: { agentId: callerKey, slug: 'codex' },

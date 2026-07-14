@@ -9,8 +9,8 @@
  * `sessionId -> { server, transport }` map and route each request to
  * its session's transport. Identity is captured on the client's
  * InitializedNotification (by then both `transport.sessionId` and the
- * server's stored `clientInfo` are set) and dropped when the session
- * ends. Tool dispatch reads identity back via
+ * server's stored `clientInfo` are set) and retained by key when the
+ * session ends. Tool dispatch reads live identity back via
  * `extra.sessionId`, the same id the transport stamps onto the
  * session at handshake.
  */
@@ -187,11 +187,9 @@ function cleanupSessionState(
       error: err instanceof Error ? err.message : String(err),
     })
   })
-  if (key) {
-    const browserSession = getBrowserSession()
-    if (ownershipStore.groupOf(key) && browserSession) {
-      void collapseAgentTabGroup({ key, session: browserSession })
-    }
+  const browserSession = getBrowserSession()
+  if (key && browserSession) {
+    void collapseAgentTabGroup({ key, session: browserSession })
   }
   logger.info('cockpit v2 mcp session closed', { sessionId })
 }
@@ -222,30 +220,42 @@ export function sweepIdleSessions(now: number): string[] {
 
 /** Closes and forgets ended sessions whose retention window elapsed. */
 export async function reapRetainedSessions(now: number): Promise<AgentKey[]> {
-  const expired = identityService
-    .listRetained()
-    .filter(
-      ({ key, endedAt }) =>
-        now - endedAt >= env.sessionRetentionMs && !reapingKeys.has(key),
-    )
+  const retained = identityService.listRetained()
+  const expired = retained.filter(
+    ({ key, endedAt }) =>
+      now - endedAt >= env.sessionRetentionMs && !reapingKeys.has(key),
+  )
   for (const { key } of expired) reapingKeys.add(key)
+  const expiredKeys = new Set(expired.map(({ key }) => key))
+  const browserSession = getBrowserSession()
 
-  await Promise.all(
+  if (browserSession) {
+    await Promise.all(
+      retained
+        .filter(({ key }) => !expiredKeys.has(key) && !reapingKeys.has(key))
+        .map(({ key }) =>
+          collapseAgentTabGroup({ key, session: browserSession }),
+        ),
+    )
+  }
+
+  const reaped = await Promise.all(
     expired.map(async ({ key }) => {
       try {
-        const browserSession = getBrowserSession()
-        if (browserSession) {
-          await closeAgentTabGroup({ key, session: browserSession })
-        }
-      } finally {
+        const closed = browserSession
+          ? await closeAgentTabGroup({ key, session: browserSession })
+          : true
+        if (!closed) return null
         ownershipStore.forget(key)
         dropFirstCaptures(key)
         identityService.forgetRetained(key)
+        return key
+      } finally {
         reapingKeys.delete(key)
       }
     }),
   )
-  return expired.map(({ key }) => key)
+  return reaped.filter((key): key is AgentKey => key !== null)
 }
 
 function ensureSweeperStarted(): void {

@@ -17,6 +17,17 @@ interface GroupCall {
 }
 
 const groupCalls: GroupCall[] = []
+let nextGroupErrorAction: string | null = null
+let tabsNewPage: number | null = null
+let pendingRootGroupCreate: Promise<{
+  isError: false
+  content: Array<{ type: 'text'; text: string }>
+  structuredContent: { group: { groupId: string; windowId: number } }
+}> | null = null
+let pendingGroupClose: Promise<{
+  isError: false
+  content: Array<{ type: 'text'; text: string }>
+}> | null = null
 const realFramework = await import('@browseros/browser-mcp/tools/framework')
 mock.module('@browseros/browser-mcp/tools/framework', () => ({
   ...realFramework,
@@ -26,6 +37,35 @@ mock.module('@browseros/browser-mcp/tools/framework', () => ({
     context: { signal?: AbortSignal },
   ) => {
     groupCalls.push({ toolName: tool.name, args, signal: context.signal })
+    if (tool.name === 'tabs' && args.action === 'new' && tabsNewPage) {
+      return {
+        isError: false,
+        content: [{ type: 'text', text: 'opened' }],
+        structuredContent: { page: tabsNewPage },
+      }
+    }
+    if (
+      tool.name === 'tab_groups' &&
+      args.action === 'create' &&
+      args.groupId === undefined &&
+      pendingRootGroupCreate
+    ) {
+      return pendingRootGroupCreate
+    }
+    if (
+      tool.name === 'tab_groups' &&
+      args.action === 'close' &&
+      pendingGroupClose
+    ) {
+      return pendingGroupClose
+    }
+    if (tool.name === 'tab_groups' && args.action === nextGroupErrorAction) {
+      nextGroupErrorAction = null
+      return {
+        isError: true,
+        content: [{ type: 'text', text: 'transient group failure' }],
+      }
+    }
     return { isError: false, content: [{ type: 'text', text: 'ok' }] }
   },
 }))
@@ -110,6 +150,10 @@ describe('MCP session lifecycle', () => {
     dispatchCancellation.clear()
     clearFirstCapturesForTesting()
     groupCalls.length = 0
+    nextGroupErrorAction = null
+    tabsNewPage = null
+    pendingRootGroupCreate = null
+    pendingGroupClose = null
     setBrowserSession(null)
     env.sessionIdleMs = 50
     env.sessionRetentionMs = 1_000
@@ -122,6 +166,10 @@ describe('MCP session lifecycle', () => {
     dispatchCancellation.clear()
     clearFirstCapturesForTesting()
     groupCalls.length = 0
+    nextGroupErrorAction = null
+    tabsNewPage = null
+    pendingRootGroupCreate = null
+    pendingGroupClose = null
     setBrowserSession(null)
     env.sessionIdleMs = ORIGINAL_IDLE
     env.sessionRetentionMs = ORIGINAL_RETENTION
@@ -140,7 +188,7 @@ describe('MCP session lifecycle', () => {
     setLastActivityForTesting(sessionId, Date.now() - 10_000)
 
     expect(sweepIdleSessions(Date.now())).toEqual([sessionId])
-    await Promise.resolve()
+    await Bun.sleep(0)
 
     expect(identityService.getIdentity(sessionId)).toBeNull()
     expect(identityService.listRetained()).toHaveLength(1)
@@ -186,6 +234,61 @@ describe('MCP session lifecycle', () => {
     await client.close()
   })
 
+  test('DELETE waits for an in-flight first-group create before collapse', async () => {
+    const { client, transport, identity } = await connect()
+    setBrowserSession({
+      pages: {
+        getInfo: (pageId: number) => ({
+          targetId: `target-${pageId}`,
+          url: 'https://example.com',
+          title: 'Example',
+        }),
+      },
+    } as never)
+    tabsNewPage = 9
+    let releaseCreate:
+      | ((result: Awaited<NonNullable<typeof pendingRootGroupCreate>>) => void)
+      | undefined
+    pendingRootGroupCreate = new Promise((resolve) => {
+      releaseCreate = resolve
+    })
+
+    await client.callTool({
+      name: 'tabs',
+      arguments: { action: 'new', url: 'https://example.com' },
+    })
+    const response = await app.fetch(
+      new Request('http://localhost/mcp', {
+        method: 'DELETE',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          'mcp-session-id': transport.sessionId as string,
+        },
+      }),
+    )
+    expect(response.status).toBe(200)
+    expect(identityService.listRetained()).toMatchObject([
+      { key: identity.key },
+    ])
+    expect(ownershipStore.groupOf(identity.key)).toBeNull()
+
+    releaseCreate?.({
+      isError: false,
+      content: [{ type: 'text', text: 'created' }],
+      structuredContent: { group: { groupId: 'G1', windowId: 1 } },
+    })
+    await Bun.sleep(0)
+
+    expect(groupCalls.map((call) => call.args)).toContainEqual({
+      action: 'update',
+      groupId: 'G1',
+      collapsed: true,
+    })
+    expect(ownershipStore.groupOf(identity.key)?.collapsed).toBe(true)
+    await client.close()
+  })
+
   test('transport error records errored and tears down the session', async () => {
     const { client, sessionId, identity } = await connect()
     seedOwnership(identity.key)
@@ -194,7 +297,7 @@ describe('MCP session lifecycle', () => {
     if (!refs) throw new Error('missing session refs')
 
     refs.transport.onerror?.(new Error('socket broke'))
-    await Promise.resolve()
+    await Bun.sleep(0)
 
     expect(identityService.getIdentity(sessionId)).toBeNull()
     expect(endRowsFor(sessionId)).toEqual([
@@ -243,6 +346,27 @@ describe('MCP session lifecycle', () => {
     await client.close()
   })
 
+  test('retries a failed collapse while the key is retained', async () => {
+    const { client, sessionId, identity } = await connect()
+    seedOwnership(identity.key)
+    setBrowserSession({} as never)
+    nextGroupErrorAction = 'update'
+    setLastActivityForTesting(sessionId, Date.now() - 10_000)
+
+    sweepIdleSessions(Date.now())
+    await Bun.sleep(0)
+    expect(ownershipStore.groupOf(identity.key)?.collapsed).toBe(false)
+    const endedAt = identityService.listRetained()[0]?.endedAt
+    if (endedAt === undefined) throw new Error('missing retained timestamp')
+
+    expect(await reapRetainedSessions(endedAt + 999)).toEqual([])
+    expect(ownershipStore.groupOf(identity.key)?.collapsed).toBe(true)
+    expect(
+      groupCalls.filter((call) => call.args.action === 'update'),
+    ).toHaveLength(2)
+    await client.close()
+  })
+
   test('expiry closes the group then forgets ownership and captures', async () => {
     const { client, sessionId, identity } = await connect()
     seedOwnership(identity.key)
@@ -266,6 +390,65 @@ describe('MCP session lifecycle', () => {
     expect(hasFirstCapturesForTesting(identity.key)).toBe(false)
     expect(identityService.listRetained()).toEqual([])
     expect(await reapRetainedSessions(endedAt + 2_000)).toEqual([])
+    await client.close()
+  })
+
+  test('connected close failure keeps retained state for a later retry', async () => {
+    const { client, sessionId, identity } = await connect()
+    seedOwnership(identity.key)
+    setBrowserSession({} as never)
+    setLastActivityForTesting(sessionId, Date.now() - 10_000)
+    sweepIdleSessions(Date.now())
+    await Bun.sleep(0)
+    groupCalls.length = 0
+    const endedAt = identityService.listRetained()[0]?.endedAt
+    if (endedAt === undefined) throw new Error('missing retained timestamp')
+    nextGroupErrorAction = 'close'
+
+    expect(await reapRetainedSessions(endedAt + 1_000)).toEqual([])
+    expect(identityService.listRetained()).toHaveLength(1)
+    expect(ownershipStore.ownerOf(7)).toBe(identity.key)
+    expect(hasFirstCapturesForTesting(identity.key)).toBe(true)
+
+    expect(await reapRetainedSessions(endedAt + 2_000)).toEqual([identity.key])
+    expect(identityService.listRetained()).toEqual([])
+    expect(ownershipStore.ownerOf(7)).toBeNull()
+    expect(hasFirstCapturesForTesting(identity.key)).toBe(false)
+    await client.close()
+  })
+
+  test('overlapping reaps issue only one group close', async () => {
+    const { client, sessionId, identity } = await connect()
+    seedOwnership(identity.key)
+    setBrowserSession({} as never)
+    setLastActivityForTesting(sessionId, Date.now() - 10_000)
+    sweepIdleSessions(Date.now())
+    await Bun.sleep(0)
+    groupCalls.length = 0
+    const endedAt = identityService.listRetained()[0]?.endedAt
+    if (endedAt === undefined) throw new Error('missing retained timestamp')
+    let releaseClose:
+      | ((result: Awaited<NonNullable<typeof pendingGroupClose>>) => void)
+      | undefined
+    pendingGroupClose = new Promise((resolve) => {
+      releaseClose = resolve
+    })
+
+    const first = reapRetainedSessions(endedAt + 1_000)
+    await Bun.sleep(0)
+    const second = reapRetainedSessions(endedAt + 1_000)
+    await Bun.sleep(0)
+    expect(
+      groupCalls.filter((call) => call.args.action === 'close'),
+    ).toHaveLength(1)
+
+    releaseClose?.({
+      isError: false,
+      content: [{ type: 'text', text: 'closed' }],
+    })
+    expect(await first).toEqual([identity.key])
+    expect(await second).toEqual([])
+    expect(identityService.listRetained()).toEqual([])
     await client.close()
   })
 

@@ -177,6 +177,38 @@ describe('durable tab group effect', () => {
     expect(ownershipStore.groupOf(key)).toBeNull()
   })
 
+  it('waits for an in-flight create before collapsing the new group', async () => {
+    let release: ((result: FakeResult) => void) | undefined
+    const createResult = new Promise<FakeResult>((resolve) => {
+      release = resolve
+    })
+    queue(createResult, ok(), ok())
+
+    const creating = ensureAgentTabGroup({
+      key,
+      identity: identity(),
+      pageId: 1,
+      session: fakeSession,
+      defaultTabGroupId: null,
+    })
+    const collapsing = collapseAgentTabGroup({ key, session: fakeSession })
+    expect(calls).toHaveLength(1)
+
+    release?.(ok({ group: { groupId: 'G1', windowId: 1 } }))
+    await Promise.all([creating, collapsing])
+
+    expect(calls.map((call) => call.args)).toEqual([
+      {
+        action: 'create',
+        pages: [1],
+        title: 'claude/swift-otter',
+      },
+      { action: 'update', groupId: 'G1', color: 'red' },
+      { action: 'update', groupId: 'G1', collapsed: true },
+    ])
+    expect(ownershipStore.groupOf(key)?.collapsed).toBe(true)
+  })
+
   it('uses its own timeout signal instead of the aborted client signal', async () => {
     queue(ok({ group: { groupId: 'G1', windowId: 1 } }), ok())
     const client = new AbortController()
@@ -187,10 +219,9 @@ describe('durable tab group effect', () => {
         tool: tabsTool,
         args: { action: 'new' },
         sessionId: 'sid-1',
-        requestId: 1,
         identity: identity(),
         key,
-        agent: { agentId: 'claude-code-abc123', slug: 'claude-code' },
+        agent: { agentId: key, slug: 'claude-code' },
         agentLabel: 'claude-code',
         session: fakeSession,
         signal: client.signal,
@@ -266,10 +297,9 @@ describe('durable tab group effect', () => {
         tool: tabsTool,
         args: { action: 'new' },
         sessionId: 'sid-1',
-        requestId: 1,
         identity: identity(),
         key,
-        agent: { agentId: 'claude-code-abc123', slug: 'claude-code' },
+        agent: { agentId: key, slug: 'claude-code' },
         agentLabel: 'claude-code',
         session: sessionWithPageGroup('G1'),
         defaultTabGroupId: 'G1',
@@ -296,10 +326,9 @@ describe('durable tab group effect', () => {
         tool: tabsTool,
         args: { action: 'new' },
         sessionId: 'sid-1',
-        requestId: 1,
         identity: identity(),
         key,
-        agent: { agentId: 'claude-code-abc123', slug: 'claude-code' },
+        agent: { agentId: key, slug: 'claude-code' },
         agentLabel: 'claude-code',
         session: sessionWithPageGroup('deleted-group'),
         defaultTabGroupId: 'G1',
@@ -353,7 +382,7 @@ describe('durable tab group effect', () => {
     expect(ownershipStore.groupOf(key)?.title).toBe('claude/invoice-processing')
   })
 
-  it('creates once with the born title and does not run late-title reconciliation', async () => {
+  it('keeps the title captured when group creation begins', async () => {
     let release: ((result: FakeResult) => void) | undefined
     const createResult = new Promise<FakeResult>((resolve) => {
       release = resolve
@@ -392,10 +421,9 @@ describe('durable tab group effect', () => {
         tool: tabsTool,
         args: { action: 'list' },
         sessionId: 'sid-1',
-        requestId: 1,
         identity: identity(),
         key,
-        agent: { agentId: 'claude-code-abc123', slug: 'claude-code' },
+        agent: { agentId: key, slug: 'claude-code' },
         agentLabel: 'claude-code',
         session: fakeSession,
         defaultTabGroupId: 'G1',
@@ -424,10 +452,9 @@ describe('durable tab group effect', () => {
         tool: tabsTool,
         args: { action: 'list' },
         sessionId: 'sid-1',
-        requestId: 1,
         identity: identity(),
         key,
-        agent: { agentId: 'claude-code-abc123', slug: 'claude-code' },
+        agent: { agentId: key, slug: 'claude-code' },
         agentLabel: 'claude-code',
         session: fakeSession,
         defaultTabGroupId: 'G1',
@@ -444,7 +471,7 @@ describe('durable tab group effect', () => {
     expect(ownershipStore.groupOf(key)?.collapsed).toBe(true)
   })
 
-  it('keeps the group ref when a late title update fails', async () => {
+  it('keeps the group ref when a rename update fails', async () => {
     setGroup()
     queue(err('opaque BrowserOS CDP failure'))
 
@@ -461,7 +488,9 @@ describe('durable tab group effect', () => {
     setGroup()
     queue(ok())
 
-    await collapseAgentTabGroup({ key, session: fakeSession })
+    expect(await collapseAgentTabGroup({ key, session: fakeSession })).toBe(
+      true,
+    )
 
     expect(calls[0]?.args).toEqual({
       action: 'update',
@@ -476,7 +505,7 @@ describe('durable tab group effect', () => {
     setGroup()
     queue(ok())
 
-    await closeAgentTabGroup({ key, session: fakeSession })
+    expect(await closeAgentTabGroup({ key, session: fakeSession })).toBe(true)
 
     expect(calls[0]?.args).toEqual({ action: 'close', groupId: 'G1' })
     expect(calls[0]?.signal).toBeInstanceOf(AbortSignal)

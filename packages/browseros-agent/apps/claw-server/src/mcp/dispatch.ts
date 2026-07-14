@@ -53,7 +53,6 @@ export interface ToolCall {
   tool: ToolDefinition
   args: unknown
   sessionId: string
-  requestId: unknown
   identity: ClientIdentity | null
   key: AgentKey | null
   agent: { agentId: string; slug: string } | null
@@ -195,7 +194,6 @@ export function registerBrowserToolsForSingleServer(
 interface DispatchExtra {
   signal?: AbortSignal
   sessionId?: string
-  requestId?: string | number
 }
 
 interface ExecutionOutcome {
@@ -226,7 +224,6 @@ function buildToolCall(
     tool,
     args,
     sessionId: extra?.sessionId ?? '',
-    requestId: extra?.requestId,
     identity,
     key,
     agent,
