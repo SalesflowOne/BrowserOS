@@ -73,7 +73,7 @@ on:
       VITE_PUBLIC_POSTHOG_HOST:
         required: false
       VITE_CLAW_POSTHOG_KEY:
-        required: false
+        required: true
       VITE_CLAW_POSTHOG_HOST:
         required: false
 

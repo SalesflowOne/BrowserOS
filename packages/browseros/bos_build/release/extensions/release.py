@@ -20,6 +20,7 @@ from .specs import (
     spec_by_name,
 )
 from .workspace import (
+    require_env,
     resolve_source,
     run_command,
     update_manifest_version,
@@ -28,15 +29,6 @@ from .workspace import (
 
 # Chrome requires extension versions to be 1-4 dot-separated integers.
 _VERSION_RE = re.compile(r"^\d+(\.\d+){0,3}$")
-
-
-def _require_env(name: str) -> str:
-    value = os.environ.get(name, "").strip()
-    # <=1 mirrors the old release tool's guard: 0-1 chars is an unset or
-    # placeholder value ("0", "-"), never a real key.
-    if len(value) <= 1:
-        raise EnvironmentError(f"Missing or empty environment variable: {name}")
-    return value
 
 
 class ExtensionReleaseModule(Step):
@@ -75,12 +67,20 @@ class ExtensionReleaseModule(Step):
 
         for spec in specs:
             try:
-                _require_env(spec.signing_key_env)
+                require_env(spec.signing_key_env)
             except EnvironmentError:
                 raise ValidationError(
                     f"Signing key env var '{spec.signing_key_env}' for "
                     f"'{spec.name}' is missing or empty"
                 )
+            for name in spec.required_env:
+                try:
+                    require_env(name)
+                except EnvironmentError:
+                    raise ValidationError(
+                        f"Required build env var '{name}' for "
+                        f"'{spec.name}' is missing or empty"
+                    )
 
         if not BOTO3_AVAILABLE:
             raise ValidationError("boto3 library not installed - run: pip install boto3")
@@ -136,14 +136,18 @@ class ExtensionReleaseModule(Step):
                 env_dir = (
                     source_root / spec.env_dir if spec.env_dir else source_root
                 )
-                write_env_file(env_dir, spec.env)
+                write_env_file(
+                    env_dir,
+                    spec.env,
+                    required_names=spec.required_env,
+                )
             if spec.pre_build:
                 run_command(spec.pre_build, source_root)
             run_command(spec.build, source_root)
 
             crx_path = pack_crx(
                 source_root / spec.dist_path,
-                _require_env(spec.signing_key_env),
+                require_env(spec.signing_key_env),
                 chrome,
                 work_root / "dist" / spec.crx_filename(self.version),
             )

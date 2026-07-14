@@ -342,10 +342,27 @@ class BundledExtensionsManifestTest(unittest.TestCase):
                 self._ctx("browseros", bundle_local_extensions=True)
             )
 
-    def test_browserclaw_local_preflight_requires_only_claw_key(self) -> None:
+    def test_browserclaw_local_preflight_accepts_signing_and_posthog_keys(self) -> None:
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "BROWSERCLAW_KEY": "claw-pem",
+                    "VITE_CLAW_POSTHOG_KEY": "phc-claw-app",
+                },
+                clear=True,
+            ),
+            patch(f"{MODULE}.find_chrome_binary", return_value="chrome-bin"),
+        ):
+            BundledExtensionsModule().preflight(
+                self._ctx("browserclaw", bundle_local_extensions=True)
+            )
+
+    def test_browserclaw_local_preflight_names_missing_posthog_key(self) -> None:
         with (
             patch.dict(os.environ, {"BROWSERCLAW_KEY": "claw-pem"}, clear=True),
             patch(f"{MODULE}.find_chrome_binary", return_value="chrome-bin"),
+            self.assertRaisesRegex(ValidationError, "VITE_CLAW_POSTHOG_KEY"),
         ):
             BundledExtensionsModule().preflight(
                 self._ctx("browserclaw", bundle_local_extensions=True)

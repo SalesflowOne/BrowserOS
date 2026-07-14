@@ -114,7 +114,12 @@ class SpecTableTest(unittest.TestCase):
                 "NODE_ENV",
             ),
         )
+        self.assertEqual(browserclaw.required_env, ("VITE_CLAW_POSTHOG_KEY",))
         self.assertEqual(browserclaw.env_dir, "apps/claw-app")
+
+    def test_non_claw_extensions_have_no_required_build_env(self):
+        for name in ("agent", "controller", "bugreporter"):
+            self.assertEqual(spec_by_name(name).required_env, (), name)
 
     def test_in_repo_manifest_paths_exist_in_working_tree(self):
         monorepo_root = get_package_root().parent.parent
