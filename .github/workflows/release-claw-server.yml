@@ -1,6 +1,6 @@
 # Required secrets for resource publishing: R2_ACCOUNT_ID, R2_ACCESS_KEY_ID,
-# R2_SECRET_ACCESS_KEY, R2_BUCKET. Optional when publish_ota is true:
-# SPARKLE_PRIVATE_KEY.
+# R2_SECRET_ACCESS_KEY, R2_BUCKET, CLAW_POSTHOG_KEY. Also required when
+# publish_ota is true: SPARKLE_PRIVATE_KEY.
 name: "Release: BrowserClaw Server + Onboard"
 
 on:
@@ -52,7 +52,7 @@ on:
       SPARKLE_PRIVATE_KEY:
         required: false
       CLAW_POSTHOG_KEY:
-        required: false
+        required: true
       CLAW_POSTHOG_HOST:
         required: false
 
@@ -65,7 +65,46 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PUBLISH_OTA: ${{ inputs.publish_ota || false }}
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+      CLAW_POSTHOG_KEY: ${{ secrets.CLAW_POSTHOG_KEY }}
+    steps:
+      - name: Preflight required secrets
+        run: |
+          set -euo pipefail
+          required=(
+            R2_ACCOUNT_ID
+            R2_ACCESS_KEY_ID
+            R2_SECRET_ACCESS_KEY
+            R2_BUCKET
+            CLAW_POSTHOG_KEY
+          )
+          if [ "${PUBLISH_OTA:-false}" = "true" ]; then
+            required+=(SPARKLE_PRIVATE_KEY)
+          fi
+
+          missing=()
+          for name in "${required[@]}"; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("$name")
+            fi
+          done
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Missing required secret(s): ${missing[*]}"
+            exit 1
+          fi
+
   release:
+    needs: preflight
     if: github.event_name != 'push' || github.event.deleted != true
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -174,31 +213,6 @@ jobs:
           fetch-depth: 0
           lfs: true
           ref: ${{ needs.release.outputs.release_sha }}
-
-      - name: Preflight required secrets
-        run: |
-          set -euo pipefail
-          required=(
-            R2_ACCOUNT_ID
-            R2_ACCESS_KEY_ID
-            R2_SECRET_ACCESS_KEY
-            R2_BUCKET
-          )
-          if [ "${PUBLISH_OTA:-false}" = "true" ]; then
-            required+=(SPARKLE_PRIVATE_KEY)
-          fi
-
-          missing=()
-          for name in "${required[@]}"; do
-            if [ -z "${!name:-}" ]; then
-              missing+=("$name")
-            fi
-          done
-
-          if [ "${#missing[@]}" -gt 0 ]; then
-            echo "::error::Missing required secret(s): ${missing[*]}"
-            exit 1
-          fi
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2

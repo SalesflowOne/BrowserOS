@@ -270,6 +270,8 @@ jobs:
           SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
           VITE_PUBLIC_POSTHOG_KEY: ${{ secrets.VITE_PUBLIC_POSTHOG_KEY }}
           VITE_PUBLIC_POSTHOG_HOST: ${{ secrets.VITE_PUBLIC_POSTHOG_HOST }}
+          VITE_CLAW_POSTHOG_KEY: ${{ secrets.VITE_CLAW_POSTHOG_KEY }}
+          VITE_CLAW_POSTHOG_HOST: ${{ secrets.VITE_CLAW_POSTHOG_HOST }}
           VITE_PUBLIC_BROWSEROS_API: https://api.browseros.com
           GRAPHQL_SCHEMA_PATH: apps/app/schema/graphql.schema.json
           NODE_ENV: production
@@ -296,6 +298,8 @@ jobs:
           write_env SENTRY_PROJECT
           write_env VITE_PUBLIC_POSTHOG_KEY
           write_env VITE_PUBLIC_POSTHOG_HOST
+          write_env VITE_CLAW_POSTHOG_KEY
+          write_env VITE_CLAW_POSTHOG_HOST
           write_env VITE_PUBLIC_BROWSEROS_API
           write_env GRAPHQL_SCHEMA_PATH
           write_env NODE_ENV

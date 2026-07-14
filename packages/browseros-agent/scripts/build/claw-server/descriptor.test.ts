@@ -46,7 +46,9 @@ describe('claw server build descriptor', () => {
   })
 
   it('inlines NODE_ENV from the production env file', async () => {
-    const rootDir = await writeClawPackageRoot('NODE_ENV=production\n')
+    const rootDir = await writeClawPackageRoot(
+      'NODE_ENV=production\nCLAW_POSTHOG_KEY=phc_claw_test\n',
+    )
 
     const config = loadBuildConfig(rootDir, clawServerBuildProduct)
 
@@ -74,7 +76,7 @@ describe('claw server build descriptor', () => {
     expect(config.envVars.NODE_ENV).toBe('production')
   })
 
-  it('inlines optional Claw PostHog values from the production env', async () => {
+  it('inlines required key and optional host from the production env', async () => {
     const rootDir = await writeClawPackageRoot(
       [
         'CLAW_POSTHOG_KEY=phc_claw_test',
@@ -88,14 +90,22 @@ describe('claw server build descriptor', () => {
     expect(config.envVars.CLAW_POSTHOG_HOST).toBe('https://eu.i.posthog.com')
   })
 
-  it('keeps Claw PostHog values optional and absent from CI defaults', async () => {
+  it('requires the Claw PostHog key for production builds', async () => {
+    const rootDir = await writeClawPackageRoot('NODE_ENV=production\n')
+
+    expect(() => loadBuildConfig(rootDir, clawServerBuildProduct)).toThrow(
+      'BrowserOS Claw server: Missing required env: CLAW_POSTHOG_KEY (section: claw)',
+    )
+  })
+
+  it('keeps CI fixture builds keyless and the host optional', async () => {
     const rootDir = await writeClawPackageRoot()
 
     const config = loadBuildConfig(rootDir, clawServerBuildProduct, {
       ci: true,
     })
 
-    expect(clawServerBuildProduct.env.requiredInlineEnvKeys).not.toContain(
+    expect(clawServerBuildProduct.env.requiredInlineEnvKeys).toContain(
       'CLAW_POSTHOG_KEY',
     )
     expect(config.envVars.CLAW_POSTHOG_KEY).toBeUndefined()

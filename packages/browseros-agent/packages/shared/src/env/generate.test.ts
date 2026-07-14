@@ -59,7 +59,7 @@ describe('ENV_REGISTRY', () => {
     )
   })
 
-  test('registers optional Claw analytics and production eSigner inputs', () => {
+  test('registers the Claw analytics production contract and eSigner inputs', () => {
     const specs = Object.fromEntries(
       ENV_REGISTRY.map((spec) => [spec.key, spec]),
     )
@@ -80,18 +80,32 @@ describe('ENV_REGISTRY', () => {
           value: 'https://us.i.posthog.com',
           commented: true,
         },
+        production: {
+          value: 'https://us.i.posthog.com',
+          commented: true,
+        },
       },
     })
     expect(specs.VITE_CLAW_POSTHOG_KEY).toMatchObject({
       section: 'claw',
       secret: true,
-      modes: { development: { value: '' } },
+      modes: {
+        development: { value: '' },
+        production: { value: '' },
+      },
     })
+    expect(specs.VITE_CLAW_POSTHOG_KEY.description).toContain(
+      'embedded in the shipped client bundle',
+    )
     expect(specs.VITE_CLAW_POSTHOG_HOST).toMatchObject({
       section: 'claw',
       secret: false,
       modes: {
         development: {
+          value: 'https://us.i.posthog.com',
+          commented: true,
+        },
+        production: {
           value: 'https://us.i.posthog.com',
           commented: true,
         },
@@ -145,8 +159,13 @@ describe('generateEnvExample', () => {
     )
 
     expect(production).toContain('\nCLAW_POSTHOG_KEY=\n')
-    expect(production).not.toContain('CLAW_POSTHOG_HOST')
-    expect(production).not.toContain('VITE_CLAW_POSTHOG')
+    expect(production).toContain(
+      '\n# CLAW_POSTHOG_HOST=https://us.i.posthog.com\n',
+    )
+    expect(production).toContain('\nVITE_CLAW_POSTHOG_KEY=\n')
+    expect(production).toContain(
+      '\n# VITE_CLAW_POSTHOG_HOST=https://us.i.posthog.com\n',
+    )
     expect(production).toContain('\n# --- sign ---\n')
     expect(production).toContain('\nESIGNER_USERNAME=\n')
     expect(production).toContain('\nESIGNER_PASSWORD=\n')

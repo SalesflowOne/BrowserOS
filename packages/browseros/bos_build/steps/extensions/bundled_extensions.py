@@ -8,7 +8,6 @@ while required external extensions continue to download from the CDN manifest.
 """
 
 import json
-import os
 import shutil
 import sys
 import xml.etree.ElementTree as ET
@@ -28,6 +27,7 @@ from ...release.extensions.specs import (
     InRepoSource,
 )
 from ...release.extensions.workspace import (
+    require_env,
     resolve_source,
     run_command,
     write_env_file,
@@ -301,7 +301,11 @@ class BundledExtensionsModule(Step):
         version = self._read_manifest_version(source_root / spec.manifest_path)
         if spec.env:
             env_dir = source_root / spec.env_dir if spec.env_dir else source_root
-            write_env_file(env_dir, spec.env)
+            write_env_file(
+                env_dir,
+                spec.env,
+                required_names=spec.required_env,
+            )
         if spec.pre_build:
             run_command(spec.pre_build, source_root)
         run_command(spec.build, source_root)
@@ -327,12 +331,7 @@ class BundledExtensionsModule(Step):
         return version
 
     def _require_signing_key(self, spec: ExtensionSpec) -> str:
-        value = os.environ.get(spec.signing_key_env, "").strip()
-        if len(value) <= 1:
-            raise RuntimeError(
-                f"Missing or empty environment variable: {spec.signing_key_env}"
-            )
-        return value
+        return require_env(spec.signing_key_env)
 
     def _validate_local_bundle_requirements(self, ctx: Context) -> None:
         missing = []
@@ -343,13 +342,14 @@ class BundledExtensionsModule(Step):
             if spec is None:
                 continue
             has_local_required = True
-            try:
-                self._require_signing_key(spec)
-            except RuntimeError:
-                missing.append(f"{name}: {spec.signing_key_env}")
+            for env_name in (spec.signing_key_env, *spec.required_env):
+                try:
+                    require_env(env_name)
+                except EnvironmentError:
+                    missing.append(f"{name}: {env_name}")
         if missing:
             raise ValidationError(
-                "Local bundled extension signing key env var(s) missing: "
+                "Local bundled extension env var(s) missing: "
                 + ", ".join(missing)
             )
         if not has_local_required:
