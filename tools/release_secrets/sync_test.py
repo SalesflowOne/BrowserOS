@@ -96,13 +96,25 @@ class WorkflowSecretScannerTest(unittest.TestCase):
             consumers,
         )
 
-    def test_claw_posthog_workflow_secrets_are_allowlisted_and_optional(self):
+    def test_claw_posthog_keys_are_required_and_hosts_are_optional(self):
         expected_consumers = {
-            "CLAW_POSTHOG_KEY": ("release-claw-server.yml",),
+            "CLAW_POSTHOG_KEY": (
+                "release-browserclaw.yml",
+                "release-claw-server.yml",
+            ),
             "CLAW_POSTHOG_HOST": ("release-claw-server.yml",),
-            "VITE_CLAW_POSTHOG_KEY": ("release-extensions.yml",),
-            "VITE_CLAW_POSTHOG_HOST": ("release-extensions.yml",),
+            "VITE_CLAW_POSTHOG_KEY": (
+                "build-browseros.yml",
+                "release-browserclaw.yml",
+                "release-extensions.yml",
+            ),
+            "VITE_CLAW_POSTHOG_HOST": (
+                "build-browseros.yml",
+                "release-extensions.yml",
+            ),
         }
+        required_keys = {"CLAW_POSTHOG_KEY", "VITE_CLAW_POSTHOG_KEY"}
+        optional_hosts = {"CLAW_POSTHOG_HOST", "VITE_CLAW_POSTHOG_HOST"}
         referenced = scan_workflow_secret_refs(REPO_ROOT)
         allowlisted = {
             spec.name: spec.consumers
@@ -112,11 +124,12 @@ class WorkflowSecretScannerTest(unittest.TestCase):
 
         self.assertEqual(set(expected_consumers), referenced & set(expected_consumers))
         self.assertEqual(expected_consumers, allowlisted)
-        self.assertTrue(set(expected_consumers) <= KNOWN_OPTIONAL_SECRETS)
+        self.assertTrue(optional_hosts <= KNOWN_OPTIONAL_SECRETS)
+        self.assertTrue(required_keys.isdisjoint(KNOWN_OPTIONAL_SECRETS))
 
         result = build_check_result(set(expected_consumers), set())
-        self.assertEqual(sorted(expected_consumers), result.optional)
-        self.assertEqual([], result.missing_required)
+        self.assertEqual(sorted(optional_hosts), result.optional)
+        self.assertEqual(sorted(required_keys), result.missing_required)
 
 
 class SecretPlanTest(unittest.TestCase):

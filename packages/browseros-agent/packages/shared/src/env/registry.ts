@@ -199,7 +199,8 @@ export const ENV_REGISTRY: readonly EnvKeySpec[] = [
   {
     key: 'CLAW_POSTHOG_KEY',
     section: 'claw',
-    description: 'Claw server PostHog project write key.',
+    description:
+      'Claw server PostHog project key required by production builds.',
     secret: true,
     schema: stringSchema,
     modes: { development: { value: '' }, production: { value: '' } },
@@ -216,15 +217,20 @@ export const ENV_REGISTRY: readonly EnvKeySpec[] = [
         value: 'https://us.i.posthog.com',
         commented: true,
       },
+      production: {
+        value: 'https://us.i.posthog.com',
+        commented: true,
+      },
     },
   },
   {
     key: 'VITE_CLAW_POSTHOG_KEY',
     section: 'claw',
-    description: 'BrowserClaw bundle PostHog project write key.',
+    description:
+      'BrowserClaw PostHog project key embedded in the shipped client bundle; required by production builds.',
     secret: true,
     schema: stringSchema,
-    modes: { development: { value: '' } },
+    modes: { development: { value: '' }, production: { value: '' } },
   },
   {
     key: 'VITE_CLAW_POSTHOG_HOST',
@@ -235,6 +241,10 @@ export const ENV_REGISTRY: readonly EnvKeySpec[] = [
     schema: stringSchema,
     modes: {
       development: {
+        value: 'https://us.i.posthog.com',
+        commented: true,
+      },
+      production: {
         value: 'https://us.i.posthog.com',
         commented: true,
       },
