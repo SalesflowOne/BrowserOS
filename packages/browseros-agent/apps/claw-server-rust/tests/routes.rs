@@ -19,7 +19,7 @@ use tokio::{
     net::{TcpListener, TcpStream},
     task::JoinHandle,
 };
-use tokio_tungstenite::{WebSocketStream, accept_async, tungstenite::Message};
+use tokio_tungstenite::{accept_async, tungstenite::Message};
 use tower::ServiceExt;
 
 struct TestApp {
