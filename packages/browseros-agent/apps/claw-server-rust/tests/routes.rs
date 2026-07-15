@@ -419,12 +419,14 @@ async fn mcp_hygiene_rejects_browser_originated_requests() -> anyhow::Result<()>
     assert_eq!(body, json!({ "error": "unsupported request" }));
 
     // Hygiene applies to /mcp only: the same origin header is fine elsewhere.
-    let (status, _headers, _body) =
-        request_json_with_headers(&app.router, "GET", "/system/health", None, &[(
-            "origin",
-            "http://evil.example",
-        )])
-        .await?;
+    let (status, _headers, _body) = request_json_with_headers(
+        &app.router,
+        "GET",
+        "/system/health",
+        None,
+        &[("origin", "http://evil.example")],
+    )
+    .await?;
     assert_eq!(status, StatusCode::OK);
 
     // CORS preflight stays 204 like every other route (TS cors layer
@@ -584,7 +586,11 @@ async fn mcp_session_naming_triggers_once_after_first_successful_tabs_new() -> a
     )
     .await?;
     assert_eq!(status, StatusCode::OK);
-    assert!(body["result"]["tools"].as_array().is_some_and(|tools| !tools.is_empty()));
+    assert!(
+        body["result"]["tools"]
+            .as_array()
+            .is_some_and(|tools| !tools.is_empty())
+    );
 
     wait_for_session_registration(&app, &session_id).await?;
     let session = app
