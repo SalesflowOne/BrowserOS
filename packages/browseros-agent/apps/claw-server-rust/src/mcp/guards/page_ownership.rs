@@ -102,7 +102,13 @@ mod tests {
                 "page 7 is not owned by this agent; call `tabs new` to open a fresh page and use the returned page id."
             )
         );
-        assert!(call.state.sessions.owner_of_page(&PageId(7)).await.is_none());
+        assert!(
+            call.state
+                .sessions
+                .owner_of_page(&PageId(7))
+                .await
+                .is_none()
+        );
         Ok(())
     }
 }

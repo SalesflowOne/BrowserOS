@@ -593,7 +593,10 @@ mod tests {
         )
         .await;
         recorder.release_group_creation();
-        assert!(applied.is_ok(), "tab-group effect blocked the tool response");
+        assert!(
+            applied.is_ok(),
+            "tab-group effect blocked the tool response"
+        );
         Ok(())
     }
 

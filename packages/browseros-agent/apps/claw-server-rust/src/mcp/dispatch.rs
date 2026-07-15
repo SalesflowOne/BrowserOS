@@ -10,8 +10,7 @@ use browseros_mcp::{
 };
 use futures_util::future::BoxFuture;
 use rmcp::{
-    ErrorData as McpError,
-    RoleServer,
+    ErrorData as McpError, RoleServer,
     model::{CallToolResult, ContentBlock, RequestId},
     service::Peer,
 };
@@ -334,9 +333,9 @@ async fn execute_with_cancellation(call: &ToolCall) -> DispatchExecution {
             });
             match execute_tool(call.tool(), call.raw_args.clone(), &ctx).await {
                 Ok(result) => result,
-                Err(browseros_mcp::framework::ToolError::Cancelled) => ToolResult::error(
-                    format!("{} failed: cancelled", call.tool().name),
-                ),
+                Err(browseros_mcp::framework::ToolError::Cancelled) => {
+                    ToolResult::error(format!("{} failed: cancelled", call.tool().name))
+                }
                 Err(error) => ToolResult::error(format!("{} failed: {error}", call.tool().name)),
             }
         }
@@ -704,9 +703,12 @@ mod tests {
             .await?
             .rows;
         assert_eq!(rows.len(), 1);
-        assert!(rows[0].result_meta.as_deref().is_some_and(|meta| {
-            meta.contains("cancellationKind")
-        }));
+        assert!(
+            rows[0]
+                .result_meta
+                .as_deref()
+                .is_some_and(|meta| { meta.contains("cancellationKind") })
+        );
         assert_eq!(session.cancel_active_dispatches().await, 0);
         Ok(())
     }
