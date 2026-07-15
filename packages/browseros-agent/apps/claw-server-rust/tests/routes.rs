@@ -1,6 +1,6 @@
 use axum::{
     Router,
-    body::{Body, to_bytes},
+    body::{Body, BodyDataStream, to_bytes},
     http::{HeaderMap, Request, StatusCode, header},
 };
 use browseros_core::TargetId;
@@ -169,6 +169,75 @@ fn sse_json(body: &str) -> anyhow::Result<Value> {
         }
     }
     Err(anyhow::anyhow!("SSE response had no JSON data: {body:?}"))
+}
+
+struct McpSseStream {
+    body: BodyDataStream,
+    pending: Vec<u8>,
+}
+
+impl McpSseStream {
+    /// Opens the session's standalone SSE channel for server-initiated MCP requests.
+    async fn open(router: &Router, session_id: &str) -> anyhow::Result<Self> {
+        let request = Request::builder()
+            .method("GET")
+            .uri("/mcp")
+            .header(header::HOST, "localhost")
+            .header(header::ACCEPT, "text/event-stream")
+            .header("mcp-session-id", session_id)
+            .header("mcp-protocol-version", "2025-06-18")
+            .body(Body::empty())?;
+        let response = router.clone().oneshot(request).await?;
+        assert_eq!(response.status(), StatusCode::OK);
+        Ok(Self {
+            body: response.into_body().into_data_stream(),
+            pending: Vec::new(),
+        })
+    }
+
+    async fn next_method(&mut self, method: &str) -> anyhow::Result<Value> {
+        loop {
+            while let Some(event) = take_sse_event(&mut self.pending) {
+                let event = std::str::from_utf8(&event)?;
+                let data = event
+                    .lines()
+                    .filter_map(|line| line.strip_prefix("data:"))
+                    .map(str::trim)
+                    .filter(|line| !line.is_empty())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                if data.is_empty() {
+                    continue;
+                }
+                let value: Value = serde_json::from_str(&data)?;
+                if value.get("method").and_then(Value::as_str) == Some(method) {
+                    return Ok(value);
+                }
+            }
+            let chunk = self
+                .body
+                .next()
+                .await
+                .ok_or_else(|| anyhow::anyhow!("MCP SSE stream ended before {method}"))??;
+            self.pending.extend_from_slice(&chunk);
+        }
+    }
+}
+
+fn take_sse_event(pending: &mut Vec<u8>) -> Option<Vec<u8>> {
+    let delimiter = pending
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .map(|index| (index, 4))
+        .or_else(|| {
+            pending
+                .windows(2)
+                .position(|window| window == b"\n\n")
+                .map(|index| (index, 2))
+        })?;
+    let event = pending[..delimiter.0].to_vec();
+    pending.drain(..delimiter.0 + delimiter.1);
+    Some(event)
 }
 
 #[tokio::test]
@@ -478,8 +547,11 @@ async fn mcp_initialize_list_guard_audit_and_delete() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn mcp_initialize_with_elicitation_capability_stays_nonblocking() -> anyhow::Result<()> {
-    let app = test_app().await?;
+async fn mcp_session_naming_triggers_once_after_first_successful_tabs_new() -> anyhow::Result<()> {
+    let mock = MockCdp::start().await?;
+    let app = test_app_with_cdp_port(mock.cdp_port, false).await?;
+    app.state.browser.connect_once_for_testing().await?;
+    wait_for_cdp_connected(&app.router).await?;
     let initialize = json!({
         "jsonrpc": "2.0",
         "id": 1,
@@ -522,6 +594,91 @@ async fn mcp_initialize_with_elicitation_capability_stays_nonblocking() -> anyho
         .await
         .ok_or_else(|| anyhow::anyhow!("session not minted"))?;
     assert_eq!(session.session_label().await, None);
+
+    let mut stream = McpSseStream::open(&app.router, &session_id).await?;
+    let (status, _headers, body) = request_json_with_headers(
+        &app.router,
+        "POST",
+        "/mcp",
+        Some(tabs_new_request(3)),
+        &[("mcp-session-id", &session_id)],
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["result"]["isError"], false, "tabs_new body: {body:?}");
+
+    let elicitation = tokio::time::timeout(
+        Duration::from_secs(2),
+        stream.next_method("elicitation/create"),
+    )
+    .await??;
+    assert_eq!(elicitation["params"]["mode"], "form");
+    assert_eq!(
+        elicitation["params"]["requestedSchema"]["required"],
+        json!(["name"])
+    );
+    let request_id = elicitation["id"].clone();
+    let (status, _headers, _body) = request_json_with_headers(
+        &app.router,
+        "POST",
+        "/mcp",
+        Some(json!({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {
+                "action": "accept",
+                "content": { "name": "Invoice Processing!!!" }
+            }
+        })),
+        &[("mcp-session-id", &session_id)],
+    )
+    .await?;
+    assert_eq!(status, StatusCode::ACCEPTED);
+
+    let mut applied = false;
+    for _ in 0..100 {
+        let label_ready = session.session_label().await.as_deref() == Some("invoice-processing");
+        let title_ready = mock.group_updates.lock().await.iter().any(|params| {
+            params.get("title").and_then(Value::as_str) == Some("claude/invoice-processing")
+        });
+        if label_ready && title_ready {
+            applied = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(applied, "session label or group title was not applied");
+    assert_eq!(
+        app.state
+            .sessions
+            .ownership()
+            .tab_group_ref(&session.agent().ownership_key())
+            .await
+            .as_deref(),
+        Some("group-1")
+    );
+
+    let (status, _headers, body) = request_json_with_headers(
+        &app.router,
+        "POST",
+        "/mcp",
+        Some(tabs_new_request(4)),
+        &[("mcp-session-id", &session_id)],
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["result"]["isError"], false, "tabs_new body: {body:?}");
+    match tokio::time::timeout(
+        Duration::from_millis(250),
+        stream.next_method("elicitation/create"),
+    )
+    .await
+    {
+        Err(_) => {}
+        Ok(Ok(request)) => anyhow::bail!("second tabs new elicited again: {request:?}"),
+        Ok(Err(error)) => return Err(error),
+    }
+    drop(mock);
     Ok(())
 }
 
@@ -566,7 +723,7 @@ async fn mcp_tabs_new_roundtrips_through_mock_cdp() -> anyhow::Result<()> {
     assert!(
         list_body["result"]["content"][0]["text"]
             .as_str()
-            .is_some_and(|text| text.starts_with("[1] https://example.com"))
+            .is_some_and(|text| text.starts_with("Your tabs:\n[1] https://example.com"))
     );
 
     let screencast_task = app
@@ -1048,6 +1205,7 @@ struct MockCdp {
     cdp_port: u16,
     tabs: Arc<tokio::sync::Mutex<Vec<MockTab>>>,
     captures: Arc<tokio::sync::Mutex<Vec<(String, Value)>>>,
+    group_updates: Arc<tokio::sync::Mutex<Vec<Value>>>,
     tasks: Vec<JoinHandle<()>>,
 }
 
@@ -1055,10 +1213,12 @@ impl MockCdp {
     async fn start() -> anyhow::Result<Self> {
         let tabs = Arc::new(tokio::sync::Mutex::new(Vec::<MockTab>::new()));
         let captures = Arc::new(tokio::sync::Mutex::new(Vec::<(String, Value)>::new()));
+        let group_updates = Arc::new(tokio::sync::Mutex::new(Vec::<Value>::new()));
         let ws_listener = TcpListener::bind("127.0.0.1:0").await?;
         let ws_addr = ws_listener.local_addr()?;
         let ws_tabs = tabs.clone();
         let ws_captures = captures.clone();
+        let ws_group_updates = group_updates.clone();
         let ws_task = tokio::spawn(async move {
             loop {
                 let Ok((stream, _addr)) = ws_listener.accept().await else {
@@ -1066,8 +1226,9 @@ impl MockCdp {
                 };
                 let tabs = ws_tabs.clone();
                 let captures = ws_captures.clone();
+                let group_updates = ws_group_updates.clone();
                 tokio::spawn(async move {
-                    let _ = handle_mock_ws(stream, tabs, captures).await;
+                    let _ = handle_mock_ws(stream, tabs, captures, group_updates).await;
                 });
             }
         });
@@ -1089,6 +1250,7 @@ impl MockCdp {
             cdp_port,
             tabs,
             captures,
+            group_updates,
             tasks: vec![ws_task, http_task],
         })
     }
@@ -1152,6 +1314,7 @@ async fn handle_mock_ws(
     stream: TcpStream,
     tabs: Arc<tokio::sync::Mutex<Vec<MockTab>>>,
     captures: Arc<tokio::sync::Mutex<Vec<(String, Value)>>>,
+    group_updates: Arc<tokio::sync::Mutex<Vec<Value>>>,
 ) -> anyhow::Result<()> {
     let mut ws = accept_async(stream).await?;
     while let Some(message) = ws.next().await {
@@ -1186,6 +1349,8 @@ async fn handle_mock_ws(
                 .lock()
                 .await
                 .push((session.clone().unwrap_or_default(), params));
+        } else if method == "Browser.updateTabGroup" {
+            group_updates.lock().await.push(params);
         }
         let response = match result {
             Ok(result) => json!({ "id": id, "result": result }),
@@ -1287,16 +1452,63 @@ async fn handle_mock_cdp_method(
                 }
             }))
         }
-        "Browser.addTabsToGroup" => Ok(json!({
-            "group": {
-                "groupId": params.get("groupId").and_then(Value::as_str).unwrap_or("group-1"),
-                "windowId": 1,
-                "title": "group",
-                "color": "blue",
-                "collapsed": false,
-                "tabIds": params.get("tabIds").cloned().unwrap_or_else(|| json!([]))
+        "Browser.addTabsToGroup" => {
+            let group_id = params
+                .get("groupId")
+                .and_then(Value::as_str)
+                .unwrap_or("group-1")
+                .to_string();
+            let mut tabs = tabs.lock().await;
+            let tab_ids = params
+                .get("tabIds")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            for id in &tab_ids {
+                if let Some(tab_id) = id.as_i64()
+                    && let Some(tab) = tabs.iter_mut().find(|tab| tab.tab_id == tab_id)
+                {
+                    tab.group_id = Some(group_id.clone());
+                }
             }
-        })),
+            let grouped_ids = tabs
+                .iter()
+                .filter(|tab| tab.group_id.as_deref() == Some(group_id.as_str()))
+                .map(|tab| tab.tab_id)
+                .collect::<Vec<_>>();
+            Ok(json!({
+                "group": {
+                    "groupId": group_id,
+                    "windowId": 1,
+                    "title": "group",
+                    "color": "blue",
+                    "collapsed": false,
+                    "tabIds": grouped_ids
+                }
+            }))
+        }
+        "Browser.updateTabGroup" => {
+            let group_id = params
+                .get("groupId")
+                .and_then(Value::as_str)
+                .unwrap_or("group-1");
+            let tabs = tabs.lock().await;
+            let grouped_ids = tabs
+                .iter()
+                .filter(|tab| tab.group_id.as_deref() == Some(group_id))
+                .map(|tab| tab.tab_id)
+                .collect::<Vec<_>>();
+            Ok(json!({
+                "group": {
+                    "groupId": group_id,
+                    "windowId": 1,
+                    "title": params.get("title").and_then(Value::as_str).unwrap_or("group"),
+                    "color": params.get("color").and_then(Value::as_str).unwrap_or("blue"),
+                    "collapsed": params.get("collapsed").and_then(Value::as_bool).unwrap_or(false),
+                    "tabIds": grouped_ids
+                }
+            }))
+        }
         _ => Ok(json!({})),
     }
 }
