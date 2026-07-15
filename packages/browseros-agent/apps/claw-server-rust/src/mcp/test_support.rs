@@ -51,10 +51,11 @@ pub async fn tool_call_with_fallback(
         .iter()
         .position(|tool| tool.name == tool_name)
         .ok_or_else(|| anyhow::anyhow!("tool {tool_name} missing from catalog"))?;
+    let client_cancel = CancellationToken::new();
     let dispatch_cancel = CancellationToken::new();
     let cancel = linked_cancel_token(
         session.child_token(),
-        CancellationToken::new(),
+        client_cancel.clone(),
         dispatch_cancel.clone(),
     );
     let ownership_key = session.agent().ownership_key();
@@ -72,6 +73,7 @@ pub async fn tool_call_with_fallback(
         }),
         None,
         cancel,
+        client_cancel,
         dispatch_cancel,
         None,
         state,

@@ -307,6 +307,7 @@ impl ServerHandler for ClawMcpService {
             Some(identity),
             browser_session,
             cancel,
+            context.ct.clone(),
             dispatch_cancel,
             default_tab_group_id,
             self.state.clone(),
@@ -314,7 +315,7 @@ impl ServerHandler for ClawMcpService {
             Some(started.peer),
             started.naming_started,
         );
-        Ok(dispatch_tool_call(call).await)
+        dispatch_tool_call(call).await
     }
 }
 

@@ -10,6 +10,7 @@ use browseros_mcp::{
 };
 use futures_util::future::BoxFuture;
 use rmcp::{
+    ErrorData as McpError,
     RoleServer,
     model::{CallToolResult, ContentBlock, RequestId},
     service::Peer,
@@ -23,6 +24,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
 const CANCELLATION_REASON: &str = "Operation cancelled by the User";
+const CLIENT_CANCELLATION_ERROR: &str = "Request cancelled by client";
 const ARBITRARY_SCRIPT_TOOLS: &[&str] = &["run", "evaluate"];
 const DISPATCH_ERROR_TEXT_MAX: usize = 200;
 
@@ -51,6 +53,7 @@ pub struct ToolCall {
     pub identity: Option<ToolIdentity>,
     pub browser_session: Option<Arc<BrowserSession>>,
     pub cancel: CancellationToken,
+    pub client_cancel: CancellationToken,
     pub dispatch_cancel: CancellationToken,
     pub default_tab_group_id: Option<String>,
     pub flags: ToolFlags,
@@ -74,6 +77,7 @@ impl ToolCall {
         identity: Option<ToolIdentity>,
         browser_session: Option<Arc<BrowserSession>>,
         cancel: CancellationToken,
+        client_cancel: CancellationToken,
         dispatch_cancel: CancellationToken,
         default_tab_group_id: Option<String>,
         state: AppState,
@@ -114,6 +118,7 @@ impl ToolCall {
             identity,
             browser_session,
             cancel,
+            client_cancel,
             dispatch_cancel,
             default_tab_group_id,
             flags,
@@ -188,8 +193,13 @@ struct ExecutionOutcome {
     duration_ms: i64,
 }
 
+enum DispatchExecution {
+    Completed(ExecutionOutcome),
+    ProtocolCancelled,
+}
+
 /// Dispatches a tool through ordered guards, cancellation, and ordered effects.
-pub async fn dispatch_tool_call(call: ToolCall) -> CallToolResult {
+pub async fn dispatch_tool_call(call: ToolCall) -> Result<CallToolResult, McpError> {
     dispatch_tool_call_with(call, GUARDS, EFFECTS).await
 }
 
@@ -197,7 +207,7 @@ async fn dispatch_tool_call_with(
     call: ToolCall,
     guards: &[ToolGuard],
     effects: &[NamedToolEffect],
-) -> CallToolResult {
+) -> Result<CallToolResult, McpError> {
     if let Some(identity) = &call.identity {
         identity
             .session
@@ -206,7 +216,7 @@ async fn dispatch_tool_call_with(
     }
 
     let result = if let Some(rejection) = run_guards(&call, guards).await {
-        rejection
+        Ok(rejection)
     } else {
         if ARBITRARY_SCRIPT_TOOLS.contains(&call.tool().name) {
             warn!(
@@ -216,26 +226,37 @@ async fn dispatch_tool_call_with(
             );
         }
 
-        let outcome = execute_with_cancellation(&call).await;
-        if outcome.result.is_error && !outcome.cancelled {
-            warn!(
-                tool = call.tool().name,
-                session_id = %call.session_id,
-                duration_ms = outcome.duration_ms,
-                error = ?dispatch_error_text(&outcome.result),
-                "cockpit tool dispatch failed"
-            );
+        match execute_with_cancellation(&call).await {
+            DispatchExecution::ProtocolCancelled => {
+                tracing::info!(
+                    tool = call.tool().name,
+                    session_id = %call.session_id,
+                    "cockpit tool dispatch cancelled by client"
+                );
+                Err(McpError::internal_error(CLIENT_CANCELLATION_ERROR, None))
+            }
+            DispatchExecution::Completed(outcome) => {
+                if outcome.result.is_error && !outcome.cancelled {
+                    warn!(
+                        tool = call.tool().name,
+                        session_id = %call.session_id,
+                        duration_ms = outcome.duration_ms,
+                        error = ?dispatch_error_text(&outcome.result),
+                        "cockpit tool dispatch failed"
+                    );
+                }
+                Ok(run_effects(
+                    ToolEffectContext {
+                        call: &call,
+                        result: &outcome.result,
+                        cancelled: outcome.cancelled,
+                        duration_ms: outcome.duration_ms,
+                    },
+                    effects,
+                )
+                .await)
+            }
         }
-        run_effects(
-            ToolEffectContext {
-                call: &call,
-                result: &outcome.result,
-                cancelled: outcome.cancelled,
-                duration_ms: outcome.duration_ms,
-            },
-            effects,
-        )
-        .await
     };
 
     if let Some(identity) = &call.identity {
@@ -246,7 +267,7 @@ async fn dispatch_tool_call_with(
     }
     call.dispatch_cancel.cancel();
     call.cancel.cancel();
-    wire_result(result)
+    result.map(wire_result)
 }
 
 async fn run_guards(call: &ToolCall, guards: &[ToolGuard]) -> Option<ToolResult> {
@@ -283,8 +304,18 @@ async fn run_effects(context: ToolEffectContext<'_>, effects: &[NamedToolEffect]
     result
 }
 
-async fn execute_with_cancellation(call: &ToolCall) -> ExecutionOutcome {
+async fn execute_with_cancellation(call: &ToolCall) -> DispatchExecution {
     let started = Instant::now();
+    if call.dispatch_cancel.is_cancelled() {
+        return DispatchExecution::Completed(ExecutionOutcome {
+            result: operator_cancellation_result(),
+            cancelled: true,
+            duration_ms: 0,
+        });
+    }
+    if call.client_cancel.is_cancelled() || call.cancel.is_cancelled() {
+        return DispatchExecution::ProtocolCancelled;
+    }
     let result = match &call.browser_session {
         Some(browser_session) => {
             let ctx = ToolCtx::new(BrowserToolOptions {
@@ -298,9 +329,9 @@ async fn execute_with_cancellation(call: &ToolCall) -> ExecutionOutcome {
             });
             match execute_tool(call.tool(), call.raw_args.clone(), &ctx).await {
                 Ok(result) => result,
-                Err(browseros_mcp::framework::ToolError::Cancelled) => {
-                    operator_cancellation_result()
-                }
+                Err(browseros_mcp::framework::ToolError::Cancelled) => ToolResult::error(
+                    format!("{} failed: cancelled", call.tool().name),
+                ),
                 Err(error) => ToolResult::error(format!("{} failed: {error}", call.tool().name)),
             }
         }
@@ -308,17 +339,22 @@ async fn execute_with_cancellation(call: &ToolCall) -> ExecutionOutcome {
             "browser session not connected; the agent browser is not running or paired. Tell the user to start BrowserClaw and check the cockpit connection status; do not fall back to another browser tool.",
         ),
     };
-    let cancelled = call.cancel.is_cancelled();
-    let result = if cancelled {
-        operator_cancellation_result()
-    } else {
-        result
-    };
-    ExecutionOutcome {
-        result,
-        cancelled,
-        duration_ms: i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX),
+    let duration_ms = i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX);
+    if call.dispatch_cancel.is_cancelled() {
+        return DispatchExecution::Completed(ExecutionOutcome {
+            result: operator_cancellation_result(),
+            cancelled: true,
+            duration_ms,
+        });
     }
+    if call.client_cancel.is_cancelled() || call.cancel.is_cancelled() {
+        return DispatchExecution::ProtocolCancelled;
+    }
+    DispatchExecution::Completed(ExecutionOutcome {
+        result,
+        cancelled: false,
+        duration_ms,
+    })
 }
 
 fn operator_cancellation_result() -> ToolResult {
@@ -400,6 +436,7 @@ pub fn linked_cancel_token(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::audit::ListDispatchesQuery;
     use std::sync::{
         Mutex,
         atomic::{AtomicUsize, Ordering},
@@ -585,7 +622,8 @@ mod tests {
                 run: counting_effect,
             }],
         )
-        .await;
+        .await
+        .unwrap_or_else(|error| panic!("guard rejection should stay in-band: {error:?}"));
         assert_eq!(result.is_error, Some(true));
         assert_eq!(EFFECT_CALLS.load(Ordering::SeqCst), 0);
         Ok(())
@@ -623,5 +661,74 @@ mod tests {
         assert_eq!(result.is_error, Some(false));
         assert_eq!(result.structured_content, None);
         assert_eq!(result.meta, None);
+    }
+
+    #[tokio::test]
+    async fn operator_cancellation_returns_and_audits_operator_result() -> anyhow::Result<()> {
+        let call = crate::mcp::test_support::tool_call("tabs", json!({ "action": "list" })).await?;
+        let session = call
+            .identity
+            .as_ref()
+            .unwrap_or_else(|| unreachable!())
+            .session
+            .clone();
+        call.dispatch_cancel.cancel();
+        let result = dispatch_tool_call_with(
+            call.clone(),
+            &[],
+            &[NamedToolEffect {
+                name: "audit",
+                run: effects::audit::apply,
+            }],
+        )
+        .await
+        .unwrap_or_else(|error| panic!("operator cancellation should stay in-band: {error:?}"));
+        assert_eq!(result.is_error, Some(true));
+        assert_eq!(
+            result
+                .content
+                .first()
+                .and_then(|block| block.as_text())
+                .map(|text| text.text.as_str()),
+            Some(CANCELLATION_REASON)
+        );
+        let rows = call
+            .state
+            .audit
+            .list_dispatches(ListDispatchesQuery::default())
+            .await?
+            .rows;
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].result_meta.as_deref().is_some_and(|meta| {
+            meta.contains("cancellationKind")
+        }));
+        assert_eq!(session.cancel_active_dispatches().await, 0);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn client_cancellation_skips_effects_and_operator_result() -> anyhow::Result<()> {
+        let call = crate::mcp::test_support::tool_call("tabs", json!({ "action": "list" })).await?;
+        call.client_cancel.cancel();
+        let error = dispatch_tool_call_with(
+            call.clone(),
+            &[],
+            &[NamedToolEffect {
+                name: "audit",
+                run: effects::audit::apply,
+            }],
+        )
+        .await
+        .expect_err("client cancellation should be a protocol error");
+        assert_eq!(error.message.as_ref(), CLIENT_CANCELLATION_ERROR);
+        assert!(
+            call.state
+                .audit
+                .list_dispatches(ListDispatchesQuery::default())
+                .await?
+                .rows
+                .is_empty()
+        );
+        Ok(())
     }
 }
