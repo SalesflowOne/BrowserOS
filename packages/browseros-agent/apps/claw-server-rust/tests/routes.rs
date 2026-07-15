@@ -448,8 +448,7 @@ async fn mcp_initialize_list_guard_audit_and_delete() -> anyhow::Result<()> {
     let rows = dispatches["rows"]
         .as_array()
         .ok_or_else(|| anyhow::anyhow!("rows not array"))?;
-    assert_eq!(rows.len(), 1);
-    assert!(rows[0]["dispatchId"].as_str().is_some());
+    assert!(rows.is_empty(), "guard rejections must skip audit effects");
 
     let (status, _headers, _body) = request_json_with_headers(
         &app.router,
@@ -501,8 +500,8 @@ async fn mcp_initialize_with_elicitation_capability_stays_nonblocking() -> anyho
         .to_string();
     send_initialized(&app.router, &session_id).await?;
 
-    // The naming task fires in the background; the handshake and tool
-    // surface must stay responsive regardless of the pending elicitation.
+    // Naming starts only after a successful tabs-new call, so initialize and
+    // tool discovery must not create an elicitation or session label.
     let list = json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {} });
     let (status, _headers, body) = request_json_with_headers(
         &app.router,
@@ -544,7 +543,8 @@ async fn mcp_tabs_new_roundtrips_through_mock_cdp() -> anyhow::Result<()> {
     .await?;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["result"]["isError"], false, "tabs_new body: {body:?}");
-    assert_eq!(body["result"]["structuredContent"]["page"], 1);
+    assert!(body["result"].get("structuredContent").is_none());
+    assert!(body["result"].get("_meta").is_none());
 
     let tabs_list = json!({
         "jsonrpc": "2.0",
@@ -562,10 +562,46 @@ async fn mcp_tabs_new_roundtrips_through_mock_cdp() -> anyhow::Result<()> {
     .await?;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(list_body["result"]["isError"], false);
-    assert_eq!(
-        list_body["result"]["structuredContent"]["pages"][0]["page"],
-        1
+    assert!(list_body["result"].get("structuredContent").is_none());
+    assert!(
+        list_body["result"]["content"][0]["text"]
+            .as_str()
+            .is_some_and(|text| text.starts_with("[1] https://example.com"))
     );
+
+    let screencast_task = app
+        .state
+        .screencast
+        .clone()
+        .start(app.state.browser.clone(), app.state.tab_activity.clone());
+    let _ = request_json(&app.router, "GET", "/tabs/activity", None).await?;
+    for _ in 0..50 {
+        if app.state.screencast.frame_for(1).await.is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(app.state.screencast.frame_for(1).await.is_some());
+
+    let wait = json!({
+        "jsonrpc": "2.0",
+        "id": 12,
+        "method": "tools/call",
+        "params": {
+            "name": "wait",
+            "arguments": { "page": 1, "for": "time", "value": 1 }
+        }
+    });
+    let (status, _headers, wait_body) = request_json_with_headers(
+        &app.router,
+        "POST",
+        "/mcp",
+        Some(wait),
+        &[("mcp-session-id", &session_id)],
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(wait_body["result"]["isError"], false);
 
     let (status, dispatches) = request_json(&app.router, "GET", "/audit/dispatches", None).await?;
     assert_eq!(status, StatusCode::OK);
@@ -577,7 +613,7 @@ async fn mcp_tabs_new_roundtrips_through_mock_cdp() -> anyhow::Result<()> {
             .any(|row| row["toolName"] == "tabs" && row["dispatchId"].is_string())
     );
 
-    // Fallback screenshots default on: the tabs-new dispatch persisted a frame.
+    // The first successful page read persists the already-cached poller frame.
     let mut screenshot_statuses = Vec::new();
     for row in rows {
         let dispatch_id = row["dispatchId"]
@@ -596,6 +632,8 @@ async fn mcp_tabs_new_roundtrips_through_mock_cdp() -> anyhow::Result<()> {
         screenshot_statuses.contains(&StatusCode::OK),
         "no dispatch had a persisted screenshot: {screenshot_statuses:?}"
     );
+    app.state.screencast.stop();
+    screencast_task.await?;
     drop(mock);
     Ok(())
 }
@@ -663,7 +701,7 @@ async fn cancel_endpoint_aborts_in_flight_dispatch() -> anyhow::Result<()> {
     )
     .await?;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["result"]["structuredContent"]["page"], 1);
+    assert!(body["result"].get("structuredContent").is_none());
 
     let wait_call = json!({
         "jsonrpc": "2.0",
@@ -709,8 +747,23 @@ async fn cancel_endpoint_aborts_in_flight_dispatch() -> anyhow::Result<()> {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(wait_body["result"]["isError"], true);
     assert_eq!(
-        wait_body["result"]["structuredContent"]["cancellationKind"],
-        "cockpit.operator-cancelled"
+        wait_body["result"]["content"][0]["text"],
+        "Operation cancelled by the User"
+    );
+    assert!(wait_body["result"].get("structuredContent").is_none());
+
+    let (status, dispatches) = request_json(&app.router, "GET", "/audit/dispatches", None).await?;
+    assert_eq!(status, StatusCode::OK);
+    let cancellation_meta = dispatches["rows"]
+        .as_array()
+        .and_then(|rows| rows.iter().find(|row| row["toolName"] == "wait"))
+        .and_then(|row| row["resultMeta"].as_str())
+        .ok_or_else(|| anyhow::anyhow!("missing cancellation audit row"))?;
+    let cancellation_meta: Value = serde_json::from_str(cancellation_meta)?;
+    assert_eq!(cancellation_meta["isError"], true);
+    assert_eq!(
+        cancellation_meta["structuredKeys"],
+        json!(["cancellationKind", "cancellationReason"])
     );
     drop(mock);
     Ok(())
@@ -914,9 +967,12 @@ async fn initialize_mcp(app: &TestApp) -> anyhow::Result<String> {
     let (status, headers, body) =
         request_json_with_headers(&app.router, "POST", "/mcp", Some(initialize), &[]).await?;
     assert_eq!(status, StatusCode::OK, "initialize body: {body:?}");
-    assert_eq!(
-        body["result"]["serverInfo"]["name"],
-        "browseros-claw-server"
+    assert_eq!(body["result"]["serverInfo"]["name"], "browserclaw");
+    assert_eq!(body["result"]["serverInfo"]["title"], "BrowserClaw");
+    assert!(
+        body["result"]["instructions"].as_str().is_some_and(
+            |instructions| instructions.starts_with("BrowserClaw — the browser for agents")
+        )
     );
     let session_id = headers
         .get("mcp-session-id")
@@ -940,9 +996,8 @@ fn tabs_new_request(id: u64) -> Value {
     })
 }
 
-/// The initialized notification is acknowledged with 202 before the
-/// session_started hook finishes registering the session, so a tools/call
-/// fired immediately after can race the registry. Tests wait it out.
+/// The initialized notification is acknowledged before the service finishes
+/// registering the session, so an immediate tool call can race the registry.
 async fn wait_for_session_registration(app: &TestApp, session_id: &str) -> anyhow::Result<()> {
     for _ in 0..50 {
         if app
