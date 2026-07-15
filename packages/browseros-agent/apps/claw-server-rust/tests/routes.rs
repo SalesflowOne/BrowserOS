@@ -789,7 +789,7 @@ async fn tabs_activity_enriches_by_agent_id_only() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn tabs_activity_serves_pushed_screencast_frames_with_acks() -> anyhow::Result<()> {
+async fn tabs_activity_embeds_polled_screenshot_frames() -> anyhow::Result<()> {
     let mock = MockCdp::start().await?;
     mock.add_tab(1, "target-1", 1).await;
     mock.add_tab(2, "target-2", 2).await;
@@ -818,10 +818,6 @@ async fn tabs_activity_serves_pushed_screencast_frames_with_acks() -> anyhow::Re
         .clone()
         .start(app.state.browser.clone(), app.state.tab_activity.clone());
 
-    // Frame 2 for each target is only released by the mock after the server
-    // acks frame 1 with the right integer sessionId on the right target
-    // session — seeing cast2 frames proves the full route→store→ack loop
-    // for two concurrent screencasts.
     let mut last_frames: Vec<(String, Option<Value>)> = Vec::new();
     let mut done = false;
     for _ in 0..100 {
@@ -847,8 +843,8 @@ async fn tabs_activity_serves_pushed_screencast_frames_with_acks() -> anyhow::Re
                 .and_then(|frame| frame["jpegBase64"].as_str())
                 .map(str::to_string)
         };
-        if frame_data("target-1").as_deref() == Some("cast2-target-1")
-            && frame_data("target-2").as_deref() == Some("cast2-target-2")
+        if frame_data("target-1").as_deref() == Some("anBlZw==")
+            && frame_data("target-2").as_deref() == Some("anBlZw==")
         {
             done = true;
             break;
@@ -857,38 +853,37 @@ async fn tabs_activity_serves_pushed_screencast_frames_with_acks() -> anyhow::Re
     }
     assert!(
         done,
-        "pushed frames never reached /tabs/activity; last: {last_frames:?}"
+        "polled frames never reached /tabs/activity; last: {last_frames:?}"
     );
 
     for (_, frame) in &last_frames {
         let frame = frame
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("missing screencast frame"))?;
+        assert_eq!(frame.as_object().map(serde_json::Map::len), Some(2));
         assert!(frame["capturedAt"].as_i64().is_some_and(|at| at > 0));
-        let data = frame["jpegBase64"].as_str().unwrap_or_default();
-        assert!(
-            data.starts_with("cast2-"),
-            "unexpected frame payload: {data}"
+        assert_eq!(frame["jpegBase64"], "anBlZw==");
+    }
+
+    let captures = mock.captures.lock().await.clone();
+    for session_id in ["session-target-1", "session-target-2"] {
+        let (_, params) = captures
+            .iter()
+            .find(|(session, _)| session == session_id)
+            .ok_or_else(|| anyhow::anyhow!("missing screenshot capture for {session_id}"))?;
+        assert_eq!(
+            params,
+            &json!({
+                "format": "jpeg",
+                "fromSurface": true,
+                "captureBeyondViewport": false,
+                "quality": 50
+            })
         );
     }
 
-    let acks = mock.acks.lock().await.clone();
-    assert!(
-        acks.contains(&("session-target-1".to_string(), 1001)),
-        "missing ack for target-1 frame 1: {acks:?}"
-    );
-    assert!(
-        acks.contains(&("session-target-2".to_string(), 2001)),
-        "missing ack for target-2 frame 1: {acks:?}"
-    );
-    // The frame pushed on the foreign envelope session must never be
-    // stored or acked (its ack ids end in 9).
-    assert!(
-        acks.iter().all(|(_, ack_id)| ack_id % 1000 != 9),
-        "foreign-session frame was acked: {acks:?}"
-    );
-
-    screencast_task.abort();
+    app.state.screencast.stop();
+    screencast_task.await?;
     drop(mock);
     Ok(())
 }
@@ -997,27 +992,27 @@ async fn wait_for_cdp_connected(router: &Router) -> anyhow::Result<()> {
 struct MockCdp {
     cdp_port: u16,
     tabs: Arc<tokio::sync::Mutex<Vec<MockTab>>>,
-    acks: Arc<tokio::sync::Mutex<Vec<(String, i64)>>>,
+    captures: Arc<tokio::sync::Mutex<Vec<(String, Value)>>>,
     tasks: Vec<JoinHandle<()>>,
 }
 
 impl MockCdp {
     async fn start() -> anyhow::Result<Self> {
         let tabs = Arc::new(tokio::sync::Mutex::new(Vec::<MockTab>::new()));
-        let acks = Arc::new(tokio::sync::Mutex::new(Vec::<(String, i64)>::new()));
+        let captures = Arc::new(tokio::sync::Mutex::new(Vec::<(String, Value)>::new()));
         let ws_listener = TcpListener::bind("127.0.0.1:0").await?;
         let ws_addr = ws_listener.local_addr()?;
         let ws_tabs = tabs.clone();
-        let ws_acks = acks.clone();
+        let ws_captures = captures.clone();
         let ws_task = tokio::spawn(async move {
             loop {
                 let Ok((stream, _addr)) = ws_listener.accept().await else {
                     break;
                 };
                 let tabs = ws_tabs.clone();
-                let acks = ws_acks.clone();
+                let captures = ws_captures.clone();
                 tokio::spawn(async move {
-                    let _ = handle_mock_ws(stream, tabs, acks).await;
+                    let _ = handle_mock_ws(stream, tabs, captures).await;
                 });
             }
         });
@@ -1038,7 +1033,7 @@ impl MockCdp {
         Ok(Self {
             cdp_port,
             tabs,
-            acks,
+            captures,
             tasks: vec![ws_task, http_task],
         })
     }
@@ -1101,7 +1096,7 @@ async fn handle_mock_http(mut stream: TcpStream, ws_port: u16) -> anyhow::Result
 async fn handle_mock_ws(
     stream: TcpStream,
     tabs: Arc<tokio::sync::Mutex<Vec<MockTab>>>,
-    acks: Arc<tokio::sync::Mutex<Vec<(String, i64)>>>,
+    captures: Arc<tokio::sync::Mutex<Vec<(String, Value)>>>,
 ) -> anyhow::Result<()> {
     let mut ws = accept_async(stream).await?;
     while let Some(message) = ws.next().await {
@@ -1131,91 +1126,18 @@ async fn handle_mock_ws(
             .and_then(Value::as_str)
             .map(str::to_string);
         let result = handle_mock_cdp_method(method, params.clone(), tabs.clone()).await;
+        if method == "Page.captureScreenshot" {
+            captures
+                .lock()
+                .await
+                .push((session.clone().unwrap_or_default(), params));
+        }
         let response = match result {
             Ok(result) => json!({ "id": id, "result": result }),
             Err(message) => json!({ "id": id, "error": { "code": -32000, "message": message } }),
         };
         ws.send(Message::Text(response.to_string().into())).await?;
-        match method {
-            // A real browser pushes frames only after startScreencast; ours
-            // pushes one frame on a foreign session (must be dropped by the
-            // server) and then frame 1 on the requesting session.
-            "Page.startScreencast" => {
-                if let Some(session) = &session
-                    && let Some(tab) = find_tab_for_session(&tabs, session).await
-                {
-                    let base = tab.tab_id * 1000;
-                    send_screencast_frame(&mut ws, "session-bogus", "foreign", base + 9).await?;
-                    send_screencast_frame(
-                        &mut ws,
-                        session,
-                        &format!("cast1-{}", tab.target_id),
-                        base + 1,
-                    )
-                    .await?;
-                }
-            }
-            // Frame 2 is released only by a correct ack of frame 1 — the CDP
-            // backpressure contract the server must honor.
-            "Page.screencastFrameAck" => {
-                if let Some(session) = &session
-                    && let Some(ack_id) = params.get("sessionId").and_then(Value::as_i64)
-                {
-                    acks.lock().await.push((session.clone(), ack_id));
-                    if ack_id % 1000 == 1
-                        && let Some(tab) = find_tab_for_session(&tabs, session).await
-                    {
-                        send_screencast_frame(
-                            &mut ws,
-                            session,
-                            &format!("cast2-{}", tab.target_id),
-                            tab.tab_id * 1000 + 2,
-                        )
-                        .await?;
-                    }
-                }
-            }
-            _ => {}
-        }
     }
-    Ok(())
-}
-
-async fn find_tab_for_session(
-    tabs: &Arc<tokio::sync::Mutex<Vec<MockTab>>>,
-    session: &str,
-) -> Option<MockTab> {
-    let target_id = session.strip_prefix("session-")?;
-    tabs.lock()
-        .await
-        .iter()
-        .find(|tab| tab.target_id == target_id)
-        .cloned()
-}
-
-async fn send_screencast_frame(
-    ws: &mut WebSocketStream<TcpStream>,
-    session: &str,
-    data: &str,
-    ack_id: i64,
-) -> anyhow::Result<()> {
-    let event = json!({
-        "method": "Page.screencastFrame",
-        "params": {
-            "data": data,
-            "metadata": {
-                "offsetTop": 0.0,
-                "pageScaleFactor": 1.0,
-                "deviceWidth": 1280.0,
-                "deviceHeight": 800.0,
-                "scrollOffsetX": 0.0,
-                "scrollOffsetY": 0.0
-            },
-            "sessionId": ack_id
-        },
-        "sessionId": session
-    });
-    ws.send(Message::Text(event.to_string().into())).await?;
     Ok(())
 }
 
