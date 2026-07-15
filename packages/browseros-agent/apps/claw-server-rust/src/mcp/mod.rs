@@ -4,6 +4,7 @@ pub mod guards;
 pub mod naming;
 mod prompt;
 mod service;
+mod timeouts;
 
 #[cfg(test)]
 pub mod test_support;

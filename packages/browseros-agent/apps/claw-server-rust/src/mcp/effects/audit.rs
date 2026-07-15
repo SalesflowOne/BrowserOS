@@ -1,13 +1,25 @@
 use crate::{
-    mcp::dispatch::{ToolCall, ToolEffect, ToolEffectContext, extract_page_id, result_page_id},
-    services::audit::{DispatchResultSummary, RecordToolDispatchInput},
+    mcp::{
+        dispatch::{ToolCall, ToolEffect, ToolEffectContext, extract_page_id, result_page_id},
+        timeouts::{AUDIT_SCREENSHOT_CAPTURE, SCREENCAST_FRAME_FRESHNESS},
+    },
+    services::{
+        audit::{DispatchResultSummary, RecordToolDispatchInput},
+        now_epoch_ms,
+        tab_activity::ScreencastFrame,
+    },
 };
 use base64::Engine;
-use browseros_core::PageId;
+use browseros_core::{
+    PageId,
+    screenshot::{ScreenshotCaptureOptions, ScreenshotFormat},
+};
 use browseros_mcp::ToolResult;
 use futures_util::future::BoxFuture;
 use rmcp::model::ContentBlock;
 use serde_json::{Value, json};
+use std::future::Future;
+use tokio::time::timeout;
 use tracing::warn;
 
 const READ_ONLY_TOOLS: &[&str] = &["snapshot", "read", "grep", "diff", "wait"];
@@ -150,10 +162,34 @@ async fn persist_screenshot(
     {
         return;
     }
-    let Some(frame) = call.state.screencast.frame_for(page_id).await else {
+    let cached = call.state.screencast.frame_for(page_id).await;
+    let browser = call.browser_session.clone();
+    let dispatch_id = call.dispatch_id.clone();
+    let Some(jpeg_base64) = fallback_screenshot_data(cached, now_epoch_ms(), move || async move {
+        let browser = browser?;
+        match timeout(
+            AUDIT_SCREENSHOT_CAPTURE,
+            browser.screenshot(PageId(page_id), fallback_capture_options()),
+        )
+        .await
+        {
+            Ok(Ok(capture)) if !capture.data.is_empty() => Some(capture.data),
+            Ok(Ok(_)) => None,
+            Ok(Err(error)) => {
+                warn!(error = %error, dispatch_id = %dispatch_id, "fallback screenshot capture failed");
+                None
+            }
+            Err(_) => {
+                warn!(dispatch_id = %dispatch_id, "fallback screenshot capture timed out");
+                None
+            }
+        }
+    })
+    .await
+    else {
         return;
     };
-    match base64::engine::general_purpose::STANDARD.decode(frame.jpeg_base64.as_bytes()) {
+    match base64::engine::general_purpose::STANDARD.decode(jpeg_base64.as_bytes()) {
         Ok(bytes) if !bytes.is_empty() => {
             if write_screenshot_files(call, record, &bytes).await {
                 identity.session.mark_first_capture_done(page).await;
@@ -207,6 +243,35 @@ fn image_data(block: &ContentBlock) -> Option<&str> {
     }
 }
 
+async fn fallback_screenshot_data<F, Fut>(
+    cached: Option<ScreencastFrame>,
+    now_ms: i64,
+    capture: F,
+) -> Option<String>
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = Option<String>>,
+{
+    if let Some(frame) = cached
+        && !frame.jpeg_base64.is_empty()
+        && now_ms.abs_diff(frame.captured_at)
+            <= u64::try_from(SCREENCAST_FRAME_FRESHNESS.as_millis()).unwrap_or(u64::MAX)
+    {
+        return Some(frame.jpeg_base64);
+    }
+    capture().await
+}
+
+fn fallback_capture_options() -> ScreenshotCaptureOptions {
+    ScreenshotCaptureOptions {
+        format: Some(ScreenshotFormat::Jpeg),
+        quality: Some(50),
+        full_page: Some(false),
+        annotate: Some(false),
+        clip: None,
+    }
+}
+
 const _: ToolEffect = apply;
 
 #[cfg(test)]
@@ -214,6 +279,10 @@ mod tests {
     use super::*;
     use crate::services::audit::ListDispatchesQuery;
     use serde_json::json;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
 
     #[tokio::test]
     async fn explicit_image_persists_when_fallback_is_disabled() -> anyhow::Result<()> {
@@ -315,5 +384,56 @@ mod tests {
                 .is_empty()
         );
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn fresh_cache_frame_avoids_a_new_capture() {
+        let captures = Arc::new(AtomicUsize::new(0));
+        let capture_count = captures.clone();
+        let data = fallback_screenshot_data(
+            Some(ScreencastFrame {
+                jpeg_base64: "fresh".to_string(),
+                captured_at: 8_000,
+            }),
+            10_000,
+            move || async move {
+                capture_count.fetch_add(1, Ordering::SeqCst);
+                Some("captured".to_string())
+            },
+        )
+        .await;
+        assert_eq!(data.as_deref(), Some("fresh"));
+        assert_eq!(captures.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn stale_or_missing_cache_frame_takes_a_new_capture() {
+        let captures = Arc::new(AtomicUsize::new(0));
+        for cached in [
+            Some(ScreencastFrame {
+                jpeg_base64: "stale".to_string(),
+                captured_at: 6_999,
+            }),
+            None,
+        ] {
+            let capture_count = captures.clone();
+            let data = fallback_screenshot_data(cached, 10_000, move || async move {
+                capture_count.fetch_add(1, Ordering::SeqCst);
+                Some("captured".to_string())
+            })
+            .await;
+            assert_eq!(data.as_deref(), Some("captured"));
+        }
+        assert_eq!(captures.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn fresh_capture_uses_jpeg_quality_fifty_without_clip_or_annotations() {
+        let options = fallback_capture_options();
+        assert_eq!(options.format, Some(ScreenshotFormat::Jpeg));
+        assert_eq!(options.quality, Some(50));
+        assert_eq!(options.full_page, Some(false));
+        assert_eq!(options.annotate, Some(false));
+        assert_eq!(options.clip, None);
     }
 }
