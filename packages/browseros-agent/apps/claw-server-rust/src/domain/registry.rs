@@ -149,21 +149,10 @@ impl SessionRegistry {
         kind: &str,
         reason: Option<&str>,
     ) -> AppResult<bool> {
-        let (session, last_for_key) = {
-            let mut sessions = self.sessions.write().await;
-            let session = sessions.remove(id);
-            let last_for_key = session.as_ref().is_some_and(|removed| {
-                let key = removed.agent().ownership_key();
-                !sessions
-                    .values()
-                    .any(|candidate| candidate.agent().ownership_key() == key)
-            });
-            (session, last_for_key)
-        };
+        let session = self.sessions.write().await.remove(id);
         if let Some(session) = session {
             let fallback = self.fallback_sessions.write().await.remove(id);
-            self.teardown(session, kind, reason, last_for_key, fallback)
-                .await?;
+            self.teardown(session, kind, reason, true, fallback).await?;
             return Ok(true);
         }
         Ok(false)
@@ -248,7 +237,7 @@ impl SessionRegistry {
         session: Arc<Session>,
         kind: &str,
         reason: Option<&str>,
-        last_for_key: bool,
+        finalize_key: bool,
         fallback: bool,
     ) -> AppResult<()> {
         session.cancel_active_dispatches().await;
@@ -262,17 +251,28 @@ impl SessionRegistry {
         for page_id in self.ownership.owned_pages(&key).await {
             session.forget_first_capture(&page_id).await;
         }
-        if last_for_key {
-            if let Some(hook) = self.last_session_teardown_hook.get() {
-                hook(self.ownership.clone(), key.clone()).await;
-            }
-            if fallback {
-                self.ownership.forget(&key).await;
-            }
+        if finalize_key {
+            self.finalize_inactive_key(&key, fallback).await;
         }
         replay_result?;
         audit_result?;
         Ok(())
+    }
+
+    async fn finalize_inactive_key(&self, key: &AgentKey, fallback: bool) {
+        let sessions = self.sessions.read().await;
+        if sessions
+            .values()
+            .any(|candidate| candidate.agent().ownership_key() == *key)
+        {
+            return;
+        }
+        if let Some(hook) = self.last_session_teardown_hook.get() {
+            hook(self.ownership.clone(), key.clone()).await;
+        }
+        if fallback {
+            self.ownership.forget(key).await;
+        }
     }
 }
 
@@ -545,6 +545,74 @@ mod tests {
             .remove(&SessionId::new("s2"), "closed", None)
             .await?;
         assert_eq!(calls.load(Ordering::SeqCst), 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn inactive_key_finalization_rechecks_for_a_reconnected_session() -> anyhow::Result<()> {
+        let dir = tempdir()?;
+        let audit = Arc::new(AuditService::open(dir.path().join("audit.sqlite")).await?);
+        let replay = Arc::new(ReplayService::new(
+            dir.path().join("replays"),
+            50,
+            Duration::from_secs(30),
+        ));
+        let registry = SessionRegistry::new(
+            audit,
+            replay,
+            Duration::from_secs(60),
+            Duration::from_secs(1),
+        );
+        let calls = Arc::new(AtomicUsize::new(0));
+        let hook_calls = calls.clone();
+        registry.set_last_session_teardown_hook(Arc::new(move |ownership, key| {
+            let hook_calls = hook_calls.clone();
+            Box::pin(async move {
+                let _ = (ownership, key);
+                hook_calls.fetch_add(1, Ordering::SeqCst);
+            })
+        }));
+        let session1 = Session::new(
+            SessionId::new("s1"),
+            AgentRef::Ephemeral {
+                agent_id: crate::domain::AgentId::new("codex-a"),
+                slug: "codex".to_string(),
+                label: "Codex".to_string(),
+            },
+            Instant::now(),
+        );
+        let key = session1.agent().ownership_key();
+        registry.insert_for_testing(session1.clone()).await;
+        registry
+            .ownership()
+            .set_tab_group_ref(key.clone(), Some("group-1".to_string()))
+            .await;
+
+        let removed = registry.sessions.write().await.remove(session1.id());
+        assert!(removed.is_some());
+        registry
+            .mint_with_id(
+                SessionId::new("s2"),
+                AgentRef::Ephemeral {
+                    agent_id: crate::domain::AgentId::new("codex-b"),
+                    slug: "codex".to_string(),
+                    label: "Codex".to_string(),
+                },
+                ClientInfo {
+                    name: "Codex".to_string(),
+                    version: "1".to_string(),
+                    title: None,
+                },
+            )
+            .await?;
+
+        registry.finalize_inactive_key(&key, true).await;
+
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            registry.ownership().tab_group_ref(&key).await.as_deref(),
+            Some("group-1")
+        );
         Ok(())
     }
 }

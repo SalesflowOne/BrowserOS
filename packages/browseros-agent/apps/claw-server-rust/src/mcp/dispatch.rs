@@ -400,9 +400,20 @@ pub fn linked_cancel_token(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{
+        Mutex,
+        atomic::{AtomicUsize, Ordering},
+    };
 
     static EFFECT_CALLS: AtomicUsize = AtomicUsize::new(0);
+    static EFFECT_ORDER: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
+
+    fn record_effect(name: &'static str) {
+        EFFECT_ORDER
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(name);
+    }
 
     fn passthrough_guard(call: &ToolCall) -> BoxFuture<'_, Option<ToolResult>> {
         Box::pin(async move {
@@ -446,6 +457,36 @@ mod tests {
         })
     }
 
+    fn first_ordered_effect(
+        context: ToolEffectContext<'_>,
+    ) -> BoxFuture<'_, anyhow::Result<Option<ToolResult>>> {
+        Box::pin(async move {
+            let _ = context;
+            record_effect("first");
+            Ok(Some(ToolResult::text("first replacement", None)))
+        })
+    }
+
+    fn failing_ordered_effect(
+        context: ToolEffectContext<'_>,
+    ) -> BoxFuture<'_, anyhow::Result<Option<ToolResult>>> {
+        Box::pin(async move {
+            let _ = context;
+            record_effect("failing");
+            anyhow::bail!("ordered effect failed")
+        })
+    }
+
+    fn last_ordered_effect(
+        context: ToolEffectContext<'_>,
+    ) -> BoxFuture<'_, anyhow::Result<Option<ToolResult>>> {
+        Box::pin(async move {
+            let _ = context;
+            record_effect("last");
+            Ok(Some(ToolResult::text("last replacement", None)))
+        })
+    }
+
     #[tokio::test]
     async fn tabs_flags_default_to_list() -> anyhow::Result<()> {
         let call =
@@ -485,6 +526,50 @@ mod tests {
         )
         .await;
         assert_eq!(dispatch_error_text(&result).as_deref(), Some("replacement"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn effects_run_in_order_and_continue_after_a_failure() -> anyhow::Result<()> {
+        EFFECT_ORDER
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clear();
+        let call = crate::mcp::test_support::tool_call("tabs", json!({ "action": "list" })).await?;
+        let initial = ToolResult::text("initial", None);
+        let result = run_effects(
+            ToolEffectContext {
+                call: &call,
+                result: &initial,
+                cancelled: false,
+                duration_ms: 1,
+            },
+            &[
+                NamedToolEffect {
+                    name: "first",
+                    run: first_ordered_effect,
+                },
+                NamedToolEffect {
+                    name: "failing",
+                    run: failing_ordered_effect,
+                },
+                NamedToolEffect {
+                    name: "last",
+                    run: last_ordered_effect,
+                },
+            ],
+        )
+        .await;
+        assert_eq!(
+            *EFFECT_ORDER
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+            ["first", "failing", "last"]
+        );
+        assert_eq!(
+            dispatch_error_text(&result).as_deref(),
+            Some("last replacement")
+        );
         Ok(())
     }
 
