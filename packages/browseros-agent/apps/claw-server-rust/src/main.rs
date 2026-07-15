@@ -91,10 +91,16 @@ async fn serve_stdio(state: AppState) -> anyhow::Result<()> {
 }
 
 async fn heal_boot_config(state: &AppState) {
-    match state.harness.heal_claude_code_http_tags().await {
-        Ok(changed) if changed > 0 => info!(changed, "healed Claude Code MCP transport tags"),
-        Ok(_) => {}
-        Err(err) => error!(error = %err, "Claude Code MCP transport heal failed"),
+    match state.harness.run_integrity_scan().await {
+        Ok(outcome) => info!(
+            verified = outcome.verified,
+            drifted = outcome.drifted,
+            missing = outcome.missing,
+            healed = outcome.healed,
+            failed = outcome.failed,
+            "completed MCP config integrity scan"
+        ),
+        Err(err) => error!(error = %err, "MCP config integrity scan failed"),
     }
 }
 

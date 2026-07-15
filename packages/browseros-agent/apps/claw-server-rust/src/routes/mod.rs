@@ -4,8 +4,8 @@ use crate::{
     error::{AppError, AppResult},
     mcp::streamable_http_service,
     services::{
-        agents::Harness,
         audit::{ListDispatchesQuery, ListTasksQuery, TaskStatus},
+        harness::Harness,
         replay::ReplayService,
         replay_tabs::{ReplayTabsResponse, list_replay_tabs},
         tab_activity::EnrichedTabRecord,
@@ -32,6 +32,10 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/system/shutdown", post(system_shutdown))
         .route("/system/version", get(system_version))
         .route("/system/url", get(system_url))
+        .route(
+            "/system/telemetry",
+            get(system_telemetry).post(system_telemetry_consent),
+        )
         .route("/agents/{agent_id}/cancel", post(agents_cancel))
         .route("/tabs/activity", get(tabs_activity))
         .route("/connections", get(connections_list))
@@ -174,10 +178,23 @@ async fn system_url(State(state): State<AppState>) -> Json<Value> {
     Json(json!({ "url": state.config.local_server_url() }))
 }
 
-async fn agents_cancel(
+async fn system_telemetry(State(state): State<AppState>) -> Json<Value> {
+    Json(json!(state.telemetry.get_state().await))
+}
+
+#[derive(Debug, Deserialize)]
+struct TelemetryConsent {
+    consent: bool,
+}
+
+async fn system_telemetry_consent(
     State(state): State<AppState>,
-    Path(agent_id): Path<String>,
-) -> Response {
+    Json(input): Json<TelemetryConsent>,
+) -> Json<Value> {
+    Json(json!(state.telemetry.set_consent(input.consent).await))
+}
+
+async fn agents_cancel(State(state): State<AppState>, Path(agent_id): Path<String>) -> Response {
     let cancelled = state.sessions.cancel_by_agent(&agent_id).await;
     if cancelled == 0 {
         // claw-app parses this 404 body as a CancelAgentResult (idle state,
