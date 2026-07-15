@@ -415,7 +415,9 @@ mod tests {
     #[test]
     fn tick_overlap_guard_resets_when_tick_finishes() {
         let service = ScreencastService::new(2);
-        let guard = service.begin_tick().expect("first tick should start");
+        let Some(guard) = service.begin_tick() else {
+            panic!("first tick should start");
+        };
         assert!(service.begin_tick().is_none());
         drop(guard);
         assert!(service.begin_tick().is_some());
@@ -441,11 +443,15 @@ mod tests {
         service.store_frame(1, frame("new-a", 3)).await;
         service.store_frame(3, frame("c", 4)).await;
 
-        let refreshed = service.frame_for(1).await.expect("page 1 frame");
+        let Some(refreshed) = service.frame_for(1).await else {
+            panic!("missing page 1 frame");
+        };
         assert_eq!(refreshed.jpeg_base64, "new-a");
         assert_eq!(refreshed.captured_at, 3);
         assert!(service.frame_for(2).await.is_none());
-        let newest = service.frame_for(3).await.expect("page 3 frame");
+        let Some(newest) = service.frame_for(3).await else {
+            panic!("missing page 3 frame");
+        };
         assert_eq!(newest.jpeg_base64, "c");
         assert_eq!(newest.captured_at, 4);
     }
