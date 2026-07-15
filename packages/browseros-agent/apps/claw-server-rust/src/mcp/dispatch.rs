@@ -716,6 +716,12 @@ mod tests {
     #[tokio::test]
     async fn client_cancellation_skips_effects_and_operator_result() -> anyhow::Result<()> {
         let call = crate::mcp::test_support::tool_call("tabs", json!({ "action": "list" })).await?;
+        let session = call
+            .identity
+            .as_ref()
+            .unwrap_or_else(|| unreachable!())
+            .session
+            .clone();
         call.client_cancel.cancel();
         let result = dispatch_tool_call_with(
             call.clone(),
@@ -738,6 +744,8 @@ mod tests {
                 .rows
                 .is_empty()
         );
+        assert_eq!(session.cancel_active_dispatches().await, 0);
+        assert!(call.dispatch_cancel.is_cancelled());
         Ok(())
     }
 }
