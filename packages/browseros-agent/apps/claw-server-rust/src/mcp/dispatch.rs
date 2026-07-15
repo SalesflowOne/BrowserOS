@@ -134,6 +134,11 @@ impl ToolCall {
     pub fn tool(&self) -> &ToolDef {
         &self.catalog[self.tool_index]
     }
+
+    #[must_use]
+    pub fn tool_named(&self, name: &str) -> Option<&ToolDef> {
+        self.catalog.iter().find(|tool| tool.name == name)
+    }
 }
 
 pub type ToolGuard = for<'a> fn(&'a ToolCall) -> BoxFuture<'a, Option<ToolResult>>;
@@ -710,7 +715,7 @@ mod tests {
     async fn client_cancellation_skips_effects_and_operator_result() -> anyhow::Result<()> {
         let call = crate::mcp::test_support::tool_call("tabs", json!({ "action": "list" })).await?;
         call.client_cancel.cancel();
-        let error = dispatch_tool_call_with(
+        let result = dispatch_tool_call_with(
             call.clone(),
             &[],
             &[NamedToolEffect {
@@ -718,8 +723,10 @@ mod tests {
                 run: effects::audit::apply,
             }],
         )
-        .await
-        .expect_err("client cancellation should be a protocol error");
+        .await;
+        let Err(error) = result else {
+            panic!("client cancellation should be a protocol error");
+        };
         assert_eq!(error.message.as_ref(), CLIENT_CANCELLATION_ERROR);
         assert!(
             call.state

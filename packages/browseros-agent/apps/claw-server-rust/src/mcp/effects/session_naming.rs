@@ -42,9 +42,15 @@ pub fn apply(context: ToolEffectContext<'_>) -> BoxFuture<'_, anyhow::Result<Opt
             );
             return Ok(None);
         }
+        let Some(tab_groups) = context.call.tool_named("tab_groups").cloned() else {
+            warn!("tab_groups tool unavailable for session naming");
+            return Ok(None);
+        };
         let state = context.call.state.clone();
         let session = identity.session.clone();
         let ownership_key = identity.ownership_key.clone();
+        // rmcp 2.1 routes server-initiated requests only through its common SSE channel;
+        // it has no related-request API that can target the still-open tool POST stream.
         tokio::spawn(async move {
             let prefix = client_prefix_from_slug(session.agent().slug()).to_string();
             let name = tokio::select! {
@@ -68,6 +74,7 @@ pub fn apply(context: ToolEffectContext<'_>) -> BoxFuture<'_, anyhow::Result<Opt
                 return;
             };
             retitle_agent_tab_group(
+                &tab_groups,
                 &browser,
                 &state.sessions.ownership(),
                 &ownership_key,
