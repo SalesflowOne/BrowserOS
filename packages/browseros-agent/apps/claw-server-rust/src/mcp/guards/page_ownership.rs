@@ -14,27 +14,22 @@ pub fn guard(call: &ToolCall) -> BoxFuture<'_, Option<ToolResult>> {
             if page_missing_after_refresh(call, &page_id).await {
                 ownership.remove_page(&page_id).await;
                 identity.session.forget_first_capture(&page_id).await;
-            } else if owner != identity.ownership_key {
-                warn!(
-                    tool = call.tool().name,
-                    session_id = %call.session_id,
-                    key = %identity.ownership_key,
-                    agent_id = %identity.agent.agent_id(),
-                    page = page_id.0,
-                    "cockpit rejected foreign-page dispatch"
-                );
-                return Some(ToolResult::error(format!(
-                    "page {} is not owned by this agent; call `tabs new` to open a fresh page and use the returned page id.",
-                    page_id.0
-                )));
-            } else {
+            } else if owner == identity.ownership_key {
                 return None;
             }
         }
-        ownership
-            .claim_page(identity.ownership_key.clone(), page_id)
-            .await;
-        None
+        warn!(
+            tool = call.tool().name,
+            session_id = %call.session_id,
+            key = %identity.ownership_key,
+            agent_id = %identity.agent.agent_id(),
+            page = page_id.0,
+            "cockpit rejected foreign-page dispatch"
+        );
+        Some(ToolResult::error(format!(
+            "page {} is not owned by this agent; call `tabs new` to open a fresh page and use the returned page id.",
+            page_id.0
+        )))
     })
 }
 
@@ -88,6 +83,26 @@ mod tests {
                 "page 7 is not owned by this agent; call `tabs new` to open a fresh page and use the returned page id."
             )
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn denies_user_tab_without_claiming_it() -> anyhow::Result<()> {
+        let call = crate::mcp::test_support::tool_call("navigate", json!({ "page": 7 })).await?;
+        let result = guard(&call)
+            .await
+            .unwrap_or_else(|| ToolResult::error("missing"));
+        let text = result.content.iter().find_map(|block| match block {
+            ContentBlock::Text(text) => Some(text.text.as_str()),
+            _ => None,
+        });
+        assert_eq!(
+            text,
+            Some(
+                "page 7 is not owned by this agent; call `tabs new` to open a fresh page and use the returned page id."
+            )
+        );
+        assert!(call.state.sessions.owner_of_page(&PageId(7)).await.is_none());
         Ok(())
     }
 }
