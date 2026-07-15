@@ -227,7 +227,7 @@ async fn tabs_activity(State(state): State<AppState>) -> AppResult<Json<Value>> 
                 .map(|profile| profile.name.clone())
                 .unwrap_or_else(|| record.slug.clone()),
             harness: profile.map(|profile| profile.harness.to_string()),
-            color: None,
+            color: Some(crate::domain::hex_for_slug(&record.slug).to_string()),
             screencast: state.screencast.frame_for(record.page_id).await,
             record,
         });
