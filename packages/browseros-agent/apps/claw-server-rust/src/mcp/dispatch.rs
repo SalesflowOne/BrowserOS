@@ -599,6 +599,22 @@ mod tests {
     }
 
     #[test]
+    fn production_effects_run_in_ts_pipeline_order() {
+        let names = EFFECTS.iter().map(|effect| effect.name).collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            [
+                "ownership-claims",
+                "tabs-list-view",
+                "audit",
+                "tab-activity",
+                "tab-groups",
+                "session-naming",
+            ]
+        );
+    }
+
+    #[test]
     fn wire_result_strips_structured_content_and_metadata() {
         let result = wire_result(ToolResult::text(
             "ok",
