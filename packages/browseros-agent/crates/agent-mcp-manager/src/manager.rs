@@ -3,9 +3,9 @@ use std::{collections::BTreeMap, path::PathBuf};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use crate::{
-    AgentId, AgentScope, DisconnectInput, DisconnectSummary, Error, LinkInput, LinkSummary,
-    ListLinksFilter, ListedLink, ManifestServerEntry, RescanReport, UnlinkInput, UnlinkSummary,
-    io::{apply_plan, read_state},
+    AgentScope, DisconnectInput, DisconnectSummary, Error, LinkInput, LinkSummary, ListLinksFilter,
+    ListedLink, ManifestServerEntry, RescanReport, UnlinkInput, UnlinkSummary,
+    io::{apply_plan, read_state, read_state_at_paths},
     planner::{plan_disconnect, plan_link, plan_rescan, plan_unlink},
 };
 
@@ -138,7 +138,7 @@ impl Manager {
         Ok(links)
     }
 
-    /// Rescans manifest links against agent files resolved at OS-default paths.
+    /// Rescans each manifest link against its recorded configuration path.
     pub fn rescan(&self) -> Result<RescanReport, Error> {
         let manifest_state = read_state(
             &self.workspace_dir,
@@ -146,20 +146,20 @@ impl Manager {
             AgentScope::System,
             &BTreeMap::new(),
         )?;
-        let mut agents = manifest_state
+        let mut paths = manifest_state
             .manifest
             .servers
             .values()
-            .flat_map(|server| server.links.keys().copied())
-            .collect::<Vec<AgentId>>();
-        agents.sort_unstable();
-        agents.dedup();
-        let state = read_state(
-            &self.workspace_dir,
-            &agents,
-            AgentScope::System,
-            &BTreeMap::new(),
-        )?;
+            .flat_map(|server| {
+                server
+                    .links
+                    .iter()
+                    .map(|(agent, link)| (*agent, link.config_path.clone()))
+            })
+            .collect::<Vec<_>>();
+        paths.sort_unstable();
+        paths.dedup();
+        let state = read_state_at_paths(&self.workspace_dir, &paths, AgentScope::System)?;
         plan_rescan(&state)
     }
 }

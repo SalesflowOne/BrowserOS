@@ -198,6 +198,31 @@ fn list_links_filters_by_server_and_agent() -> Result<(), Box<dyn std::error::Er
 }
 
 #[test]
+fn rescan_reads_each_manifest_recorded_config_path() -> Result<(), Box<dyn std::error::Error>> {
+    let root = tempdir()?;
+    let manager = Manager::new(root.path().join("workspace"));
+    let first = root.path().join("custom/first.json");
+    let second = root.path().join("custom/second.json");
+    fs::create_dir_all(first.parent().ok_or("missing custom config parent")?)?;
+    manager.link(link_input(stdio_server("one"), AgentId::Cursor, &first))?;
+    manager.link(link_input(stdio_server("two"), AgentId::Cursor, &second))?;
+
+    let report = manager.rescan()?;
+    assert_eq!(report.verified.len(), 2);
+    assert_eq!(
+        report
+            .verified
+            .iter()
+            .map(|link| link.config_path.as_path())
+            .collect::<Vec<_>>(),
+        [first.as_path(), second.as_path()]
+    );
+    assert!(report.drifted.is_empty());
+    assert!(report.missing.is_empty());
+    Ok(())
+}
+
+#[test]
 fn install_gate_and_project_scope_return_typed_errors() -> Result<(), Box<dyn std::error::Error>> {
     let root = tempdir()?;
     let manager = Manager::new(root.path().join("workspace"));

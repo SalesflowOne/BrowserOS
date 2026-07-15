@@ -212,7 +212,7 @@ pub(crate) fn plan_disconnect(
     })
 }
 
-/// Classifies manifest links against the default-path agent file snapshot without writing.
+/// Classifies manifest links against their recorded-path file snapshots without writing.
 pub(crate) fn plan_rescan(state: &State) -> Result<RescanReport, Error> {
     let mut report = RescanReport::default();
     for server in state.manifest.servers.values() {

@@ -18,3 +18,4 @@ The public API is the workspace-bound `Manager` plus agent discovery and path-re
 - TOML uses `toml_edit`, preserving comments that the TypeScript package's TOML serializer loses.
 - The TypeScript `remove` verb and `lowlevel` export are omitted because they have no production consumers. The read/plan/apply separation remains internal.
 - Only system scope is implemented. `AgentScope::Project` is retained for API evolution and returns a clear error.
+- Unlike the TypeScript package, `rescan` reads every manifest-recorded `configPath` instead of re-resolving OS defaults. This avoids false missing reports and duplicate healing writes after custom paths or environment variables change.

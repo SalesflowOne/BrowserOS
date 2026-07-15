@@ -67,14 +67,40 @@ pub(crate) fn read_state(
     overrides: &BTreeMap<AgentId, PathBuf>,
 ) -> Result<State, Error> {
     let manifest = read_manifest(workspace_dir)?;
-    let mut agent_files = Vec::with_capacity(agents.len());
+    let mut paths = Vec::with_capacity(agents.len());
     for agent in agents {
         ensure_system_scope(*agent, scope)?;
         let config_path = match overrides.get(agent) {
             Some(path) => path.clone(),
             None => resolve_agent_mcp_config_path(*agent, scope)?,
         };
-        let (raw_content, exists) = read_file_with_existence(&config_path)?;
+        paths.push((*agent, config_path));
+    }
+    snapshot_state(workspace_dir, manifest, &paths, scope)
+}
+
+/// Snapshots every explicit agent and config-path pair, including repeated agents.
+pub(crate) fn read_state_at_paths(
+    workspace_dir: &Path,
+    paths: &[(AgentId, PathBuf)],
+    scope: AgentScope,
+) -> Result<State, Error> {
+    let manifest = read_manifest(workspace_dir)?;
+    for (agent, _) in paths {
+        ensure_system_scope(*agent, scope)?;
+    }
+    snapshot_state(workspace_dir, manifest, paths, scope)
+}
+
+fn snapshot_state(
+    workspace_dir: &Path,
+    manifest: ServerManifest,
+    paths: &[(AgentId, PathBuf)],
+    scope: AgentScope,
+) -> Result<State, Error> {
+    let mut agent_files = Vec::with_capacity(paths.len());
+    for (agent, config_path) in paths {
+        let (raw_content, exists) = read_file_with_existence(config_path)?;
         let parent_exists = if exists {
             true
         } else {
@@ -86,7 +112,7 @@ pub(crate) fn read_state(
         agent_files.push(AgentFileState {
             agent: *agent,
             scope,
-            config_path,
+            config_path: config_path.clone(),
             raw_content,
             exists,
             parent_exists,

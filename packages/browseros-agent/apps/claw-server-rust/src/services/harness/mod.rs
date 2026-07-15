@@ -1,16 +1,20 @@
 use crate::error::{AppError, AppResult};
 use agent_mcp_manager::{
     AgentId, AgentScope, DisconnectInput, Error as ManagerError, LinkInput, ListLinksFilter,
-    Manager, McpServer, McpServerSpec, is_installed, resolve_agent_mcp_config_path,
-    resolve_agent_surface,
+    Manager, ManifestLinkEntry, ManifestServerEntry, McpServer, McpServerSpec, ServerManifest,
+    is_installed, resolve_agent_mcp_config_path, resolve_agent_surface,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
-    fmt,
+    ffi::OsString,
+    fmt, fs,
+    io::{self, Write},
     path::{Path, PathBuf},
+    process,
     str::FromStr,
     sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::Mutex;
 
@@ -118,6 +122,7 @@ pub struct IntegrityScanOutcome {
 #[derive(Clone)]
 pub struct HarnessService {
     manager: Manager,
+    workspace_dir: PathBuf,
     home_dir: PathBuf,
     mutex: Arc<Mutex<()>>,
 }
@@ -126,7 +131,8 @@ impl HarnessService {
     #[must_use]
     pub fn new(workspace_dir: PathBuf, home_dir: PathBuf) -> Self {
         Self {
-            manager: Manager::new(workspace_dir),
+            manager: Manager::new(&workspace_dir),
+            workspace_dir,
             home_dir,
             mutex: Arc::new(Mutex::new(())),
         }
@@ -142,8 +148,16 @@ impl HarnessService {
         let agent = harness.agent_id();
         let spec = spec_for(agent, mcp_url).map_err(manager_app_error)?;
         let manager = self.manager.clone();
+        let workspace_dir = self.workspace_dir.clone();
         let result = tokio::task::spawn_blocking(move || {
-            relink_managed_server(&manager, BROWSEROS_MCP_SERVER_NAME, agent, spec, true)?;
+            relink_managed_server(
+                &manager,
+                &workspace_dir,
+                BROWSEROS_MCP_SERVER_NAME,
+                agent,
+                spec,
+                true,
+            )?;
             Ok(resolve_agent_mcp_config_path(agent, AgentScope::System).ok())
         })
         .await?;
@@ -168,10 +182,12 @@ impl HarnessService {
         let _guard = self.mutex.lock().await;
         let agent = harness.agent_id();
         let manager = self.manager.clone();
+        let workspace_dir = self.workspace_dir.clone();
         let result = tokio::task::spawn_blocking(move || {
-            manager
-                .disconnect(DisconnectInput::new(BROWSEROS_MCP_SERVER_NAME, agent))
-                .map_err(HarnessOperationError::Manager)
+            with_legacy_manifest_migration(&workspace_dir, || {
+                manager.disconnect(DisconnectInput::new(BROWSEROS_MCP_SERVER_NAME, agent))
+            })
+            .map_err(HarnessOperationError::Manager)
         })
         .await?;
 
@@ -200,11 +216,14 @@ impl HarnessService {
     pub async fn list_browseros_connections(&self) -> AppResult<Vec<ConnectionState>> {
         let _guard = self.mutex.lock().await;
         let manager = self.manager.clone();
+        let workspace_dir = self.workspace_dir.clone();
         let agents = Harness::ALL.map(Harness::agent_id);
         let (links_result, installed_result) = tokio::task::spawn_blocking(move || {
-            let links = manager.list_links(ListLinksFilter {
-                server_names: Some(vec![BROWSEROS_MCP_SERVER_NAME.to_string()]),
-                agents: None,
+            let links = with_legacy_manifest_migration(&workspace_dir, || {
+                manager.list_links(ListLinksFilter {
+                    server_names: Some(vec![BROWSEROS_MCP_SERVER_NAME.to_string()]),
+                    agents: None,
+                })
             });
             (links, is_installed(&agents))
         })
@@ -264,7 +283,8 @@ impl HarnessService {
     pub async fn run_integrity_scan(&self) -> AppResult<IntegrityScanOutcome> {
         let _guard = self.mutex.lock().await;
         let manager = self.manager.clone();
-        tokio::task::spawn_blocking(move || run_integrity_scan(&manager))
+        let workspace_dir = self.workspace_dir.clone();
+        tokio::task::spawn_blocking(move || run_integrity_scan(&manager, &workspace_dir))
             .await?
             .map_err(manager_app_error)
     }
@@ -340,27 +360,29 @@ pub fn spec_for(agent: AgentId, mcp_url: &str) -> Result<McpServerSpec, ManagerE
 
 fn relink_managed_server(
     manager: &Manager,
+    workspace_dir: &Path,
     server_name: &str,
     agent: AgentId,
     spec: McpServerSpec,
     allow_overwrite: bool,
 ) -> Result<agent_mcp_manager::LinkSummary, HarnessOperationError> {
-    let previous_spec = manager
-        .list()
+    let previous_spec = with_legacy_manifest_migration(workspace_dir, || manager.list())
         .map_err(HarnessOperationError::Manager)?
         .into_iter()
         .find(|server| server.name == server_name)
         .map(|server| server.spec);
-    let link = |spec| {
-        let mut input = LinkInput::new(
-            McpServer {
-                name: server_name.to_string(),
-                spec,
-            },
-            agent,
-        );
-        input.allow_overwrite = allow_overwrite;
-        manager.link(input)
+    let link = |spec: McpServerSpec| {
+        with_legacy_manifest_migration(workspace_dir, || {
+            let mut input = LinkInput::new(
+                McpServer {
+                    name: server_name.to_string(),
+                    spec: spec.clone(),
+                },
+                agent,
+            );
+            input.allow_overwrite = allow_overwrite;
+            manager.link(input)
+        })
     };
     match link(spec) {
         Ok(summary) => Ok(summary),
@@ -378,10 +400,12 @@ fn relink_managed_server(
     }
 }
 
-fn run_integrity_scan(manager: &Manager) -> Result<IntegrityScanOutcome, ManagerError> {
-    let report = manager.rescan()?;
-    let spec_by_name = manager
-        .list()?
+fn run_integrity_scan(
+    manager: &Manager,
+    workspace_dir: &Path,
+) -> Result<IntegrityScanOutcome, ManagerError> {
+    let report = with_legacy_manifest_migration(workspace_dir, || manager.rescan())?;
+    let spec_by_name = with_legacy_manifest_migration(workspace_dir, || manager.list())?
         .into_iter()
         .map(|server| (server.name, server.spec))
         .collect::<BTreeMap<_, _>>();
@@ -415,7 +439,7 @@ fn run_integrity_scan(manager: &Manager) -> Result<IntegrityScanOutcome, Manager
         );
         input.scope = entry.scope;
         input.allow_overwrite = true;
-        match manager.link(input) {
+        match with_legacy_manifest_migration(workspace_dir, || manager.link(input.clone())) {
             Ok(_) => {
                 healed += 1;
                 tracing::info!(
@@ -439,6 +463,126 @@ fn run_integrity_scan(manager: &Manager) -> Result<IntegrityScanOutcome, Manager
         healed,
         failed,
     })
+}
+
+/// Retries one failed manager operation after atomically upgrading the legacy Rust manifest.
+fn with_legacy_manifest_migration<T>(
+    workspace_dir: &Path,
+    mut operation: impl FnMut() -> Result<T, ManagerError>,
+) -> Result<T, ManagerError> {
+    match operation() {
+        Err(original @ ManagerError::Manifest { .. }) => {
+            let migrated = match migrate_legacy_manifest(workspace_dir) {
+                Ok(migrated) => migrated,
+                Err(error) => {
+                    tracing::warn!(%error, "legacy MCP manifest migration failed");
+                    false
+                }
+            };
+            if migrated { operation() } else { Err(original) }
+        }
+        result => result,
+    }
+}
+
+fn migrate_legacy_manifest(workspace_dir: &Path) -> Result<bool, String> {
+    let path = workspace_dir.join("manifest.json");
+    let raw = fs::read_to_string(&path).map_err(|error| error.to_string())?;
+    let legacy = match serde_json::from_str::<LegacyManifest>(&raw) {
+        Ok(legacy) if legacy.version == 1 => legacy,
+        Ok(_) | Err(_) => return Ok(false),
+    };
+    let mut manifest = ServerManifest {
+        version: 1,
+        servers: legacy
+            .servers
+            .into_iter()
+            .map(|(name, server)| {
+                (
+                    name.clone(),
+                    ManifestServerEntry {
+                        name,
+                        spec: server.spec,
+                        added_at: server.added_at,
+                        links: BTreeMap::new(),
+                    },
+                )
+            })
+            .collect(),
+    };
+    for link in legacy.links {
+        let Ok(agent) = AgentId::from_str(&link.agent) else {
+            tracing::warn!(agent = %link.agent, "dropping unsupported legacy MCP manifest link");
+            continue;
+        };
+        let server = manifest
+            .servers
+            .get_mut(&link.server_name)
+            .ok_or_else(|| format!("legacy link references missing server {}", link.server_name))?;
+        server.links.insert(
+            agent,
+            ManifestLinkEntry {
+                config_path: link.config_path,
+                created_at: server.added_at.clone(),
+            },
+        );
+    }
+    let mut serialized =
+        serde_json::to_string_pretty(&manifest).map_err(|error| error.to_string())?;
+    serialized.push('\n');
+    atomic_replace(&path, serialized.as_bytes()).map_err(|error| error.to_string())?;
+    tracing::info!(path = %path.display(), "migrated legacy MCP manifest");
+    Ok(true)
+}
+
+fn atomic_replace(path: &Path, content: &[u8]) -> io::Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "manifest has no parent"))?;
+    fs::create_dir_all(parent)?;
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let mut temporary_name = OsString::from(path.as_os_str());
+    temporary_name.push(format!(".tmp-{}-{nanos}", process::id()));
+    let temporary_path = PathBuf::from(temporary_name);
+    let write_result = (|| {
+        let mut temporary = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary_path)?;
+        temporary.write_all(content)?;
+        drop(temporary);
+        fs::rename(&temporary_path, path)
+    })();
+    if write_result.is_err() {
+        let _ = fs::remove_file(&temporary_path);
+    }
+    write_result
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LegacyManifest {
+    version: u8,
+    servers: BTreeMap<String, LegacyServer>,
+    links: Vec<LegacyLink>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LegacyServer {
+    spec: McpServerSpec,
+    added_at: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LegacyLink {
+    server_name: String,
+    agent: String,
+    config_path: PathBuf,
 }
 
 fn tildify_home_path(path: Option<&Path>, home_dir: &Path) -> Option<String> {

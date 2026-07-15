@@ -291,7 +291,7 @@ fn toml_add(
     }
     let parent = document
         .get_mut(top_level_key)
-        .and_then(Item::as_table_mut)
+        .and_then(Item::as_table_like_mut)
         .ok_or_else(|| Error::Config {
             format: "TOML",
             message: format!("{top_level_key} must be a table"),
@@ -309,13 +309,15 @@ fn toml_remove(raw: &str, top_level_key: &str, name: &str) -> Result<String, Err
         return Ok(raw.to_string());
     }
     let mut document = parse_toml(raw)?;
-    let remove_parent =
-        if let Some(parent) = document.get_mut(top_level_key).and_then(Item::as_table_mut) {
-            parent.remove(name);
-            parent.is_empty()
-        } else {
-            false
-        };
+    let remove_parent = if let Some(parent) = document
+        .get_mut(top_level_key)
+        .and_then(Item::as_table_like_mut)
+    {
+        parent.remove(name);
+        parent.is_empty()
+    } else {
+        false
+    };
     if remove_parent {
         document.remove(top_level_key);
     }
@@ -470,6 +472,23 @@ mod tests {
         let empty = emitter.remove(&only, "gh")?;
         assert!(!empty.contains("mcp_servers"));
         assert!(empty.contains("# root"));
+        Ok(())
+    }
+
+    #[test]
+    fn toml_inline_table_add_remove_preserves_formatting_and_removes_empty_parent()
+    -> Result<(), Error> {
+        let raw = "# model\nmodel = \"gpt-5\"\nmcp_servers = { browseros = { url = \"https://old.example/mcp\" } } # inline\n# tail\n";
+        let emitter = emitter(AgentId::Codex)?;
+        let added = emitter.add(raw, "BrowserClaw", &http())?;
+        assert!(added.contains("browseros = { url = \"https://old.example/mcp\" }"));
+        assert!(added.contains("# inline\n# tail"));
+        assert_eq!(emitter.remove(&added, "BrowserClaw")?, raw);
+
+        let removed_only = emitter.remove(raw, "browseros")?;
+        assert!(!removed_only.contains("mcp_servers"));
+        assert!(removed_only.contains("# model\nmodel = \"gpt-5\""));
+        assert!(removed_only.contains("# tail"));
         Ok(())
     }
 }

@@ -1,4 +1,7 @@
-use agent_mcp_manager::{AgentId, AgentScope, resolve_agent_mcp_config_path};
+use agent_mcp_manager::{
+    AgentId, AgentScope, LinkInput, Manager, McpServer, McpServerSpec,
+    resolve_agent_mcp_config_path,
+};
 use axum::{
     Router,
     body::{Body, to_bytes},
@@ -57,6 +60,8 @@ async fn run_connections_case() -> anyhow::Result<()> {
             fs::create_dir_all(parent(path)?)?;
         }
     }
+
+    assert_legacy_manifest_migration(&home, &paths).await?;
 
     let not_installed = service
         .connect_browseros(Harness::Antigravity, MCP_URL)
@@ -192,6 +197,96 @@ async fn run_connections_case() -> anyhow::Result<()> {
         request_json(&router, "POST", "/connections/VS%20Code/disconnect").await?;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(disconnected["installed"], false);
+
+    let custom_workspace = claw_dir.join("custom-mcp-manager");
+    let custom_config = home.join("custom/cursor.json");
+    fs::create_dir_all(parent(&custom_config)?)?;
+    let custom_manager = Manager::new(&custom_workspace);
+    let mut custom_link = LinkInput::new(
+        McpServer {
+            name: "CustomPath".to_string(),
+            spec: McpServerSpec::Http {
+                url: MCP_URL.to_string(),
+                headers: Default::default(),
+            },
+        },
+        AgentId::Cursor,
+    );
+    custom_link.config_path = Some(custom_config.clone());
+    custom_manager.link(custom_link)?;
+    let custom_service = HarnessService::new(custom_workspace, home.clone());
+    let scan = custom_service.run_integrity_scan().await?;
+    assert_eq!(scan.verified, 1);
+    assert_eq!(scan.healed, 0);
+    assert!(!path_for(&paths, AgentId::Cursor)?.exists());
+    Ok(())
+}
+
+async fn assert_legacy_manifest_migration(
+    home: &Path,
+    paths: &[(AgentId, std::path::PathBuf)],
+) -> anyhow::Result<()> {
+    let workspace = home.join("claw/legacy-mcp-manager");
+    fs::create_dir_all(&workspace)?;
+    let claude_path = path_for(paths, AgentId::ClaudeCode)?;
+    fs::write(
+        claude_path,
+        format!(
+            "{{\"mcpServers\":{{\"BrowserClaw\":{{\"type\":\"http\",\"url\":\"{MCP_URL}\"}}}}}}"
+        ),
+    )?;
+    let added_at = "2026-01-02T03:04:05Z";
+    fs::write(
+        workspace.join("manifest.json"),
+        serde_json::to_string_pretty(&json!({
+            "version": 1,
+            "servers": {
+                "BrowserClaw": {
+                    "spec": { "transport": "http", "url": MCP_URL },
+                    "addedAt": added_at
+                }
+            },
+            "links": [{
+                "serverName": "BrowserClaw",
+                "agent": "claude-code",
+                "configPath": claude_path
+            }]
+        }))?,
+    )?;
+
+    let service = HarnessService::new(workspace.clone(), home.to_path_buf());
+    let listed = service.list_browseros_connections().await?;
+    let claude = listed
+        .iter()
+        .find(|state| state.harness == Harness::ClaudeCode)
+        .ok_or_else(|| anyhow::anyhow!("missing migrated Claude Code row"))?;
+    assert!(claude.installed);
+    let connected = service
+        .connect_browseros(Harness::ClaudeCode, MCP_URL)
+        .await?;
+    assert!(connected.installed, "{}", connected.message);
+
+    let migrated = Manager::new(&workspace).list()?;
+    assert_eq!(migrated.len(), 1);
+    assert_eq!(migrated[0].name, "BrowserClaw");
+    assert_eq!(migrated[0].added_at, added_at);
+    assert_eq!(migrated[0].links[&AgentId::ClaudeCode].created_at, added_at);
+
+    let corrupt_workspace = home.join("claw/corrupt-mcp-manager");
+    fs::create_dir_all(&corrupt_workspace)?;
+    let corrupt = "{ definitely not json";
+    fs::write(corrupt_workspace.join("manifest.json"), corrupt)?;
+    let corrupt_service = HarnessService::new(corrupt_workspace.clone(), home.to_path_buf());
+    let error = corrupt_service
+        .run_integrity_scan()
+        .await
+        .err()
+        .ok_or_else(|| anyhow::anyhow!("corrupt manifest unexpectedly migrated"))?;
+    assert!(error.to_string().contains("is not valid JSON"));
+    assert_eq!(
+        fs::read_to_string(corrupt_workspace.join("manifest.json"))?,
+        corrupt
+    );
     Ok(())
 }
 
