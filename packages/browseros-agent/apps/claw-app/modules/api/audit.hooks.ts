@@ -15,8 +15,13 @@
  * through the rpc client (which is JSON-only).
  */
 
+import type { AuditCleanupThresholdDays } from '@browseros/shared/constants/audit'
 import { useEffect, useState } from 'react'
-import { createInfiniteQuery, createQuery } from 'react-query-kit'
+import {
+  createInfiniteQuery,
+  createMutation,
+  createQuery,
+} from 'react-query-kit'
 import { api, apiBaseUrl, resolveApiBaseUrl } from './client'
 import { parseResponse } from './parseResponse'
 
@@ -188,3 +193,69 @@ export function useTaskScreenshotBaseUrl(): string | null {
 
   return baseUrl
 }
+
+// ------------------------- Audit cleanup -------------------------
+//
+// GET /audit/cleanup/candidates + POST /audit/cleanup. Candidates poll
+// so the dialog options appear/disappear naturally as data ages past a
+// threshold. The mutation invalidates every audit-facing query so the
+// list, chip counts, and candidates all refresh in one refetch cycle.
+
+export interface CleanupCandidateStats {
+  olderThanDays: AuditCleanupThresholdDays
+  sessionCount: number
+  dispatchCount: number
+  bytesOnDisk: number
+}
+
+export interface CleanupOrphans {
+  replayFilesDeleted: number
+  screenshotFilesDeleted: number
+  bytesFreed: number
+}
+
+export interface CleanupResult {
+  olderThanDays: AuditCleanupThresholdDays
+  sessionsDeleted: number
+  dispatchesDeleted: number
+  replayFilesDeleted: number
+  screenshotFilesDeleted: number
+  bytesFreed: number
+  orphans: CleanupOrphans
+}
+
+export interface CleanupCandidatesResponse {
+  ranges: CleanupCandidateStats[]
+}
+
+export const useAuditCleanupCandidates = createQuery<CleanupCandidatesResponse>(
+  {
+    queryKey: ['audit', 'cleanup', 'candidates'],
+    fetcher: async () => {
+      const response = await api.audit.cleanup.candidates.$get()
+      return parseResponse<CleanupCandidatesResponse>(response)
+    },
+    // 30s poll: cheap on the server (three GROUP BY + a couple of
+    // stat calls), keeps the Storage button visibility and the option
+    // list honest as sessions age past a threshold with no user
+    // action.
+    refetchInterval: 30_000,
+  },
+)
+
+export const useAuditCleanup = createMutation<
+  CleanupResult,
+  { olderThanDays: AuditCleanupThresholdDays }
+>({
+  mutationFn: async (vars) => {
+    const response = await api.audit.cleanup.$post({ json: vars })
+    return parseResponse<CleanupResult>(response)
+  },
+  onSuccess: (_result, _vars, _ctx, { client }) => {
+    // Sessions and their totals just changed. Invalidate every audit
+    // surface so the list, empty state, and the Storage button all
+    // refetch on the same tick.
+    client.invalidateQueries({ queryKey: useTasks.getKey() })
+    client.invalidateQueries({ queryKey: useAuditCleanupCandidates.getKey() })
+  },
+})

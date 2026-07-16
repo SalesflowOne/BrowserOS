@@ -10,6 +10,7 @@ import { Fragment, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { AuditEmpty } from '@/components/audit/AuditEmpty'
 import { AuditHoverPreview } from '@/components/audit/AuditHoverPreview'
+import { CleanupButton } from '@/components/audit/CleanupButton'
 import { FilterBar } from '@/components/audit/FilterBar'
 import {
   Table,
@@ -107,10 +108,11 @@ export function Audit() {
 
   return (
     <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-6 px-8 pt-8 pb-16">
-      <header>
+      <header className="flex items-center justify-between gap-4">
         <h1 className="font-extrabold text-3xl leading-tight tracking-tight md:text-4xl">
           Audit
         </h1>
+        <CleanupButton />
       </header>
 
       {!isError && (tasks.length > 0 || hasActiveFilters) && (
