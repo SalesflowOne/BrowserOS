@@ -46,8 +46,14 @@ import { logger } from '../lib/logger'
 import { screencastCache } from './screencast-cache'
 import { extractToolResultImageData } from './tool-result-image'
 
+export const SCREENSHOTS_DIR_NAME = 'screenshots'
+export const SCREENSHOT_FILE_EXTENSION = '.jpg'
+
 export function screenshotPath(dispatchId: number): string {
-  return resolveClawServerPath('screenshots', `${dispatchId}.jpg`)
+  return resolveClawServerPath(
+    SCREENSHOTS_DIR_NAME,
+    `${dispatchId}${SCREENSHOT_FILE_EXTENSION}`,
+  )
 }
 
 export interface PersistScreenshotInput {

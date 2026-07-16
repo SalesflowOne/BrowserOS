@@ -26,7 +26,8 @@ import { dirname } from 'node:path'
 import { resolveClawServerPath } from '../lib/browserclaw-dir'
 import { logger } from '../lib/logger'
 
-const REPLAY_DIR_NAME = 'replays'
+export const REPLAY_DIR_NAME = 'replays'
+export const REPLAY_FILE_EXTENSION = '.ndjson'
 const MAX_OPEN_HANDLES = 50
 const IDLE_HANDLE_MS = 30_000
 
@@ -80,7 +81,7 @@ export function createReplayStorage(
   function resolvePath(sessionId: string): string {
     const sid = sanitiseSessionId(sessionId)
     const root = opts.rootDir ?? resolveClawServerPath(REPLAY_DIR_NAME)
-    return `${root.replace(/\/$/, '')}/${sid}.ndjson`
+    return `${root.replace(/\/$/, '')}/${sid}${REPLAY_FILE_EXTENSION}`
   }
 
   async function evictOldestIfNeeded(): Promise<void> {

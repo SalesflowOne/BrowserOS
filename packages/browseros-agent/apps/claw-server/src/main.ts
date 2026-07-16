@@ -30,6 +30,7 @@ import { writeRuntimeFile } from './lib/runtime-file'
 import { setLocalServerUrl } from './local-server-url'
 import { createServer } from './server'
 import { captureEvent, shutdownAnalytics } from './services/analytics'
+import { scheduleStartupOrphanSweep } from './services/audit-cleanup-startup'
 import { runIntegrityScan } from './services/integrity-scan'
 import { startScreencastPoller } from './services/screencast-poller'
 import { publicMcpUrl } from './shared/mcp-url'
@@ -84,6 +85,12 @@ async function start(): Promise<void> {
       error: err instanceof Error ? err.message : String(err),
     })
   }
+
+  // Self-heal loop 2: sweep orphan replay + screenshot files whose DB
+  // row disappeared (partial cleanup failure, crashed writer). Deferred
+  // 30s so it never delays the socket going live; the sweep is
+  // best-effort and its own errors are swallowed.
+  scheduleStartupOrphanSweep()
 
   // Attach to the BrowserOS Chromium so MCP `tools/call` dispatches
   // hit a real browser. The bootstrap soft-fails when BrowserOS is
