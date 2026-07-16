@@ -34,6 +34,10 @@
       "types": "./src/constants/paths.ts",
       "default": "./src/constants/paths.ts"
     },
+    "./constants/audit": {
+      "types": "./src/constants/audit.ts",
+      "default": "./src/constants/audit.ts"
+    },
     "./constants/hermes": {
       "types": "./src/constants/hermes.ts",
       "default": "./src/constants/hermes.ts"

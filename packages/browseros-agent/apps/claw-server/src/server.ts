@@ -20,6 +20,7 @@ import { HttpError } from './lib/errors'
 import { logger } from './lib/logger'
 import { agentsControlRoute } from './routes/agents-control'
 import { auditRoute } from './routes/audit'
+import { auditCleanupRoute } from './routes/audit/cleanup'
 import { auditScreenshotsRoute } from './routes/audit/screenshots'
 import { auditTasksRoute } from './routes/audit/tasks'
 import { auditReplayRoute } from './routes/audit-replay'
@@ -111,6 +112,7 @@ export function createServer(options: CreateServerOptions = {}) {
     .route('/', connectionsRoute)
     .route('/', auditRoute)
     .route('/', auditTasksRoute)
+    .route('/', auditCleanupRoute)
     .route('/', auditScreenshotsRoute)
     .route('/', auditReplayRoute)
     .route('/', replayTabsRoute)

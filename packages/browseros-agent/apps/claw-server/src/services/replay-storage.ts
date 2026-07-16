@@ -43,6 +43,13 @@ export interface ReplayStorage {
   readEvents(sessionId: string): Promise<ReadableStream<Uint8Array>>
   statSession(sessionId: string): Promise<ReplayMetadata>
   deleteSession(sessionId: string): Promise<void>
+  /**
+   * Resolves the on-disk NDJSON path for a session id (does not touch
+   * the file). Exposed so callers that need to size-check or sweep
+   * files without opening the append pipeline can do so without
+   * reimplementing the sanitise+join logic.
+   */
+  pathFor(sessionId: string): string
   /** Test-only: forcibly close all open handles and drop the chain map. */
   resetForTesting(): Promise<void>
 }
@@ -224,6 +231,9 @@ export function createReplayStorage(
       } finally {
         await fh.close()
       }
+    },
+    pathFor(sessionId) {
+      return resolvePath(sessionId)
     },
     async deleteSession(sessionId) {
       await closeEntry(sessionId)
