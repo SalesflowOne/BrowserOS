@@ -311,4 +311,50 @@ describe('audit-cleanup age-based', () => {
       expect(db.select().from(agentSessionEnds).all().length).toBe(0)
     })
   })
+
+  it('lets a concurrent dispatch that lands during cleanup survive as a resurrected session', async () => {
+    // Regression coverage for the accepted concurrency behaviour: a
+    // dispatch that arrives after cleanupOlderThan has computed its
+    // target set but before it commits will end up committed AFTER the
+    // deletes finish (WAL serialises writers). The row belongs to a
+    // session that we just "deleted", so it resurrects that session in
+    // the audit UI, minus its old start/end rows. That's fine: the
+    // deriver already handles missing start rows. This test documents
+    // the behaviour so a future concurrency guard would surface here.
+    await withTempBrowserClawDir(async () => {
+      startSession('s-doomed')
+      dispatch('s-doomed', 'act')
+      backdateSession('s-doomed', 100)
+
+      const cleanupPromise = cleanupOlderThan(15)
+      // Kick off a fresh dispatch immediately; bun:sqlite serialises
+      // through a single writer so this queues behind the cleanup's
+      // transaction and lands after commit.
+      const resurrectedId = dispatch('s-doomed', 'act')
+      const cleanupResult = await cleanupPromise
+
+      expect(cleanupResult.sessionsDeleted).toBe(1)
+
+      const remaining = getAuditDb()
+        .select({ sessionId: toolDispatches.sessionId })
+        .from(toolDispatches)
+        .all()
+        .map((r) => r.sessionId)
+      // The doomed session comes back as a "zombie" with only the
+      // resurrected dispatch.
+      expect(remaining).toEqual(['s-doomed'])
+      // And it's the fresh row, not one from before cleanup.
+      const rows = getAuditDb()
+        .select({ id: toolDispatches.id })
+        .from(toolDispatches)
+        .all()
+      expect(rows.map((r) => r.id)).toEqual([resurrectedId])
+
+      // Session start/end rows are gone (cleanup deleted them and the
+      // fresh dispatch does not re-emit a start event).
+      expect(getAuditDb().select().from(agentSessionStarts).all().length).toBe(
+        0,
+      )
+    })
+  })
 })
