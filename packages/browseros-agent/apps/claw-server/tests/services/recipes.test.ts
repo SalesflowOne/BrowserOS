@@ -4,8 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
  * Unit coverage for the recipes service: URL-to-host-stem reduction
- * (must match browser-harness's helpers.py:134 for portability),
- * directory read behaviour including caps and edge cases.
+ * plus directory read behaviour including caps and edge cases.
  */
 
 import { describe, expect, it } from 'bun:test'
@@ -24,9 +23,9 @@ describe('hostStemFromUrl', () => {
     expect(hostStemFromUrl('https://linkedin.com/foo')).toBe('linkedin')
   })
 
-  it('takes the leftmost label for subdomains (matches browser-harness)', () => {
-    // helpers.py:134 in the upstream: hostname.removeprefix("www.").split(".")[0]
-    // So mail.google.com yields 'mail', not 'google'.
+  it('takes the leftmost label for subdomains', () => {
+    // Rule: hostname.removeprefix("www.").split(".")[0], so
+    // mail.google.com yields 'mail', not 'google'.
     expect(hostStemFromUrl('https://mail.google.com/inbox')).toBe('mail')
     expect(hostStemFromUrl('https://docs.github.com/en')).toBe('docs')
   })

@@ -3,15 +3,13 @@
  * Copyright 2025 BrowserOS
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * Per-agent per-host recipe file store, ported from the storage half
- * of browser-use/browser-harness's "domain skills" convention
- * (helpers.py:130-135 in the upstream). Files live at
+ * Per-agent per-host recipe file store. Files live at
  *   <browserclawDir>/recipes/<slug>/<host-stem>/<name>.md
  *
  * The runtime surfacing lives in the `domain-skills-hint` dispatch
  * effect; this file only owns pure path derivation + directory reads.
  * Writes are the agent's job (it uses its coding-agent's own Write
- * tool, matching how browser-harness works upstream).
+ * tool).
  */
 
 import { readdirSync, statSync } from 'node:fs'
@@ -20,22 +18,20 @@ import { resolveClawServerPath } from '../lib/browserclaw-dir'
 export const RECIPES_DIR_NAME = 'recipes'
 export const RECIPE_FILE_EXTENSION = '.md'
 /**
- * Cap on how many filenames surface on a single navigate. Matches the
- * upstream browser-harness cap so recipes migrated across products
- * behave the same. Ten is enough context for the LLM without flooding
- * the tool result.
+ * Cap on how many filenames surface on a single navigate. Ten is
+ * enough context for the LLM without flooding the tool result.
  */
 export const MAX_SKILLS_SURFACED = 10
 
 /**
- * Reduce a URL to browser-harness's hostname stem: strip a leading
- * `www.`, then take the first dot-separated label. Matches
- * helpers.py:134 in the upstream so a recipe folder is portable in
- * either direction between products.
+ * Reduce a URL to a hostname stem: strip a leading `www.`, then take
+ * the first dot-separated label. `mail.google.com` yields `mail`, not
+ * `google`, so subdomains get their own recipe folder.
  *
- * Returns null for URLs with no hostname (e.g. `chrome://newtab`,
- * `about:blank`, malformed strings). Callers treat null as "no recipes
- * for this navigation" and short-circuit.
+ * Returns null for URLs without an http(s) hostname (e.g.
+ * `chrome://newtab`, `about:blank`, `file:///`, malformed strings).
+ * Callers treat null as "no recipes for this navigation" and
+ * short-circuit.
  */
 export function hostStemFromUrl(url: string): string | null {
   let parsed: URL

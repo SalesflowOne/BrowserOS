@@ -15,7 +15,7 @@ import { env } from '../env'
  * Appended to the base instructions when BROWSERCLAW_RECIPES is on.
  * Tells the agent to read the surfaced Markdown files before acting
  * on a site and to write new ones when it discovers something
- * non-obvious. Mirrors browser-harness's SKILL.md discipline.
+ * non-obvious.
  */
 const RECIPES_INSTRUCTIONS = `
 Domain recipes:

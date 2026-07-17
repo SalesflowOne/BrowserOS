@@ -5,9 +5,7 @@
  *
  * Post-navigate hint: appends the calling agent's recipe filenames
  * for the destination host to the tool result so the LLM reads them
- * before acting on the site. Runtime half of the browser-harness
- * "domain skills" convention (helpers.py:130-135 in the upstream),
- * ported to a NamedToolEffect on the BrowserClaw dispatch loop.
+ * before acting on the site.
  *
  * Feature-flagged via BROWSERCLAW_RECIPES. When off, the effect is a
  * cheap early-return; no filesystem I/O happens.

@@ -101,12 +101,11 @@ export const env = {
   screencastScreenshotFallback: readBoolFlagDefaultTrue(
     'CLAW_SCREENCAST_SCREENSHOT_FALLBACK',
   ),
-  // Self-healing recipes: when on, the `navigate` dispatch effect
+  // Per-host recipes: when on, the `navigate` dispatch effect
   // surfaces per-agent per-host Markdown filenames in the tool result
   // and the MCP Initialize response tells the agent to read them
-  // first. Ports browser-use/browser-harness's domain-skills
-  // convention. Off by default in v1 for careful rollout; flip to
-  // default-on after production soak.
+  // first. Off by default for a careful rollout; flip to default-on
+  // after production soak.
   recipesEnabled: readBoolFlagDefaultFalse('BROWSERCLAW_RECIPES'),
   // Anonymous product analytics (PostHog). Disabled unless a project
   // write key is provided (production builds inject it). `posthogHost`
