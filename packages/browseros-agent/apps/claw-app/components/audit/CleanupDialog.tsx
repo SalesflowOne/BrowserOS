@@ -20,7 +20,7 @@
  */
 
 import { AlertTriangle } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -68,11 +68,20 @@ export function CleanupDialog({
   const [typed, setTyped] = useState('')
   const [errorText, setErrorText] = useState<string | null>(null)
   const cleanup = useAuditCleanup()
+  // Track the previous `open` value so the reset effect below fires
+  // ONLY on a false→true transition (the moment the user opens the
+  // dialog) and not on every unrelated re-render. Without this guard,
+  // the candidates poll (30s refetch) hands `CleanupButton` a fresh
+  // `ranges` array reference on every tick; that would ripple through
+  // the effect deps and wipe Stage 2 progress out from under a user
+  // who takes longer than the poll interval to read + type the
+  // confirmation phrase.
+  const prevOpenRef = useRef(open)
 
-  // Reset internal state whenever the dialog opens so a previous
-  // typed phrase or error banner never survives across sessions.
   useEffect(() => {
-    if (!open) return
+    const justOpened = open && !prevOpenRef.current
+    prevOpenRef.current = open
+    if (!justOpened) return
     setStage('pick')
     setSelectedDays(
       ranges.length === 1 ? (ranges[0]?.olderThanDays ?? null) : null,

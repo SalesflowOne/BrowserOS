@@ -16,8 +16,6 @@ import { sweepOrphanFiles } from './audit-cleanup'
 /** Ms to wait after boot before running the first orphan sweep. */
 const STARTUP_SWEEP_DELAY_MS = 30_000
 
-let scheduledForTesting = false
-
 export function scheduleStartupOrphanSweep(): void {
   const timer = setTimeout(() => {
     void runStartupSweep()
@@ -29,7 +27,6 @@ export function scheduleStartupOrphanSweep(): void {
 
 /** Exported for testing. Runs the sweep immediately, no delay. */
 export async function runStartupSweep(): Promise<void> {
-  scheduledForTesting = true
   try {
     const result = await sweepOrphanFiles()
     logger.info('orphan sweep', {
@@ -44,13 +41,4 @@ export async function runStartupSweep(): Promise<void> {
       error: err instanceof Error ? err.message : String(err),
     })
   }
-}
-
-/** Test-only probe: was the startup sweep scheduled / run? */
-export function wasStartupSweepInvokedForTesting(): boolean {
-  return scheduledForTesting
-}
-
-export function resetStartupSweepForTesting(): void {
-  scheduledForTesting = false
 }
