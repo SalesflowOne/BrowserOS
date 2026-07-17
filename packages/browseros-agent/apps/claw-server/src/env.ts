@@ -50,19 +50,6 @@ function readBoolFlagDefaultTrue(name: string): boolean {
   return normalised !== '0' && normalised !== 'false'
 }
 
-/**
- * Opt-IN gate for features that stay OFF by default. Only `1` and
- * `true` (case-insensitive) enable. Used for careful rollouts where
- * we want a hard-off default until the feature has soaked.
- */
-function readBoolFlagDefaultFalse(name: string): boolean {
-  // biome-ignore lint/style/noProcessEnv: env.ts is the sanctioned env-reader for the package
-  const raw = process.env[name]
-  if (raw === undefined) return false
-  const normalised = raw.trim().toLowerCase()
-  return normalised === '1' || normalised === 'true'
-}
-
 /** Trims a string value, returning undefined when it is unset or blank. */
 function trimmedString(value: string | undefined): string | undefined {
   const raw = value?.trim()
@@ -101,12 +88,6 @@ export const env = {
   screencastScreenshotFallback: readBoolFlagDefaultTrue(
     'CLAW_SCREENCAST_SCREENSHOT_FALLBACK',
   ),
-  // Per-host recipes: when on, the `navigate` dispatch effect
-  // surfaces per-agent per-host Markdown filenames in the tool result
-  // and the MCP Initialize response tells the agent to read them
-  // first. Off by default for a careful rollout; flip to default-on
-  // after production soak.
-  recipesEnabled: readBoolFlagDefaultFalse('BROWSERCLAW_RECIPES'),
   // Anonymous product analytics (PostHog). Disabled unless a project
   // write key is provided (production builds inject it). `posthogHost`
   // defaults to PostHog US Cloud. `analyticsEnabledByEnv` is an

@@ -3,15 +3,11 @@
  * Copyright 2025 BrowserOS
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * Unit coverage for the domain-skills-hint dispatch effect. Feature
- * is behind BROWSERCLAW_RECIPES; we set the runtime flag directly on
- * the env module (matching the test pattern used elsewhere) rather
- * than round-tripping through the process env.
+ * Unit coverage for the domain-skills-hint dispatch effect.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { beforeEach, describe, expect, it } from 'bun:test'
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { env } from '../../../src/env'
 import type { ClientIdentity } from '../../../src/lib/mcp-session'
 import { identityService } from '../../../src/lib/mcp-session'
 import type { ToolCall } from '../../../src/mcp/dispatch'
@@ -75,22 +71,6 @@ function seedRecipe(slug: string, hostStem: string, name: string): string {
 describe('domain-skills-hint', () => {
   beforeEach(() => {
     identityService.clear()
-    env.recipesEnabled = true
-  })
-  afterEach(() => {
-    env.recipesEnabled = false
-  })
-
-  it('is a no-op when the recipesEnabled flag is off', async () => {
-    await withTempBrowserClawDir(async () => {
-      env.recipesEnabled = false
-      const identity = register('s1')
-      seedRecipe(identity.slug, 'linkedin', 'invitation.md')
-
-      expect(
-        apply(makeCall(identity, 'navigate'), makeResult()),
-      ).toBeUndefined()
-    })
   })
 
   it('is a no-op for non-navigate tools', async () => {

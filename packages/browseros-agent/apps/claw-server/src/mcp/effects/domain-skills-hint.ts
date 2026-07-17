@@ -7,9 +7,6 @@
  * for the destination host to the tool result so the LLM reads them
  * before acting on the site.
  *
- * Feature-flagged via BROWSERCLAW_RECIPES. When off, the effect is a
- * cheap early-return; no filesystem I/O happens.
- *
  * Ordering. Runs BEFORE `applyAudit` so the annotation lands in the
  * dispatch's `resultMeta` record and the operator can see, per row,
  * which recipes an agent was told about. Must run AFTER
@@ -18,7 +15,6 @@
  * tabs-list dispatch (we only fire on `navigate`).
  */
 
-import { env } from '../../env'
 import { logger } from '../../lib/logger'
 import {
   hostStemFromUrl,
@@ -59,7 +55,6 @@ function extractNavigateUrl(
 
 /** Attaches per-host recipe filenames + workspace dir to navigate results. */
 export const applyDomainSkillsHint: ToolEffect = ({ call, result }) => {
-  if (!env.recipesEnabled) return
   if (result.isError) return
 
   const url = extractNavigateUrl(
