@@ -37,6 +37,7 @@ import {
 import { cancellationErrorResult } from './cancellation-result'
 import { composeAbortSignals, dispatchErrorText } from './dispatch-util'
 import { applyAudit } from './effects/audit'
+import { applyDomainSkillsHint } from './effects/domain-skills-hint'
 import { applyOwnershipClaims } from './effects/ownership-claims'
 import { applySessionNaming } from './effects/session-naming'
 import { applyTabActivity } from './effects/tab-activity'
@@ -88,6 +89,10 @@ const GUARDS: readonly ToolGuard[] = [
 const BASE_EFFECTS: readonly NamedToolEffect[] = [
   { name: 'ownership-claims', run: applyOwnershipClaims },
   { name: 'tabs-list-view', run: applyTabsListView },
+  // Runs BEFORE audit so the annotation lands in resultMeta and the
+  // operator sees which recipes an agent was told about. No-op when
+  // BROWSERCLAW_RECIPES is off (default in v1).
+  { name: 'domain-skills-hint', run: applyDomainSkillsHint },
   { name: 'audit', run: applyAudit },
   { name: 'tab-activity', run: applyTabActivity },
   { name: 'tab-groups', run: applyTabGroups },
