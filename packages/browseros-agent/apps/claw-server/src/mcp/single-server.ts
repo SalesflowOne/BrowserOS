@@ -37,7 +37,7 @@ import {
 import { VERSION } from '../version'
 import { registerBrowserToolsForSingleServer } from './dispatch'
 import { closeAgentTabGroup, collapseAgentTabGroup } from './effects/tab-groups'
-import { BROWSERCLAW_MCP_INSTRUCTIONS } from './mcp-prompt'
+import { getBrowserClawMcpInstructions } from './mcp-prompt'
 
 const SERVER_NAME = 'browserclaw'
 const SERVER_TITLE = 'BrowserClaw'
@@ -76,7 +76,7 @@ function buildSession(): Session {
       description: SERVER_DESCRIPTION,
       websiteUrl: SERVER_WEBSITE_URL,
     },
-    { instructions: BROWSERCLAW_MCP_INSTRUCTIONS },
+    { instructions: getBrowserClawMcpInstructions() },
   )
 
   registerBrowserToolsForSingleServer(server, resolveIdentity)
