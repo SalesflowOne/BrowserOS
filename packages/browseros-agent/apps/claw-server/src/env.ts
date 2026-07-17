@@ -50,6 +50,12 @@ function readBoolFlagDefaultTrue(name: string): boolean {
   return normalised !== '0' && normalised !== 'false'
 }
 
+/** Trims a string value, returning undefined when it is unset or blank. */
+function trimmedString(value: string | undefined): string | undefined {
+  const raw = value?.trim()
+  return raw && raw.length > 0 ? raw : undefined
+}
+
 /**
  * Runtime snapshot shared across services. main.ts applies validated
  * startup config before serving; tests may mutate fields for isolation.
@@ -61,12 +67,14 @@ export const env = {
   resourcesDir: resolveDefaultResourcesDir(),
   browserClawDirOverride: readBrowserClawDirOverride(),
   isDevelopment: readIsDevelopment(),
-  // MCP session idle reaper. Sessions older than `sessionIdleMs`
-  // with no inbound requests are torn down by the sweeper running
-  // every `sessionSweepIntervalMs`. The 5-minute default matches
-  // services/tasks.ts:IDLE_TIMEOUT_MS so the UI's status read and
-  // the actual session-end row land at the same boundary.
-  sessionIdleMs: readPositiveIntFlag('CLAW_SESSION_IDLE_MS', 5 * 60 * 1000),
+  // MCP session lifecycle. Idle sessions end after `sessionIdleMs`;
+  // their groups and attribution remain until `sessionRetentionMs`.
+  // The cockpit UI derives its done status independently.
+  sessionIdleMs: readPositiveIntFlag('CLAW_SESSION_IDLE_MS', 30 * 60 * 1000),
+  sessionRetentionMs: readPositiveIntFlag(
+    'CLAW_SESSION_RETENTION_MS',
+    2 * 60 * 60 * 1000,
+  ),
   sessionSweepIntervalMs: readPositiveIntFlag(
     'CLAW_SESSION_SWEEP_INTERVAL_MS',
     60 * 1000,
@@ -80,6 +88,17 @@ export const env = {
   screencastScreenshotFallback: readBoolFlagDefaultTrue(
     'CLAW_SCREENCAST_SCREENSHOT_FALLBACK',
   ),
+  // Anonymous product analytics (PostHog). Disabled unless a project
+  // write key is provided (production builds inject it). `posthogHost`
+  // defaults to PostHog US Cloud. `analyticsEnabledByEnv` is an
+  // operator kill-switch (set CLAW_ANALYTICS_ENABLED=0 to force off);
+  // the per-install user opt-out lives in the analytics state file.
+  // biome-ignore lint/style/noProcessEnv: static access allows production builds to inline the key
+  posthogKey: trimmedString(process.env.CLAW_POSTHOG_KEY),
+  posthogHost:
+    // biome-ignore lint/style/noProcessEnv: static access allows production builds to inline the host
+    trimmedString(process.env.CLAW_POSTHOG_HOST) ?? 'https://us.i.posthog.com',
+  analyticsEnabledByEnv: readBoolFlagDefaultTrue('CLAW_ANALYTICS_ENABLED'),
 }
 
 /** Applies validated startup config to the shared runtime snapshot. */

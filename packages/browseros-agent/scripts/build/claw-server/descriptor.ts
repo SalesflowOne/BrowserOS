@@ -2,7 +2,12 @@ import type { BuildProductDescriptor } from '@browseros/build-server-tools'
 
 export const CLAW_SERVER_BUNDLE_ENTRYPOINT = 'apps/claw-server/src/main.ts'
 
-const INLINED_ENV_VARS = ['NODE_ENV'] as const
+const REQUIRED_PROD_VARS = ['CLAW_POSTHOG_KEY'] as const
+const INLINED_ENV_VARS = [
+  ...REQUIRED_PROD_VARS,
+  'CLAW_POSTHOG_HOST',
+  'NODE_ENV',
+] as const
 const PRODUCTION_INLINE_ENV = {
   NODE_ENV: 'production',
 }
@@ -17,7 +22,7 @@ export const clawServerBuildProduct: BuildProductDescriptor = {
   archiveBaseName: 'browseros-claw-server-resources',
   defaultManifestPath: 'scripts/build/config/claw-server-prod-resources.json',
   env: {
-    requiredInlineEnvKeys: [],
+    requiredInlineEnvKeys: REQUIRED_PROD_VARS,
     inlineEnvKeys: INLINED_ENV_VARS,
     ciInlineEnvDefaults: PRODUCTION_INLINE_ENV,
     inlineEnvOverrides: PRODUCTION_INLINE_ENV,

@@ -18,6 +18,7 @@ ALL_KEYS = {
     "BROWSEROS_CONTROLLER_KEY": "controller-pem",
     "BUGREPORTER_KEY": "bugreporter-pem",
     "BROWSERCLAW_KEY": "claw-pem",
+    "VITE_CLAW_POSTHOG_KEY": "phc-claw-app",
 }
 
 
@@ -107,6 +108,16 @@ class ValidateTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValidationError, "R2"):
                     self._module().validate(_ctx(has_r2=False))
 
+    def test_missing_browserclaw_build_env_names_the_variable(self):
+        env = dict(ALL_KEYS)
+        env.pop("VITE_CLAW_POSTHOG_KEY")
+        with patch.dict("os.environ", env, clear=True):
+            with patch(f"{MODULE}.find_chrome_binary", return_value="chrome"):
+                with self.assertRaisesRegex(
+                    ValidationError, "VITE_CLAW_POSTHOG_KEY"
+                ):
+                    self._module(names=("browserclaw",)).validate(_ctx())
+
     def test_chrome_resolution_failure_fails_validation(self):
         with patch.dict("os.environ", ALL_KEYS):
             with patch(
@@ -193,6 +204,9 @@ class ExecuteTest(unittest.TestCase):
         env_args = self.mocks["write_env_file"].call_args.args
         self.assertEqual(env_args[0], Path("/src/agent/apps/app"))
         self.assertIn("VITE_PUBLIC_BROWSEROS_API", env_args[1])
+        self.assertEqual(self.mocks["write_env_file"].call_args.kwargs, {
+            "required_names": (),
+        })
 
         commands = [c.args for c in self.mocks["run_command"].call_args_list]
         self.assertEqual(

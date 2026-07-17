@@ -2,12 +2,15 @@ import unittest
 
 from tools.release_secrets.sync import (
     ALLOWLIST,
+    KNOWN_OPTIONAL_SECRETS,
+    REPO_ROOT,
     RELEASE_WORKFLOW_FILES,
     DotenvParseError,
     build_check_result,
     build_plan,
     parse_dotenv_text,
     scan_secret_refs_from_text,
+    scan_workflow_secret_refs,
     verify_dotenv_round_trip,
 )
 
@@ -92,6 +95,42 @@ class WorkflowSecretScannerTest(unittest.TestCase):
             },
             consumers,
         )
+
+    def test_claw_posthog_keys_are_required_and_hosts_are_optional(self):
+        expected_consumers = {
+            "CLAW_POSTHOG_KEY": (
+                "nightly-browserclaw.yml",
+                "release-browserclaw.yml",
+                "release-claw-server.yml",
+            ),
+            "CLAW_POSTHOG_HOST": ("release-claw-server.yml",),
+            "VITE_CLAW_POSTHOG_KEY": (
+                "build-browseros.yml",
+                "release-browserclaw.yml",
+                "release-extensions.yml",
+            ),
+            "VITE_CLAW_POSTHOG_HOST": (
+                "build-browseros.yml",
+                "release-extensions.yml",
+            ),
+        }
+        required_keys = {"CLAW_POSTHOG_KEY", "VITE_CLAW_POSTHOG_KEY"}
+        optional_hosts = {"CLAW_POSTHOG_HOST", "VITE_CLAW_POSTHOG_HOST"}
+        referenced = scan_workflow_secret_refs(REPO_ROOT)
+        allowlisted = {
+            spec.name: spec.consumers
+            for spec in ALLOWLIST
+            if spec.name in expected_consumers
+        }
+
+        self.assertEqual(set(expected_consumers), referenced & set(expected_consumers))
+        self.assertEqual(expected_consumers, allowlisted)
+        self.assertTrue(optional_hosts <= KNOWN_OPTIONAL_SECRETS)
+        self.assertTrue(required_keys.isdisjoint(KNOWN_OPTIONAL_SECRETS))
+
+        result = build_check_result(set(expected_consumers), set())
+        self.assertEqual(sorted(optional_hosts), result.optional)
+        self.assertEqual(sorted(required_keys), result.missing_required)
 
 
 class SecretPlanTest(unittest.TestCase):

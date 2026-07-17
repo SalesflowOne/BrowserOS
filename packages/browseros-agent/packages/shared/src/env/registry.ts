@@ -8,6 +8,7 @@ export type EnvSection =
   | 'server'
   | 'build'
   | 'upload'
+  | 'sign'
 
 export interface EnvExampleEntry {
   value: string
@@ -196,6 +197,60 @@ export const ENV_REGISTRY: readonly EnvKeySpec[] = [
     modes: { development: { value: '~/.browserclaw-dev', commented: true } },
   },
   {
+    key: 'CLAW_POSTHOG_KEY',
+    section: 'claw',
+    description:
+      'Claw server PostHog project key required by production builds.',
+    secret: true,
+    schema: stringSchema,
+    modes: { development: { value: '' }, production: { value: '' } },
+  },
+  {
+    key: 'CLAW_POSTHOG_HOST',
+    section: 'claw',
+    description:
+      'Optional Claw server PostHog host; defaults to PostHog US Cloud.',
+    secret: false,
+    schema: stringSchema,
+    modes: {
+      development: {
+        value: 'https://us.i.posthog.com',
+        commented: true,
+      },
+      production: {
+        value: 'https://us.i.posthog.com',
+        commented: true,
+      },
+    },
+  },
+  {
+    key: 'VITE_CLAW_POSTHOG_KEY',
+    section: 'claw',
+    description:
+      'BrowserClaw PostHog project key embedded in the shipped client bundle; required by production builds.',
+    secret: true,
+    schema: stringSchema,
+    modes: { development: { value: '' }, production: { value: '' } },
+  },
+  {
+    key: 'VITE_CLAW_POSTHOG_HOST',
+    section: 'claw',
+    description:
+      'Optional BrowserClaw bundle PostHog host; defaults to PostHog US Cloud.',
+    secret: false,
+    schema: stringSchema,
+    modes: {
+      development: {
+        value: 'https://us.i.posthog.com',
+        commented: true,
+      },
+      production: {
+        value: 'https://us.i.posthog.com',
+        commented: true,
+      },
+    },
+  },
+  {
     key: 'BROWSEROS_CONFIG_URL',
     section: 'server',
     description: 'BrowserOS server config URL required by production builds.',
@@ -313,6 +368,42 @@ export const ENV_REGISTRY: readonly EnvKeySpec[] = [
     secret: false,
     schema: stringSchema,
     modes: { production: { value: 'browseros' } },
+  },
+  {
+    key: 'ESIGNER_USERNAME',
+    section: 'sign',
+    description:
+      'BrowserOS build eSigner username for Windows production signing.',
+    secret: false,
+    schema: stringSchema,
+    modes: { production: { value: '' } },
+  },
+  {
+    key: 'ESIGNER_PASSWORD',
+    section: 'sign',
+    description:
+      'BrowserOS build eSigner password for Windows production signing.',
+    secret: true,
+    schema: stringSchema,
+    modes: { production: { value: '' } },
+  },
+  {
+    key: 'ESIGNER_TOTP_SECRET',
+    section: 'sign',
+    description:
+      'BrowserOS build eSigner TOTP secret for Windows production signing.',
+    secret: true,
+    schema: stringSchema,
+    modes: { production: { value: '' } },
+  },
+  {
+    key: 'ESIGNER_CREDENTIAL_ID',
+    section: 'sign',
+    description:
+      'BrowserOS build eSigner credential ID for Windows production signing.',
+    secret: false,
+    schema: stringSchema,
+    modes: { production: { value: '' } },
   },
 ]
 

@@ -161,6 +161,8 @@ jobs:
           ESIGNER_TOTP_SECRET: ${{ secrets.ESIGNER_TOTP_SECRET }}
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
           BROWSERCLAW_KEY: ${{ secrets.BROWSERCLAW_KEY }}
+          CLAW_POSTHOG_KEY: ${{ secrets.CLAW_POSTHOG_KEY }}
+          VITE_CLAW_POSTHOG_KEY: ${{ secrets.VITE_CLAW_POSTHOG_KEY }}
           BROWSEROS_REPO_PATH: ${{ vars.BROWSEROS_REPO_PATH }}
           BROWSEROS_CHROMIUM_SRC: ${{ vars.BROWSEROS_CHROMIUM_SRC }}
         run: |
@@ -201,8 +203,13 @@ jobs:
             require_value BROWSEROS_CHROMIUM_SRC
           fi
 
+          if [ "$INPUT_INCLUDE_SERVERS" = "true" ]; then
+            require_value CLAW_POSTHOG_KEY
+          fi
+
           if [ "$INPUT_EXTENSIONS" != "skip" ]; then
             require_value BROWSERCLAW_KEY
+            require_value VITE_CLAW_POSTHOG_KEY
           fi
 
           if [ "${#missing[@]}" -gt 0 ]; then
@@ -316,7 +323,7 @@ jobs:
       }}
     uses: ./.github/workflows/release-extensions.yml
     permissions:
-      contents: read
+      contents: write
     with:
       version: ${{ needs.preflight.outputs.extensions_version }}
       extension: browserclaw
