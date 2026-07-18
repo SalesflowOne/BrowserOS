@@ -256,6 +256,9 @@ export function createRecordingsRelay(
         return { kind: 'unknown-tab' }
       }
       batch.association = association
+      for (const queuedBatch of queues.get(tabId) ?? []) {
+        queuedBatch.association ??= association
+      }
       const response = await fetch(
         `${baseUrl}/api/v1/sessions/${encodeURIComponent(batch.association.sessionId)}/recording/events`,
         {

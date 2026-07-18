@@ -434,6 +434,65 @@ describe('createRecordingsRelay', () => {
     expect(recoveredTabs).toEqual([42])
   })
 
+  it('pins overlapping posts to the association resolved by the in-flight batch', async () => {
+    const recoveredTabs: number[] = []
+    const posted: Array<{ body: string; sessionId: string }> = []
+    let releaseFirstLookup: ((response: Response) => void) | undefined
+    let notifyFirstLookupStarted: () => void = () => {}
+    const firstLookupStarted = new Promise<void>((resolve) => {
+      notifyFirstLookupStarted = resolve
+    })
+    let currentAssociation = tab()
+    let lookupCount = 0
+    const relay = createRecordingsRelay({
+      resolveServerBaseUrl: async () => serverBaseUrl,
+      fetch: async (input, init) => {
+        const url = String(input)
+        if (url.endsWith('/tabs')) {
+          lookupCount++
+          if (lookupCount === 1) {
+            return new Promise<Response>((resolve) => {
+              releaseFirstLookup = resolve
+              notifyFirstLookupStarted()
+            })
+          }
+          return Response.json({ items: [currentAssociation] })
+        }
+        posted.push({
+          body: String(init?.body),
+          sessionId: url.split('/sessions/')[1]?.split('/')[0] ?? '',
+        })
+        return Response.json({ accepted: 1 })
+      },
+      warn: () => {},
+    })
+    relay.onTabRecoveredAfterLoss((tabId) => recoveredTabs.push(tabId))
+
+    const firstPost = relay.post(42, 'first-old-session-batch')
+    await firstLookupStarted
+    expect(releaseFirstLookup).toBeDefined()
+    const overlappingPost = relay.post(42, 'second-old-session-batch')
+    currentAssociation = tab({
+      sessionId: 'session-2',
+      pageId: 8,
+      targetId: 'target-8',
+    })
+    releaseFirstLookup?.(Response.json({ items: [tab()] }))
+    await Promise.all([firstPost, overlappingPost])
+
+    expect(posted).toEqual([
+      { body: 'first-old-session-batch', sessionId: 'session-1' },
+    ])
+    expect(recoveredTabs).toEqual([])
+
+    await relay.post(42, 'new-session-checkpoint')
+    expect(posted).toEqual([
+      { body: 'first-old-session-batch', sessionId: 'session-1' },
+      { body: 'new-session-checkpoint', sessionId: 'session-2' },
+    ])
+    expect(recoveredTabs).toEqual([42])
+  })
+
   it('warns again when a new outage begins after delivery recovered', async () => {
     const clock = createFakeClock()
     const warnings: unknown[][] = []
