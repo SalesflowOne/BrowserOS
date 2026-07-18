@@ -176,6 +176,7 @@ function mapDispatchToFrame(
     caption,
     url: row.url,
     pageId: row.pageId,
+    targetId: row.targetId,
     note,
     dispatchId: row.id,
   }
