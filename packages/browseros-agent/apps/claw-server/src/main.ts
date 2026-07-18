@@ -28,6 +28,7 @@ import { logger } from './lib/logger'
 import { migrateMcpConfigPaths } from './lib/migrate-mcp-config-paths'
 import { migrateMcpUrls } from './lib/migrate-mcp-urls'
 import { writeRuntimeFile } from './lib/runtime-file'
+import { initializeTabTargets, stopTabTargets } from './lib/tab-targets'
 import { setLocalServerUrl } from './local-server-url'
 import { createServer } from './server'
 import { captureEvent, shutdownAnalytics } from './services/analytics'
@@ -98,6 +99,7 @@ async function start(): Promise<void> {
   const bootstrap = await bootstrapBrowserosBrowser()
   if (bootstrap) {
     setBrowserSession(bootstrap.session)
+    await initializeTabTargets(bootstrap.session)
     logger.info('cockpit attached to browseros browser', {
       cdpPort: env.cdpPort,
     })
@@ -119,6 +121,7 @@ async function start(): Promise<void> {
       if (exiting) return
       exiting = true
       screencast.stop()
+      stopTabTargets()
       setTimeout(() => process.exit(1), 5_000).unref()
       // Drain queued analytics alongside the CDP disconnect so the
       // last session event is not stranded; the 5s kill switch above
