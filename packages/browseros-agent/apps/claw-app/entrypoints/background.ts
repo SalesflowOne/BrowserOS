@@ -6,7 +6,7 @@
 
 import { defineBackground } from 'wxt/utils/define-background'
 import { resolveBrowserOSServerBaseUrl } from '@/modules/api/browseros-ports'
-import { createRecordingsRelay, type RecorderMessage } from '@/modules/recorder'
+import { createRecordingsRelay } from '@/modules/recorder'
 
 /** Tags recorder batches with the sender tab and relays them to the local server. */
 export default defineBackground(() => {
@@ -15,7 +15,10 @@ export default defineBackground(() => {
   })
 
   chrome.runtime.onMessage.addListener((message, sender) => {
-    const recorderMessage = message as Partial<RecorderMessage>
+    const recorderMessage = message as {
+      type?: unknown
+      ndjson?: unknown
+    }
     const tabId = sender.tab?.id
     if (
       recorderMessage.type !== 'recorder-events' ||
