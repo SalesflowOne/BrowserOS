@@ -12,7 +12,7 @@ interface AuditReplaysRouteDeps {
 }
 
 /** Creates the attributed session replay and metadata read surface. */
-export function createAuditReplaysRoute(deps: AuditReplaysRouteDeps): Hono {
+export function createAuditReplaysRoute(deps: AuditReplaysRouteDeps) {
   return new Hono()
     .get('/audit/replays/:sessionId', async (c) => {
       const sessionId = c.req.param('sessionId')

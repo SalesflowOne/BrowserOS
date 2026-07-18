@@ -23,7 +23,7 @@ interface RecordingsRouteDeps {
 }
 
 /** Creates the record-everything health and tab ingest HTTP surface. */
-export function createRecordingsRoute(deps: RecordingsRouteDeps): Hono {
+export function createRecordingsRoute(deps: RecordingsRouteDeps) {
   return new Hono()
     .get('/recordings/health', (c) => c.json({ ok: true }))
     .post('/recordings/tabs/:tabId/events', async (c) => {

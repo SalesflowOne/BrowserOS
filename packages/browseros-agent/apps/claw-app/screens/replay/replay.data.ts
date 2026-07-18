@@ -20,9 +20,9 @@ import {
   useReplayEvents,
 } from '@/modules/api/replay.hooks'
 import {
-  buildReplayEventTabs,
+  buildReplayEventTargets,
   EMPTY_REPLAY_EVENTS,
-  type ReplayEventTabs,
+  type ReplayEventTargets,
 } from './replay-events'
 
 export interface ReplayData {
@@ -47,10 +47,10 @@ export interface ReplayData {
   /** Total seconds the session covers, from start to last dispatch. */
   totalSeconds: number
   frames: ReplayFrame[]
-  /** Distinct tabPageIds with rrweb events. */
-  tabPageIds: number[]
-  /** Filter helper: events scoped to one tabPageId. */
-  eventsForTab: (tabPageId: number) => readonly ReplayEvent[]
+  /** Stable target ids with rrweb events. */
+  targetIds: string[]
+  /** Filter helper: events scoped to one target. */
+  eventsForTarget: (targetId: string) => readonly ReplayEvent[]
 }
 
 // `buildTabView` and the `TabView` shape live in `./tab-view.ts` so
@@ -84,11 +84,11 @@ export function useReplayData(): UseReplayDataResult {
   })
 
   const events = eventsQuery.data?.events ?? EMPTY_REPLAY_EVENTS
-  const eventTabs = useMemo(() => buildReplayEventTabs(events), [events])
+  const eventTargets = useMemo(() => buildReplayEventTargets(events), [events])
   const replay = useMemo<ReplayData | null>(() => {
     if (!taskQuery.data) return null
-    return buildReplayData(taskQuery.data, eventTabs)
-  }, [taskQuery.data, eventTabs])
+    return buildReplayData(taskQuery.data, eventTargets)
+  }, [taskQuery.data, eventTargets])
 
   return {
     replay,
@@ -101,7 +101,7 @@ export function useReplayData(): UseReplayDataResult {
 /** Converts task rows into replay metadata while reusing event buckets. */
 function buildReplayData(
   task: TaskDetail,
-  eventTabs: ReplayEventTabs,
+  eventTargets: ReplayEventTargets,
 ): ReplayData {
   const sessionStartMs = task.startedAt
   const lastDispatchAt = task.dispatches.length
@@ -130,8 +130,8 @@ function buildReplayData(
     steps: String(task.dispatchCount),
     totalSeconds: totalMs / 1000,
     frames,
-    tabPageIds: eventTabs.tabPageIds,
-    eventsForTab: eventTabs.eventsForTab,
+    targetIds: eventTargets.targetIds,
+    eventsForTarget: eventTargets.eventsForTarget,
   }
 }
 
@@ -175,7 +175,7 @@ function mapDispatchToFrame(
     node,
     caption,
     url: row.url,
-    pageId: row.pageId,
+    targetId: row.targetId,
     note,
     dispatchId: row.id,
   }

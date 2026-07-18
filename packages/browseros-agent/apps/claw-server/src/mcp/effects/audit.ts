@@ -32,7 +32,13 @@ export const applyAudit: ToolEffect = ({
     return undefined
   }
 
-  const pageId = extractPageId(call.tool.name, call.args)
+  const resultPageId = (
+    result.structuredContent as { page?: number } | undefined
+  )?.page
+  const pageId =
+    call.flags.newPage && typeof resultPageId === 'number'
+      ? resultPageId
+      : extractPageId(call.tool.name, call.args)
   const live = pageId !== null ? call.session?.pages.getInfo(pageId) : null
   const page = live ?? call.pageSnapshot
   const dispatchId = recordToolDispatch({
@@ -55,19 +61,10 @@ export const applyAudit: ToolEffect = ({
   })
   if (dispatchId === null) return undefined
 
-  // `tabs new` is the one page-targeted tool whose page id is born in the
-  // result. Prefer it so screenshot fallback and first-capture use that tab.
-  const resultPageId = (
-    result.structuredContent as { page?: number } | undefined
-  )?.page
-  const screenshotPageId =
-    call.flags.newPage && typeof resultPageId === 'number'
-      ? resultPageId
-      : pageId
   persistScreenshot({
     dispatchId,
     toolName: call.tool.name,
-    pageId: screenshotPageId,
+    pageId,
     agentId: call.agent.agentId,
     result: {
       isError: result.isError ?? false,

@@ -21,9 +21,7 @@ import { usePlayback } from './use-playback'
 export function Replay() {
   const { replay, isLoading, navigate } = useReplayData()
   const location = useLocation()
-  const [selectedTabPageId, setSelectedTabPageId] = useState<number | null>(
-    null,
-  )
+  const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null)
   const playerHandleRef = useRef<ReplayPlayerHandle | null>(null)
   const playbackTimeRef = useRef(0)
   const playbackSpeedRef = useRef(1)
@@ -31,10 +29,10 @@ export function Replay() {
   const hasInitializedTabRef = useRef(false)
 
   useEffect(() => {
-    if (selectedTabPageId !== null) return
-    if (!replay || replay.tabPageIds.length === 0) return
-    setSelectedTabPageId(replay.tabPageIds[0])
-  }, [replay, selectedTabPageId])
+    if (selectedTargetId !== null) return
+    if (!replay || replay.targetIds.length === 0) return
+    setSelectedTargetId(replay.targetIds[0])
+  }, [replay, selectedTargetId])
 
   const perTabView = useMemo(
     () =>
@@ -42,13 +40,13 @@ export function Replay() {
         ? buildTabView(
             {
               frames: replay.frames,
-              eventsForTab: replay.eventsForTab,
+              eventsForTarget: replay.eventsForTarget,
               startedAtMs: replay.startedAtMs,
             },
-            selectedTabPageId,
+            selectedTargetId,
           )
         : EMPTY_TAB_VIEW,
-    [replay, selectedTabPageId],
+    [replay, selectedTargetId],
   )
 
   const playback = usePlayback(perTabView.totalSeconds)
@@ -68,7 +66,7 @@ export function Replay() {
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: tab changes are the only reset trigger; task-duration updates must not restart playback.
   useEffect(() => {
-    if (selectedTabPageId === null) return
+    if (selectedTargetId === null) return
     if (!hasInitializedTabRef.current) {
       hasInitializedTabRef.current = true
       playbackTimeRef.current = 0
@@ -78,7 +76,7 @@ export function Replay() {
     playbackTimeRef.current = seconds
     playbackIsPlayingRef.current = false
     playerHandleRef.current?.seek(0)
-  }, [selectedTabPageId])
+  }, [selectedTargetId])
 
   useEffect(() => {
     if (!playerHandleRef.current) return
@@ -204,14 +202,11 @@ export function Replay() {
 
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col gap-3 p-4">
-          {replay.tabPageIds.length > 1 && selectedTabPageId !== null && (
-            <Tabs
-              value={String(selectedTabPageId)}
-              onValueChange={(v) => setSelectedTabPageId(Number(v))}
-            >
+          {replay.targetIds.length > 1 && selectedTargetId !== null && (
+            <Tabs value={selectedTargetId} onValueChange={setSelectedTargetId}>
               <TabsList variant="line">
-                {replay.tabPageIds.map((id, idx) => (
-                  <TabsTrigger key={id} value={String(id)}>
+                {replay.targetIds.map((id, idx) => (
+                  <TabsTrigger key={id} value={id}>
                     Tab {idx + 1}
                   </TabsTrigger>
                 ))}

@@ -8,14 +8,14 @@
  * Two consumers, two hooks:
  *
  *   - `useReplayMetadata({ sessionId })` polls
- *     `GET /audit/replay/:sessionId/exists` (cheap) so the audit
+ *     `GET /audit/replays/:sessionId/meta` (cheap) so the audit
  *     task page can flip its "View Session Replay" CTA between
  *     enabled and "no replay yet". Refetches while the page is
  *     open so a live session unlocks the CTA without a hard
  *     refresh.
  *
  *   - `useReplayEvents({ sessionId })` fetches the full NDJSON
- *     stream from `GET /audit/replay/:sessionId` and parses each
+ *     stream from `GET /audit/replays/:sessionId` and parses each
  *     line into an rrweb event. Mounted only by the replay page;
  *     the cache is keyed on sessionId so swapping between two
  *     audit sessions does not re-fetch when both are still in
@@ -56,17 +56,16 @@ export interface ReplayFrame {
    * targeted a page. Populates the replay viewport's browser-chrome
    * address bar so the operator can see the exact URL the agent
    * was on at this instant. Null for tools that do not target a
-   * page (`run`, `windows`, `tab_groups`, `tabs new` before the
-   * result comes back).
+   * page (`run`, `windows`, `tab_groups`).
    */
   url?: string | null
   /**
-   * BrowserOS pageId this frame belongs to, or null when the tool
+   * Stable CDP target id this frame belongs to, or null when the tool
    * did not target a page. Enables per-tab filtering on the replay
    * screen so the address bar + caption reflect the selected tab
    * as the operator switches between them.
    */
-  pageId?: number | null
+  targetId?: string | null
   /** Optional badge shown on the timeline row ("Blocked", "Cancelled"). */
   note?: string
   /** Source dispatch id so the replay surface can deep-link. */
@@ -75,13 +74,14 @@ export interface ReplayFrame {
 
 /**
  * One rrweb event as parsed from the NDJSON stream. The on-disk line
- * carries `sessionId` (server-trusted) + `tabPageId` (recorder-supplied)
+ * carries server-trusted `sessionId`, `targetId`, and `tabId`
  * + the standard rrweb `{type, data, ts}`. The replay UI filters by
- * `tabPageId` to drive a single rrweb-player instance at a time.
+ * `targetId` to drive a single rrweb-player instance at a time.
  */
 export interface ReplayEvent {
   sessionId: string
-  tabPageId: number
+  targetId: string
+  tabId: number
   /** rrweb event type 0-5. */
   type: number
   data: unknown
@@ -90,13 +90,16 @@ export interface ReplayEvent {
 }
 
 export interface ReplayMetadata {
-  ok: boolean
-  hasData: boolean
+  exists: boolean
   sizeBytes: number
   firstEventAt?: number
   lastEventAt?: number
-  /** Distinct page ids that contributed events to this session. */
-  tabPageIds: number[]
+  targets: Array<{
+    targetId: string
+    tabId: number
+    firstEventAt: number
+    lastEventAt: number
+  }>
 }
 
 interface UseReplayMetadataVariables {
@@ -109,13 +112,13 @@ export const useReplayMetadata = createQuery<
 >({
   queryKey: ['replay', 'metadata'],
   fetcher: async ({ sessionId }) => {
-    const res = await api.audit.replay[':sessionId'].exists.$get({
+    const res = await api.audit.replays[':sessionId'].meta.$get({
       param: { sessionId },
     })
     return parseResponse<ReplayMetadata>(res)
   },
   // While a live session is still streaming events the metadata
-  // (sizeBytes, lastEventAt, tabPageIds) keeps changing. 10s is a
+  // (sizeBytes, lastEventAt, targets) keeps changing. 10s is a
   // cheap poll over loopback and is what flips the CTA from
   // disabled to enabled the first time data arrives.
   refetchInterval: 10_000,
@@ -127,8 +130,8 @@ interface UseReplayEventsVariables {
 
 export interface ReplayEventsBundle {
   events: ReplayEvent[]
-  /** All distinct tabPageIds in the stream, sorted ascending. */
-  tabPageIds: number[]
+  /** All distinct target ids in the stream. */
+  targetIds: string[]
 }
 
 export const useReplayEvents = createQuery<
@@ -137,19 +140,19 @@ export const useReplayEvents = createQuery<
 >({
   queryKey: ['replay', 'events'],
   fetcher: async ({ sessionId }) => {
-    const res = await api.audit.replay[':sessionId'].$get({
+    const res = await api.audit.replays[':sessionId'].$get({
       param: { sessionId },
     })
     if (!res.ok) {
       // 404 means no replay data; surface a clean empty bundle so
       // the UI can render its no-data state without an error boundary
       // catching the parseResponse throw.
-      if (res.status === 404) return { events: [], tabPageIds: [] }
+      if (res.status === 404) return { events: [], targetIds: [] }
       return parseResponse<ReplayEventsBundle>(res)
     }
     const text = await res.text()
     const events: ReplayEvent[] = []
-    const tabs = new Set<number>()
+    const targets = new Set<string>()
     for (const line of text.split('\n')) {
       if (line.length === 0) continue
       try {
@@ -157,10 +160,11 @@ export const useReplayEvents = createQuery<
         if (
           typeof ev.ts === 'number' &&
           typeof ev.type === 'number' &&
-          typeof ev.tabPageId === 'number'
+          typeof ev.targetId === 'string' &&
+          typeof ev.tabId === 'number'
         ) {
           events.push(ev)
-          tabs.add(ev.tabPageId)
+          targets.add(ev.targetId)
         }
       } catch {
         // Malformed line; the recorder shouldn't emit these, but if
@@ -170,7 +174,7 @@ export const useReplayEvents = createQuery<
     }
     return {
       events,
-      tabPageIds: [...tabs].sort((a, b) => a - b),
+      targetIds: [...targets],
     }
   },
   // Replay events are immutable once a session ends; for live
