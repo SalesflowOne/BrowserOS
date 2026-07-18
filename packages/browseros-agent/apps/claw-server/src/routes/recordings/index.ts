@@ -41,8 +41,15 @@ export function createRecordingsRoute(deps: RecordingsRouteDeps) {
 
       const events = parseEvents(body)
       if (events.length === 0) return c.json({ ok: true, accepted: 0 })
+      const batchId = c.req.raw.headers.get('x-recording-batch-id') ?? undefined
       try {
-        await deps.recordingStore.appendBatch(targetId, tabId, events)
+        const appended = await deps.recordingStore.appendBatch(
+          targetId,
+          tabId,
+          events,
+          batchId,
+        )
+        if (!appended) return c.json({ ok: true, accepted: 0 })
       } catch (error) {
         logger.warn('recording batch append failed', {
           tabId,
