@@ -31,17 +31,20 @@ describe('createRecorderBuffer', () => {
   it('flushes a partial batch when the timer fires', () => {
     const batches: string[] = []
     let timerCallback: (() => void) | undefined
+    let timerDelay: number | undefined
     const buffer = createRecorderBuffer({
       send: (ndjson) => batches.push(ndjson),
       queueMicrotask: (callback) => callback(),
-      setTimeout: (callback) => {
+      setTimeout: (callback, delay) => {
         timerCallback = callback
+        timerDelay = delay
         return 1
       },
     })
 
     buffer.emit(rrwebEvent(1))
     expect(batches).toEqual([])
+    expect(timerDelay).toBe(2_500)
 
     timerCallback?.()
     expect(batches).toHaveLength(1)
@@ -98,6 +101,37 @@ describe('installRecorderFlushListeners', () => {
     buffer.emit(rrwebEvent(1))
     pageListeners.get('pagehide')?.()
 
+    expect(batches).toHaveLength(1)
+  })
+
+  it('flushes only when visibility changes to hidden', () => {
+    const documentListeners = new Map<string, () => void>()
+    const batches: string[] = []
+    let visibilityState = 'visible'
+    const buffer = createRecorderBuffer({
+      send: (ndjson) => batches.push(ndjson),
+      queueMicrotask: (callback) => callback(),
+      setTimeout: () => 1,
+    })
+
+    installRecorderFlushListeners({
+      page: { addEventListener: () => {} },
+      document: {
+        get visibilityState() {
+          return visibilityState
+        },
+        addEventListener: (type, listener) =>
+          documentListeners.set(type, listener as () => void),
+      },
+      flush: buffer.flushNow,
+    })
+
+    buffer.emit(rrwebEvent(1))
+    documentListeners.get('visibilitychange')?.()
+    expect(batches).toEqual([])
+
+    visibilityState = 'hidden'
+    documentListeners.get('visibilitychange')?.()
     expect(batches).toHaveLength(1)
   })
 })

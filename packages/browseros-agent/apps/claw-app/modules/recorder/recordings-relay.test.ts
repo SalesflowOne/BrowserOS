@@ -61,6 +61,7 @@ describe('createRecordingsRelay', () => {
   it('re-probes on the next batch after a failed post', async () => {
     const requests: string[] = []
     const warnings: unknown[][] = []
+    let now = 0
     const relay = createRecordingsRelay({
       resolveServerBaseUrl: async () => serverBaseUrl,
       fetch: async (input) => {
@@ -70,7 +71,7 @@ describe('createRecordingsRelay', () => {
           ? Response.json({ ok: true })
           : new Response('{}', { status: 503 })
       },
-      now: () => 0,
+      now: () => now,
       warn: (...args) => warnings.push(args),
     })
 
@@ -84,5 +85,9 @@ describe('createRecordingsRelay', () => {
       `${serverBaseUrl}/recordings/tabs/7/events`,
     ])
     expect(warnings).toHaveLength(1)
+
+    now = 60_000
+    await relay.post(7, 'third')
+    expect(warnings).toHaveLength(2)
   })
 })
