@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import { Hono } from 'hono'
 import { createRecordingsRoute } from '../../../src/routes/recordings'
+import app from '../../../src/server'
 import type { RecordingEventInput } from '../../../src/services/recordings'
 
 function createFixture(targetId: string | null = 'target-a') {
@@ -83,5 +84,22 @@ describe('recordings routes', () => {
     })
 
     expect(response.status).toBe(413)
+  })
+
+  it('does not expose the legacy replay endpoints', async () => {
+    const responses = await Promise.all([
+      app.fetch(new Request('http://localhost/replay/tabs')),
+      app.fetch(new Request('http://localhost/audit/replay/session-a')),
+      app.fetch(new Request('http://localhost/audit/replay/session-a/exists')),
+      app.fetch(
+        new Request('http://localhost/audit/replay/session-a/events', {
+          method: 'POST',
+        }),
+      ),
+    ])
+
+    expect(responses.map((response) => response.status)).toEqual([
+      404, 404, 404, 404,
+    ])
   })
 })
