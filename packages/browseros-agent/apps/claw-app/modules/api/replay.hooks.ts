@@ -66,9 +66,9 @@ export interface ReplayEvent {
 export interface ReplayTargetMetadata {
   targetId: string
   tabId: number
-  /** First event in the attributed window, in Unix epoch milliseconds. */
+  /** Inclusive attributed-window lower bound, in Unix epoch milliseconds. */
   firstEventAt: number
-  /** Last event in the attributed window, in Unix epoch milliseconds. */
+  /** Inclusive attributed-window upper bound, in Unix epoch milliseconds. */
   lastEventAt: number
 }
 
