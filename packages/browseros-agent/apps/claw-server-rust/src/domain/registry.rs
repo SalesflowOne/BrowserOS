@@ -262,6 +262,16 @@ impl SessionRegistry {
     ) -> AppResult<()> {
         session.cancel_active_dispatches().await;
         session.cancel();
+        let claim_audit = self.audit.clone();
+        let claim_session_id = session.id().as_str().to_string();
+        tokio::spawn(async move {
+            if let Err(error) = claim_audit
+                .release_claims_for_session(&claim_session_id)
+                .await
+            {
+                warn!(session_id = claim_session_id, error = %error, "session claim release failed");
+            }
+        });
         let replay_result = self.replay.close_session(session.id().as_str()).await;
         let audit_result = self
             .audit
@@ -345,11 +355,13 @@ impl SessionRegistry {
 mod tests {
     use super::{RetainedGroupAction, SessionRegistry};
     use crate::{
+        db::audit::entities::prelude::TabClaims,
         domain::{
             AgentKey, AgentRef, ClientInfo, Session, SessionId, SessionIdentity, generate_fun_name,
         },
         services::{audit::AuditService, replay::ReplayService},
     };
+    use sea_orm::EntityTrait;
     use std::{
         sync::{
             Arc,
@@ -392,6 +404,51 @@ mod tests {
         let detail = audit.get_task("s1").await?;
         assert!(detail.is_none());
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn session_teardown_releases_every_open_target_claim() -> anyhow::Result<()> {
+        let dir = tempdir()?;
+        let audit = Arc::new(AuditService::open(dir.path().join("audit.sqlite")).await?);
+        let replay = Arc::new(ReplayService::new(
+            dir.path().join("replays"),
+            50,
+            Duration::from_secs(30),
+        ));
+        let registry = SessionRegistry::new(
+            audit.clone(),
+            replay,
+            Duration::from_secs(60),
+            Duration::from_secs(60),
+            Duration::from_secs(1),
+        );
+        let session = Session::new(
+            SessionId::new("claim-session"),
+            AgentRef::Ephemeral {
+                slug: "agent".to_string(),
+                label: "Agent".to_string(),
+            },
+            SessionIdentity::new("agent", "agile-alpaca".to_string()),
+            Instant::now(),
+        );
+        registry.insert_for_testing(session.clone()).await;
+        audit
+            .claim_target_for_session("target-a", session.id().as_str(), "agent", 1)
+            .await?;
+        audit
+            .claim_target_for_session("target-b", session.id().as_str(), "agent", 2)
+            .await?;
+
+        assert!(registry.remove(session.id(), "closed", None).await?);
+
+        for _ in 0..100 {
+            let claims = TabClaims::find().all(audit.connection()).await?;
+            if claims.iter().all(|claim| claim.released_at.is_some()) {
+                return Ok(());
+            }
+            tokio::task::yield_now().await;
+        }
+        anyhow::bail!("session teardown left claims open")
     }
 
     #[tokio::test]

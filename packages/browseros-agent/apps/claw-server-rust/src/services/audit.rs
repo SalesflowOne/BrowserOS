@@ -324,6 +324,64 @@ impl AuditService {
         Ok(result.rows_affected)
     }
 
+    /// Opens a claim window when a session begins driving a target.
+    pub async fn claim_target_for_session(
+        &self,
+        target_id: &str,
+        session_id: &str,
+        agent_id: &str,
+        claimed_at: i64,
+    ) -> AppResult<i64> {
+        let result = TabClaims::insert(tab_claims::ActiveModel {
+            id: NotSet,
+            target_id: Set(target_id.to_string()),
+            session_id: Set(session_id.to_string()),
+            agent_id: Set(agent_id.to_string()),
+            claimed_at: Set(claimed_at),
+            released_at: Set(None),
+        })
+        .exec(self.db.connection())
+        .await?;
+        Ok(result.last_insert_id)
+    }
+
+    /// Closes this session's open claim after it closes the target.
+    pub async fn release_target_for_session(
+        &self,
+        target_id: &str,
+        session_id: &str,
+    ) -> AppResult<u64> {
+        let result = TabClaims::update_many()
+            .col_expr(tab_claims::Column::ReleasedAt, Expr::value(now_epoch_ms()))
+            .filter(tab_claims::Column::TargetId.eq(target_id))
+            .filter(tab_claims::Column::SessionId.eq(session_id))
+            .filter(tab_claims::Column::ReleasedAt.is_null())
+            .exec(self.db.connection())
+            .await?;
+        Ok(result.rows_affected)
+    }
+
+    /// Closes every open claim when an MCP session ends.
+    pub async fn release_claims_for_session(&self, session_id: &str) -> AppResult<u64> {
+        let result = TabClaims::update_many()
+            .col_expr(tab_claims::Column::ReleasedAt, Expr::value(now_epoch_ms()))
+            .filter(tab_claims::Column::SessionId.eq(session_id))
+            .filter(tab_claims::Column::ReleasedAt.is_null())
+            .exec(self.db.connection())
+            .await?;
+        Ok(result.rows_affected)
+    }
+
+    /// Closes claims left open across an unclean server shutdown.
+    pub async fn release_all_open_claims(&self) -> AppResult<u64> {
+        let result = TabClaims::update_many()
+            .col_expr(tab_claims::Column::ReleasedAt, Expr::value(now_epoch_ms()))
+            .filter(tab_claims::Column::ReleasedAt.is_null())
+            .exec(self.db.connection())
+            .await?;
+        Ok(result.rows_affected)
+    }
+
     /// Lists dispatches using stable descending-id cursor pagination.
     pub async fn list_dispatches(
         &self,

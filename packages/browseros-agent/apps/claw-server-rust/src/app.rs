@@ -53,6 +53,7 @@ impl AppState {
         let store = JsonStore::new(config.browserclaw_dir.clone());
         let audit =
             Arc::new(AuditService::open(config.browserclaw_dir.join("audit.sqlite")).await?);
+        audit.release_all_open_claims().await?;
         let replay = Arc::new(ReplayService::new(
             config.browserclaw_dir.join("replays"),
             50,
