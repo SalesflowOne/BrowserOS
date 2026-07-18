@@ -237,15 +237,22 @@ pub(super) async fn append_events(
             "content-type must be application/x-ndjson",
         ));
     }
+    let tab_id = positive_recording_header(&request_id, &headers, "x-recording-tab-id")?;
+    let page_id = positive_recording_header(&request_id, &headers, "x-recording-page-id")?;
+    let target_id = recording_target_header(&request_id, &headers)?;
     let events = parse_recording_events(&body);
-    let Some(target) = state
-        .tab_activity
-        .snapshot()
-        .await
-        .into_iter()
-        .find(|tab| tab.session_id == session_id)
-    else {
-        return Ok(Json(AppendRecordingEventsResponse::new(0)));
+    let Some(target) = state.tab_activity.snapshot().await.into_iter().find(|tab| {
+        tab.session_id == session_id
+            && tab.tab_id == tab_id
+            && i64::from(tab.page_id) == page_id
+            && tab.target_id == target_id
+    }) else {
+        return Err(error(
+            &request_id,
+            StatusCode::CONFLICT,
+            "recording_association_changed",
+            "recording tab association changed",
+        ));
     };
     let batch_id = headers
         .get("x-recording-batch-id")
@@ -275,6 +282,46 @@ fn parse_recording_events(body: &str) -> Vec<RecordingEventInput> {
             })
         })
         .collect()
+}
+
+fn positive_recording_header(
+    request_id: &RequestId,
+    headers: &HeaderMap,
+    name: &str,
+) -> Result<i64, CanonicalError> {
+    let value = headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<i64>().ok())
+        .filter(|value| *value > 0)
+        .ok_or_else(|| {
+            error(
+                request_id,
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "recording tab, page, and target headers are required",
+            )
+        })?;
+    Ok(value)
+}
+
+fn recording_target_header(
+    request_id: &RequestId,
+    headers: &HeaderMap,
+) -> Result<String, CanonicalError> {
+    headers
+        .get("x-recording-target-id")
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| {
+            error(
+                request_id,
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "recording tab, page, and target headers are required",
+            )
+        })
 }
 
 async fn require_known_session(

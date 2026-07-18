@@ -96,7 +96,11 @@ import {
 
 export interface AppendRecordingEventsRequest {
     sessionId: string;
+    xRecordingTabId: number;
+    xRecordingPageId: number;
+    xRecordingTargetId: string;
     body: string;
+    xRecordingBatchId?: string;
 }
 
 export interface CancelSessionRequest {
@@ -162,6 +166,27 @@ export class DefaultApi extends runtime.BaseAPI {
             );
         }
 
+        if (requestParameters['xRecordingTabId'] == null) {
+            throw new runtime.RequiredError(
+                'xRecordingTabId',
+                'Required parameter "xRecordingTabId" was null or undefined when calling appendRecordingEvents().'
+            );
+        }
+
+        if (requestParameters['xRecordingPageId'] == null) {
+            throw new runtime.RequiredError(
+                'xRecordingPageId',
+                'Required parameter "xRecordingPageId" was null or undefined when calling appendRecordingEvents().'
+            );
+        }
+
+        if (requestParameters['xRecordingTargetId'] == null) {
+            throw new runtime.RequiredError(
+                'xRecordingTargetId',
+                'Required parameter "xRecordingTargetId" was null or undefined when calling appendRecordingEvents().'
+            );
+        }
+
         if (requestParameters['body'] == null) {
             throw new runtime.RequiredError(
                 'body',
@@ -174,6 +199,22 @@ export class DefaultApi extends runtime.BaseAPI {
         const headerParameters: runtime.HTTPHeaders = {};
 
         headerParameters['Content-Type'] = 'application/x-ndjson';
+
+        if (requestParameters['xRecordingTabId'] != null) {
+            headerParameters['X-Recording-Tab-Id'] = String(requestParameters['xRecordingTabId']);
+        }
+
+        if (requestParameters['xRecordingPageId'] != null) {
+            headerParameters['X-Recording-Page-Id'] = String(requestParameters['xRecordingPageId']);
+        }
+
+        if (requestParameters['xRecordingTargetId'] != null) {
+            headerParameters['X-Recording-Target-Id'] = String(requestParameters['xRecordingTargetId']);
+        }
+
+        if (requestParameters['xRecordingBatchId'] != null) {
+            headerParameters['X-Recording-Batch-Id'] = String(requestParameters['xRecordingBatchId']);
+        }
 
 
         let urlPath = `/api/v1/sessions/{sessionId}/recording/events`;

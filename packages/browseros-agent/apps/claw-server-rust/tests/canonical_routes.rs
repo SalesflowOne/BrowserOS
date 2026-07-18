@@ -58,12 +58,26 @@ async fn request(
     content_type: Option<&str>,
     body: impl Into<Body>,
 ) -> anyhow::Result<(StatusCode, HeaderMap, Vec<u8>)> {
+    request_with_headers(router, method, uri, content_type, &[], body).await
+}
+
+async fn request_with_headers(
+    router: &Router,
+    method: &str,
+    uri: &str,
+    content_type: Option<&str>,
+    headers: &[(&str, &str)],
+    body: impl Into<Body>,
+) -> anyhow::Result<(StatusCode, HeaderMap, Vec<u8>)> {
     let mut builder = Request::builder()
         .method(method)
         .uri(uri)
         .header(header::HOST, "localhost");
     if let Some(content_type) = content_type {
         builder = builder.header(header::CONTENT_TYPE, content_type);
+    }
+    for (name, value) in headers {
+        builder = builder.header(*name, *value);
     }
     let response = router.clone().oneshot(builder.body(body.into())?).await?;
     let status = response.status();
@@ -235,18 +249,91 @@ async fn canonical_sessions_cancel_and_recordings() -> anyhow::Result<()> {
         .audit
         .claim_target_for_session("target-7", "session-live", session.convo_id().as_str(), 0)
         .await?;
+    app.state
+        .tab_activity
+        .record_tool(RecordToolInput {
+            target_id: TargetId::from("target-8".to_string()),
+            tab_id: 102,
+            page_id: 8,
+            session_id: "session-live".to_string(),
+            url: "https://example.com".to_string(),
+            title: "Example".to_string(),
+            agent_id: session.convo_id().as_str().to_string(),
+            slug: "codex".to_string(),
+            tool_name: "snapshot".to_string(),
+        })
+        .await;
+    app.state
+        .audit
+        .claim_target_for_session("target-8", "session-live", session.convo_id().as_str(), 0)
+        .await?;
 
-    let events = "{\"tabPageId\":7,\"ts\":100}\n{\"tabPageId\":7,\"ts\":200}\n";
-    let (status, _, bytes) = request(
+    let events =
+        "{\"ts\":100,\"data\":{\"id\":\"seven-a\"}}\n{\"ts\":200,\"data\":{\"id\":\"seven-b\"}}\n";
+    let recording_headers = [
+        ("x-recording-tab-id", "101"),
+        ("x-recording-page-id", "7"),
+        ("x-recording-target-id", "target-7"),
+        ("x-recording-batch-id", "batch-7"),
+    ];
+    let (status, _, bytes) = request_with_headers(
         &app.router,
         "POST",
         "/api/v1/sessions/session-live/recording/events",
         Some("application/x-ndjson"),
+        &recording_headers,
         events,
     )
     .await?;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(json_body(&bytes)?, json!({ "accepted": 2 }));
+
+    let (status, _, bytes) = request_with_headers(
+        &app.router,
+        "POST",
+        "/api/v1/sessions/session-live/recording/events",
+        Some("application/x-ndjson"),
+        &recording_headers,
+        events,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json_body(&bytes)?, json!({ "accepted": 0 }));
+
+    let second_headers = [
+        ("x-recording-tab-id", "102"),
+        ("x-recording-page-id", "8"),
+        ("x-recording-target-id", "target-8"),
+        ("x-recording-batch-id", "batch-8"),
+    ];
+    let (status, _, bytes) = request_with_headers(
+        &app.router,
+        "POST",
+        "/api/v1/sessions/session-live/recording/events",
+        Some("application/x-ndjson"),
+        &second_headers,
+        "{\"ts\":150,\"data\":{\"id\":\"eight\"}}\n",
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json_body(&bytes)?, json!({ "accepted": 1 }));
+
+    let stale_headers = [
+        ("x-recording-tab-id", "102"),
+        ("x-recording-page-id", "8"),
+        ("x-recording-target-id", "target-7"),
+    ];
+    let (status, _, bytes) = request_with_headers(
+        &app.router,
+        "POST",
+        "/api/v1/sessions/session-live/recording/events",
+        Some("application/x-ndjson"),
+        &stale_headers,
+        "{\"ts\":175}\n",
+    )
+    .await?;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(json_body(&bytes)?["code"], "recording_association_changed");
 
     let (status, headers, bytes) = request(
         &app.router,
@@ -263,7 +350,12 @@ async fn canonical_sessions_cancel_and_recordings() -> anyhow::Result<()> {
             .and_then(|value| value.to_str().ok()),
         Some("application/x-ndjson")
     );
-    assert!(String::from_utf8(bytes)?.contains("session-live"));
+    let events = String::from_utf8(bytes)?;
+    assert_eq!(events.matches("session-live").count(), 3);
+    assert!(events.contains("\"targetId\":\"target-7\""));
+    assert!(events.contains("\"targetId\":\"target-8\""));
+    assert!(events.find("seven-a").unwrap() < events.find("eight").unwrap());
+    assert!(events.find("eight").unwrap() < events.find("seven-b").unwrap());
 
     assert!(
         app.state

@@ -17,6 +17,10 @@ post:
   operationId: appendRecordingEvents
   parameters:
     - $ref: ../parameters.yaml#/SessionId
+    - $ref: ../parameters.yaml#/RecordingTabId
+    - $ref: ../parameters.yaml#/RecordingPageId
+    - $ref: ../parameters.yaml#/RecordingTargetId
+    - $ref: ../parameters.yaml#/RecordingBatchId
   requestBody:
     required: true
     content:
@@ -34,6 +38,8 @@ post:
       $ref: ../responses.yaml#/BadRequest
     '404':
       $ref: ../responses.yaml#/NotFound
+    '409':
+      $ref: ../responses.yaml#/Conflict
     '410':
       $ref: ../responses.yaml#/Gone
     '500':

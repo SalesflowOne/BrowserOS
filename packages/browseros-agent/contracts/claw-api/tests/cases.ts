@@ -87,9 +87,19 @@ export const contractCases: ContractCase[] = [
     name: 'recording append and NDJSON download',
     async run({ api, baseUrl, liveSessionId }) {
       const body = '{"tabPageId":7,"ts":100}\n{"tabPageId":7,"ts":200}\n'
+      const request = {
+        sessionId: liveSessionId,
+        xRecordingTabId: 101,
+        xRecordingPageId: 7,
+        xRecordingTargetId: 'target-7',
+        xRecordingBatchId: 'contract-batch-1',
+        body,
+      }
+      expect(await api.appendRecordingEvents(request)).toEqual({ accepted: 2 })
+      expect(await api.appendRecordingEvents(request)).toEqual({ accepted: 0 })
       expect(
-        await api.appendRecordingEvents({ sessionId: liveSessionId, body }),
-      ).toEqual({ accepted: 2 })
+        await api.getRecording({ sessionId: liveSessionId }),
+      ).toMatchObject({ hasData: true, pageIds: [7] })
       const response = await fetch(
         `${baseUrl}/api/v1/sessions/${liveSessionId}/recording/events`,
       )
@@ -165,6 +175,9 @@ export const contractCases: ContractCase[] = [
         () =>
           api.appendRecordingEvents({
             sessionId: endedSessionId,
+            xRecordingTabId: 101,
+            xRecordingPageId: 7,
+            xRecordingTargetId: 'target-7',
             body: '{"ts":300}\n',
           }),
         410,

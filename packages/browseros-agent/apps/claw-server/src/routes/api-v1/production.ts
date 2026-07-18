@@ -15,7 +15,10 @@ import {
   type Tab,
 } from '@browseros/claw-api'
 import { identityService } from '../../lib/mcp-session'
-import { tabActivityRegistry } from '../../lib/tab-activity'
+import {
+  type TabActivityRecord,
+  tabActivityRegistry,
+} from '../../lib/tab-activity'
 import { getLocalServerUrl } from '../../local-server-url'
 import {
   getTelemetryState,
@@ -43,7 +46,7 @@ import {
 } from '../../services/tasks'
 import { VERSION } from '../../version'
 import { resolveAgentDisplay } from '../tabs/agent-display'
-import type { CanonicalApiDependencies } from '.'
+import type { CanonicalApiDependencies, RecordingAssociation } from '.'
 
 export const canonicalApiDependencies: CanonicalApiDependencies = {
   getSystemInfo: () => ({
@@ -116,15 +119,22 @@ export const canonicalApiDependencies: CanonicalApiDependencies = {
       ? ''
       : `${events.map((event) => JSON.stringify(event)).join('\n')}\n`
   },
-  async appendRecordingEvents(sessionId, ndjson) {
+  async appendRecordingEvents(sessionId, association, ndjson, batchId) {
     const events = parseRecordingEvents(ndjson)
+    const target = recordingTargetFor(
+      tabActivityRegistry.snapshot(),
+      sessionId,
+      association,
+    )
+    if (!target) return null
     if (events.length === 0) return { accepted: 0 }
-    const target = tabActivityRegistry
-      .snapshot()
-      .find((tab) => tab.sessionId === sessionId)
-    if (!target) return { accepted: 0 }
-    await recordingStore.appendBatch(target.targetId, target.tabId, events)
-    return { accepted: events.length }
+    const appended = await recordingStore.appendBatch(
+      target.targetId,
+      target.tabId,
+      events,
+      batchId,
+    )
+    return { accepted: appended ? events.length : 0 }
   },
   listTabs() {
     const identities = identityService.list()
@@ -186,6 +196,20 @@ export const canonicalApiDependencies: CanonicalApiDependencies = {
   async disconnectHarness(harness) {
     return connection(await disconnectBrowserosFromHarness(harness))
   },
+}
+
+export function recordingTargetFor(
+  tabs: TabActivityRecord[],
+  sessionId: string,
+  association: RecordingAssociation,
+): TabActivityRecord | undefined {
+  return tabs.find(
+    (tab) =>
+      tab.sessionId === sessionId &&
+      tab.tabId === association.tabId &&
+      tab.pageId === association.pageId &&
+      tab.targetId === association.targetId,
+  )
 }
 
 function knownSession(sessionId: string): boolean {

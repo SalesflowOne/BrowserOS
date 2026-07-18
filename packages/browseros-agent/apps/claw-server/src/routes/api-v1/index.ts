@@ -42,6 +42,12 @@ export interface CanonicalSessionQuery {
   limit?: number
 }
 
+export interface RecordingAssociation {
+  tabId: number
+  pageId: number
+  targetId: string
+}
+
 export interface CanonicalApiDependencies {
   getSystemInfo(): SystemInfo
   getTelemetry(): TelemetryState
@@ -54,8 +60,10 @@ export interface CanonicalApiDependencies {
   downloadRecordingEvents(sessionId: string): Promise<string | null>
   appendRecordingEvents(
     sessionId: string,
+    association: RecordingAssociation,
     ndjson: string,
-  ): Promise<AppendRecordingEventsResponse>
+    batchId?: string,
+  ): Promise<AppendRecordingEventsResponse | null>
   listTabs(): TabList
   getTabPreview(pageId: number): BinaryAsset | null
   getDispatchScreenshot(dispatchId: number): BinaryAsset | null
@@ -136,9 +144,32 @@ export function createCanonicalApiRoute(deps: CanonicalApiDependencies) {
         'content-type must be application/x-ndjson',
       )
     }
-    return c.json(
-      await deps.appendRecordingEvents(sessionId, await c.req.text()),
+    const tabId = positiveInteger(c.req.header('x-recording-tab-id') ?? '')
+    const pageId = positiveInteger(c.req.header('x-recording-page-id') ?? '')
+    const targetId = c.req.header('x-recording-target-id')
+    if (tabId === null || pageId === null || !targetId) {
+      return apiError(
+        c,
+        400,
+        'invalid_request',
+        'recording tab, page, and target headers are required',
+      )
+    }
+    const result = await deps.appendRecordingEvents(
+      sessionId,
+      { tabId, pageId, targetId },
+      await c.req.text(),
+      c.req.header('x-recording-batch-id'),
     )
+    if (!result) {
+      return apiError(
+        c,
+        409,
+        'recording_association_changed',
+        'recording tab association changed',
+      )
+    }
+    return c.json(result)
   })
 
   app.get('/api/v1/tabs', (c) => c.json(deps.listTabs()))

@@ -27,3 +27,33 @@ Harness:
   required: true
   schema:
     $ref: ./schemas/connections.yaml#/Harness
+RecordingTabId:
+  name: X-Recording-Tab-Id
+  in: header
+  required: true
+  schema:
+    type: integer
+    format: int64
+    minimum: 1
+RecordingPageId:
+  name: X-Recording-Page-Id
+  in: header
+  required: true
+  schema:
+    type: integer
+    format: int64
+    minimum: 1
+RecordingTargetId:
+  name: X-Recording-Target-Id
+  in: header
+  required: true
+  schema:
+    type: string
+    minLength: 1
+RecordingBatchId:
+  name: X-Recording-Batch-Id
+  in: header
+  required: false
+  schema:
+    type: string
+    minLength: 1

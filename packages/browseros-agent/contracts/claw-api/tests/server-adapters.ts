@@ -43,6 +43,7 @@ const endedSession = {
 export async function startTypeScriptServer(): Promise<ContractServer> {
   let telemetryConsent = true
   let recordingEvents = ''
+  const recordingBatchIds = new Set<string>()
   const connections = new Map<Harness, boolean>()
   const deps: CanonicalApiDependencies = {
     getSystemInfo: () => ({
@@ -99,8 +100,17 @@ export async function startTypeScriptServer(): Promise<ContractServer> {
         : null,
     downloadRecordingEvents: async (sessionId) =>
       sessionId === liveSession.sessionId ? recordingEvents : null,
-    async appendRecordingEvents(_sessionId, ndjson) {
+    async appendRecordingEvents(_sessionId, association, ndjson, batchId) {
+      if (
+        association.tabId !== 101 ||
+        association.pageId !== 7 ||
+        association.targetId !== 'target-7'
+      ) {
+        return null
+      }
+      if (batchId && recordingBatchIds.has(batchId)) return { accepted: 0 }
       recordingEvents += ndjson
+      if (batchId) recordingBatchIds.add(batchId)
       return {
         accepted: ndjson.split('\n').filter((line) => line.trim()).length,
       }

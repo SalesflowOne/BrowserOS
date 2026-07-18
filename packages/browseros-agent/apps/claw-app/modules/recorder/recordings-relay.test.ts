@@ -72,6 +72,9 @@ describe('createRecordingsRelay', () => {
       body: string
       batchId: string
       contentType: string
+      tabId: string
+      pageId: string
+      targetId: string
       succeeded: boolean
     }> = []
     let serverUp = false
@@ -87,6 +90,9 @@ describe('createRecordingsRelay', () => {
           body: String(init?.body),
           batchId: requestHeader(init, 'X-Recording-Batch-Id'),
           contentType: requestHeader(init, 'content-type'),
+          tabId: requestHeader(init, 'X-Recording-Tab-Id'),
+          pageId: requestHeader(init, 'X-Recording-Page-Id'),
+          targetId: requestHeader(init, 'X-Recording-Target-Id'),
           succeeded: serverUp,
         })
         if (!serverUp) throw new TypeError('connection refused')
@@ -110,6 +116,12 @@ describe('createRecordingsRelay', () => {
     expect(
       attempts.every(
         ({ contentType }) => contentType === 'application/x-ndjson',
+      ),
+    ).toBe(true)
+    expect(
+      attempts.every(
+        ({ tabId, pageId, targetId }) =>
+          tabId === '42' && pageId === '7' && targetId === 'target-7',
       ),
     ).toBe(true)
     expect(attempts.every(({ body }) => body === 'first')).toBe(true)
@@ -281,7 +293,12 @@ describe('createRecordingsRelay', () => {
   })
 
   it('maps exact tab identity and resnapshots when its association changes', async () => {
-    const posts: string[] = []
+    const posts: Array<{
+      url: string
+      tabId: string
+      pageId: string
+      targetId: string
+    }> = []
     const recoveredTabs: number[] = []
     const associations = [
       tab(),
@@ -306,7 +323,12 @@ describe('createRecordingsRelay', () => {
             ],
           })
         }
-        posts.push(url)
+        posts.push({
+          url,
+          tabId: requestHeader(init, 'X-Recording-Tab-Id'),
+          pageId: requestHeader(init, 'X-Recording-Page-Id'),
+          targetId: requestHeader(init, 'X-Recording-Target-Id'),
+        })
         expect(init?.body).toBe(`batch-${listIndex}`)
         return Response.json({ accepted: 1 })
       },
@@ -318,11 +340,49 @@ describe('createRecordingsRelay', () => {
     await relay.post(42, 'batch-3')
 
     expect(posts).toEqual([
-      `${serverBaseUrl}/api/v1/sessions/session-1/recording/events`,
-      `${serverBaseUrl}/api/v1/sessions/session-2/recording/events`,
-      `${serverBaseUrl}/api/v1/sessions/session-3/recording/events`,
+      {
+        url: `${serverBaseUrl}/api/v1/sessions/session-1/recording/events`,
+        tabId: '42',
+        pageId: '7',
+        targetId: 'target-7',
+      },
+      {
+        url: `${serverBaseUrl}/api/v1/sessions/session-2/recording/events`,
+        tabId: '42',
+        pageId: '8',
+        targetId: 'target-7',
+      },
+      {
+        url: `${serverBaseUrl}/api/v1/sessions/session-3/recording/events`,
+        tabId: '42',
+        pageId: '9',
+        targetId: 'target-9',
+      },
     ])
     expect(recoveredTabs).toEqual([42, 42])
+  })
+
+  it('treats a server-side association race as a gap and heals after rediscovery', async () => {
+    const recoveredTabs: number[] = []
+    let associationChanged = true
+    const relay = createRecordingsRelay({
+      resolveServerBaseUrl: async () => serverBaseUrl,
+      fetch: async (input) => {
+        const url = String(input)
+        if (url.endsWith('/tabs')) return Response.json({ items: [tab()] })
+        if (associationChanged) return new Response('{}', { status: 409 })
+        return Response.json({ accepted: 1 })
+      },
+      warn: () => {},
+    })
+    relay.onTabRecoveredAfterLoss((tabId) => recoveredTabs.push(tabId))
+
+    await relay.post(42, 'stale-association')
+    expect(recoveredTabs).toEqual([])
+
+    associationChanged = false
+    await relay.post(42, 'fresh-association')
+    expect(recoveredTabs).toEqual([42])
   })
 
   it('warns again when a new outage begins after delivery recovered', async () => {

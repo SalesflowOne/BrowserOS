@@ -25,6 +25,7 @@ import {
   type CanonicalApiDependencies,
   createCanonicalApiRoute,
 } from '../../src/routes/api-v1'
+import { recordingTargetFor } from '../../src/routes/api-v1/production'
 import { createServer } from '../../src/server'
 import { recordToolDispatch } from '../../src/services/audit-log'
 
@@ -240,13 +241,46 @@ describe('canonical TypeScript API', () => {
       '/api/v1/sessions/session-live/recording/events',
       {
         method: 'POST',
-        headers: { 'content-type': 'application/x-ndjson' },
+        headers: {
+          'content-type': 'application/x-ndjson',
+          'x-recording-tab-id': '101',
+          'x-recording-page-id': '7',
+          'x-recording-target-id': 'target-7',
+          'x-recording-batch-id': 'batch-1',
+        },
         body: '{"ts":1}\n{"ts":2}\n',
       },
     )
     expect(upload.status).toBe(200)
     expect(await upload.json()).toEqual({ accepted: 2 })
-    expect(append).toHaveBeenCalledWith('session-live', '{"ts":1}\n{"ts":2}\n')
+    expect(append).toHaveBeenCalledWith(
+      'session-live',
+      { tabId: 101, pageId: 7, targetId: 'target-7' },
+      '{"ts":1}\n{"ts":2}\n',
+      'batch-1',
+    )
+
+    const changed = createCanonicalApiRoute(
+      dependencies({ appendRecordingEvents: async () => null }),
+    )
+    const changedResponse = await request(
+      changed,
+      '/api/v1/sessions/session-live/recording/events',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/x-ndjson',
+          'x-recording-tab-id': '101',
+          'x-recording-page-id': '7',
+          'x-recording-target-id': 'stale-target',
+        },
+        body: '{"ts":1}\n',
+      },
+    )
+    expect(changedResponse.status).toBe(409)
+    expect(await changedResponse.json()).toMatchObject({
+      code: 'recording_association_changed',
+    })
 
     const ended = createCanonicalApiRoute(
       dependencies({ getSessionState: () => 'ended' }),
@@ -258,6 +292,48 @@ describe('canonical TypeScript API', () => {
     )
     expect(rejected.status).toBe(410)
     expect(await rejected.json()).toMatchObject({ code: 'session_ended' })
+  })
+
+  it('selects the exact recording association in a multi-tab session', () => {
+    const first = {
+      targetId: 'target-7',
+      tabId: 101,
+      pageId: 7,
+      sessionId: 'session-live',
+      agentId: 'codex-one',
+      slug: 'codex',
+      url: 'https://one.example',
+      title: 'One',
+      firstToolAt: 1,
+      lastToolAt: 2,
+      lastToolName: 'snapshot',
+      toolCount: 1,
+      recentTools: [],
+      status: 'active' as const,
+    }
+    const second = {
+      ...first,
+      targetId: 'target-8',
+      tabId: 102,
+      pageId: 8,
+      url: 'https://two.example',
+      title: 'Two',
+    }
+
+    expect(
+      recordingTargetFor([first, second], 'session-live', {
+        tabId: 102,
+        pageId: 8,
+        targetId: 'target-8',
+      }),
+    ).toBe(second)
+    expect(
+      recordingTargetFor([first, second], 'session-live', {
+        tabId: 102,
+        pageId: 8,
+        targetId: 'target-7',
+      }),
+    ).toBeUndefined()
   })
 
   it('serves binary artifacts without embedding preview bytes in tab JSON', async () => {

@@ -253,6 +253,9 @@ export function createRecordingsRelay(
           headers: {
             'content-type': 'application/x-ndjson',
             'X-Recording-Batch-Id': batch.batchId,
+            'X-Recording-Tab-Id': tabId.toString(),
+            'X-Recording-Page-Id': association.pageId.toString(),
+            'X-Recording-Target-Id': association.targetId,
           },
           body: batch.ndjson,
           credentials: 'omit',

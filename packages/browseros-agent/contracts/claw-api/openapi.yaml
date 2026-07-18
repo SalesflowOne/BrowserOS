@@ -44,6 +44,14 @@ components:
       $ref: ./parameters.yaml#/DispatchId
     Harness:
       $ref: ./parameters.yaml#/Harness
+    RecordingTabId:
+      $ref: ./parameters.yaml#/RecordingTabId
+    RecordingPageId:
+      $ref: ./parameters.yaml#/RecordingPageId
+    RecordingTargetId:
+      $ref: ./parameters.yaml#/RecordingTargetId
+    RecordingBatchId:
+      $ref: ./parameters.yaml#/RecordingBatchId
   responses:
     BadRequest:
       $ref: ./responses.yaml#/BadRequest
