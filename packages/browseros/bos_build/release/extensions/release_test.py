@@ -203,7 +203,7 @@ class ExecuteTest(unittest.TestCase):
             self.tracker.attach_mock(mock, name)
 
         read_text_patcher = patch(f"{MODULE}.Path.read_text", return_value="{}")
-        read_text_patcher.start()
+        self.read_text = read_text_patcher.start()
         self.addCleanup(read_text_patcher.stop)
 
         env_patcher = patch.dict("os.environ", ALL_KEYS)
@@ -221,6 +221,8 @@ class ExecuteTest(unittest.TestCase):
 
     def test_agent_flow_order_and_arguments(self):
         self._module(("agent",)).execute(_ctx())
+
+        self.read_text.assert_called_once_with(encoding="utf-8")
 
         called = [c[0] for c in self.tracker.mock_calls]
         self.assertEqual(

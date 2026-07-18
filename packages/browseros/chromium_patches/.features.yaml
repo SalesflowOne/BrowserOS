@@ -316,8 +316,6 @@ features:
       - chrome/browser/ui/toolbar/BUILD.gn
       - chrome/browser/ui/toolbar/toolbar_actions_model.cc
       - chrome/browser/ui/views/side_panel/extensions/extension_side_panel_manager.cc
-      - chrome/browser/ui/side_panel/side_panel_action_callback.cc
-      - chrome/browser/ui/side_panel/side_panel_action_callback.h
 
   flags:
     description: "feat: browser flags"

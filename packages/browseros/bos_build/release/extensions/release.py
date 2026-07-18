@@ -165,7 +165,9 @@ class ExtensionReleaseModule(Step):
             run_command(spec.build, source_root)
 
             dist_path = source_root / spec.dist_path
-            manifest = json.loads((dist_path / "manifest.json").read_text())
+            manifest = json.loads(
+                (dist_path / "manifest.json").read_text(encoding="utf-8")
+            )
             _validate_manifest_update_url(spec, manifest, dist_path)
             crx_path = pack_crx(
                 dist_path,
