@@ -66,9 +66,9 @@ export interface ReplayEvent {
 export interface ReplayTargetMetadata {
   targetId: string
   tabId: number
-  /** Inclusive attributed-window lower bound, in Unix epoch milliseconds. */
+  /** Earliest claim start clamped to catalog bounds, in Unix epoch milliseconds. */
   firstEventAt: number
-  /** Inclusive attributed-window upper bound, in Unix epoch milliseconds. */
+  /** Latest claim end clamped to catalog bounds; event reads may include a release tail. */
   lastEventAt: number
 }
 
