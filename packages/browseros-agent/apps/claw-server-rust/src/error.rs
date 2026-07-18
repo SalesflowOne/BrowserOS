@@ -28,8 +28,6 @@ pub enum AppError {
     #[error(transparent)]
     Json(#[from] serde_json::Error),
     #[error(transparent)]
-    Sql(#[from] rusqlite::Error),
-    #[error(transparent)]
     Db(#[from] sea_orm::DbErr),
     #[error(transparent)]
     Join(#[from] tokio::task::JoinError),
@@ -99,7 +97,7 @@ impl AppError {
                 StatusCode::BAD_REQUEST
             }
             Self::StorageNotFound(_) => StatusCode::NOT_FOUND,
-            Self::Io { .. } | Self::Sql(_) | Self::Db(_) | Self::Join(_) | Self::Internal(_) => {
+            Self::Io { .. } | Self::Db(_) | Self::Join(_) | Self::Internal(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
         }
