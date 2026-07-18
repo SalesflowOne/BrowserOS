@@ -24,7 +24,6 @@ pub struct Session {
     first_captures: RwLock<BTreeSet<PageId>>,
     active_dispatches: Mutex<BTreeMap<DispatchId, CancellationToken>>,
     cancel: CancellationToken,
-    replay_handle: Mutex<Option<String>>,
     last_activity: Mutex<Instant>,
 }
 
@@ -43,7 +42,6 @@ impl Session {
             first_captures: RwLock::new(BTreeSet::new()),
             active_dispatches: Mutex::new(BTreeMap::new()),
             cancel: CancellationToken::new(),
-            replay_handle: Mutex::new(None),
             last_activity: Mutex::new(now),
         })
     }
@@ -98,10 +96,6 @@ impl Session {
 
     pub async fn forget_first_capture(&self, page_id: &PageId) {
         self.first_captures.write().await.remove(page_id);
-    }
-
-    pub async fn set_replay_handle(&self, value: Option<String>) {
-        *self.replay_handle.lock().await = value;
     }
 
     pub fn cancel(&self) {

@@ -69,7 +69,10 @@ export function Replay() {
     [selectedTargetId, tabViewInput],
   )
 
-  const playback = usePlayback(perTabView.totalSeconds)
+  const playbackTotalSeconds = perTabView.hasFullSnapshot
+    ? perTabView.totalSeconds
+    : 0
+  const playback = usePlayback(playbackTotalSeconds)
 
   useEffect(() => {
     playbackTimeRef.current = playback.time
@@ -94,7 +97,7 @@ export function Replay() {
   }, [playback.isPlaying])
 
   useEffect(() => {
-    if (!playback.isPlaying || perTabView.totalSeconds === 0) return
+    if (!playback.isPlaying || playbackTotalSeconds === 0) return
     let rafId = 0
     let active = true
     const sync = () => {
@@ -110,7 +113,7 @@ export function Replay() {
       active = false
       window.cancelAnimationFrame(rafId)
     }
-  }, [playback.isPlaying, playback.syncFromPlayer, perTabView.totalSeconds])
+  }, [playback.isPlaying, playback.syncFromPlayer, playbackTotalSeconds])
 
   const seekTo = useCallback(
     (seconds: number) => {
@@ -266,18 +269,35 @@ export function Replay() {
               </TabsList>
             </Tabs>
           )}
-          <ReplayViewport
-            site={replay.site}
-            frame={currentTabFrame}
-            events={perTabView.events}
-            onPlayerReady={onPlayerReady}
-          />
-          <PlaybackTransport
-            playback={playback}
-            totalSeconds={perTabView.totalSeconds}
-            frames={perTabView.frames}
-            onSeek={seekTo}
-          />
+          {perTabView.incompleteUntilMs !== null && (
+            <div
+              role="status"
+              className="rounded-lg border border-amber/30 bg-amber-tint px-3 py-2 font-medium text-ink-2 text-xs"
+            >
+              Recording incomplete — playback starts at{' '}
+              {formatIncompleteOffset(perTabView.incompleteUntilMs)}
+            </div>
+          )}
+          {perTabView.hasFullSnapshot ? (
+            <>
+              <ReplayViewport
+                site={replay.site}
+                frame={currentTabFrame}
+                events={perTabView.events}
+                onPlayerReady={onPlayerReady}
+              />
+              <PlaybackTransport
+                playback={playback}
+                totalSeconds={perTabView.totalSeconds}
+                frames={perTabView.frames}
+                onSeek={seekTo}
+              />
+            </>
+          ) : (
+            <div className="flex flex-1 items-center justify-center rounded-2xl border border-border-2 bg-card text-ink-3 text-sm shadow-sm">
+              No visual recording for this tab
+            </div>
+          )}
         </div>
         <EventTimeline
           frames={replay.frames}
@@ -287,4 +307,11 @@ export function Replay() {
       </div>
     </div>
   )
+}
+
+function formatIncompleteOffset(milliseconds: number): string {
+  const totalSeconds = Math.floor(milliseconds / 1000)
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
