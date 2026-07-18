@@ -12,6 +12,8 @@ import {
 import { resolveMigrationsFolder } from '../../../src/modules/db/migrator'
 import { agentSessionEnds } from '../../../src/modules/db/schema/agent-session-ends.sql'
 import { agentSessionStarts } from '../../../src/modules/db/schema/agent-session-starts.sql'
+import { tabClaims } from '../../../src/modules/db/schema/tab-claims.sql'
+import { tabRecordings } from '../../../src/modules/db/schema/tab-recordings.sql'
 import { toolDispatches } from '../../../src/modules/db/schema/tool-dispatches.sql'
 
 describe('audit DB (in-memory test seam)', () => {
@@ -29,6 +31,13 @@ describe('audit DB (in-memory test seam)', () => {
     const db = getAuditDb()
     const rows = db.select().from(toolDispatches).all()
     expect(rows).toEqual([])
+  })
+
+  it('migrates the recording catalog and claim ledger tables', () => {
+    const db = getAuditDb()
+
+    expect(db.select().from(tabRecordings).all()).toEqual([])
+    expect(db.select().from(tabClaims).all()).toEqual([])
   })
 
   it('populates createdAt with an epoch-ms default within a few seconds of now', () => {
