@@ -10,16 +10,14 @@ export type Fetcher = (
 ) => ReturnType<typeof globalThis.fetch>
 
 type TimerHandle = ReturnType<typeof globalThis.setTimeout>
-type SetTimer = (callback: () => void, delayMs: number) => TimerHandle
-type ClearTimer = (handle: TimerHandle) => void
 
 export interface RecordingsRelayOptions {
   resolveServerBaseUrl: () => Promise<string>
   fetch?: Fetcher
   now?: () => number
   warn?: (...args: unknown[]) => void
-  setTimeout?: SetTimer
-  clearTimeout?: ClearTimer
+  setTimeout?: (callback: () => void, delayMs: number) => TimerHandle
+  clearTimeout?: (handle: TimerHandle) => void
 }
 
 export interface RecordingsRelay {
@@ -207,6 +205,11 @@ export function createRecordingsRelay(
     }
   }
 
+  function markDeliverySuccess(tabId: number): void {
+    lastWarningAt.delete('transient-send')
+    notifyRecovered(tabId)
+  }
+
   async function sendBatch(
     tabId: number,
     batch: QueuedBatch,
@@ -301,7 +304,7 @@ export function createRecordingsRelay(
           if (outcome.kind === 'unknown-tab') {
             gappedTabs.add(tabId)
           } else {
-            notifyRecovered(tabId)
+            markDeliverySuccess(tabId)
           }
         }
       }
@@ -345,7 +348,7 @@ export function createRecordingsRelay(
       if (outcome.kind === 'unknown-tab') {
         gappedTabs.add(tabId)
       } else {
-        notifyRecovered(tabId)
+        markDeliverySuccess(tabId)
       }
 
       if ((queues.get(tabId)?.length ?? 0) > 0) await drainQueues()

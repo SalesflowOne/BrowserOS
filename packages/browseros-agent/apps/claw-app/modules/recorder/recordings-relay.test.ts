@@ -188,4 +188,33 @@ describe('createRecordingsRelay', () => {
     expect(bodies).toEqual(['terminal', 'next'])
     expect(recoveredTabs).toEqual([7])
   })
+
+  it('warns again when a new outage begins after delivery recovered', async () => {
+    const clock = createFakeClock()
+    const warnings: unknown[][] = []
+    let serverUp = false
+    const relay = createRecordingsRelay({
+      resolveServerBaseUrl: async () => serverBaseUrl,
+      fetch: async () => {
+        if (!serverUp) throw new TypeError('connection refused')
+        return Response.json({ ok: true, accepted: 1 })
+      },
+      now: clock.now,
+      setTimeout: clock.setTimeout,
+      clearTimeout: clock.clearTimeout,
+      warn: (...args) => warnings.push(args),
+    })
+
+    await relay.post(3, 'first-outage')
+    serverUp = true
+    await clock.advanceBy(5_000)
+    serverUp = false
+    await relay.post(3, 'second-outage')
+
+    expect(
+      warnings.filter(
+        ([message]) => message === '[browseros-claw replay] events POST failed',
+      ),
+    ).toHaveLength(2)
+  })
 })
