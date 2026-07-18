@@ -1,6 +1,6 @@
 use crate::{
     AppState,
-    domain::{AgentRef, ClientInfo, Session, SessionId},
+    domain::{ClientIdentity, ClientInfo, ProfileView, Session, SessionId},
     mcp::{
         dispatch::{ToolCall, ToolIdentity, dispatch_tool_call, linked_cancel_token},
         effects::tab_groups::apply_agent_tab_group_title,
@@ -157,7 +157,8 @@ impl ClawMcpService {
             let profiles = self.state.agents.list_profiles().await.map_err(|error| {
                 McpError::internal_error(format!("agent profile lookup failed: {error}"), None)
             })?;
-            let agent = AgentRef::resolve(&client, &profiles);
+            let profiles = profiles.iter().map(ProfileView::from).collect::<Vec<_>>();
+            let agent = ClientIdentity::resolve(&client, &profiles);
             let session = self
                 .state
                 .sessions

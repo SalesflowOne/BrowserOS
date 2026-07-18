@@ -7,7 +7,7 @@ use browseros_core::TargetId;
 use claw_server_rust::{
     AppState, build_router,
     config::Config,
-    domain::{AgentRef, ProfileId, Session, SessionId, SessionIdentity, TabGroupColor},
+    domain::{ClientIdentity, ConversationIdentity, ProfileId, Session, SessionId, TabGroupColor},
     services::tab_activity::RecordToolInput,
 };
 use futures_util::{SinkExt, StreamExt};
@@ -1111,12 +1111,12 @@ async fn tabs_activity_enriches_through_live_session_profile_identity() -> anyho
 
     let stored_session = Session::new(
         SessionId::new("stored-session"),
-        AgentRef::Profile {
+        ClientIdentity::Profile {
             profile_id: ProfileId::new("stored-agent"),
             slug: "mcp".to_string(),
             label: "Stored Agent".to_string(),
         },
-        SessionIdentity::new("mcp", "agile-alpaca".to_string()),
+        ConversationIdentity::new("mcp", "agile-alpaca".to_string()),
         tokio::time::Instant::now(),
     );
     let ephemeral_session =
@@ -1283,11 +1283,11 @@ fn test_session(session_id: SessionId, agent_id: &str, slug: &str) -> Arc<Sessio
         .to_string();
     Session::new(
         session_id,
-        AgentRef::Ephemeral {
+        ClientIdentity::Ephemeral {
             slug: slug.to_string(),
             label: slug.to_string(),
         },
-        claw_server_rust::domain::SessionIdentity::new(slug, generated_label),
+        claw_server_rust::domain::ConversationIdentity::new(slug, generated_label),
         tokio::time::Instant::now(),
     )
 }

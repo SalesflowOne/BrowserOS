@@ -166,11 +166,11 @@ mod tests {
         let identity = call.identity.as_ref().unwrap_or_else(|| unreachable!());
         let other_session = crate::domain::Session::new(
             crate::domain::SessionId::new("s2"),
-            crate::domain::AgentRef::Ephemeral {
+            crate::domain::ClientIdentity::Ephemeral {
                 slug: "other".to_string(),
                 label: "Cowork".to_string(),
             },
-            crate::domain::SessionIdentity::new("other", "bright-beaver".to_string()),
+            crate::domain::ConversationIdentity::new("other", "bright-beaver".to_string()),
             tokio::time::Instant::now(),
         );
         call.state

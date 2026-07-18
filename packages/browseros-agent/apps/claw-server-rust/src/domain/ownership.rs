@@ -1,31 +1,9 @@
-use crate::domain::TabGroupColor;
+use crate::{domain::TabGroupColor, ids::ConvoId};
 use browseros_core::PageId;
-use std::{
-    collections::{BTreeSet, HashMap},
-    fmt,
-};
+use std::collections::{BTreeSet, HashMap};
 use tokio::sync::RwLock;
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct AgentKey(String);
-
-impl AgentKey {
-    #[must_use]
-    pub fn new(value: impl Into<String>) -> Self {
-        Self(value.into())
-    }
-
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Display for AgentKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
+pub type AgentKey = ConvoId;
 
 #[derive(Debug, Default)]
 pub struct AgentPageOwnership {

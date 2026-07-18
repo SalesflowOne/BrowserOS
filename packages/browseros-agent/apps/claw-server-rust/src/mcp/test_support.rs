@@ -1,7 +1,7 @@
 use crate::{
     AppState,
     config::Config,
-    domain::{AgentRef, Session, SessionId, SessionIdentity},
+    domain::{ClientIdentity, ConversationIdentity, Session, SessionId},
     mcp::dispatch::{ToolCall, ToolIdentity, linked_cancel_token},
 };
 use serde_json::Value;
@@ -37,11 +37,11 @@ pub async fn tool_call_with_fallback(
     let state = AppState::new_with_home(config, None, home).await?;
     let session = Session::new(
         SessionId::new("s1"),
-        AgentRef::Ephemeral {
+        ClientIdentity::Ephemeral {
             slug: "codex".to_string(),
             label: "Codex".to_string(),
         },
-        SessionIdentity::new("codex", "agile-alpaca".to_string()),
+        ConversationIdentity::new("codex", "agile-alpaca".to_string()),
         tokio::time::Instant::now(),
     );
     state.sessions.insert_for_testing(session.clone()).await;

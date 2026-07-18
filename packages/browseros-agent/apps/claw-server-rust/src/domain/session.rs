@@ -1,4 +1,4 @@
-use crate::domain::{AgentKey, AgentRef, ConvoId, DispatchId, SessionId, SessionIdentity};
+use crate::domain::{ClientIdentity, ConversationIdentity, ConvoId, DispatchId, SessionId};
 use browseros_core::PageId;
 use serde::Serialize;
 use std::{
@@ -114,8 +114,8 @@ fn fnv1a(input: &str) -> u32 {
 
 pub struct Session {
     id: SessionId,
-    agent: AgentRef,
-    identity: SessionIdentity,
+    agent: ClientIdentity,
+    identity: ConversationIdentity,
     first_captures: RwLock<BTreeSet<PageId>>,
     active_dispatches: Mutex<BTreeMap<DispatchId, CancellationToken>>,
     cancel: CancellationToken,
@@ -127,8 +127,8 @@ impl Session {
     #[must_use]
     pub fn new(
         id: SessionId,
-        agent: AgentRef,
-        identity: SessionIdentity,
+        agent: ClientIdentity,
+        identity: ConversationIdentity,
         now: Instant,
     ) -> Arc<Self> {
         Arc::new(Self {
@@ -149,18 +149,18 @@ impl Session {
     }
 
     #[must_use]
-    pub fn agent(&self) -> &AgentRef {
+    pub fn agent(&self) -> &ClientIdentity {
         &self.agent
     }
 
     #[must_use]
     pub fn agent_id(&self) -> &ConvoId {
-        self.identity.agent_id()
+        self.identity.convo_id()
     }
 
     #[must_use]
-    pub fn ownership_key(&self) -> &AgentKey {
-        self.identity.ownership_key()
+    pub fn ownership_key(&self) -> &ConvoId {
+        self.identity.convo_id()
     }
 
     #[must_use]

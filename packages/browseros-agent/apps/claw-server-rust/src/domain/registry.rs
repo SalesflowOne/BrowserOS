@@ -1,7 +1,7 @@
 use crate::{
     domain::{
-        AgentKey, AgentPageOwnership, AgentRef, ClientInfo, Session, SessionId, SessionIdentity,
-        generate_fun_name,
+        AgentKey, AgentPageOwnership, ClientIdentity, ClientInfo, ConversationIdentity, Session,
+        SessionId, generate_fun_name,
     },
     error::{AppError, AppResult},
     services::{audit::AuditService, replay::ReplayService},
@@ -87,7 +87,7 @@ impl SessionRegistry {
 
     pub async fn mint(
         self: &Arc<Self>,
-        agent: AgentRef,
+        agent: ClientIdentity,
         client: ClientInfo,
     ) -> AppResult<Arc<Session>> {
         let id = SessionId::new(Ulid::new().to_string());
@@ -97,7 +97,7 @@ impl SessionRegistry {
     pub async fn mint_with_id(
         self: &Arc<Self>,
         id: SessionId,
-        agent: AgentRef,
+        agent: ClientIdentity,
         client: ClientInfo,
     ) -> AppResult<Arc<Session>> {
         let identity = {
@@ -106,8 +106,8 @@ impl SessionRegistry {
                 !reserved_keys.contains(&AgentKey::new(format!("{}-{label}", agent.slug())))
             })
             .map_err(|error| AppError::Internal(error.to_string()))?;
-            let identity = SessionIdentity::new(agent.slug(), generated_label);
-            reserved_keys.insert(identity.ownership_key().clone());
+            let identity = ConversationIdentity::new(agent.slug(), generated_label);
+            reserved_keys.insert(identity.convo_id().clone());
             identity
         };
         let session = Session::new(id.clone(), agent, identity, Instant::now());
@@ -346,7 +346,8 @@ mod tests {
     use super::{RetainedGroupAction, SessionRegistry};
     use crate::{
         domain::{
-            AgentKey, AgentRef, ClientInfo, Session, SessionId, SessionIdentity, generate_fun_name,
+            AgentKey, ClientIdentity, ClientInfo, ConversationIdentity, Session, SessionId,
+            generate_fun_name,
         },
         services::{audit::AuditService, replay::ReplayService},
     };
@@ -378,11 +379,11 @@ mod tests {
         );
         let session = Session::new(
             SessionId::new("s1"),
-            AgentRef::Ephemeral {
+            ClientIdentity::Ephemeral {
                 slug: "a1".to_string(),
                 label: "A1".to_string(),
             },
-            SessionIdentity::new("a1", "agile-alpaca".to_string()),
+            ConversationIdentity::new("a1", "agile-alpaca".to_string()),
             Instant::now(),
         );
         registry.insert_for_testing(session).await;
@@ -412,7 +413,7 @@ mod tests {
         );
         let session = registry
             .mint(
-                AgentRef::Ephemeral {
+                ClientIdentity::Ephemeral {
                     slug: "agent".to_string(),
                     label: "Agent".to_string(),
                 },
@@ -448,7 +449,7 @@ mod tests {
             version: "1".to_string(),
             title: None,
         };
-        let agent = AgentRef::Ephemeral {
+        let agent = ClientIdentity::Ephemeral {
             slug: "codex".to_string(),
             label: "Codex".to_string(),
         };
@@ -522,11 +523,11 @@ mod tests {
         let session_id = SessionId::new("s1");
         let session = Session::new(
             session_id.clone(),
-            AgentRef::Ephemeral {
+            ClientIdentity::Ephemeral {
                 slug: "codex".to_string(),
                 label: "Codex".to_string(),
             },
-            SessionIdentity::new("codex", "agile-alpaca".to_string()),
+            ConversationIdentity::new("codex", "agile-alpaca".to_string()),
             Instant::now(),
         );
         let key = session.ownership_key().clone();
@@ -617,11 +618,11 @@ mod tests {
         }));
         let session = Session::new(
             SessionId::new("s1"),
-            AgentRef::Ephemeral {
+            ClientIdentity::Ephemeral {
                 slug: "codex".to_string(),
                 label: "Codex".to_string(),
             },
-            SessionIdentity::new("codex", "agile-alpaca".to_string()),
+            ConversationIdentity::new("codex", "agile-alpaca".to_string()),
             Instant::now(),
         );
         let key = session.ownership_key().clone();
@@ -680,11 +681,11 @@ mod tests {
         );
         let session = Session::new(
             SessionId::new("s1"),
-            AgentRef::Ephemeral {
+            ClientIdentity::Ephemeral {
                 slug: "codex".to_string(),
                 label: "Codex".to_string(),
             },
-            SessionIdentity::new("codex", "agile-alpaca".to_string()),
+            ConversationIdentity::new("codex", "agile-alpaca".to_string()),
             Instant::now(),
         );
         registry.insert_for_testing(session.clone()).await;
@@ -749,11 +750,11 @@ mod tests {
         }));
         let session = Session::new(
             SessionId::new("s1"),
-            AgentRef::Ephemeral {
+            ClientIdentity::Ephemeral {
                 slug: "codex".to_string(),
                 label: "Codex".to_string(),
             },
-            SessionIdentity::new("codex", "agile-alpaca".to_string()),
+            ConversationIdentity::new("codex", "agile-alpaca".to_string()),
             Instant::now(),
         );
         registry.insert_for_testing(session.clone()).await;

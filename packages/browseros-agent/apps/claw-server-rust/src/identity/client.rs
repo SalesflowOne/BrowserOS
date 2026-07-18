@@ -1,4 +1,4 @@
-use crate::{ids::ProfileId, services::agents::StoredAgentProfile};
+use crate::ids::ProfileId;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -9,9 +9,17 @@ pub struct ClientInfo {
     pub title: Option<String>,
 }
 
+/// The profile fields needed to resolve an MCP client without coupling identity to storage.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProfileView {
+    pub id: ProfileId,
+    pub slug: String,
+    pub name: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
-pub enum AgentRef {
+pub enum ClientIdentity {
     Profile {
         profile_id: ProfileId,
         slug: String,
@@ -23,16 +31,16 @@ pub enum AgentRef {
     },
 }
 
-impl AgentRef {
+impl ClientIdentity {
     #[must_use]
-    pub fn resolve(client_info: &ClientInfo, profiles: &[StoredAgentProfile]) -> Self {
+    pub fn resolve(client_info: &ClientInfo, profiles: &[ProfileView]) -> Self {
         let client_slug = slugify_client_name(&client_info.name).unwrap_or_else(|| "agent".into());
         if let Some(profile) = profiles.iter().find(|profile| {
             profile.slug == client_slug
                 || names_match(profile.name.as_str(), client_info.name.as_str())
         }) {
             return Self::Profile {
-                profile_id: ProfileId::new(profile.id.clone()),
+                profile_id: profile.id.clone(),
                 slug: profile.slug.clone(),
                 label: profile.name.clone(),
             };
@@ -108,25 +116,14 @@ fn names_match(profile_name: &str, client_name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{AgentRef, ClientInfo, slugify_client_name};
-    use crate::services::agents::StoredAgentProfile;
-    use std::collections::BTreeMap;
+    use super::{ClientIdentity, ClientInfo, ProfileView, slugify_client_name};
+    use crate::ids::ProfileId;
 
-    fn profile() -> StoredAgentProfile {
-        StoredAgentProfile {
-            id: "p1".to_string(),
+    fn profile() -> ProfileView {
+        ProfileView {
+            id: ProfileId::new("p1"),
             name: "Finance Ops".to_string(),
-            harness: crate::services::agents::Harness::Codex,
-            login_mode: crate::services::agents::LoginMode::Profile,
-            selected_sites: Vec::new(),
-            approvals: BTreeMap::new(),
-            acl_rule_ids: Vec::new(),
-            custom_acl_rules: Vec::new(),
             slug: "finance-ops".to_string(),
-            mcp_url: "http://127.0.0.1:9200/mcp".to_string(),
-            status: crate::services::agents::ProfileStatus::Configured,
-            created_at: "now".to_string(),
-            updated_at: "now".to_string(),
         }
     }
 
@@ -141,7 +138,7 @@ mod tests {
 
     #[test]
     fn resolves_profile_when_client_name_matches_slug() {
-        let resolved = AgentRef::resolve(
+        let resolved = ClientIdentity::resolve(
             &ClientInfo {
                 name: "finance ops".to_string(),
                 version: "1".to_string(),
@@ -150,19 +147,19 @@ mod tests {
             &[profile()],
         );
         match resolved {
-            AgentRef::Profile {
+            ClientIdentity::Profile {
                 profile_id, slug, ..
             } => {
                 assert_eq!(profile_id.as_str(), "p1");
                 assert_eq!(slug, "finance-ops");
             }
-            AgentRef::Ephemeral { .. } => panic!("expected profile"),
+            ClientIdentity::Ephemeral { .. } => panic!("expected profile"),
         }
     }
 
     #[test]
     fn falls_back_to_ephemeral_for_unknown_client() {
-        let resolved = AgentRef::resolve(
+        let resolved = ClientIdentity::resolve(
             &ClientInfo {
                 name: "Other".to_string(),
                 version: "1".to_string(),
@@ -171,14 +168,14 @@ mod tests {
             &[profile()],
         );
         match resolved {
-            AgentRef::Ephemeral { slug, .. } => assert_eq!(slug, "other"),
-            AgentRef::Profile { .. } => panic!("expected ephemeral"),
+            ClientIdentity::Ephemeral { slug, .. } => assert_eq!(slug, "other"),
+            ClientIdentity::Profile { .. } => panic!("expected ephemeral"),
         }
     }
 
     #[test]
     fn empty_client_name_uses_agent_slug() {
-        let resolved = AgentRef::resolve(
+        let resolved = ClientIdentity::resolve(
             &ClientInfo {
                 name: "...".to_string(),
                 version: "1".to_string(),
