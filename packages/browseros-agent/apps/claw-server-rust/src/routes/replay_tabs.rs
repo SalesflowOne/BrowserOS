@@ -2,10 +2,13 @@ use crate::{services::tab_activity::TabActivityService, sessions::Sessions, tabs
 use serde::Serialize;
 use std::collections::HashMap;
 
+/// Replay discovery row joining recorded activity to a currently live MCP session.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ReplayTab {
+    /// Server-minted MCP transport session id consumed by replay event endpoints.
     pub session_id: String,
+    /// BrowserOS page id from the tool pipeline, not a Chrome tab or CDP target id.
     pub tab_page_id: u32,
     pub url: String,
     pub title: String,
