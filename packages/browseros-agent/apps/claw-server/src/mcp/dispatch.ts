@@ -30,6 +30,7 @@ import {
   identityService,
   normalizeSmallName,
 } from '../lib/mcp-session'
+import { extractPageId } from '../lib/tab-activity'
 import {
   CANCELLATION_REASON,
   dispatchCancellation,
@@ -60,6 +61,12 @@ export interface ToolCall {
   session: BrowserSession | null
   signal?: AbortSignal
   defaultTabGroupId: string | null
+  pageSnapshot?: {
+    pageId: number
+    targetId: string
+    url: string
+    title: string
+  }
   flags: { newPage: boolean; closePage: boolean; listTabs: boolean }
 }
 
@@ -213,6 +220,9 @@ function buildToolCall(
     tool.name === 'tabs'
       ? ((args as { action?: unknown } | null | undefined)?.action ?? 'list')
       : null
+  const session = getBrowserSession()
+  const pageId = extractPageId(tool.name, args)
+  const page = pageId === null ? undefined : session?.pages.getInfo(pageId)
   return {
     tool,
     args,
@@ -227,9 +237,17 @@ function buildToolCall(
           ? identity.clientName
           : (agent?.slug ?? null)
       : null,
-    session: getBrowserSession(),
+    session,
     signal: extra?.signal,
     defaultTabGroupId,
+    ...(page && {
+      pageSnapshot: {
+        pageId: page.pageId,
+        targetId: page.targetId,
+        url: page.url,
+        title: page.title,
+      },
+    }),
     flags: {
       newPage: action === 'new',
       closePage: action === 'close',

@@ -5,9 +5,7 @@
  */
 
 import type { BrowserSession } from '@browseros/browser-core/core/session'
-import { and, eq, isNull } from 'drizzle-orm'
-import { getAuditDb } from '../modules/db/db'
-import { tabClaims } from '../modules/db/schema/tab-claims.sql'
+import { releaseClaimsForTarget } from '../services/tab-claims'
 import { logger } from './logger'
 
 export interface TargetLifecycleInfo {
@@ -31,7 +29,7 @@ export interface TabTargetSource {
 }
 
 interface TabTargetMapOptions {
-  releaseTargetClaims?: (targetId: string) => Promise<void>
+  releaseTargetClaims?: (targetId: string) => Promise<void> | void
 }
 
 /** Maintains the browser tab id to stable CDP target id identity boundary. */
@@ -39,7 +37,9 @@ export class TabTargetMap {
   private readonly targetByTab = new Map<number, string>()
   private readonly tabByTarget = new Map<string, number>()
   private readonly unsubscribers: Array<() => void> = []
-  private readonly releaseTargetClaims: (targetId: string) => Promise<void>
+  private readonly releaseTargetClaims: (
+    targetId: string,
+  ) => Promise<void> | void
   private sourceEpoch = -1
   private rebuildPromise: Promise<void> | null = null
 
@@ -48,7 +48,7 @@ export class TabTargetMap {
     options: TabTargetMapOptions = {},
   ) {
     this.releaseTargetClaims =
-      options.releaseTargetClaims ?? releaseOpenClaimsForTarget
+      options.releaseTargetClaims ?? releaseClaimsForTarget
   }
 
   /** Subscribes to target events and seeds the map from the browser's live tabs. */
@@ -126,12 +126,14 @@ export class TabTargetMap {
     const tabId = this.tabByTarget.get(targetId)
     if (tabId !== undefined) this.targetByTab.delete(tabId)
     this.tabByTarget.delete(targetId)
-    void this.releaseTargetClaims(targetId).catch((error) => {
-      logger.warn('failed to release claims for destroyed target', {
-        targetId,
-        error: error instanceof Error ? error.message : String(error),
-      })
-    })
+    try {
+      const release = this.releaseTargetClaims(targetId)
+      if (release) {
+        void release.catch((error) => logReleaseFailure(targetId, error))
+      }
+    } catch (error) {
+      logReleaseFailure(targetId, error)
+    }
   }
 }
 
@@ -181,10 +183,9 @@ function sourceFromBrowserSession(session: BrowserSession): TabTargetSource {
   }
 }
 
-async function releaseOpenClaimsForTarget(targetId: string): Promise<void> {
-  getAuditDb()
-    .update(tabClaims)
-    .set({ releasedAt: Date.now() })
-    .where(and(eq(tabClaims.targetId, targetId), isNull(tabClaims.releasedAt)))
-    .run()
+function logReleaseFailure(targetId: string, error: unknown): void {
+  logger.warn('failed to release claims for destroyed target', {
+    targetId,
+    error: error instanceof Error ? error.message : String(error),
+  })
 }

@@ -13,6 +13,7 @@ import {
 import {
   agentSessionEnds,
   agentSessionStarts,
+  tabClaims,
 } from '../../src/modules/db/schema/schema'
 import {
   recordSessionEnd,
@@ -76,5 +77,36 @@ describe('session events', () => {
     expect(rows).toHaveLength(1)
     expect(rows[0]!.kind).toBe('errored')
     expect(rows[0]!.reason).toBe('transport broke')
+  })
+
+  it('recordSessionEnd releases every open claim for the session', () => {
+    const db = setAuditDbForTesting()
+    db.insert(tabClaims)
+      .values([
+        {
+          targetId: 'target-a',
+          sessionId: 'sid-5',
+          agentId: 'agent',
+          claimedAt: 1,
+        },
+        {
+          targetId: 'target-b',
+          sessionId: 'sid-5',
+          agentId: 'agent',
+          claimedAt: 2,
+        },
+      ])
+      .run()
+
+    recordSessionEnd({ sessionId: 'sid-5', kind: 'closed' })
+
+    expect(
+      db
+        .select()
+        .from(tabClaims)
+        .where(eq(tabClaims.sessionId, 'sid-5'))
+        .all()
+        .every((claim) => typeof claim.releasedAt === 'number'),
+    ).toBe(true)
   })
 })
