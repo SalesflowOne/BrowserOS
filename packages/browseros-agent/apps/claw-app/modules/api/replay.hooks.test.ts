@@ -33,7 +33,7 @@ describe('replay queries', () => {
       ],
     }
     const request = mock(async () => Response.json(metadata))
-    globalThis.fetch = request as typeof fetch
+    globalThis.fetch = request as unknown as typeof fetch
 
     await expect(
       fetchReplayMetadata({ sessionId: 'session/with slash' }),
@@ -45,7 +45,9 @@ describe('replay queries', () => {
 
   it('preserves the empty metadata shape when no replay exists', async () => {
     const metadata = { exists: false, sizeBytes: 0, targets: [] }
-    globalThis.fetch = mock(async () => Response.json(metadata)) as typeof fetch
+    globalThis.fetch = mock(async () =>
+      Response.json(metadata),
+    ) as unknown as typeof fetch
 
     await expect(
       fetchReplayMetadata({ sessionId: 'session-1' }),
@@ -80,7 +82,7 @@ describe('replay queries', () => {
       }),
     ].join('\n')
     const request = mock(async () => new Response(body))
-    globalThis.fetch = request as typeof fetch
+    globalThis.fetch = request as unknown as typeof fetch
 
     await expect(
       fetchReplayEvents({ sessionId: 'session-1' }),

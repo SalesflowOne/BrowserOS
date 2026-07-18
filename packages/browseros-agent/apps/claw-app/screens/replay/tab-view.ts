@@ -8,7 +8,7 @@ import type { ReplayEvent, ReplayFrame } from '@/modules/api/replay.hooks'
 
 /**
  * A single tab's replay view. All fields are scoped to one
- * `tabPageId`:
+ * target:
  *   - `frames`: filtered AND time-shifted so `t=0` is the tab's
  *     first activity, not session start.
  *   - `events`: pass-through. rrweb treats the first event's `ts`
@@ -29,21 +29,19 @@ export const EMPTY_TAB_VIEW: TabView = {
 }
 
 export interface BuildTabViewInput {
-  /** Session-scoped frames (any pageId). */
   frames: ReplayFrame[]
-  eventsForTab: (tabPageId: number) => readonly ReplayEvent[]
-  /** Session start in ms since epoch. Anchor for frame `t` values. */
+  eventsForTarget: (targetId: string) => readonly ReplayEvent[]
   startedAtMs: number
 }
 
 /** Builds the frame/event/duration view for the selected replay tab. */
 export function buildTabView(
   input: BuildTabViewInput,
-  tabPageId: number | null,
+  targetId: string | null,
 ): TabView {
-  if (tabPageId === null) return EMPTY_TAB_VIEW
-  const rawFrames = input.frames.filter((f) => f.pageId === tabPageId)
-  const events = input.eventsForTab(tabPageId)
+  if (targetId === null) return EMPTY_TAB_VIEW
+  const rawFrames = input.frames.filter((frame) => frame.targetId === targetId)
+  const events = input.eventsForTarget(targetId)
   if (rawFrames.length === 0 && events.length === 0) return EMPTY_TAB_VIEW
   const startedMs = input.startedAtMs
   const originMs =
