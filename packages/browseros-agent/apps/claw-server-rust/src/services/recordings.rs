@@ -761,9 +761,15 @@ mod tests {
     #[tokio::test]
     async fn remembers_a_batch_id_only_after_append_succeeds() -> anyhow::Result<()> {
         let dir = tempdir()?;
-        let (_, store) = store(dir.path()).await?;
-        let recordings_path = dir.path().join("recordings");
-        tokio::fs::write(&recordings_path, b"not a directory").await?;
+        let (audit, store) = store(dir.path()).await?;
+        audit
+            .connection()
+            .execute_unprepared(
+                "CREATE TRIGGER fail_recording_catalog
+                 BEFORE INSERT ON tab_recordings
+                 BEGIN SELECT RAISE(FAIL, 'catalog unavailable'); END",
+            )
+            .await?;
 
         assert!(
             store
@@ -776,7 +782,12 @@ mod tests {
                 .await
                 .is_err()
         );
-        tokio::fs::remove_file(&recordings_path).await?;
+        let recording_path = dir.path().join("recordings/target-retry.ndjson");
+        assert_eq!(tokio::fs::read(&recording_path).await?, b"");
+        audit
+            .connection()
+            .execute_unprepared("DROP TRIGGER fail_recording_catalog")
+            .await?;
 
         assert!(
             store
@@ -788,8 +799,13 @@ mod tests {
                 )
                 .await?
         );
-        let text = tokio::fs::read_to_string(recordings_path.join("target-retry.ndjson")).await?;
+        let text = tokio::fs::read_to_string(recording_path).await?;
         assert_eq!(text.lines().count(), 1);
+        let row = TabRecordings::find_by_id("target-retry")
+            .one(audit.connection())
+            .await?
+            .unwrap_or_else(|| panic!("catalog row missing"));
+        assert_eq!(row.event_count, 1);
         Ok(())
     }
 
