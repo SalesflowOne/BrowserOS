@@ -12,28 +12,19 @@ import type { MiddlewareHandler } from 'hono'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { canonicalApiError } from './lib/api-error'
-import { HttpError } from './lib/errors'
 import { logger } from './lib/logger'
 import {
   type RequestContextEnv,
   requestIdFor,
   requestIdMiddleware,
 } from './lib/request-id'
-import { agentsControlRoute } from './routes/agents-control'
 import {
   type CanonicalApiDependencies,
   createCanonicalApiRoute,
 } from './routes/api-v1'
 import { canonicalApiDependencies } from './routes/api-v1/production'
-import { auditRoute } from './routes/audit'
-import { auditScreenshotsRoute } from './routes/audit/screenshots'
-import { auditTasksRoute } from './routes/audit/tasks'
-import { auditReplaysRoute } from './routes/audit-replays'
-import { connectionsRoute } from './routes/connections'
 import { mcpRoute } from './routes/mcp'
-import { recordingsRoute } from './routes/recordings'
 import { createSystemRoute } from './routes/system'
-import { tabsRoute } from './routes/tabs'
 
 // Telemetry capture is injectable so the server module stays usable
 // from the bun-test runner without pulling Sentry into the import
@@ -83,8 +74,8 @@ export function createServer(options: CreateServerOptions = {}) {
   app.use('*', requestIdMiddleware)
 
   // One structured line per failed request, however the failure was
-  // produced: a router 404, a thrown HttpError, a direct 4xx/5xx JSON
-  // return, or an unhandled error — hono materialises the onError
+  // produced: a router 404, a direct 4xx/5xx JSON return, or an
+  // unhandled error — hono materialises the onError
   // response before `next()` resolves, so `c.res.status` is final
   // here. Sub-400 traffic stays unlogged on purpose: the logger has no
   // level filtering and the claw-app polls several endpoints, so a
@@ -117,9 +108,6 @@ export function createServer(options: CreateServerOptions = {}) {
         500,
       )
     }
-    if (err instanceof HttpError) {
-      return c.json({ error: err.message }, err.status as 400 | 404 | 409 | 500)
-    }
     const message = err instanceof Error ? err.message : 'internal error'
     logger.error('Unhandled route error', {
       path: c.req.path,
@@ -139,12 +127,4 @@ export function createServer(options: CreateServerOptions = {}) {
       ),
     )
     .route('/', mcpRoute)
-    .route('/', tabsRoute)
-    .route('/', agentsControlRoute)
-    .route('/', connectionsRoute)
-    .route('/', auditRoute)
-    .route('/', auditTasksRoute)
-    .route('/', auditScreenshotsRoute)
-    .route('/', recordingsRoute)
-    .route('/', auditReplaysRoute)
 }
