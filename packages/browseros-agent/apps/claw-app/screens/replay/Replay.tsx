@@ -40,10 +40,11 @@ export function Replay() {
       }
       return
     }
-    if (
-      selectedTargetId === null ||
-      !replay.targetIds.includes(selectedTargetId)
-    ) {
+    if (selectedTargetId === null) {
+      setSelectedTargetId(firstTargetId)
+      return
+    }
+    if (!replay.targetIds.includes(selectedTargetId)) {
       pendingTargetSeekRef.current = 0
       setSelectedTargetId(firstTargetId)
     }

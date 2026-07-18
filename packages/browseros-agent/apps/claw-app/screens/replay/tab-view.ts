@@ -78,6 +78,15 @@ export function targetSeekForFrame(
   const targetFrames = input.frames.filter(
     (candidate) => candidate.targetId === targetId,
   )
+  if (frame.targetId == null) {
+    const targetEvents = input.eventsForTarget(targetId)
+    const originT =
+      targetEvents.length > 0
+        ? ((targetEvents[0]?.ts ?? input.startedAtMs) - input.startedAtMs) /
+          1000
+        : (targetFrames[0]?.t ?? 0)
+    return { targetId, seconds: Math.max(0, frame.t - originT) }
+  }
   const targetFrameIndex = targetFrames.indexOf(frame)
   const targetView = buildTabView(input, targetId)
   const shiftedFrame = targetView.frames[targetFrameIndex]

@@ -214,4 +214,20 @@ describe('targetSeekForFrame', () => {
       seconds: 2,
     })
   })
+
+  it('translates an unaddressed session frame into the selected target clock', () => {
+    const sessionFrame = frame(7, null, { dispatchId: 23 })
+    const input = makeInput({
+      frames: [frame(5, 'target-a'), sessionFrame],
+      eventsForTarget: (targetId) => [
+        event(1_005_000, targetId),
+        event(1_010_000, targetId),
+      ],
+    })
+
+    expect(targetSeekForFrame(input, 'target-a', sessionFrame)).toEqual({
+      targetId: 'target-a',
+      seconds: 2,
+    })
+  })
 })

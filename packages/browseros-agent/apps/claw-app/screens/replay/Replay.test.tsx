@@ -27,8 +27,15 @@ mock.module('./ReplayViewport', () => ({
 }))
 
 mock.module('./PlaybackTransport', () => ({
-  PlaybackTransport: ({ playback }: { playback: { time: number } }) => (
-    <div data-playback-time={playback.time} />
+  PlaybackTransport: ({
+    playback,
+  }: {
+    playback: { time: number; isPlaying: boolean }
+  }) => (
+    <div
+      data-playback-time={playback.time}
+      data-playback-playing={playback.isPlaying}
+    />
   ),
 }))
 
@@ -289,6 +296,11 @@ describe('Replay', () => {
         .querySelector('[data-player-targets]')
         ?.getAttribute('data-player-targets'),
     ).toBe('target-a,target-a')
+    expect(
+      container
+        .querySelector('[data-playback-playing]')
+        ?.getAttribute('data-playback-playing'),
+    ).toBe('true')
 
     const targetBFrame = container.querySelector(
       '[data-frame-target="target-b"]',
