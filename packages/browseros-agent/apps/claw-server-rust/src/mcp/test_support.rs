@@ -4,7 +4,6 @@ use crate::{
     domain::{AgentRef, Session, SessionId, SessionIdentity},
     mcp::dispatch::{ToolCall, ToolIdentity, linked_cancel_token},
 };
-use rmcp::model::RequestId;
 use serde_json::Value;
 use std::{sync::Arc, time::Duration};
 use tokio_util::sync::CancellationToken;
@@ -63,7 +62,6 @@ pub async fn tool_call_with_fallback(
         tool_index,
         raw_args,
         session.id().clone(),
-        RequestId::Number(1),
         Some(ToolIdentity {
             session: session.clone(),
             agent: session.agent().clone(),
@@ -77,7 +75,5 @@ pub async fn tool_call_with_fallback(
         None,
         state,
         browseros_mcp::output_file::create_browser_output_file_access(),
-        None,
-        Arc::default(),
     ))
 }

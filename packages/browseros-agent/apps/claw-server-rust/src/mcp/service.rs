@@ -17,7 +17,7 @@ use rmcp::{
         InitializeRequestParams, InitializeResult, JsonObject, ListToolsResult,
         PaginatedRequestParams, ServerCapabilities, Tool, ToolAnnotations,
     },
-    service::{NotificationContext, Peer, RequestContext},
+    service::{NotificationContext, RequestContext},
 };
 use serde_json::{Value, json};
 use std::sync::{
@@ -49,16 +49,12 @@ pub struct ClawMcpService {
 struct ServiceLifecycle {
     client_info: Option<ClientInfo>,
     session_id: Option<SessionId>,
-    peer: Option<Peer<RoleServer>>,
-    naming_started: Arc<AtomicBool>,
     started: bool,
 }
 
 #[derive(Clone)]
 struct StartedSession {
     session: Arc<Session>,
-    peer: Peer<RoleServer>,
-    naming_started: Arc<AtomicBool>,
     agent_label: String,
 }
 
@@ -115,7 +111,7 @@ impl ClawMcpService {
         CallToolResult::success(vec![rmcp::model::ContentBlock::text(rename.response)])
     }
 
-    async fn set_client_info(&self, request: &InitializeRequestParams, peer: Peer<RoleServer>) {
+    async fn set_client_info(&self, request: &InitializeRequestParams) {
         let mut lifecycle = self.lifecycle.lock().await;
         lifecycle.client_info = Some(ClientInfo {
             name: clean_client_field(&request.client_info.name, "agent"),
@@ -128,16 +124,13 @@ impl ClawMcpService {
                 .filter(|value| !value.is_empty())
                 .map(str::to_string),
         });
-        lifecycle.peer = Some(peer);
     }
 
     async fn ensure_session_started(
         &self,
         session_id: SessionId,
-        peer: Peer<RoleServer>,
     ) -> Result<StartedSession, McpError> {
         let mut lifecycle = self.lifecycle.lock().await;
-        lifecycle.peer = Some(peer.clone());
         if lifecycle.session_id.is_none() {
             lifecycle.session_id = Some(session_id.clone());
         }
@@ -186,7 +179,6 @@ impl ClawMcpService {
             );
             session
         };
-        let peer = lifecycle.peer.clone().unwrap_or(peer);
         let agent_label = client
             .title
             .as_deref()
@@ -196,8 +188,6 @@ impl ClawMcpService {
             .to_string();
         Ok(StartedSession {
             session,
-            peer,
-            naming_started: lifecycle.naming_started.clone(),
             agent_label,
         })
     }
@@ -208,17 +198,13 @@ impl ClawMcpService {
     ) -> Result<StartedSession, McpError> {
         let session_id = session_id_from_extensions(&context.extensions)
             .unwrap_or_else(|| self.fallback_session_id.clone());
-        self.ensure_session_started(session_id, context.peer.clone())
-            .await
+        self.ensure_session_started(session_id).await
     }
 
     async fn learn_session_from_notification(&self, context: &NotificationContext<RoleServer>) {
         let session_id = session_id_from_extensions(&context.extensions)
             .unwrap_or_else(|| self.fallback_session_id.clone());
-        if let Err(error) = self
-            .ensure_session_started(session_id, context.peer.clone())
-            .await
-        {
+        if let Err(error) = self.ensure_session_started(session_id).await {
             warn!(error = %error, "mcp session start failed");
         }
     }
@@ -272,14 +258,12 @@ impl ServerHandler for ClawMcpService {
         context: RequestContext<RoleServer>,
     ) -> Result<InitializeResult, McpError> {
         context.peer.set_peer_info(request.clone());
-        self.set_client_info(&request, context.peer.clone()).await;
+        self.set_client_info(&request).await;
         let info = self.get_info();
         let Some(session_id) = session_id_from_extensions(&context.extensions) else {
             return Ok(info);
         };
-        let _ = self
-            .ensure_session_started(session_id, context.peer.clone())
-            .await?;
+        let _ = self.ensure_session_started(session_id).await?;
         Ok(info)
     }
 
@@ -350,7 +334,6 @@ impl ServerHandler for ClawMcpService {
             tool_index,
             raw_args,
             started.session.id().clone(),
-            context.id,
             Some(identity),
             browser_session,
             cancel,
@@ -359,8 +342,6 @@ impl ServerHandler for ClawMcpService {
             default_tab_group_id,
             self.state.clone(),
             self.output_files.clone(),
-            Some(started.peer),
-            started.naming_started,
         );
         dispatch_tool_call(call).await
     }
@@ -462,6 +443,11 @@ mod tests {
         );
         assert!(info.instructions.as_deref().is_some_and(|instructions| {
             instructions.contains("BrowserClaw — the browser for agents")
+        }));
+        assert!(info.instructions.as_deref().is_some_and(|instructions| {
+            instructions.contains(
+                "- Rename your session early with name_session using a 2-3 word task label;\n  tabs group as <client>/<name>."
+            )
         }));
         Ok(())
     }

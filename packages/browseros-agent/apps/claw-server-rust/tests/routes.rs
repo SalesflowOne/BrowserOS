@@ -483,7 +483,7 @@ async fn mcp_initialize_list_guard_audit_and_delete() -> anyhow::Result<()> {
             .as_array()
             .ok_or_else(|| anyhow::anyhow!("tools not array"))?
             .len(),
-        16
+        17
     );
 
     let blocked = json!({
@@ -647,7 +647,7 @@ async fn mcp_name_session_lists_and_renames_while_disconnected() -> anyhow::Resu
 }
 
 #[tokio::test]
-async fn mcp_session_naming_triggers_once_after_first_successful_tabs_new() -> anyhow::Result<()> {
+async fn mcp_session_naming_appends_five_tips_without_elicitation() -> anyhow::Result<()> {
     let mock = MockCdp::start().await?;
     let app = test_app_with_cdp_port(mock.cdp_port, false).await?;
     app.state.browser.connect_once_for_testing().await?;
@@ -658,7 +658,7 @@ async fn mcp_session_naming_triggers_once_after_first_successful_tabs_new() -> a
         "method": "initialize",
         "params": {
             "protocolVersion": "2025-06-18",
-            "capabilities": { "elicitation": {} },
+            "capabilities": {},
             "clientInfo": { "name": "Claude Code", "version": "1.0" }
         }
     });
@@ -672,24 +672,6 @@ async fn mcp_session_naming_triggers_once_after_first_successful_tabs_new() -> a
         .to_string();
     send_initialized(&app.router, &session_id).await?;
 
-    // Naming starts only after a successful tabs-new call, so initialize and
-    // tool discovery must not create an elicitation or session label.
-    let list = json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {} });
-    let (status, _headers, body) = request_json_with_headers(
-        &app.router,
-        "POST",
-        "/mcp",
-        Some(list),
-        &[("mcp-session-id", &session_id)],
-    )
-    .await?;
-    assert_eq!(status, StatusCode::OK);
-    assert!(
-        body["result"]["tools"]
-            .as_array()
-            .is_some_and(|tools| !tools.is_empty())
-    );
-
     wait_for_session_registration(&app, &session_id).await?;
     let session = app
         .state
@@ -697,81 +679,43 @@ async fn mcp_session_naming_triggers_once_after_first_successful_tabs_new() -> a
         .lookup(&SessionId::new(session_id.clone()))
         .await
         .ok_or_else(|| anyhow::anyhow!("session not minted"))?;
-    assert_eq!(session.label().await, session.generated_label());
+    let generated = session.generated_label().to_string();
+    assert_eq!(session.label().await, generated);
 
     let mut stream = McpSseStream::open(&app.router, &session_id).await?;
-    let (status, _headers, body) = request_json_with_headers(
-        &app.router,
-        "POST",
-        "/mcp",
-        Some(tabs_new_request(3)),
-        &[("mcp-session-id", &session_id)],
-    )
-    .await?;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["result"]["isError"], false, "tabs_new body: {body:?}");
-
-    let elicitation = tokio::time::timeout(
-        Duration::from_secs(2),
-        stream.next_method("elicitation/create"),
-    )
-    .await??;
-    assert_eq!(elicitation["params"]["mode"], "form");
-    assert_eq!(
-        elicitation["params"]["requestedSchema"]["required"],
-        json!(["name"])
+    let tip = format!(
+        "Tip: this session is \"claude/{generated}\" — rename it with name_session name=\"<2-3 word task label>\""
     );
-    let request_id = elicitation["id"].clone();
-    let (status, _headers, _body) = request_json_with_headers(
-        &app.router,
-        "POST",
-        "/mcp",
-        Some(json!({
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "result": {
-                "action": "accept",
-                "content": { "name": "Invoice Processing!!!" }
-            }
-        })),
-        &[("mcp-session-id", &session_id)],
-    )
-    .await?;
-    assert_eq!(status, StatusCode::ACCEPTED);
-
-    let mut applied = false;
-    for _ in 0..100 {
-        let label_ready = session.label().await == "invoice-processing";
-        let title_ready = mock.group_updates.lock().await.iter().any(|params| {
-            params.get("title").and_then(Value::as_str) == Some("claude/invoice-processing")
-        });
-        if label_ready && title_ready {
-            applied = true;
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
+    for id in 3..=7 {
+        let (status, _headers, body) = request_json_with_headers(
+            &app.router,
+            "POST",
+            "/mcp",
+            Some(tabs_new_request(id)),
+            &[("mcp-session-id", &session_id)],
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["result"]["isError"], false, "tabs_new body: {body:?}");
+        assert_eq!(
+            body["result"]["content"]
+                .as_array()
+                .and_then(|content| content.last())
+                .and_then(|block| block["text"].as_str()),
+            Some(tip.as_str())
+        );
     }
-    assert!(applied, "session label or group title was not applied");
-    assert_eq!(
-        app.state
-            .sessions
-            .ownership()
-            .tab_group_ref(session.ownership_key())
-            .await
-            .as_deref(),
-        Some("group-1")
-    );
-
     let (status, _headers, body) = request_json_with_headers(
         &app.router,
         "POST",
         "/mcp",
-        Some(tabs_new_request(4)),
+        Some(tabs_new_request(8)),
         &[("mcp-session-id", &session_id)],
     )
     .await?;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["result"]["isError"], false, "tabs_new body: {body:?}");
+    assert!(!body.to_string().contains("Tip: this session is"));
     match tokio::time::timeout(
         Duration::from_millis(250),
         stream.next_method("elicitation/create"),
@@ -779,9 +723,10 @@ async fn mcp_session_naming_triggers_once_after_first_successful_tabs_new() -> a
     .await
     {
         Err(_) => {}
-        Ok(Ok(request)) => anyhow::bail!("second tabs new elicited again: {request:?}"),
+        Ok(Ok(request)) => anyhow::bail!("unexpected elicitation: {request:?}"),
         Ok(Err(error)) => return Err(error),
     }
+    assert!(!mock.group_updates.lock().await.is_empty());
     drop(mock);
     Ok(())
 }
