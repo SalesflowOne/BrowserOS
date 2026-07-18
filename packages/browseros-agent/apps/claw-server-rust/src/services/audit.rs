@@ -359,7 +359,7 @@ impl AuditService {
                 .add(
                     Func::lower(Func::coalesce([
                         Expr::col(tasks::Column::Site).into(),
-                        Expr::value("").into(),
+                        Expr::value(""),
                     ]))
                     .like(pattern),
                 )
