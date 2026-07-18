@@ -9,4 +9,8 @@ export interface RecorderEventsMessage {
   ndjson: string
 }
 
-export type RecorderMessage = RecorderEventsMessage
+export interface RecorderResnapshotMessage {
+  type: 'recorder-resnapshot'
+}
+
+export type RecorderMessage = RecorderEventsMessage | RecorderResnapshotMessage
