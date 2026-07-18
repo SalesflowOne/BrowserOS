@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
+import { Configuration, DefaultApi, type Tab } from '@browseros/claw-api'
+
 export type Fetcher = (
   input: Parameters<typeof globalThis.fetch>[0],
   init?: Parameters<typeof globalThis.fetch>[1],
@@ -24,44 +26,49 @@ export interface RecordingsRelay {
 const HEALTH_RETRY_MS = 60_000
 const WARNING_INTERVAL_MS = 60_000
 
-/** Relays tab-scoped recorder batches only while the server supports ingestion. */
+interface TabAssociation {
+  sessionId: string
+  pageId: number
+  targetId: string
+}
+
+interface CanonicalServer {
+  baseUrl: string
+  client: DefaultApi
+  pendingTabs: Tab[] | null
+}
+
+/** Relays tab-scoped recorder batches through their current session association. */
 export function createRecordingsRelay(
   options: RecordingsRelayOptions,
 ): RecordingsRelay {
   const fetch = options.fetch ?? globalThis.fetch
   const now = options.now ?? Date.now
   const warn = options.warn ?? console.warn
-  let healthyBaseUrl: string | null = null
+  let healthyServer: CanonicalServer | null = null
   let unhealthyUntil = 0
-  let healthProbe: Promise<string | null> | null = null
+  let healthProbe: Promise<CanonicalServer | null> | null = null
   let lastPostFailureWarningAt: number | null = null
+  const associations = new Map<number, TabAssociation>()
 
-  async function probeServer(): Promise<string | null> {
+  async function probeServer(): Promise<CanonicalServer | null> {
     try {
       const baseUrl = await options.resolveServerBaseUrl()
-      const response = await fetch(`${baseUrl}/recordings/health`, {
-        credentials: 'omit',
-      })
-      if (!response.ok) {
-        unhealthyUntil = now() + HEALTH_RETRY_MS
-        return null
-      }
-      const body = (await response.json()) as { ok?: unknown }
-      if (body.ok !== true) {
-        unhealthyUntil = now() + HEALTH_RETRY_MS
-        return null
-      }
-      healthyBaseUrl = baseUrl
+      const client = new DefaultApi(
+        new Configuration({ basePath: baseUrl, fetchApi: fetch }),
+      )
+      const pendingTabs = (await client.listTabs()).items
+      healthyServer = { baseUrl, client, pendingTabs }
       unhealthyUntil = 0
-      return baseUrl
+      return healthyServer
     } catch {
       unhealthyUntil = now() + HEALTH_RETRY_MS
       return null
     }
   }
 
-  async function resolveHealthyBaseUrl(): Promise<string | null> {
-    if (healthyBaseUrl) return healthyBaseUrl
+  async function resolveHealthyServer(): Promise<CanonicalServer | null> {
+    if (healthyServer) return healthyServer
     if (now() < unhealthyUntil) return null
     if (!healthProbe) healthProbe = probeServer()
     const currentProbe = healthProbe
@@ -73,7 +80,7 @@ export function createRecordingsRelay(
   }
 
   function markPostFailure(error: unknown): void {
-    healthyBaseUrl = null
+    healthyServer = null
     unhealthyUntil = 0
     const timestamp = now()
     if (
@@ -88,16 +95,58 @@ export function createRecordingsRelay(
     })
   }
 
+  async function associationForTab(
+    server: CanonicalServer,
+    tabId: number,
+  ): Promise<TabAssociation | null> {
+    let tabs: Tab[]
+    try {
+      tabs = server.pendingTabs ?? (await server.client.listTabs()).items
+      server.pendingTabs = null
+    } catch {
+      healthyServer = null
+      unhealthyUntil = now() + HEALTH_RETRY_MS
+      associations.delete(tabId)
+      return null
+    }
+
+    const tab = tabs.find(
+      (candidate) =>
+        candidate.tabId === tabId && typeof candidate.sessionId === 'string',
+    )
+    if (!tab?.sessionId) {
+      associations.delete(tabId)
+      return null
+    }
+    const association = {
+      sessionId: tab.sessionId,
+      pageId: tab.pageId,
+      targetId: tab.targetId,
+    }
+    const previous = associations.get(tabId)
+    if (
+      previous?.sessionId === association.sessionId &&
+      previous.pageId === association.pageId &&
+      previous.targetId === association.targetId
+    ) {
+      return previous
+    }
+    associations.set(tabId, association)
+    return association
+  }
+
   return {
     async serverHasRecordings(): Promise<boolean> {
-      return (await resolveHealthyBaseUrl()) !== null
+      return (await resolveHealthyServer()) !== null
     },
     async post(tabId, ndjson): Promise<void> {
-      const baseUrl = await resolveHealthyBaseUrl()
-      if (!baseUrl) return
+      const server = await resolveHealthyServer()
+      if (!server) return
+      const association = await associationForTab(server, tabId)
+      if (!association) return
       try {
         const response = await fetch(
-          `${baseUrl}/recordings/tabs/${tabId}/events`,
+          `${server.baseUrl}/api/v1/sessions/${encodeURIComponent(association.sessionId)}/recording/events`,
           {
             method: 'POST',
             headers: { 'content-type': 'application/x-ndjson' },
