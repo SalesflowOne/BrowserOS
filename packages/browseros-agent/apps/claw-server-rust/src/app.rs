@@ -1,4 +1,5 @@
 use crate::{
+    agents::AgentService,
     browser::BrowserService,
     capture::{
         audit::AuditService, recordings::RecordingStore,
@@ -7,11 +8,12 @@ use crate::{
     },
     config::Config,
     error::AppResult,
+    harness::HarnessService,
     routes,
-    services::{agents::AgentService, harness::HarnessService, telemetry::TelemetryService},
     sessions::Sessions,
     storage::JsonStore,
     tabs::{activity::TabActivityService, targets::TabTargetMap},
+    telemetry::TelemetryService,
 };
 use axum::{Router, middleware};
 use std::{env, path::PathBuf, sync::Arc, time::Duration};

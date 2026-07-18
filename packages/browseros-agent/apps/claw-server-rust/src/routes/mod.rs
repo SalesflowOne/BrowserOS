@@ -5,9 +5,9 @@ use crate::{
         recordings::RecordingEventInput,
     },
     error::{AppError, AppResult},
+    harness::Harness,
     ids::ConvoId,
     mcp::streamable_http_service,
-    services::harness::Harness,
     tabs::{activity::EnrichedTabRecord, hex_for_slug},
 };
 use axum::{

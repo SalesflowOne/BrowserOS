@@ -111,7 +111,7 @@ impl ToolCall {
             identity,
             browser_session,
             page_snapshot: None,
-            started_at_ms: crate::services::now_epoch_ms(),
+            started_at_ms: crate::clock::now_epoch_ms(),
             cancel,
             client_cancel,
             dispatch_cancel,

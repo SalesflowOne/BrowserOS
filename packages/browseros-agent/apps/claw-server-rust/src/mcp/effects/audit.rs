@@ -1,10 +1,10 @@
 use crate::{
     capture::audit::{DispatchResultSummary, RecordToolDispatchInput},
+    clock::now_epoch_ms,
     mcp::{
         dispatch::{ToolCall, ToolEffect, ToolEffectContext, extract_page_id, result_page_id},
         timeouts::{AUDIT_SCREENSHOT_CAPTURE, SCREENCAST_FRAME_FRESHNESS},
     },
-    services::now_epoch_ms,
     tabs::activity::ScreencastFrame,
 };
 use base64::Engine;

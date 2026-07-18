@@ -261,7 +261,7 @@ impl RecordingStore {
             loop {
                 ticker.tick().await;
                 match self
-                    .sweep_retention(retention_days, crate::services::now_epoch_ms())
+                    .sweep_retention(retention_days, crate::clock::now_epoch_ms())
                     .await
                 {
                     Ok(result) => info!(

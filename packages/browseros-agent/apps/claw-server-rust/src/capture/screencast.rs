@@ -1,6 +1,6 @@
 use crate::{
     browser::BrowserService,
-    services::now_epoch_ms,
+    clock::now_epoch_ms,
     tabs::activity::{ScreencastFrame, TabActivityRecord, TabActivityService},
 };
 use browseros_core::{
