@@ -6,10 +6,18 @@
 
 import { ownershipStore } from '../../domain/ownership'
 import { tabActivityRegistry } from '../../lib/tab-activity'
+import {
+  claimTargetForSession,
+  releaseTargetForSession,
+} from '../../services/tab-claims'
 import type { ToolEffect } from '../dispatch'
 
 /** Updates ownership for successful tab creation and closure results. */
-export const applyOwnershipClaims: ToolEffect = ({ call, result }) => {
+export const applyOwnershipClaims: ToolEffect = ({
+  call,
+  result,
+  startedAtMs,
+}) => {
   if (result.isError || !call.agent || !call.key) return undefined
 
   if (call.flags.newPage) {
@@ -27,6 +35,12 @@ export const applyOwnershipClaims: ToolEffect = ({ call, result }) => {
         targetId: live.targetId,
         toolName: 'tabs',
       })
+      claimTargetForSession({
+        targetId: live.targetId,
+        sessionId: call.sessionId,
+        agentId: call.agent.agentId,
+        claimedAt: startedAtMs,
+      })
     }
     // The isolation ledger grants this agent access to the result-born page.
     ownershipStore.claimPage(call.key, pageId)
@@ -37,6 +51,9 @@ export const applyOwnershipClaims: ToolEffect = ({ call, result }) => {
   const page = (call.args as { page?: unknown } | null)?.page
   if (typeof page === 'number' && Number.isInteger(page) && page >= 1) {
     ownershipStore.releasePage(call.key, page)
+    if (call.pageSnapshot) {
+      releaseTargetForSession(call.pageSnapshot.targetId, call.sessionId)
+    }
   }
   return undefined
 }

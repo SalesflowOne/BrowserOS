@@ -29,7 +29,7 @@ pub async fn list_replay_tabs(
     let live = sessions.snapshot().await;
     let mut live_by_agent_id = HashMap::with_capacity(live.len());
     for session in live {
-        let agent_id = session.agent().agent_id().as_str().to_string();
+        let agent_id = session.agent_id().as_str().to_string();
         live_by_agent_id.entry(agent_id).or_insert(session);
     }
 
@@ -39,7 +39,7 @@ pub async fn list_replay_tabs(
         let Some(session) = live_by_agent_id.get(record.agent_id.as_str()) else {
             continue;
         };
-        let agent_key = session.agent().ownership_key();
+        let agent_key = session.ownership_key().clone();
         tabs.push(ReplayTab {
             session_id: session.id().as_str().to_string(),
             tab_page_id: record.page_id,

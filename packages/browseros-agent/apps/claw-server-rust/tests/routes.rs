@@ -7,7 +7,7 @@ use browseros_core::TargetId;
 use claw_server_rust::{
     AppState, build_router,
     config::Config,
-    domain::{AgentId, AgentRef, Session, SessionId, TabGroupColor},
+    domain::{AgentRef, ProfileId, Session, SessionId, SessionIdentity, TabGroupColor},
     services::tab_activity::RecordToolInput,
 };
 use futures_util::{SinkExt, StreamExt};
@@ -51,6 +51,7 @@ async fn test_app_with_options(
         resources_dir: dir.path().join("resources"),
         browserclaw_dir: root,
         session_idle: Duration::from_secs(300),
+        session_retention: Duration::from_secs(7_200),
         session_sweep_interval: Duration::from_secs(60),
         screencast_screenshot_fallback,
         dev_mode: false,
@@ -278,6 +279,8 @@ async fn audit_empty_and_replay_gone() -> anyhow::Result<()> {
 #[tokio::test]
 async fn replay_tabs_tracks_only_live_agent_sessions() -> anyhow::Result<()> {
     let app = test_app().await?;
+    let session_id = SessionId::new("session-live");
+    let session = test_session(session_id.clone(), "agent-live", "codex");
     app.state
         .tab_activity
         .record_tool(RecordToolInput {
@@ -285,7 +288,7 @@ async fn replay_tabs_tracks_only_live_agent_sessions() -> anyhow::Result<()> {
             page_id: 7,
             url: "https://example.com/live".to_string(),
             title: "Live Tab".to_string(),
-            agent_id: "agent-live".to_string(),
+            agent_id: session.agent_id().as_str().to_string(),
             slug: "codex".to_string(),
             tool_name: "tabs".to_string(),
         })
@@ -295,8 +298,6 @@ async fn replay_tabs_tracks_only_live_agent_sessions() -> anyhow::Result<()> {
     assert_eq!(status, StatusCode::OK, "initialize body: {body:?}");
     assert_eq!(body, json!({ "tabs": [] }));
 
-    let session_id = SessionId::new("session-live");
-    let session = test_session(session_id.clone(), "agent-live", "codex");
     app.state.sessions.insert_for_testing(session.clone()).await;
 
     let (status, body) = request_json(&app.router, "GET", "/replay/tabs", None).await?;
@@ -315,7 +316,7 @@ async fn replay_tabs_tracks_only_live_agent_sessions() -> anyhow::Result<()> {
         .sessions
         .ownership()
         .set_tab_group(
-            session.agent().ownership_key(),
+            session.ownership_key().clone(),
             Some("group-live".to_string()),
             Some(TabGroupColor::Purple),
         )
@@ -337,40 +338,39 @@ async fn replay_tabs_tracks_only_live_agent_sessions() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn replay_tabs_keeps_first_live_session_per_agent_id() -> anyhow::Result<()> {
+async fn replay_tabs_maps_each_session_scoped_agent_id() -> anyhow::Result<()> {
     let app = test_app().await?;
-    app.state
-        .tab_activity
-        .record_tool(RecordToolInput {
-            target_id: TargetId::from("target-duplicate".to_string()),
-            page_id: 8,
-            url: "https://example.com/duplicate".to_string(),
-            title: "Duplicate".to_string(),
-            agent_id: "agent-duplicate".to_string(),
-            slug: "codex".to_string(),
-            tool_name: "tabs".to_string(),
-        })
-        .await;
-    app.state
-        .sessions
-        .insert_for_testing(test_session(
-            SessionId::new("session-a"),
-            "agent-duplicate",
-            "codex",
-        ))
-        .await;
-    app.state
-        .sessions
-        .insert_for_testing(test_session(
-            SessionId::new("session-b"),
-            "agent-duplicate",
-            "codex",
-        ))
-        .await;
+    let session_a = test_session(SessionId::new("session-a"), "agile-alpaca", "codex");
+    let session_b = test_session(SessionId::new("session-b"), "bright-beaver", "codex");
+    for (index, session) in [&session_a, &session_b].into_iter().enumerate() {
+        app.state
+            .tab_activity
+            .record_tool(RecordToolInput {
+                target_id: TargetId::from(format!("target-{index}")),
+                page_id: u32::try_from(index + 8)?,
+                url: format!("https://example.com/{index}"),
+                title: format!("Session {index}"),
+                agent_id: session.agent_id().as_str().to_string(),
+                slug: "codex".to_string(),
+                tool_name: "tabs".to_string(),
+            })
+            .await;
+    }
+    app.state.sessions.insert_for_testing(session_a).await;
+    app.state.sessions.insert_for_testing(session_b).await;
 
     let (status, body) = request_json(&app.router, "GET", "/replay/tabs", None).await?;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["tabs"][0]["sessionId"], "session-a");
+    let session_ids = body["tabs"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("tabs not array"))?
+        .iter()
+        .filter_map(|tab| tab["sessionId"].as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        session_ids,
+        std::collections::BTreeSet::from(["session-a", "session-b"])
+    );
     Ok(())
 }
 
@@ -484,7 +484,7 @@ async fn mcp_initialize_list_guard_audit_and_delete() -> anyhow::Result<()> {
             .as_array()
             .ok_or_else(|| anyhow::anyhow!("tools not array"))?
             .len(),
-        16
+        17
     );
 
     let blocked = json!({
@@ -548,7 +548,107 @@ async fn mcp_initialize_list_guard_audit_and_delete() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn mcp_session_naming_triggers_once_after_first_successful_tabs_new() -> anyhow::Result<()> {
+async fn mcp_name_session_lists_and_renames_while_disconnected() -> anyhow::Result<()> {
+    let app = test_app().await?;
+    let session_id = initialize_mcp(&app).await?;
+    let headers = [("mcp-session-id", session_id.as_str())];
+
+    let (status, _headers, body) = request_json_with_headers(
+        &app.router,
+        "POST",
+        "/mcp",
+        Some(json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {} })),
+        &headers,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    let tool = body["result"]["tools"]
+        .as_array()
+        .and_then(|tools| tools.iter().find(|tool| tool["name"] == "name_session"))
+        .ok_or_else(|| anyhow::anyhow!("name_session missing"))?;
+    assert_eq!(
+        tool["description"],
+        "Rename this browser session: a small lowercase 2-3 word label for what this session is doing, e.g. \"invoice processing\". Tabs are grouped as <client>/<name>. Call again to rename."
+    );
+    assert_eq!(
+        tool["inputSchema"],
+        json!({
+            "type": "object",
+            "properties": { "name": { "type": "string", "maxLength": 64 } },
+            "required": ["name"]
+        })
+    );
+    assert_eq!(
+        tool["annotations"],
+        json!({
+            "title": "Name session",
+            "readOnlyHint": false,
+            "destructiveHint": false,
+            "idempotentHint": true
+        })
+    );
+
+    let session = app
+        .state
+        .sessions
+        .lookup(&SessionId::new(session_id.clone()))
+        .await
+        .ok_or_else(|| anyhow::anyhow!("session not minted"))?;
+    let generated = session.generated_label().to_string();
+    let (status, _headers, body) = request_json_with_headers(
+        &app.router,
+        "POST",
+        "/mcp",
+        Some(name_session_request(3, "  Invoice Processing!!!  ")),
+        &headers,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["result"]["isError"], false);
+    assert_eq!(
+        body["result"]["content"][0]["text"],
+        format!("renamed to codex/invoice-processing (was codex/{generated})")
+    );
+    assert_eq!(session.label().await, "invoice-processing");
+
+    let (_status, _headers, body) = request_json_with_headers(
+        &app.router,
+        "POST",
+        "/mcp",
+        Some(name_session_request(4, "Quarterly Reporting")),
+        &headers,
+    )
+    .await?;
+    assert_eq!(
+        body["result"]["content"][0]["text"],
+        "renamed to codex/quarterly-reporting (was codex/invoice-processing)"
+    );
+
+    for (id, invalid, message) in [
+        (
+            5,
+            "!!!".to_string(),
+            "name must contain a usable session name",
+        ),
+        (6, "x".repeat(65), "name must be at most 64 characters"),
+    ] {
+        let (_status, _headers, body) = request_json_with_headers(
+            &app.router,
+            "POST",
+            "/mcp",
+            Some(name_session_request(id, &invalid)),
+            &headers,
+        )
+        .await?;
+        assert_eq!(body["result"]["isError"], true);
+        assert_eq!(body["result"]["content"][0]["text"], message);
+        assert_eq!(session.label().await, "quarterly-reporting");
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn mcp_session_naming_appends_five_tips_without_elicitation() -> anyhow::Result<()> {
     let mock = MockCdp::start().await?;
     let app = test_app_with_cdp_port(mock.cdp_port, false).await?;
     app.state.browser.connect_once_for_testing().await?;
@@ -559,7 +659,7 @@ async fn mcp_session_naming_triggers_once_after_first_successful_tabs_new() -> a
         "method": "initialize",
         "params": {
             "protocolVersion": "2025-06-18",
-            "capabilities": { "elicitation": {} },
+            "capabilities": {},
             "clientInfo": { "name": "Claude Code", "version": "1.0" }
         }
     });
@@ -573,24 +673,6 @@ async fn mcp_session_naming_triggers_once_after_first_successful_tabs_new() -> a
         .to_string();
     send_initialized(&app.router, &session_id).await?;
 
-    // Naming starts only after a successful tabs-new call, so initialize and
-    // tool discovery must not create an elicitation or session label.
-    let list = json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {} });
-    let (status, _headers, body) = request_json_with_headers(
-        &app.router,
-        "POST",
-        "/mcp",
-        Some(list),
-        &[("mcp-session-id", &session_id)],
-    )
-    .await?;
-    assert_eq!(status, StatusCode::OK);
-    assert!(
-        body["result"]["tools"]
-            .as_array()
-            .is_some_and(|tools| !tools.is_empty())
-    );
-
     wait_for_session_registration(&app, &session_id).await?;
     let session = app
         .state
@@ -598,81 +680,43 @@ async fn mcp_session_naming_triggers_once_after_first_successful_tabs_new() -> a
         .lookup(&SessionId::new(session_id.clone()))
         .await
         .ok_or_else(|| anyhow::anyhow!("session not minted"))?;
-    assert_eq!(session.session_label().await, None);
+    let generated = session.generated_label().to_string();
+    assert_eq!(session.label().await, generated);
 
     let mut stream = McpSseStream::open(&app.router, &session_id).await?;
-    let (status, _headers, body) = request_json_with_headers(
-        &app.router,
-        "POST",
-        "/mcp",
-        Some(tabs_new_request(3)),
-        &[("mcp-session-id", &session_id)],
-    )
-    .await?;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["result"]["isError"], false, "tabs_new body: {body:?}");
-
-    let elicitation = tokio::time::timeout(
-        Duration::from_secs(2),
-        stream.next_method("elicitation/create"),
-    )
-    .await??;
-    assert_eq!(elicitation["params"]["mode"], "form");
-    assert_eq!(
-        elicitation["params"]["requestedSchema"]["required"],
-        json!(["name"])
+    let tip = format!(
+        "Tip: this session is \"claude/{generated}\" — rename it with name_session name=\"<2-3 word task label>\""
     );
-    let request_id = elicitation["id"].clone();
-    let (status, _headers, _body) = request_json_with_headers(
-        &app.router,
-        "POST",
-        "/mcp",
-        Some(json!({
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "result": {
-                "action": "accept",
-                "content": { "name": "Invoice Processing!!!" }
-            }
-        })),
-        &[("mcp-session-id", &session_id)],
-    )
-    .await?;
-    assert_eq!(status, StatusCode::ACCEPTED);
-
-    let mut applied = false;
-    for _ in 0..100 {
-        let label_ready = session.session_label().await.as_deref() == Some("invoice-processing");
-        let title_ready = mock.group_updates.lock().await.iter().any(|params| {
-            params.get("title").and_then(Value::as_str) == Some("claude/invoice-processing")
-        });
-        if label_ready && title_ready {
-            applied = true;
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
+    for id in 3..=7 {
+        let (status, _headers, body) = request_json_with_headers(
+            &app.router,
+            "POST",
+            "/mcp",
+            Some(tabs_new_request(id)),
+            &[("mcp-session-id", &session_id)],
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["result"]["isError"], false, "tabs_new body: {body:?}");
+        assert_eq!(
+            body["result"]["content"]
+                .as_array()
+                .and_then(|content| content.last())
+                .and_then(|block| block["text"].as_str()),
+            Some(tip.as_str())
+        );
     }
-    assert!(applied, "session label or group title was not applied");
-    assert_eq!(
-        app.state
-            .sessions
-            .ownership()
-            .tab_group_ref(&session.agent().ownership_key())
-            .await
-            .as_deref(),
-        Some("group-1")
-    );
-
     let (status, _headers, body) = request_json_with_headers(
         &app.router,
         "POST",
         "/mcp",
-        Some(tabs_new_request(4)),
+        Some(tabs_new_request(8)),
         &[("mcp-session-id", &session_id)],
     )
     .await?;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["result"]["isError"], false, "tabs_new body: {body:?}");
+    assert!(!body.to_string().contains("Tip: this session is"));
     match tokio::time::timeout(
         Duration::from_millis(250),
         stream.next_method("elicitation/create"),
@@ -680,9 +724,10 @@ async fn mcp_session_naming_triggers_once_after_first_successful_tabs_new() -> a
     .await
     {
         Err(_) => {}
-        Ok(Ok(request)) => anyhow::bail!("second tabs new elicited again: {request:?}"),
+        Ok(Ok(request)) => anyhow::bail!("unexpected elicitation: {request:?}"),
         Ok(Err(error)) => return Err(error),
     }
+    assert!(!mock.group_updates.lock().await.is_empty());
     drop(mock);
     Ok(())
 }
@@ -801,6 +846,113 @@ async fn mcp_tabs_new_roundtrips_through_mock_cdp() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn same_name_mcp_sessions_have_distinct_groups_and_reject_cross_page_access()
+-> anyhow::Result<()> {
+    let mock = MockCdp::start().await?;
+    let app = test_app_with_cdp_port(mock.cdp_port, false).await?;
+    app.state.browser.connect_once_for_testing().await?;
+    wait_for_cdp_connected(&app.router).await?;
+    let session_a_id = initialize_mcp(&app).await?;
+    let session_b_id = initialize_mcp(&app).await?;
+    let session_a = app
+        .state
+        .sessions
+        .lookup(&SessionId::new(session_a_id.clone()))
+        .await
+        .ok_or_else(|| anyhow::anyhow!("first session missing"))?;
+    let session_b = app
+        .state
+        .sessions
+        .lookup(&SessionId::new(session_b_id.clone()))
+        .await
+        .ok_or_else(|| anyhow::anyhow!("second session missing"))?;
+    assert_ne!(session_a.agent_id(), session_b.agent_id());
+    assert_ne!(session_a.ownership_key(), session_b.ownership_key());
+
+    for (id, session_id) in [(10, &session_a_id), (11, &session_b_id)] {
+        let (status, _headers, body) = request_json_with_headers(
+            &app.router,
+            "POST",
+            "/mcp",
+            Some(tabs_new_request(id)),
+            &[("mcp-session-id", session_id)],
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["result"]["isError"], false, "tabs new: {body:?}");
+    }
+
+    let ownership = app.state.sessions.ownership();
+    let (group_a, group_b) = wait_for_distinct_session_groups(
+        &ownership,
+        session_a.ownership_key(),
+        session_b.ownership_key(),
+    )
+    .await?;
+    assert_ne!(group_a, group_b);
+    let pages_a = ownership.owned_pages(session_a.ownership_key()).await;
+    let pages_b = ownership.owned_pages(session_b.ownership_key()).await;
+    assert_eq!(pages_a.len(), 1);
+    assert_eq!(pages_b.len(), 1);
+    assert!(pages_a.is_disjoint(&pages_b));
+    let page_a = pages_a
+        .first()
+        .map(|page| page.0)
+        .ok_or_else(|| anyhow::anyhow!("first session page missing"))?;
+    let page_b = pages_b
+        .first()
+        .map(|page| page.0)
+        .ok_or_else(|| anyhow::anyhow!("second session page missing"))?;
+
+    for (id, name, arguments) in [
+        (12, "snapshot", json!({ "page": page_b })),
+        (
+            13,
+            "navigate",
+            json!({ "page": page_b, "url": "https://example.org" }),
+        ),
+    ] {
+        let (status, _headers, body) = request_json_with_headers(
+            &app.router,
+            "POST",
+            "/mcp",
+            Some(json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "method": "tools/call",
+                "params": { "name": name, "arguments": arguments }
+            })),
+            &[("mcp-session-id", &session_a_id)],
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["result"]["isError"], true, "cross-page body: {body:?}");
+        assert_eq!(
+            body["result"]["content"][0]["text"],
+            format!(
+                "page {page_b} is not owned by this agent; call `tabs new` to open a fresh page and use the returned page id."
+            )
+        );
+    }
+    let (_status, _headers, body) = request_json_with_headers(
+        &app.router,
+        "POST",
+        "/mcp",
+        Some(json!({
+            "jsonrpc": "2.0",
+            "id": 14,
+            "method": "tools/call",
+            "params": { "name": "snapshot", "arguments": { "page": page_a } }
+        })),
+        &[("mcp-session-id", &session_b_id)],
+    )
+    .await?;
+    assert_eq!(body["result"]["isError"], true);
+    drop(mock);
+    Ok(())
+}
+
+#[tokio::test]
 async fn screencast_fallback_flag_disables_fallback_screenshots() -> anyhow::Result<()> {
     let mock = MockCdp::start().await?;
     let app = test_app_with_options(mock.cdp_port, false, false).await?;
@@ -852,7 +1004,7 @@ async fn cancel_endpoint_aborts_in_flight_dispatch() -> anyhow::Result<()> {
         .lookup(&SessionId::new(session_id.clone()))
         .await
         .ok_or_else(|| anyhow::anyhow!("missing test session"))?;
-    let agent_id = session.agent().agent_id().as_str().to_string();
+    let agent_id = session.agent_id().as_str().to_string();
 
     let (status, _headers, body) = request_json_with_headers(
         &app.router,
@@ -932,7 +1084,7 @@ async fn cancel_endpoint_aborts_in_flight_dispatch() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn tabs_activity_enriches_by_agent_id_only() -> anyhow::Result<()> {
+async fn tabs_activity_enriches_through_live_session_profile_identity() -> anyhow::Result<()> {
     let app = test_app().await?;
     let agents_dir = app.state.config.browserclaw_dir.join("agents");
     tokio::fs::create_dir_all(&agents_dir).await?;
@@ -957,6 +1109,27 @@ async fn tabs_activity_enriches_by_agent_id_only() -> anyhow::Result<()> {
     )
     .await?;
 
+    let stored_session = Session::new(
+        SessionId::new("stored-session"),
+        AgentRef::Profile {
+            profile_id: ProfileId::new("stored-agent"),
+            slug: "mcp".to_string(),
+            label: "Stored Agent".to_string(),
+        },
+        SessionIdentity::new("mcp", "agile-alpaca".to_string()),
+        tokio::time::Instant::now(),
+    );
+    let ephemeral_session =
+        test_session(SessionId::new("ephemeral-session"), "bright-beaver", "mcp");
+    app.state
+        .sessions
+        .insert_for_testing(stored_session.clone())
+        .await;
+    app.state
+        .sessions
+        .insert_for_testing(ephemeral_session.clone())
+        .await;
+
     app.state
         .tab_activity
         .record_tool(RecordToolInput {
@@ -964,7 +1137,7 @@ async fn tabs_activity_enriches_by_agent_id_only() -> anyhow::Result<()> {
             page_id: 1,
             url: "https://example.com/exact".to_string(),
             title: "Exact".to_string(),
-            agent_id: "stored-agent".to_string(),
+            agent_id: stored_session.agent_id().as_str().to_string(),
             slug: "mcp".to_string(),
             tool_name: "tabs".to_string(),
         })
@@ -976,7 +1149,7 @@ async fn tabs_activity_enriches_by_agent_id_only() -> anyhow::Result<()> {
             page_id: 2,
             url: "https://example.com/fallback".to_string(),
             title: "Fallback".to_string(),
-            agent_id: "ephemeral-agent".to_string(),
+            agent_id: ephemeral_session.agent_id().as_str().to_string(),
             slug: "mcp".to_string(),
             tool_name: "tabs".to_string(),
         })
@@ -1104,13 +1277,17 @@ async fn tabs_activity_embeds_polled_screenshot_frames() -> anyhow::Result<()> {
 }
 
 fn test_session(session_id: SessionId, agent_id: &str, slug: &str) -> Arc<Session> {
+    let generated_label = agent_id
+        .strip_prefix(&format!("{slug}-"))
+        .unwrap_or(agent_id)
+        .to_string();
     Session::new(
         session_id,
         AgentRef::Ephemeral {
-            agent_id: AgentId::new(agent_id),
             slug: slug.to_string(),
             label: slug.to_string(),
         },
+        claw_server_rust::domain::SessionIdentity::new(slug, generated_label),
         tokio::time::Instant::now(),
     )
 }
@@ -1154,6 +1331,18 @@ fn tabs_new_request(id: u64) -> Value {
         "params": {
             "name": "tabs",
             "arguments": { "action": "new", "url": "https://example.com" }
+        }
+    })
+}
+
+fn name_session_request(id: u64, name: &str) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "method": "tools/call",
+        "params": {
+            "name": "name_session",
+            "arguments": { "name": name }
         }
     })
 }
@@ -1204,6 +1393,22 @@ async fn wait_for_cdp_connected(router: &Router) -> anyhow::Result<()> {
     Err(anyhow::anyhow!(
         "mock CDP did not connect; last health: {last}"
     ))
+}
+
+async fn wait_for_distinct_session_groups(
+    ownership: &Arc<claw_server_rust::domain::AgentPageOwnership>,
+    key_a: &claw_server_rust::domain::AgentKey,
+    key_b: &claw_server_rust::domain::AgentKey,
+) -> anyhow::Result<(String, String)> {
+    for _ in 0..100 {
+        let group_a = ownership.tab_group_ref(key_a).await;
+        let group_b = ownership.tab_group_ref(key_b).await;
+        if let (Some(group_a), Some(group_b)) = (group_a, group_b) {
+            return Ok((group_a, group_b));
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    anyhow::bail!("session tab groups were not created")
 }
 
 struct MockCdp {
@@ -1434,6 +1639,14 @@ async fn handle_mock_cdp_method(
         "Page.captureScreenshot" => Ok(json!({ "data": "anBlZw==" })),
         "Browser.createTabGroup" => {
             let mut tabs = tabs.lock().await;
+            let group_id = format!(
+                "group-{}",
+                tabs.iter()
+                    .filter_map(|tab| tab.group_id.as_deref())
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len()
+                    + 1
+            );
             let tab_ids = params
                 .get("tabIds")
                 .and_then(Value::as_array)
@@ -1443,12 +1656,12 @@ async fn handle_mock_cdp_method(
                 if let Some(tab_id) = id.as_i64()
                     && let Some(tab) = tabs.iter_mut().find(|tab| tab.tab_id == tab_id)
                 {
-                    tab.group_id = Some("group-1".to_string());
+                    tab.group_id = Some(group_id.clone());
                 }
             }
             Ok(json!({
                 "group": {
-                    "groupId": "group-1",
+                    "groupId": group_id,
                     "windowId": 1,
                     "title": params.get("title").and_then(Value::as_str).unwrap_or("group"),
                     "color": "blue",

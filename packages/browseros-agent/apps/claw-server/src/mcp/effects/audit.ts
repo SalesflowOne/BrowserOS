@@ -32,8 +32,15 @@ export const applyAudit: ToolEffect = ({
     return undefined
   }
 
-  const pageId = extractPageId(call.tool.name, call.args)
+  const resultPageId = (
+    result.structuredContent as { page?: number } | undefined
+  )?.page
+  const pageId =
+    call.flags.newPage && typeof resultPageId === 'number'
+      ? resultPageId
+      : extractPageId(call.tool.name, call.args)
   const live = pageId !== null ? call.session?.pages.getInfo(pageId) : null
+  const page = live ?? call.pageSnapshot
   const dispatchId = recordToolDispatch({
     agentId: call.agent.agentId,
     slug: call.agent.slug,
@@ -41,9 +48,9 @@ export const applyAudit: ToolEffect = ({
     sessionId: call.sessionId,
     toolName: call.tool.name,
     pageId,
-    targetId: live?.targetId ?? null,
-    url: live?.url ?? null,
-    title: live?.title ?? null,
+    targetId: page?.targetId ?? null,
+    url: page?.url ?? null,
+    title: page?.title ?? null,
     rawArgs: call.args,
     durationMs,
     result: {
@@ -54,19 +61,10 @@ export const applyAudit: ToolEffect = ({
   })
   if (dispatchId === null) return undefined
 
-  // `tabs new` is the one page-targeted tool whose page id is born in the
-  // result. Prefer it so screenshot fallback and first-capture use that tab.
-  const resultPageId = (
-    result.structuredContent as { page?: number } | undefined
-  )?.page
-  const screenshotPageId =
-    call.flags.newPage && typeof resultPageId === 'number'
-      ? resultPageId
-      : pageId
   persistScreenshot({
     dispatchId,
     toolName: call.tool.name,
-    pageId: screenshotPageId,
+    pageId,
     agentId: call.agent.agentId,
     result: {
       isError: result.isError ?? false,
@@ -86,6 +84,7 @@ function recordDispatch(
   if (!call.agent) return
   const pageId = extractPageId(call.tool.name, call.args)
   const live = pageId !== null ? call.session?.pages.getInfo(pageId) : null
+  const page = live ?? call.pageSnapshot
   recordToolDispatch({
     agentId: call.agent.agentId,
     slug: call.agent.slug,
@@ -93,9 +92,9 @@ function recordDispatch(
     sessionId: call.sessionId,
     toolName: call.tool.name,
     pageId,
-    targetId: live?.targetId ?? null,
-    url: live?.url ?? null,
-    title: live?.title ?? null,
+    targetId: page?.targetId ?? null,
+    url: page?.url ?? null,
+    title: page?.title ?? null,
     rawArgs: call.args,
     durationMs,
     result: {

@@ -89,6 +89,9 @@ describe('loadClawConfig', () => {
         client_id: 'client-123',
         install_id: 'install-456',
       },
+      replay: {
+        retentionDays: 14,
+      },
     })
 
     const result = loadClawConfig({
@@ -104,6 +107,7 @@ describe('loadClawConfig', () => {
         proxyPort: 9120,
         cdpPort: 9020,
         resourcesDir: join(dirname(configPath), '../resources'),
+        replay: { retentionDays: 14 },
       },
     })
   })

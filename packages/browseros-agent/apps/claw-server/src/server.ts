@@ -22,10 +22,10 @@ import { agentsControlRoute } from './routes/agents-control'
 import { auditRoute } from './routes/audit'
 import { auditScreenshotsRoute } from './routes/audit/screenshots'
 import { auditTasksRoute } from './routes/audit/tasks'
-import { auditReplayRoute } from './routes/audit-replay'
-import { replayTabsRoute } from './routes/audit-replay/tabs'
+import { auditReplaysRoute } from './routes/audit-replays'
 import { connectionsRoute } from './routes/connections'
 import { mcpRoute } from './routes/mcp'
+import { recordingsRoute } from './routes/recordings'
 import { createSystemRoute } from './routes/system'
 import { tabsRoute } from './routes/tabs'
 
@@ -112,8 +112,8 @@ export function createServer(options: CreateServerOptions = {}) {
     .route('/', auditRoute)
     .route('/', auditTasksRoute)
     .route('/', auditScreenshotsRoute)
-    .route('/', auditReplayRoute)
-    .route('/', replayTabsRoute)
+    .route('/', recordingsRoute)
+    .route('/', auditReplaysRoute)
 }
 
 const routes = createServer()

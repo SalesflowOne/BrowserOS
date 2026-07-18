@@ -30,6 +30,7 @@ import {
   identityService,
   normalizeSmallName,
 } from '../lib/mcp-session'
+import { extractPageId } from '../lib/tab-activity'
 import {
   CANCELLATION_REASON,
   dispatchCancellation,
@@ -60,6 +61,12 @@ export interface ToolCall {
   session: BrowserSession | null
   signal?: AbortSignal
   defaultTabGroupId: string | null
+  pageSnapshot?: {
+    pageId: number
+    targetId: string
+    url: string
+    title: string
+  }
   flags: { newPage: boolean; closePage: boolean; listTabs: boolean }
 }
 
@@ -70,6 +77,7 @@ export interface ToolEffectContext {
   result: ToolResult
   cancelled: boolean
   durationMs: number
+  startedAtMs: number
 }
 
 export type ToolEffect = (context: ToolEffectContext) => ToolResult | undefined
@@ -193,6 +201,7 @@ interface ExecutionOutcome {
   result: ToolResult
   cancelled: boolean
   durationMs: number
+  startedAtMs: number
 }
 
 type ConnectedToolCall = ToolCall & { session: BrowserSession }
@@ -213,6 +222,9 @@ function buildToolCall(
     tool.name === 'tabs'
       ? ((args as { action?: unknown } | null | undefined)?.action ?? 'list')
       : null
+  const session = getBrowserSession()
+  const pageId = extractPageId(tool.name, args)
+  const page = pageId === null ? undefined : session?.pages.getInfo(pageId)
   return {
     tool,
     args,
@@ -227,9 +239,17 @@ function buildToolCall(
           ? identity.clientName
           : (agent?.slug ?? null)
       : null,
-    session: getBrowserSession(),
+    session,
     signal: extra?.signal,
     defaultTabGroupId,
+    ...(page && {
+      pageSnapshot: {
+        pageId: page.pageId,
+        targetId: page.targetId,
+        url: page.url,
+        title: page.title,
+      },
+    }),
     flags: {
       newPage: action === 'new',
       closePage: action === 'close',
@@ -306,6 +326,7 @@ async function executeWithCancellation(
     result,
     cancelled: userCancel.signal.aborted,
     durationMs: Date.now() - dispatchStart,
+    startedAtMs: dispatchStart,
   }
 }
 

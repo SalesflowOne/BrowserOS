@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it, mock } from 'bun:test'
-import type { LlmProviderConfig } from '@/lib/llm-providers/types'
 import * as _providerTemplates from '../../lib/llm-providers/providerTemplates'
+import type { LlmProviderConfig } from '../../lib/llm-providers/types'
 import type { OAuthProviderFlowConfig } from './oauth-provider-flow.hooks'
 
 // sonner is an npm package; total-replacement is intentional.

@@ -28,11 +28,14 @@ import { logger } from './lib/logger'
 import { migrateMcpConfigPaths } from './lib/migrate-mcp-config-paths'
 import { migrateMcpUrls } from './lib/migrate-mcp-urls'
 import { writeRuntimeFile } from './lib/runtime-file'
+import { initializeTabTargets, stopTabTargets } from './lib/tab-targets'
 import { setLocalServerUrl } from './local-server-url'
 import { createServer } from './server'
 import { captureEvent, shutdownAnalytics } from './services/analytics'
 import { runIntegrityScan } from './services/integrity-scan'
+import { recordingStore, startRecordingRetention } from './services/recordings'
 import { startScreencastPoller } from './services/screencast-poller'
+import { releaseAllOpenClaims } from './services/tab-claims'
 import { publicMcpUrl } from './shared/mcp-url'
 
 async function start(): Promise<void> {
@@ -43,6 +46,14 @@ async function start(): Promise<void> {
     process.exit(1)
   }
   applyClawConfig(config.value)
+
+  releaseAllOpenClaims()
+  // Ingest clients drop unknown-tab batches, so seed identity before health can report ready.
+  const bootstrap = await bootstrapBrowserosBrowser()
+  if (bootstrap) {
+    setBrowserSession(bootstrap.session)
+    await initializeTabTargets(bootstrap.session)
+  }
 
   let shutdown = (): void => process.exit(0)
   const app = createServer({ onShutdown: () => shutdown() })
@@ -55,6 +66,10 @@ async function start(): Promise<void> {
   // the de-facto singleton lock, so a second accidental launch dies on
   // EADDRINUSE before it can rotate the live instance's log file.
   logger.setLogFile(getClawServerDir())
+  const recordingRetention = startRecordingRetention(
+    recordingStore,
+    env.replayRetentionDays,
+  )
   const url = `http://${httpServer.hostname}:${httpServer.port}`
   setLocalServerUrl(url)
   logger.info('claw-server listening', { url })
@@ -67,11 +82,45 @@ async function start(): Promise<void> {
   //
   // Intentionally NOT awaited: writeRuntimeFile owns its own error
   // handling (logs a warning on failure, never throws). Awaiting here
-  // would gate the integrity scan, browser bootstrap, and MCP URL
-  // migration on a best-effort disk write that can hang on a stalled
-  // network / FUSE / container-mounted filesystem even though the
-  // socket is already bound and serving.
+  // would gate the integrity scan and MCP URL migration on a
+  // best-effort disk write that can hang on a stalled network / FUSE /
+  // container-mounted filesystem, even though the socket is already serving.
   void writeRuntimeFile(url)
+
+  if (bootstrap) {
+    logger.info('cockpit attached to browseros browser', {
+      cdpPort: env.cdpPort,
+    })
+  }
+  const screencast = bootstrap
+    ? startScreencastPoller({ session: bootstrap.session })
+    : null
+  let exiting = false
+  // Stop intake before draining writes so no claim or batch can arrive after closure.
+  const cleanup = (): void => {
+    if (exiting) return
+    exiting = true
+    screencast?.stop()
+    const retentionDrain = recordingRetention.stop()
+    const killSwitch = setTimeout(() => process.exit(1), 5_000)
+    killSwitch.unref()
+    void (async () => {
+      await Promise.allSettled([httpServer.stop()])
+      await retentionDrain
+      await Promise.allSettled([recordingStore.close()])
+      stopTabTargets()
+      releaseAllOpenClaims()
+      const shutdownTasks: Promise<void>[] = [shutdownAnalytics()]
+      if (bootstrap) shutdownTasks.push(bootstrap.disconnect())
+      await Promise.allSettled(shutdownTasks)
+    })().finally(() => {
+      clearTimeout(killSwitch)
+      process.exit(0)
+    })
+  }
+  shutdown = cleanup
+  process.once('SIGINT', cleanup)
+  process.once('SIGTERM', cleanup)
 
   // Self-heal loop 1: diff manifest vs. on-disk agent configs and
   // relink any drifted / missing entries from the manifest-stored
@@ -84,65 +133,6 @@ async function start(): Promise<void> {
     logger.warn('integrity scan failed unexpectedly', {
       error: err instanceof Error ? err.message : String(err),
     })
-  }
-
-  // Attach to the BrowserOS Chromium so MCP `tools/call` dispatches
-  // hit a real browser. The bootstrap soft-fails when BrowserOS is
-  // not reachable: the cockpit keeps serving the UI, connection
-  // routes, and `tools/list`, and `tools/call` continues
-  // to short-circuit with the existing "session not connected"
-  // wire shape until the user restarts the cockpit with BrowserOS
-  // up. Reattach on transient drops is the CdpBackend's job (we
-  // pass `exitOnReconnectFailure: false` so it does not kill the
-  // process).
-  const bootstrap = await bootstrapBrowserosBrowser()
-  if (bootstrap) {
-    setBrowserSession(bootstrap.session)
-    logger.info('cockpit attached to browseros browser', {
-      cdpPort: env.cdpPort,
-    })
-    // Drive the Running-now homepage screencast against the live
-    // session. Cleanly stopped on SIGINT/SIGTERM below; the handle is
-    // a no-op interval (unref'd) so it never blocks shutdown.
-    const screencast = startScreencastPoller({ session: bootstrap.session })
-    // `exiting` guards against double-cleanup when a supervisor sends
-    // SIGINT and SIGTERM back-to-back. `process.once` removes each
-    // handler independently, so without the flag a SIGTERM that
-    // arrives while the SIGINT cleanup is still in flight would
-    // restart `disconnect()` on an already-closing CDP connection.
-    // The kill switch guarantees forward progress: a hung
-    // `cdp.disconnect()` (half-open socket, network stall) would
-    // otherwise leave the process stuck because both handlers have
-    // already been removed and only SIGKILL could recover it.
-    let exiting = false
-    const cleanup = (): void => {
-      if (exiting) return
-      exiting = true
-      screencast.stop()
-      setTimeout(() => process.exit(1), 5_000).unref()
-      // Drain queued analytics alongside the CDP disconnect so the
-      // last session event is not stranded; the 5s kill switch above
-      // bounds either hanging.
-      Promise.allSettled([bootstrap.disconnect(), shutdownAnalytics()]).finally(
-        () => process.exit(0),
-      )
-    }
-    shutdown = cleanup
-    process.once('SIGINT', cleanup)
-    process.once('SIGTERM', cleanup)
-  } else {
-    // No browser attached (BrowserOS not reachable): still flush
-    // analytics on exit so boot/connect events are not lost.
-    let exiting = false
-    const cleanup = (): void => {
-      if (exiting) return
-      exiting = true
-      setTimeout(() => process.exit(1), 5_000).unref()
-      shutdownAnalytics().finally(() => process.exit(0))
-    }
-    shutdown = cleanup
-    process.once('SIGINT', cleanup)
-    process.once('SIGTERM', cleanup)
   }
 
   // Self-heal loop 2: rewrite the shared BrowserClaw MCP spec when

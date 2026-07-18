@@ -15,6 +15,7 @@ import {
   agentSessionStarts,
 } from '../modules/db/schema/schema'
 import { bucketClientName, captureEvent } from './analytics'
+import { releaseClaimsForSession } from './tab-claims'
 
 export interface RecordSessionStartInput {
   sessionId: string
@@ -52,6 +53,7 @@ export interface RecordSessionEndInput {
 
 /** Fire-and-forget. Never throws. */
 export function recordSessionEnd(input: RecordSessionEndInput): void {
+  releaseClaimsForSession(input.sessionId)
   try {
     const db = getAuditDb()
     db.insert(agentSessionEnds)

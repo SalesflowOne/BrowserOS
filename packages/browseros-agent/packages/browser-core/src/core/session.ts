@@ -1,3 +1,4 @@
+import type { ProtocolApi } from '@browseros/cdp-protocol/protocol-api'
 import type { CdpConnection } from './connection'
 import { Input } from './input/input'
 import { Navigation } from './navigation'
@@ -101,6 +102,16 @@ export class BrowserSession {
 
   isConnected(): boolean {
     return this.connection.isConnected()
+  }
+
+  /** Exposes the typed root CDP domains for server-side lifecycle integrations. */
+  get protocol(): ProtocolApi {
+    return this.connection
+  }
+
+  /** Identifies reconnects so lifecycle consumers can rebuild cached browser state. */
+  connectionEpoch(): number {
+    return this.connection.connectionEpoch()
   }
 
   async dispose(): Promise<void> {}

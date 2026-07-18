@@ -53,6 +53,7 @@ function apply(
     result,
     cancelled: false,
     durationMs: 1,
+    startedAtMs: 1,
   })
 }
 

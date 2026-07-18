@@ -11,6 +11,7 @@ use std::{
 const DEFAULT_SERVER_PORT: u16 = 9200;
 const DEFAULT_CDP_PORT: u16 = 49337;
 const DEFAULT_SESSION_IDLE_MS: u64 = 5 * 60 * 1000;
+const DEFAULT_SESSION_RETENTION_MS: u64 = 2 * 60 * 60 * 1000;
 const DEFAULT_SESSION_SWEEP_INTERVAL_MS: u64 = 60 * 1000;
 const BROWSERCLAW_DIR_NAME: &str = ".browserclaw";
 const DEV_BROWSERCLAW_DIR_NAME: &str = ".browserclaw-dev";
@@ -32,6 +33,7 @@ pub struct Config {
     pub resources_dir: PathBuf,
     pub browserclaw_dir: PathBuf,
     pub session_idle: Duration,
+    pub session_retention: Duration,
     pub session_sweep_interval: Duration,
     pub screencast_screenshot_fallback: bool,
     pub dev_mode: bool,
@@ -156,6 +158,11 @@ impl Config {
                 "CLAW_SESSION_IDLE_MS",
                 DEFAULT_SESSION_IDLE_MS,
             )),
+            session_retention: Duration::from_millis(read_positive_ms(
+                env,
+                "CLAW_SESSION_RETENTION_MS",
+                DEFAULT_SESSION_RETENTION_MS,
+            )),
             session_sweep_interval: Duration::from_millis(read_positive_ms(
                 env,
                 "CLAW_SESSION_SWEEP_INTERVAL_MS",
@@ -265,6 +272,7 @@ mod tests {
             dir.path().join("browserclaw").to_string_lossy().to_string(),
         );
         vars.insert("CLAW_SESSION_IDLE_MS".to_string(), "1000".to_string());
+        vars.insert("CLAW_SESSION_RETENTION_MS".to_string(), "2000".to_string());
         let cfg = Config::load_with_env(
             &config_path,
             &ConfigEnv::with_vars(vars, PathBuf::from("/tmp/home")),
@@ -273,6 +281,7 @@ mod tests {
         assert_eq!(cfg.cdp_port, 49337);
         assert_eq!(cfg.proxy_port, None);
         assert_eq!(cfg.session_idle, Duration::from_millis(1000));
+        assert_eq!(cfg.session_retention, Duration::from_millis(2000));
         assert!(cfg.browserclaw_dir.ends_with("browserclaw"));
         assert_eq!(cfg.public_mcp_url(), "http://127.0.0.1:9200/mcp");
         Ok(())
@@ -342,18 +351,20 @@ mod tests {
         fs::write(&config_path, r#"{"ports":{},"directories":{}}"#)?;
         let home = dir.path().join("home");
 
-        let cases: &[(&str, &str, Duration, Duration)] = &[
-            // (idle raw, sweep raw, expected idle, expected sweep)
+        let cases: &[(&str, &str, Duration, Duration, Duration)] = &[
+            // (idle raw, sweep raw, expected idle, expected retention, expected sweep)
             (
                 "garbage",
                 "-500",
                 Duration::from_millis(300_000),
+                Duration::from_millis(7_200_000),
                 Duration::from_millis(60_000),
             ),
             (
                 "0",
                 "0x10",
                 Duration::from_millis(300_000),
+                Duration::from_millis(7_200_000),
                 Duration::from_millis(60_000),
             ),
             // Number.parseInt parity: integer prefix wins, trailing garbage
@@ -363,11 +374,16 @@ mod tests {
                 "500ms",
                 Duration::from_millis(2500),
                 Duration::from_millis(500),
+                Duration::from_millis(500),
             ),
         ];
-        for (idle_raw, sweep_raw, expected_idle, expected_sweep) in cases {
+        for (idle_raw, sweep_raw, expected_idle, expected_retention, expected_sweep) in cases {
             let mut vars = BTreeMap::new();
             vars.insert("CLAW_SESSION_IDLE_MS".to_string(), (*idle_raw).to_string());
+            vars.insert(
+                "CLAW_SESSION_RETENTION_MS".to_string(),
+                (*sweep_raw).to_string(),
+            );
             vars.insert(
                 "CLAW_SESSION_SWEEP_INTERVAL_MS".to_string(),
                 (*sweep_raw).to_string(),
@@ -375,6 +391,10 @@ mod tests {
             let cfg =
                 Config::load_with_env(&config_path, &ConfigEnv::with_vars(vars, home.clone()))?;
             assert_eq!(cfg.session_idle, *expected_idle, "idle raw: {idle_raw:?}");
+            assert_eq!(
+                cfg.session_retention, *expected_retention,
+                "retention raw: {sweep_raw:?}"
+            );
             assert_eq!(
                 cfg.session_sweep_interval, *expected_sweep,
                 "sweep raw: {sweep_raw:?}"
@@ -386,6 +406,7 @@ mod tests {
             &ConfigEnv::with_vars(BTreeMap::new(), home.clone()),
         )?;
         assert_eq!(cfg.session_idle, Duration::from_millis(300_000));
+        assert_eq!(cfg.session_retention, Duration::from_millis(7_200_000));
         assert_eq!(cfg.session_sweep_interval, Duration::from_millis(60_000));
         Ok(())
     }

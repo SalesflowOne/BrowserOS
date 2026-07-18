@@ -22,6 +22,13 @@
       "when": 1784154055975,
       "tag": "0002_default_created_at_in_js",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1784398820284,
+      "tag": "0003_add_recordings",
+      "breakpoints": true
     }
   ]
 }
