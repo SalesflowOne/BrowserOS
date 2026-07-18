@@ -1,4 +1,4 @@
-use crate::domain::{AgentId, AgentKey};
+use crate::domain::{AgentKey, ConvoId};
 use tokio::sync::Mutex;
 
 const ADJECTIVES: [&str; 46] = [
@@ -57,7 +57,7 @@ fn pick<'a>(words: &'a [&str], draw: f64) -> &'a str {
 
 #[derive(Debug)]
 pub struct SessionIdentity {
-    agent_id: AgentId,
+    agent_id: ConvoId,
     ownership_key: AgentKey,
     generated_label: String,
     naming: Mutex<SessionNamingState>,
@@ -75,7 +75,7 @@ impl SessionIdentity {
     pub fn new(client_slug: &str, generated_label: String) -> Self {
         let opaque_id = format!("{client_slug}-{generated_label}");
         Self {
-            agent_id: AgentId::new(opaque_id.clone()),
+            agent_id: ConvoId::new(opaque_id.clone()),
             ownership_key: AgentKey::new(opaque_id),
             generated_label: generated_label.clone(),
             naming: Mutex::new(SessionNamingState {
@@ -86,7 +86,7 @@ impl SessionIdentity {
     }
 
     #[must_use]
-    pub fn agent_id(&self) -> &AgentId {
+    pub fn agent_id(&self) -> &ConvoId {
         &self.agent_id
     }
 

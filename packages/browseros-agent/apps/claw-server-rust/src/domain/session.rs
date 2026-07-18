@@ -1,4 +1,4 @@
-use crate::domain::{AgentId, AgentKey, AgentRef, DispatchId, SessionId, SessionIdentity};
+use crate::domain::{AgentKey, AgentRef, ConvoId, DispatchId, SessionId, SessionIdentity};
 use browseros_core::PageId;
 use serde::Serialize;
 use std::{
@@ -154,7 +154,7 @@ impl Session {
     }
 
     #[must_use]
-    pub fn agent_id(&self) -> &AgentId {
+    pub fn agent_id(&self) -> &ConvoId {
         self.identity.agent_id()
     }
 

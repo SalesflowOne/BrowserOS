@@ -1,4 +1,4 @@
-use crate::{domain::ids::ProfileId, services::agents::StoredAgentProfile};
+use crate::{ids::ProfileId, services::agents::StoredAgentProfile};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
