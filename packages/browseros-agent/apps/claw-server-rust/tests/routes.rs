@@ -846,6 +846,113 @@ async fn mcp_tabs_new_roundtrips_through_mock_cdp() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn same_name_mcp_sessions_have_distinct_groups_and_reject_cross_page_access()
+-> anyhow::Result<()> {
+    let mock = MockCdp::start().await?;
+    let app = test_app_with_cdp_port(mock.cdp_port, false).await?;
+    app.state.browser.connect_once_for_testing().await?;
+    wait_for_cdp_connected(&app.router).await?;
+    let session_a_id = initialize_mcp(&app).await?;
+    let session_b_id = initialize_mcp(&app).await?;
+    let session_a = app
+        .state
+        .sessions
+        .lookup(&SessionId::new(session_a_id.clone()))
+        .await
+        .ok_or_else(|| anyhow::anyhow!("first session missing"))?;
+    let session_b = app
+        .state
+        .sessions
+        .lookup(&SessionId::new(session_b_id.clone()))
+        .await
+        .ok_or_else(|| anyhow::anyhow!("second session missing"))?;
+    assert_ne!(session_a.agent_id(), session_b.agent_id());
+    assert_ne!(session_a.ownership_key(), session_b.ownership_key());
+
+    for (id, session_id) in [(10, &session_a_id), (11, &session_b_id)] {
+        let (status, _headers, body) = request_json_with_headers(
+            &app.router,
+            "POST",
+            "/mcp",
+            Some(tabs_new_request(id)),
+            &[("mcp-session-id", session_id)],
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["result"]["isError"], false, "tabs new: {body:?}");
+    }
+
+    let ownership = app.state.sessions.ownership();
+    let (group_a, group_b) = wait_for_distinct_session_groups(
+        &ownership,
+        session_a.ownership_key(),
+        session_b.ownership_key(),
+    )
+    .await?;
+    assert_ne!(group_a, group_b);
+    let pages_a = ownership.owned_pages(session_a.ownership_key()).await;
+    let pages_b = ownership.owned_pages(session_b.ownership_key()).await;
+    assert_eq!(pages_a.len(), 1);
+    assert_eq!(pages_b.len(), 1);
+    assert!(pages_a.is_disjoint(&pages_b));
+    let page_a = pages_a
+        .first()
+        .map(|page| page.0)
+        .ok_or_else(|| anyhow::anyhow!("first session page missing"))?;
+    let page_b = pages_b
+        .first()
+        .map(|page| page.0)
+        .ok_or_else(|| anyhow::anyhow!("second session page missing"))?;
+
+    for (id, name, arguments) in [
+        (12, "snapshot", json!({ "page": page_b })),
+        (
+            13,
+            "navigate",
+            json!({ "page": page_b, "url": "https://example.org" }),
+        ),
+    ] {
+        let (status, _headers, body) = request_json_with_headers(
+            &app.router,
+            "POST",
+            "/mcp",
+            Some(json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "method": "tools/call",
+                "params": { "name": name, "arguments": arguments }
+            })),
+            &[("mcp-session-id", &session_a_id)],
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["result"]["isError"], true, "cross-page body: {body:?}");
+        assert_eq!(
+            body["result"]["content"][0]["text"],
+            format!(
+                "page {page_b} is not owned by this agent; call `tabs new` to open a fresh page and use the returned page id."
+            )
+        );
+    }
+    let (_status, _headers, body) = request_json_with_headers(
+        &app.router,
+        "POST",
+        "/mcp",
+        Some(json!({
+            "jsonrpc": "2.0",
+            "id": 14,
+            "method": "tools/call",
+            "params": { "name": "snapshot", "arguments": { "page": page_a } }
+        })),
+        &[("mcp-session-id", &session_b_id)],
+    )
+    .await?;
+    assert_eq!(body["result"]["isError"], true);
+    drop(mock);
+    Ok(())
+}
+
+#[tokio::test]
 async fn screencast_fallback_flag_disables_fallback_screenshots() -> anyhow::Result<()> {
     let mock = MockCdp::start().await?;
     let app = test_app_with_options(mock.cdp_port, false, false).await?;
@@ -1288,6 +1395,22 @@ async fn wait_for_cdp_connected(router: &Router) -> anyhow::Result<()> {
     ))
 }
 
+async fn wait_for_distinct_session_groups(
+    ownership: &Arc<claw_server_rust::domain::AgentPageOwnership>,
+    key_a: &claw_server_rust::domain::AgentKey,
+    key_b: &claw_server_rust::domain::AgentKey,
+) -> anyhow::Result<(String, String)> {
+    for _ in 0..100 {
+        let group_a = ownership.tab_group_ref(key_a).await;
+        let group_b = ownership.tab_group_ref(key_b).await;
+        if let (Some(group_a), Some(group_b)) = (group_a, group_b) {
+            return Ok((group_a, group_b));
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    anyhow::bail!("session tab groups were not created")
+}
+
 struct MockCdp {
     cdp_port: u16,
     tabs: Arc<tokio::sync::Mutex<Vec<MockTab>>>,
@@ -1516,6 +1639,14 @@ async fn handle_mock_cdp_method(
         "Page.captureScreenshot" => Ok(json!({ "data": "anBlZw==" })),
         "Browser.createTabGroup" => {
             let mut tabs = tabs.lock().await;
+            let group_id = format!(
+                "group-{}",
+                tabs.iter()
+                    .filter_map(|tab| tab.group_id.as_deref())
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len()
+                    + 1
+            );
             let tab_ids = params
                 .get("tabIds")
                 .and_then(Value::as_array)
@@ -1525,12 +1656,12 @@ async fn handle_mock_cdp_method(
                 if let Some(tab_id) = id.as_i64()
                     && let Some(tab) = tabs.iter_mut().find(|tab| tab.tab_id == tab_id)
                 {
-                    tab.group_id = Some("group-1".to_string());
+                    tab.group_id = Some(group_id.clone());
                 }
             }
             Ok(json!({
                 "group": {
-                    "groupId": "group-1",
+                    "groupId": group_id,
                     "windowId": 1,
                     "title": params.get("title").and_then(Value::as_str).unwrap_or("group"),
                     "color": "blue",
