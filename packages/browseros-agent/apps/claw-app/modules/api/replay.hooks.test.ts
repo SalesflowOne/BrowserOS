@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, it, mock } from 'bun:test'
+import { Configuration, DefaultApi } from '@browseros/claw-api'
 import * as client from './client'
 
 mock.module('./client', () => ({
   ...client,
+  apiClient: async () =>
+    new DefaultApi(new Configuration({ basePath: 'http://127.0.0.1:9200' })),
   resolveApiBaseUrl: async () => 'http://127.0.0.1:9200',
 }))
 
@@ -17,20 +20,13 @@ afterEach(() => {
 })
 
 describe('replay queries', () => {
-  it('fetches replay metadata from the plural meta endpoint', async () => {
+  it('fetches canonical recording metadata', async () => {
     const metadata = {
-      exists: true,
+      hasData: true,
       firstEventAt: 1_000,
       lastEventAt: 4_000,
       sizeBytes: 512,
-      targets: [
-        {
-          targetId: 'target-a',
-          tabId: 7,
-          firstEventAt: 1_000,
-          lastEventAt: 4_000,
-        },
-      ],
+      pageIds: [7],
     }
     const request = mock(async () => Response.json(metadata))
     globalThis.fetch = request as unknown as typeof fetch
@@ -39,12 +35,13 @@ describe('replay queries', () => {
       fetchReplayMetadata({ sessionId: 'session/with slash' }),
     ).resolves.toEqual(metadata)
     expect(request).toHaveBeenCalledWith(
-      'http://127.0.0.1:9200/audit/replays/session%2Fwith%20slash/meta',
+      'http://127.0.0.1:9200/api/v1/sessions/session%2Fwith%20slash/recording',
+      expect.objectContaining({ method: 'GET' }),
     )
   })
 
   it('preserves the empty metadata shape when no replay exists', async () => {
-    const metadata = { exists: false, sizeBytes: 0, targets: [] }
+    const metadata = { hasData: false, sizeBytes: 0, pageIds: [] }
     globalThis.fetch = mock(async () =>
       Response.json(metadata),
     ) as unknown as typeof fetch
@@ -108,7 +105,7 @@ describe('replay queries', () => {
       targetIds: ['target-b', 'target-a'],
     })
     expect(request).toHaveBeenCalledWith(
-      'http://127.0.0.1:9200/audit/replays/session-1',
+      'http://127.0.0.1:9200/api/v1/sessions/session-1/recording/events',
     )
   })
 })

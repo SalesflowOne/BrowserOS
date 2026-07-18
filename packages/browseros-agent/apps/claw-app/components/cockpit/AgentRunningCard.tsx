@@ -44,7 +44,8 @@ export function AgentRunningCard({
         <MiniScreencast
           site={siteOf(focus.url)}
           live={active}
-          screencast={focus.screencast}
+          pageId={focus.pageId}
+          previewCapturedAt={focus.previewCapturedAt}
           className="h-full w-full"
         />
         <div className="absolute top-3 right-3">

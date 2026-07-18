@@ -29,7 +29,7 @@ export function ScreenshotStrip({
 }: ScreenshotStripProps) {
   const screenshotBaseUrl = useTaskScreenshotBaseUrl()
   const meta = useMemo(() => {
-    const byId = new Map(dispatches.map((d) => [d.id, d]))
+    const byId = new Map(dispatches.map((d) => [d.dispatchId, d]))
     return screenshotDispatchIds.map((id) => {
       const d = byId.get(id)
       const offset = d ? Math.max(0, d.createdAt - startedAt) : 0

@@ -49,11 +49,11 @@ export function AuditHoverPreview({ task }: AuditHoverPreviewProps) {
         <div className="flex flex-col gap-0.5 bg-ink-deep px-4 py-3 text-white">
           <div className="flex items-center gap-2 font-mono text-[10px] text-white/75 uppercase tracking-[0.08em]">
             <AgentDot slug={task.slug} />
-            <span className="truncate text-white/95">{task.agentLabel}</span>
+            <span className="truncate text-white/95">{task.label}</span>
             {task.status === 'live' && <LiveDot />}
           </div>
           <p className="truncate font-semibold text-[13px] text-white leading-tight">
-            {task.title}
+            {task.name}
           </p>
           <p className="font-mono text-[10.5px] text-white/65 tabular-nums">
             {formatDuration(task.durationMs)}{' '}

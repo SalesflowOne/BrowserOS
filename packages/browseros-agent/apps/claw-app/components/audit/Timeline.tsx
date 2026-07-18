@@ -51,7 +51,7 @@ const HIGH_RISK_TOOLS = new Set(['act', 'evaluate', 'run', 'download'])
 function defaultExpandedSet(dispatches: ToolDispatchRow[]): Set<number> {
   const ids = new Set<number>()
   for (const d of dispatches) {
-    if (HIGH_RISK_TOOLS.has(d.toolName)) ids.add(d.id)
+    if (HIGH_RISK_TOOLS.has(d.toolName)) ids.add(d.dispatchId)
   }
   return ids
 }
@@ -81,10 +81,10 @@ export function Timeline({
     })
   }
   const expandAll = (): void =>
-    setExpanded(new Set(dispatches.map((d) => d.id)))
+    setExpanded(new Set(dispatches.map((d) => d.dispatchId)))
   const collapseAll = (): void => setExpanded(new Set())
   const allExpanded =
-    dispatches.length > 0 && dispatches.every((d) => expanded.has(d.id))
+    dispatches.length > 0 && dispatches.every((d) => expanded.has(d.dispatchId))
   const noneExpanded = expanded.size === 0
 
   return (
@@ -124,13 +124,13 @@ export function Timeline({
       <ol className="space-y-1.5">
         {dispatches.map((d) => (
           <TimelineRow
-            key={d.id}
+            key={d.dispatchId}
             dispatch={d}
             offsetMs={Math.max(0, d.createdAt - startedAt)}
-            expanded={expanded.has(d.id)}
-            hasScreenshot={screenshotIdSet.has(d.id)}
+            expanded={expanded.has(d.dispatchId)}
+            hasScreenshot={screenshotIdSet.has(d.dispatchId)}
             screenshotBaseUrl={screenshotBaseUrl}
-            onToggle={() => toggle(d.id)}
+            onToggle={() => toggle(d.dispatchId)}
             onScreenshotClick={onScreenshotClick}
           />
         ))}
@@ -236,12 +236,15 @@ function TimelineRow({
             <Block label="screenshot">
               <button
                 type="button"
-                onClick={() => onScreenshotClick(dispatch.id)}
+                onClick={() => onScreenshotClick(dispatch.dispatchId)}
                 className="block w-64 overflow-hidden rounded-md border border-border-2"
               >
                 <AspectRatio ratio={16 / 10}>
                   <img
-                    src={taskScreenshotUrl(dispatch.id, screenshotBaseUrl)}
+                    src={taskScreenshotUrl(
+                      dispatch.dispatchId,
+                      screenshotBaseUrl,
+                    )}
                     alt={`Screenshot at T+${formatOffset(offsetMs)}`}
                     className="h-full w-full object-cover"
                     loading="lazy"
@@ -371,7 +374,7 @@ function formatOffset(ms: number): string {
   return `${mins}m${rem.toString().padStart(2, '0')}s`
 }
 
-function argsSummary(argsJson: string | null): string {
+function argsSummary(argsJson: string | null | undefined): string {
   if (!argsJson || argsJson === '{}') return ''
   if (argsJson.length <= 80) return argsJson
   return `${argsJson.slice(0, 80)}…`

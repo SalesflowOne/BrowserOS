@@ -3,68 +3,48 @@
  * Copyright 2025 BrowserOS
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * Polls `GET /tabs/activity` so the homepage can render a
- * live view of which tabs each agent has touched, how recently, and
- * what sequence of tool calls produced the current state. Backed by
- * the in-memory registry in
- * `apps/claw-server/src/lib/tab-activity/`; refer to that
- * module for the record shape, the active-window threshold, and the
- * RECENT_TOOLS_CAP that bounds `recentTools`.
- *
- * The route enriches each record from the live MCP session identity,
- * falling back to the recorded slug when that session has closed. The
- * hook surfaces those fields directly so the screen does not join again.
+ * Canonical live-tab query and binary preview URL helpers.
  */
 
+import type { Tab, TabList, ToolEvent } from '@browseros/claw-api'
+import { useEffect, useState } from 'react'
 import { createQuery } from 'react-query-kit'
-import { api } from './client'
-import { parseResponse } from './parseResponse'
+import { apiClient, resolveApiBaseUrl } from './client'
 
-export interface ToolEvent {
-  name: string
-  at: number
-}
+export type { ToolEvent }
+export type TabActivityRecord = Tab
 
-export interface ScreencastFrame {
-  /** Raw base64; the UI wraps this with `data:image/jpeg;base64,`. */
-  jpegBase64: string
-  /** Unix ms when the poller captured the frame. */
-  capturedAt: number
-}
-
-export interface TabActivityRecord {
-  targetId: string
-  pageId: number
-  url: string
-  title: string
-  agentId: string
-  slug: string
-  firstToolAt: number
-  lastToolAt: number
-  lastToolName: string
-  toolCount: number
-  recentTools: ToolEvent[]
-  status: 'active' | 'idle'
-  agentLabel: string
-  harness: string | null
-  color: string | null
-  /**
-   * Latest screencast frame from the background poller. null when the
-   * cache has no frame for the pageId (poller cold, page in failure
-   * backoff, or the tab is idle).
-   */
-  screencast: ScreencastFrame | null
-}
-
-interface TabsActivityResponse {
-  tabs: TabActivityRecord[]
-}
-
-export const useTabsActivity = createQuery<TabsActivityResponse>({
-  queryKey: ['tabs', 'activity'],
-  fetcher: async () => {
-    const res = await api.tabs.activity.$get()
-    return parseResponse<TabsActivityResponse>(res)
-  },
+export const useTabs = createQuery<TabList>({
+  queryKey: ['api', 'tabs'],
+  fetcher: async () => (await apiClient()).listTabs(),
   refetchInterval: 1500,
 })
+
+export function tabPreviewUrl(
+  pageId: number,
+  previewCapturedAt: number,
+  baseUrl: string,
+): string {
+  return `${baseUrl}/api/v1/tabs/${pageId}/preview?capturedAt=${previewCapturedAt}`
+}
+
+export function useTabPreviewUrl(
+  pageId: number,
+  previewCapturedAt?: number,
+): string | null {
+  const [baseUrl, setBaseUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    resolveApiBaseUrl().then((resolved) => {
+      if (active) setBaseUrl(resolved)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  return baseUrl && previewCapturedAt !== undefined
+    ? tabPreviewUrl(pageId, previewCapturedAt, baseUrl)
+    : null
+}

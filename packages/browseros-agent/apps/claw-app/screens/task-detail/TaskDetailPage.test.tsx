@@ -11,7 +11,7 @@ import type { TaskDetail } from '@/modules/api/audit.hooks'
 import type { TaskDetailScreenData } from './task-detail.data'
 
 const baseData: TaskDetailScreenData = {
-  task: undefined,
+  detail: undefined,
   isPending: false,
   isError: false,
   error: null,
@@ -41,58 +41,52 @@ function render(): string {
 }
 
 const sampleTask: TaskDetail = {
-  sessionId: 'sess-1',
-  agentId: 'claude-code',
-  slug: 'claude-code',
-  agentLabel: 'Claude Code',
-  title: 'Browsed example.com',
-  site: 'example.com',
-  startedAt: Date.now() - 12000,
-  endedAt: Date.now(),
-  durationMs: 12000,
-  dispatchCount: 2,
-  toolSequence: ['tabs', 'screenshot'],
-  status: 'done',
-  errorCount: 0,
-  lastScreenshotDispatchId: 2,
-  cursorId: 2,
+  session: {
+    sessionId: 'sess-1',
+    slug: 'claude-code',
+    label: 'Claude Code',
+    name: 'Browsed example.com',
+    site: 'example.com',
+    startedAt: Date.now() - 12000,
+    endedAt: Date.now(),
+    durationMs: 12000,
+    dispatchCount: 2,
+    toolSequence: ['tabs', 'screenshot'],
+    status: 'done',
+    errorCount: 0,
+    lastScreenshotDispatchId: 2,
+  },
   dispatches: [
     {
-      id: 1,
+      dispatchId: 1,
       createdAt: Date.now() - 12000,
-      agentId: 'claude-code',
       slug: 'claude-code',
-      agentLabel: 'Claude Code',
+      label: 'Claude Code',
       sessionId: 'sess-1',
       toolName: 'tabs',
       pageId: 1,
-      targetId: null,
       url: 'https://example.com',
       title: 'Example',
       argsJson: '{"action":"new"}',
       resultMeta: '{"isError":false}',
       durationMs: 12,
+      hasScreenshot: false,
     },
     {
-      id: 2,
+      dispatchId: 2,
       createdAt: Date.now() - 9000,
-      agentId: 'claude-code',
       slug: 'claude-code',
-      agentLabel: 'Claude Code',
+      label: 'Claude Code',
       sessionId: 'sess-1',
       toolName: 'screenshot',
       pageId: 1,
-      targetId: null,
       url: 'https://example.com',
-      title: null,
       argsJson: '{"page":1}',
       resultMeta: '{"isError":false}',
       durationMs: 80,
+      hasScreenshot: true,
     },
   ],
-  screenshotDispatchIds: [2],
-  startEvent: null,
-  endEvent: { createdAt: Date.now(), kind: 'closed', reason: null },
 }
 
 describe('TaskDetailPage', () => {
@@ -109,7 +103,7 @@ describe('TaskDetailPage', () => {
   })
 
   it('renders header + timeline + strip for a real task', () => {
-    dataOverride = { ...baseData, task: sampleTask }
+    dataOverride = { ...baseData, detail: sampleTask }
     const html = render()
     expect(html).toContain('Browsed example.com')
     expect(html).toContain('Claude Code')
@@ -124,10 +118,9 @@ describe('TaskDetailPage', () => {
     if (!first) throw new Error('test fixture missing first dispatch')
     dataOverride = {
       ...baseData,
-      task: {
+      detail: {
         ...sampleTask,
-        screenshotDispatchIds: [],
-        dispatches: [first],
+        dispatches: [{ ...first, hasScreenshot: false }],
       },
     }
     const html = render()

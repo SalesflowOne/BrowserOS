@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
+    "@browseros/claw-api": "workspace:*",
     "@browseros/claw-server": "*",
     "@fontsource-variable/jetbrains-mono": "^5.2.5",
     "@fontsource-variable/schibsted-grotesk": "^5.2.5",

@@ -26,7 +26,7 @@ interface SupportingTileProps {
  */
 export function SupportingTile({ task, now, className }: SupportingTileProps) {
   const isLive = task.status === 'live'
-  const screenshotId = task.lastScreenshotDispatchId
+  const screenshotId = task.lastScreenshotDispatchId ?? null
   const screenshotBaseUrl = useTaskScreenshotBaseUrl()
   const location = useLocation()
   return (
@@ -43,7 +43,7 @@ export function SupportingTile({ task, now, className }: SupportingTileProps) {
         {screenshotId !== null && screenshotBaseUrl !== null ? (
           <img
             src={taskScreenshotUrl(screenshotId, screenshotBaseUrl)}
-            alt={`Session preview from ${task.agentLabel}`}
+            alt={`Session preview from ${task.label}`}
             loading="lazy"
             decoding="async"
             className="absolute inset-0 h-full w-full object-cover object-top"
@@ -75,7 +75,7 @@ function Caption({
     <div className="flex flex-col gap-0.5 bg-ink-deep px-3.5 py-2 text-white">
       <div className="flex items-center gap-2 font-mono text-[9.5px] text-white/75 uppercase tracking-[0.08em]">
         <AgentDot slug={task.slug} />
-        <span className="truncate text-white/95">{task.agentLabel}</span>
+        <span className="truncate text-white/95">{task.label}</span>
         {isLive && (
           <span className="inline-flex items-center gap-1 text-[#8fb4ff]">
             <span
@@ -87,7 +87,7 @@ function Caption({
         )}
       </div>
       <h3 className="truncate font-semibold text-[12.5px] text-white leading-tight">
-        {task.title}
+        {task.name}
       </h3>
       <p className="font-mono text-[10.5px] text-white/65 tabular-nums">
         {formatDuration(task.durationMs)}{' '}

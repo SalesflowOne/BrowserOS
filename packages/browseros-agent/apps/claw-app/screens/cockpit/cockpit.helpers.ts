@@ -66,7 +66,7 @@ export function formatToolTrail(
  * `Harness` union. Missing or unknown values fall back to 'Claude Code'
  * so the harness icon still resolves to something concrete.
  */
-export function harnessForRow(value: string | null): Harness {
+export function harnessForRow(value: string | undefined): Harness {
   if (!value) return 'Claude Code'
   return (HARNESSES as readonly string[]).includes(value)
     ? (value as Harness)
@@ -78,8 +78,8 @@ export function harnessForRow(value: string | null): Harness {
  * one card per tab; in practice one agent often drives multiple tabs
  * and the user wants one card per agent with the tabs nested inside.
  * The `currentFocus` is the tab the card surfaces. By default it is
- * the tab whose `lastToolAt` is freshest, but callers can pass a
- * `stickyFocus` map keyed by agent id to anchor focus across polls
+ * the tab whose `lastActivityAt` is freshest, but callers can pass a
+ * `stickyFocus` map keyed by the profile-or-slug group to anchor focus across polls
  * so the card does not flicker as new tool calls land on other tabs.
  * See `RollupOptions`.
  */
@@ -96,19 +96,19 @@ export interface AgentActivityRecord {
   /** Merged across all this agent's tabs, sorted by `at`, capped at MERGED_TRAIL_CAP. */
   recentTools: ToolEvent[]
   status: 'active' | 'idle'
-  /** The tab whose `lastToolAt` is freshest. Always present (a rollup with no tabs is impossible). */
+  /** The freshest tab in the group. Always present. */
   currentFocus: TabActivityRecord
-  /** All tabs this agent owns, sorted by `lastToolAt` desc so the popover reads chronologically. */
+  /** All tabs in the group, newest activity first. */
   tabs: TabActivityRecord[]
 }
 
 /**
  * Caller hint that lets the rollup keep the same `currentFocus`
- * across polls. The value is keyed by `agentId` and carries the
+ * across polls. The value is keyed by the profile-or-slug group and carries the
  * focus target id chosen on the previous render. When the
  * previously-focused tab is still in the agent's active set, the
  * rollup keeps it as focus; otherwise it re-elects using the
- * freshest `lastToolAt`. Without this hint the rollup behaves as
+ * freshest `lastActivityAt`. Without this hint the rollup behaves as
  * PR 3 shipped (freshest wins every time).
  */
 export interface RollupOptions {
@@ -116,8 +116,8 @@ export interface RollupOptions {
 }
 
 /**
- * Groups tabs by `agentId` so the homepage renders one card per agent
- * instead of one per tab. Pure: same input + same options always
+ * Groups tabs by `profileId ?? slug` so the homepage renders one card per
+ * configured profile, with ephemeral sessions grouped by slug. Pure: same input + same options always
  * produces the same output. The status is `active` if any of the
  * agent's tabs are active; `firstToolAt` is the oldest first-touch
  * across the bunch (the moment this agent first started working);
@@ -129,14 +129,15 @@ export function tabsToAgentActivity(
 ): AgentActivityRecord[] {
   const byAgent = new Map<string, TabActivityRecord[]>()
   for (const record of records) {
-    const bucket = byAgent.get(record.agentId)
+    const groupKey = record.profileId ?? record.slug
+    const bucket = byAgent.get(groupKey)
     if (bucket) bucket.push(record)
-    else byAgent.set(record.agentId, [record])
+    else byAgent.set(groupKey, [record])
   }
   const sticky = options?.stickyFocus
   const out: AgentActivityRecord[] = []
   for (const [agentId, tabs] of byAgent) {
-    const sorted = [...tabs].sort((a, b) => b.lastToolAt - a.lastToolAt)
+    const sorted = [...tabs].sort((a, b) => b.lastActivityAt - a.lastActivityAt)
     const previousFocusTargetId = sticky?.get(agentId)
     const stickyTab = previousFocusTargetId
       ? sorted.find((t) => t.targetId === previousFocusTargetId)
@@ -149,14 +150,14 @@ export function tabsToAgentActivity(
     out.push({
       agentId,
       slug: focus.slug,
-      agentLabel: focus.agentLabel || focus.slug,
+      agentLabel: focus.label || focus.slug,
       harness: harnessForRow(focus.harness),
       color: focus.color ?? colorForSlug(focus.slug),
-      firstToolAt: Math.min(...tabs.map((t) => t.firstToolAt)),
+      firstToolAt: Math.min(...tabs.map((t) => t.firstActivityAt)),
       // lastToolAt is agent-level freshness (max across tabs) so the
       // multi-agent sort below keeps the busiest agent on top even
       // when the sticky focus rule is anchored to an older tab.
-      lastToolAt: Math.max(...tabs.map((t) => t.lastToolAt)),
+      lastToolAt: Math.max(...tabs.map((t) => t.lastActivityAt)),
       // lastToolName tracks the focus tab so the card's live-line
       // ("snapshot -> example.com") stays stable across polls even
       // when other tabs are firing.
@@ -194,12 +195,12 @@ export function tabsToActivityRows(
     .filter((r) => r.status === 'idle')
     .map((r) => ({
       id: r.targetId,
-      agentLabel: r.agentLabel || r.slug,
+      agentLabel: r.label || r.slug,
       color: r.color ?? colorForSlug(r.slug),
       status: 'done' as const,
       action: `${r.lastToolName} on ${r.title || siteOf(r.url)}`,
       site: siteOf(r.url),
-      when: formatRelative(r.lastToolAt, now),
+      when: formatRelative(r.lastActivityAt, now),
       toolCount: r.toolCount,
       trail: formatToolTrail(r.recentTools),
     }))

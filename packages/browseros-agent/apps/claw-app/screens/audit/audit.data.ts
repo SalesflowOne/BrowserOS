@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router'
 import {
   type TaskStatus,
   type TaskSummary,
-  useTasks,
+  useSessions,
 } from '@/modules/api/audit.hooks'
 import {
   type AgentChip,
@@ -70,7 +70,7 @@ export function useAuditScreenData(): AuditScreenData {
   const [params, setParams] = useSearchParams()
   const filters = useMemo(() => paramsToFilters(params), [params])
 
-  const query = useTasks({
+  const query = useSessions({
     variables: {
       slug: filters.agentSlug ?? undefined,
       status: filters.status ?? undefined,
@@ -81,7 +81,7 @@ export function useAuditScreenData(): AuditScreenData {
   })
 
   const pages = query.data?.pages
-  const tasks = useMemo(() => (pages ?? []).flatMap((p) => p.tasks), [pages])
+  const tasks = useMemo(() => (pages ?? []).flatMap((p) => p.items), [pages])
   const agentOptions = useMemo(() => agentChipsFor(tasks), [tasks])
   const statusOpts = useMemo(() => statusOptionsOf(tasks), [tasks])
   const siteOpts = useMemo(() => siteOptionsOf(tasks), [tasks])
