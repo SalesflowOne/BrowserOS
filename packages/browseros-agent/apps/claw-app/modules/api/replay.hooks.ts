@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
  * Session-replay API surface for the claw-app cockpit.
+ * Metadata polling lets audit views discover newly available recordings without
+ * repeatedly downloading the session-keyed NDJSON event snapshot.
  */
 
 import { createQuery } from 'react-query-kit'
@@ -49,18 +51,24 @@ export interface ReplayFrame {
 }
 
 export interface ReplayEvent {
+  /** MCP session attributed from persisted claim state, not recorder input. */
   sessionId: string
+  /** Stable CDP target resolved by the server from the sender's Chrome tab id. */
   targetId: string
+  /** Chrome tab id captured at ingest; distinct from a BrowserOS page id. */
   tabId: number
   type: number
   data: unknown
+  /** rrweb event timestamp in Unix epoch milliseconds. */
   ts: number
 }
 
 export interface ReplayTargetMetadata {
   targetId: string
   tabId: number
+  /** First event in the attributed window, in Unix epoch milliseconds. */
   firstEventAt: number
+  /** Last event in the attributed window, in Unix epoch milliseconds. */
   lastEventAt: number
 }
 
