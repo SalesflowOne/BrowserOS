@@ -21,6 +21,11 @@ async fn main() -> anyhow::Result<()> {
         .clone()
         .spawn_retention(config.replay_retention_days);
     state.browser.start();
+    state.browser.wait_for_initial_attempt().await;
+    let initial_browser = state.browser.state();
+    if initial_browser.connected && !state.tab_targets.is_ready(initial_browser.epoch) {
+        anyhow::bail!("failed to seed tab target identities before server startup");
+    }
     state
         .screencast
         .clone()
@@ -32,8 +37,10 @@ async fn main() -> anyhow::Result<()> {
         return result;
     }
     spawn_signal_shutdown(state.clone());
-    let result = serve(state, config, shutdown_rx).await;
+    let result = serve(state.clone(), config, shutdown_rx).await;
     retention_task.abort();
+    state.audit.drain_claim_writes().await;
+    state.recordings.close().await;
     result
 }
 
@@ -107,6 +114,7 @@ async fn serve_stdio(state: AppState) -> anyhow::Result<()> {
         .context("failed to start stdio MCP server")?;
     running.waiting().await.context("stdio MCP server failed")?;
     state.sessions.shutdown().await?;
+    state.audit.drain_claim_writes().await;
     state.recordings.close().await;
     state.screencast.stop();
     state.browser.stop();
@@ -134,6 +142,7 @@ fn spawn_signal_shutdown(state: AppState) {
             Ok(drained) => info!(drained, "drained sessions after shutdown signal"),
             Err(err) => error!(error = %err, "session drain after shutdown signal failed"),
         }
+        state.audit.drain_claim_writes().await;
         state.recordings.close().await;
         state.screencast.stop();
         state.browser.stop();

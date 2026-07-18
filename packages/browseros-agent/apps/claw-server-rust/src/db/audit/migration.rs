@@ -1,6 +1,6 @@
 use sea_orm_migration::prelude::*;
 
-/// Applies the single audit schema snapshot migration.
+/// Applies the audit schema migrations.
 pub struct AuditMigrator;
 
 #[async_trait::async_trait]

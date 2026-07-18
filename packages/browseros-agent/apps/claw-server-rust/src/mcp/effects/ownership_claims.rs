@@ -1,7 +1,6 @@
 use crate::mcp::dispatch::{ToolEffect, ToolEffectContext, extract_page_id, result_page_id};
 use browseros_core::PageId;
 use futures_util::future::BoxFuture;
-use tracing::warn;
 
 /// Updates ownership for successful tab creation and closure results.
 pub fn apply(
@@ -36,18 +35,14 @@ pub fn apply(
                         tool_name: "tabs".to_string(),
                     })
                     .await;
-                let audit = context.call.state.audit.clone();
                 let session_id = context.call.session_id.as_str().to_string();
                 let agent_id = identity.session.agent_id().as_str().to_string();
                 let claimed_at = context.call.started_at_ms;
-                tokio::spawn(async move {
-                    if let Err(error) = audit
-                        .claim_target_for_session(&target_id, &session_id, &agent_id, claimed_at)
-                        .await
-                    {
-                        warn!(target_id, session_id, error = %error, "tab claim insert failed");
-                    }
-                });
+                context
+                    .call
+                    .state
+                    .audit
+                    .enqueue_claim_target_for_session(target_id, session_id, agent_id, claimed_at);
             }
             context
                 .call
@@ -61,17 +56,13 @@ pub fn apply(
         {
             let page_id = PageId(page_id);
             if let Some(page) = &context.call.page_snapshot {
-                let audit = context.call.state.audit.clone();
                 let target_id = page.target_id.as_str().to_string();
                 let session_id = context.call.session_id.as_str().to_string();
-                tokio::spawn(async move {
-                    if let Err(error) = audit
-                        .release_target_for_session(&target_id, &session_id)
-                        .await
-                    {
-                        warn!(target_id, session_id, error = %error, "tab claim release failed");
-                    }
-                });
+                context
+                    .call
+                    .state
+                    .audit
+                    .enqueue_release_target_for_session(target_id, session_id);
             }
             context
                 .call

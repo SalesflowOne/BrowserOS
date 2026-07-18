@@ -259,16 +259,8 @@ impl SessionRegistry {
     ) -> AppResult<()> {
         session.cancel_active_dispatches().await;
         session.cancel();
-        let claim_audit = self.audit.clone();
-        let claim_session_id = session.id().as_str().to_string();
-        tokio::spawn(async move {
-            if let Err(error) = claim_audit
-                .release_claims_for_session(&claim_session_id)
-                .await
-            {
-                warn!(session_id = claim_session_id, error = %error, "session claim release failed");
-            }
-        });
+        self.audit
+            .enqueue_release_claims_for_session(session.id().as_str().to_string());
         let audit_result = self
             .audit
             .record_session_end(session.id().as_str(), kind, reason)

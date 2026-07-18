@@ -25,6 +25,7 @@ pub struct BrowserService {
     cdp_port: u16,
     ownership: Arc<AgentPageOwnership>,
     state_tx: watch::Sender<BrowserConnectionState>,
+    initial_attempt_tx: watch::Sender<bool>,
     session: Arc<RwLock<Option<Arc<browseros_core::BrowserSession>>>>,
     tab_targets: Arc<TabTargetMap>,
     cancel: CancellationToken,
@@ -42,10 +43,12 @@ impl BrowserService {
             epoch: 0,
             last_error: None,
         });
+        let (initial_attempt_tx, _) = watch::channel(false);
         Arc::new(Self {
             cdp_port,
             ownership,
             state_tx,
+            initial_attempt_tx,
             session: Arc::new(RwLock::new(None)),
             tab_targets,
             cancel: CancellationToken::new(),
@@ -68,11 +71,20 @@ impl BrowserService {
         self.session.read().await.clone()
     }
 
+    pub async fn wait_for_initial_attempt(&self) {
+        let mut receiver = self.initial_attempt_tx.subscribe();
+        while !*receiver.borrow() {
+            if receiver.changed().await.is_err() {
+                return;
+            }
+        }
+    }
+
     #[doc(hidden)]
     pub async fn connect_once_for_testing(&self) -> Result<(), browseros_cdp::CdpError> {
         let opts = self.connect_options();
         let client = CdpClient::connect(opts).await?;
-        *self.session.write().await = Some(self.browser_session(client.clone()));
+        *self.session.write().await = Some(self.browser_session(client.clone()).await);
         self.state_tx.send_replace(BrowserConnectionState {
             connected: true,
             epoch: client.epoch(),
@@ -97,7 +109,7 @@ impl BrowserService {
         }
     }
 
-    fn browser_session(&self, client: CdpClient) -> Arc<BrowserSession> {
+    async fn browser_session(&self, client: CdpClient) -> Arc<BrowserSession> {
         let epoch = client.epoch();
         let ownership = self.ownership.clone();
         let on_page_detached: OnPageDetached = Arc::new(move |page_id| {
@@ -115,12 +127,19 @@ impl BrowserService {
                 },
             },
         );
-        self.tab_targets.observe_session(session.clone(), epoch);
+        if let Err(error) = self
+            .tab_targets
+            .observe_session(session.clone(), epoch)
+            .await
+        {
+            warn!(epoch, error = %error, "failed to seed tab target map");
+        }
         session
     }
 
     async fn reattach_loop(self: Arc<Self>) {
         let mut backoff = Duration::from_secs(1);
+        let mut initial_attempt_pending = true;
         loop {
             if self.cancel.is_cancelled() {
                 return;
@@ -128,7 +147,7 @@ impl BrowserService {
             let opts = self.connect_options();
             match CdpClient::connect(opts).await {
                 Ok(client) => {
-                    let session = self.browser_session(client.clone());
+                    let session = self.browser_session(client.clone()).await;
                     *self.session.write().await = Some(session);
                     let epoch = client.epoch();
                     self.state_tx.send_replace(BrowserConnectionState {
@@ -136,6 +155,10 @@ impl BrowserService {
                         epoch,
                         last_error: None,
                     });
+                    if initial_attempt_pending {
+                        self.initial_attempt_tx.send_replace(true);
+                        initial_attempt_pending = false;
+                    }
                     debug!(epoch, "connected to BrowserOS CDP");
                     self.monitor_client(client).await;
                     *self.session.write().await = None;
@@ -148,6 +171,10 @@ impl BrowserService {
                         epoch,
                         last_error: Some(err.to_string()),
                     });
+                    if initial_attempt_pending {
+                        self.initial_attempt_tx.send_replace(true);
+                        initial_attempt_pending = false;
+                    }
                     warn!(error = %err, retry_ms = backoff.as_millis(), "CDP connect failed; retrying");
                     tokio::select! {
                         () = self.cancel.cancelled() => return,
@@ -172,6 +199,12 @@ impl BrowserService {
                     let connected = client.is_connected();
                     let epoch = client.epoch();
                     if connected != last_connected || epoch != last_epoch {
+                        if connected
+                            && let Some(session) = self.session().await
+                            && let Err(error) = self.tab_targets.observe_session(session, epoch).await
+                        {
+                            warn!(epoch, error = %error, "failed to seed tab target map after reconnect");
+                        }
                         self.state_tx.send_replace(BrowserConnectionState {
                             connected,
                             epoch,
@@ -179,11 +212,6 @@ impl BrowserService {
                         });
                         last_connected = connected;
                         last_epoch = epoch;
-                        if connected
-                            && let Some(session) = self.session().await
-                        {
-                            self.tab_targets.observe_session(session, epoch);
-                        }
                     }
                 }
             }

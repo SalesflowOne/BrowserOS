@@ -109,40 +109,46 @@ impl RecordingStore {
             return Ok(());
         }
         let target_lock = self.lock_for(target_id).await;
-        let _target_guard = target_lock.lock().await;
-        let mut payload = String::new();
-        for event in events {
-            payload.push_str(&serde_json::to_string(&RecordedEvent {
-                tab_id,
-                ts: event.ts,
-                event_type: event.event_type.clone(),
-                data: event.data.clone(),
-            })?);
-            payload.push('\n');
+        let target_guard = target_lock.lock().await;
+        let result = async {
+            let mut payload = String::new();
+            for event in events {
+                payload.push_str(&serde_json::to_string(&RecordedEvent {
+                    tab_id,
+                    ts: event.ts,
+                    event_type: event.event_type.clone(),
+                    data: event.data.clone(),
+                })?);
+                payload.push('\n');
+            }
+            let first_event_at = events
+                .iter()
+                .map(|event| event.ts)
+                .min()
+                .unwrap_or_default();
+            let last_event_at = events
+                .iter()
+                .map(|event| event.ts)
+                .max()
+                .unwrap_or_default();
+            let file = self.open_for_append(target_id).await?;
+            let result = self
+                .append_and_catalog(
+                    target_id,
+                    tab_id,
+                    events.len(),
+                    first_event_at,
+                    last_event_at,
+                    payload.as_bytes(),
+                    &file,
+                )
+                .await;
+            self.release_append_handle(target_id).await;
+            result
         }
-        let first_event_at = events
-            .iter()
-            .map(|event| event.ts)
-            .min()
-            .unwrap_or_default();
-        let last_event_at = events
-            .iter()
-            .map(|event| event.ts)
-            .max()
-            .unwrap_or_default();
-        let file = self.open_for_append(target_id).await?;
-        let result = self
-            .append_and_catalog(
-                target_id,
-                tab_id,
-                events.len(),
-                first_event_at,
-                last_event_at,
-                payload.as_bytes(),
-                &file,
-            )
-            .await;
-        self.release_append_handle(target_id).await;
+        .await;
+        drop(target_guard);
+        self.release_target_lock(target_id, &target_lock).await;
         result
     }
 
@@ -153,23 +159,31 @@ impl RecordingStore {
         to: i64,
     ) -> AppResult<Vec<RecordedEvent>> {
         let target_lock = self.lock_for(target_id).await;
-        let _target_guard = target_lock.lock().await;
-        let path = self.path_for(target_id);
-        let text = match fs::read_to_string(&path).await {
-            Ok(text) => text,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-            Err(source) => {
-                return Err(AppError::Io {
-                    path: Some(path),
-                    source,
-                });
-            }
-        };
-        Ok(text
-            .lines()
-            .filter_map(|line| serde_json::from_str::<RecordedEvent>(line).ok())
-            .filter(|event| event.ts >= from && event.ts <= to)
-            .collect())
+        let target_guard = target_lock.lock().await;
+        let result = async {
+            let path = self.path_for(target_id);
+            let text = match fs::read_to_string(&path).await {
+                Ok(text) => text,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    return Ok(Vec::new());
+                }
+                Err(source) => {
+                    return Err(AppError::Io {
+                        path: Some(path),
+                        source,
+                    });
+                }
+            };
+            Ok(text
+                .lines()
+                .filter_map(|line| serde_json::from_str::<RecordedEvent>(line).ok())
+                .filter(|event| event.ts >= from && event.ts <= to)
+                .collect())
+        }
+        .await;
+        drop(target_guard);
+        self.release_target_lock(target_id, &target_lock).await;
+        result
     }
 
     pub async fn sweep_retention(
@@ -244,6 +258,11 @@ impl RecordingStore {
         self.handles.lock().await.entries.len()
     }
 
+    #[cfg(test)]
+    async fn target_lock_count(&self) -> usize {
+        self.target_locks.lock().await.len()
+    }
+
     #[allow(clippy::too_many_arguments)]
     async fn append_and_catalog(
         &self,
@@ -258,8 +277,16 @@ impl RecordingStore {
         let path = self.path_for(target_id);
         let mut file = file.lock().await;
         let original_size = file.metadata().await.with_path(path.clone())?.len();
-        file.write_all(payload).await.with_path(path.clone())?;
-        file.flush().await.with_path(path.clone())?;
+        let write_result = async {
+            file.write_all(payload).await.with_path(path.clone())?;
+            file.flush().await.with_path(path.clone())?;
+            Ok::<(), AppError>(())
+        }
+        .await;
+        if let Err(error) = write_result {
+            rollback_append(&mut file, target_id, original_size).await;
+            return Err(error);
+        }
         let size_bytes = i64::try_from(payload.len()).unwrap_or(i64::MAX);
         let event_count = i64::try_from(event_count).unwrap_or(i64::MAX);
         let result = TabRecordings::insert(tab_recordings::ActiveModel {
@@ -294,9 +321,7 @@ impl RecordingStore {
         .exec_without_returning(self.audit.connection())
         .await;
         if let Err(error) = result {
-            if let Err(rollback_error) = file.set_len(original_size).await {
-                warn!(target_id, error = %rollback_error, "recording append rollback failed");
-            }
+            rollback_append(&mut file, target_id, original_size).await;
             return Err(error.into());
         }
         Ok(())
@@ -304,7 +329,14 @@ impl RecordingStore {
 
     async fn delete_recording_if_expired(&self, target_id: &str, cutoff: i64) -> AppResult<bool> {
         let target_lock = self.lock_for(target_id).await;
-        let _target_guard = target_lock.lock().await;
+        let target_guard = target_lock.lock().await;
+        let result = self.delete_recording_locked(target_id, cutoff).await;
+        drop(target_guard);
+        self.release_target_lock(target_id, &target_lock).await;
+        result
+    }
+
+    async fn delete_recording_locked(&self, target_id: &str, cutoff: i64) -> AppResult<bool> {
         let Some(recording) = TabRecordings::find_by_id(target_id)
             .one(self.audit.connection())
             .await?
@@ -337,6 +369,16 @@ impl RecordingStore {
             .entry(target_id.to_string())
             .or_insert_with(|| Arc::new(Mutex::new(())))
             .clone()
+    }
+
+    async fn release_target_lock(&self, target_id: &str, target_lock: &Arc<Mutex<()>>) {
+        let mut locks = self.target_locks.lock().await;
+        let removable = locks.get(target_id).is_some_and(|stored| {
+            Arc::ptr_eq(stored, target_lock) && Arc::strong_count(stored) == 2
+        });
+        if removable {
+            locks.remove(target_id);
+        }
     }
 
     async fn open_for_append(self: &Arc<Self>, target_id: &str) -> AppResult<Arc<Mutex<File>>> {
@@ -417,6 +459,12 @@ impl RecordingStore {
     fn path_for(&self, target_id: &str) -> PathBuf {
         self.root
             .join(format!("{}.ndjson", sanitize_target_id(target_id)))
+    }
+}
+
+async fn rollback_append(file: &mut File, target_id: &str, original_size: u64) {
+    if let Err(error) = file.set_len(original_size).await {
+        warn!(target_id, error = %error, "recording append rollback failed");
     }
 }
 
@@ -640,6 +688,7 @@ mod tests {
             .append_batch("target-two", 2, &[event(2, "two")])
             .await?;
         assert_eq!(store.cached_handle_count().await, 1);
+        assert_eq!(store.target_lock_count().await, 0);
 
         tokio::time::sleep(Duration::from_millis(30)).await;
         assert_eq!(store.cached_handle_count().await, 0);

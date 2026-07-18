@@ -52,11 +52,8 @@ impl TabTargetMap {
     #[must_use]
     pub fn new(audit: Arc<AuditService>) -> Arc<Self> {
         Self::new_with_releaser(Arc::new(move |target_id| {
-            let audit = audit.clone();
-            Box::pin(async move {
-                audit.release_claims_for_target(&target_id).await?;
-                Ok(())
-            })
+            audit.enqueue_release_claims_for_target(target_id);
+            Box::pin(async { Ok(()) })
         }))
     }
 
@@ -71,14 +68,16 @@ impl TabTargetMap {
     }
 
     /// Subscribes to target lifecycle events and seeds the map from live tabs.
-    pub fn observe_session(self: &Arc<Self>, session: Arc<BrowserSession>, epoch: u64) {
+    pub async fn observe_session(
+        self: &Arc<Self>,
+        session: Arc<BrowserSession>,
+        epoch: u64,
+    ) -> anyhow::Result<()> {
         self.current_epoch.store(epoch, Ordering::SeqCst);
+        let mut events = session.cdp_events();
+        let seed_result = self.rebuild_from_session(&session, epoch, false).await;
         let map = self.clone();
         tokio::spawn(async move {
-            let mut events = session.cdp_events();
-            if let Err(error) = map.rebuild_from_session(&session, epoch).await {
-                warn!(epoch, error = %error, "failed to seed tab target map");
-            }
             loop {
                 if map.current_epoch.load(Ordering::SeqCst) != epoch {
                     return;
@@ -90,7 +89,9 @@ impl TabTargetMap {
                             epoch,
                             skipped, "tab target event listener lagged; rebuilding"
                         );
-                        if let Err(error) = map.rebuild_from_session(&session, epoch).await {
+                        // Resubscribe before the snapshot so only events concurrent with the rebuild replay over it.
+                        events = session.cdp_events();
+                        if let Err(error) = map.rebuild_from_session(&session, epoch, true).await {
                             warn!(epoch, error = %error, "failed to rebuild tab target map");
                         }
                     }
@@ -98,6 +99,12 @@ impl TabTargetMap {
                 }
             }
         });
+        seed_result
+    }
+
+    #[must_use]
+    pub fn is_ready(&self, epoch: u64) -> bool {
+        self.ready_epoch.load(Ordering::SeqCst) == epoch
     }
 
     /// Resolves a tab id, rebuilding after reconnect and using Browser.getTabInfo on a miss.
@@ -109,7 +116,7 @@ impl TabTargetMap {
     ) -> Option<String> {
         let session = session?;
         if self.ready_epoch.load(Ordering::SeqCst) != epoch
-            && let Err(error) = self.rebuild_from_session(&session, epoch).await
+            && let Err(error) = self.rebuild_from_session(&session, epoch, false).await
         {
             warn!(epoch, error = %error, "failed to rebuild tab target map before lookup");
         }
@@ -150,9 +157,10 @@ impl TabTargetMap {
         &self,
         session: &BrowserSession,
         epoch: u64,
+        force: bool,
     ) -> anyhow::Result<()> {
         let _guard = self.rebuild.lock().await;
-        if self.ready_epoch.load(Ordering::SeqCst) == epoch {
+        if !force && self.ready_epoch.load(Ordering::SeqCst) == epoch {
             return Ok(());
         }
         session
@@ -283,9 +291,10 @@ impl TabTargetMap {
 #[cfg(test)]
 mod tests {
     use super::{TabIdentity, TabTargetMap};
-    use browseros_cdp::CdpEvent;
+    use browseros_cdp::{CdpError, CdpEvent, SessionId};
+    use browseros_core::{BrowserSession, BrowserSessionHooks, CdpConnection};
     use futures_util::future::BoxFuture;
-    use serde_json::json;
+    use serde_json::{Value, json};
     use std::{
         sync::{
             Arc,
@@ -293,6 +302,76 @@ mod tests {
         },
         time::Duration,
     };
+    use tokio::sync::broadcast;
+
+    struct TabListConnection {
+        events: broadcast::Sender<CdpEvent>,
+        list_calls: AtomicUsize,
+    }
+
+    impl TabListConnection {
+        fn new() -> Arc<Self> {
+            let (events, _) = broadcast::channel(8);
+            Arc::new(Self {
+                events,
+                list_calls: AtomicUsize::new(0),
+            })
+        }
+    }
+
+    impl CdpConnection for TabListConnection {
+        fn send<'a>(
+            &'a self,
+            method: &'a str,
+            _params: Value,
+            _session: Option<&'a SessionId>,
+        ) -> BoxFuture<'a, Result<Value, CdpError>> {
+            Box::pin(async move {
+                match method {
+                    "Browser.getTabs" => {
+                        self.list_calls.fetch_add(1, Ordering::SeqCst);
+                        Ok(json!({
+                            "tabs": [{
+                                "tabId": 11,
+                                "targetId": "target-a",
+                                "url": "https://example.com",
+                                "title": "Example",
+                                "isActive": true,
+                                "isLoading": false,
+                                "loadProgress": 1.0,
+                                "isPinned": false,
+                                "isHidden": false,
+                                "windowId": 1,
+                                "index": 0
+                            }]
+                        }))
+                    }
+                    _ => Ok(json!({})),
+                }
+            })
+        }
+
+        fn send_raw_json<'a>(
+            &'a self,
+            _method: &'a str,
+            _params_json: &'a str,
+            _session: Option<&'a SessionId>,
+        ) -> BoxFuture<'a, Result<String, CdpError>> {
+            Box::pin(async { Ok("{}".to_string()) })
+        }
+
+        fn events(&self) -> broadcast::Receiver<CdpEvent> {
+            self.events.subscribe()
+        }
+
+        fn is_connected(&self) -> bool {
+            true
+        }
+
+        fn connection_epoch(&self) -> u64 {
+            1
+        }
+    }
 
     fn map_with_releases(releases: Arc<tokio::sync::Mutex<Vec<String>>>) -> Arc<TabTargetMap> {
         TabTargetMap::new_with_releaser(Arc::new(move |target_id| {
@@ -406,5 +485,21 @@ mod tests {
 
         assert_eq!(map.tab_for_target("target-e").await, None);
         assert_eq!(*releases.lock().await, vec!["target-e"]);
+    }
+
+    #[tokio::test]
+    async fn forced_rebuild_refreshes_an_already_ready_epoch() -> anyhow::Result<()> {
+        let connection = TabListConnection::new();
+        let session = BrowserSession::new(connection.clone(), BrowserSessionHooks::default());
+        let map = map_with_releases(Arc::default());
+        map.observe_session(session.clone(), 1).await?;
+        assert!(map.is_ready(1));
+        assert_eq!(connection.list_calls.load(Ordering::SeqCst), 1);
+
+        map.rebuild_from_session(&session, 1, false).await?;
+        assert_eq!(connection.list_calls.load(Ordering::SeqCst), 1);
+        map.rebuild_from_session(&session, 1, true).await?;
+        assert_eq!(connection.list_calls.load(Ordering::SeqCst), 2);
+        Ok(())
     }
 }
