@@ -62,7 +62,8 @@ const { resetSingleMcpInstanceForTesting } = await import(
 const { resetAuditDbForTesting, setAuditDbForTesting } = await import(
   '../../src/modules/db/db'
 )
-const app = (await import('../../src/server')).default
+const { createServer } = await import('../../src/server')
+const app = createServer()
 
 async function connect() {
   const transport = new StreamableHTTPClientTransport(

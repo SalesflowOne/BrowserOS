@@ -3,7 +3,7 @@
   "type": "module",
   "private": true,
   "version": "0.1.0",
-  "description": "WXT extension surface for BrowserClaw. React + shadcn (base-vega). Talks to @browseros/claw-server over hono-rpc.",
+  "description": "WXT extension surface for BrowserClaw. React + shadcn (base-vega). Uses the generated BrowserClaw API client.",
   "scripts": {
     "dev": "bun --env-file=../../.env.development wxt",
     "dev:web": "serve dist/chrome-mv3-dev -p 5174 --no-clipboard",
@@ -20,7 +20,6 @@
   "dependencies": {
     "@base-ui/react": "^1.5.0",
     "@browseros/claw-api": "workspace:*",
-    "@browseros/claw-server": "*",
     "@fontsource-variable/jetbrains-mono": "^5.2.5",
     "@fontsource-variable/schibsted-grotesk": "^5.2.5",
     "@fontsource/newsreader": "^5.2.5",
@@ -42,7 +41,6 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "embla-carousel-react": "^8.6.0",
-    "hono": "^4.12.3",
     "lucide-react": "^1.17.0",
     "media-chrome": "^4.19.1",
     "motion": "^12.40.0",

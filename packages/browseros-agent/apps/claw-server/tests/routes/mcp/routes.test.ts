@@ -20,7 +20,9 @@ import {
   identityService,
 } from '../../../src/lib/mcp-session'
 import { resetSingleMcpInstanceForTesting } from '../../../src/mcp/single-server'
-import app from '../../../src/server'
+import { createServer } from '../../../src/server'
+
+const app = createServer()
 
 const REAL_CATALOGUE = [
   'act',

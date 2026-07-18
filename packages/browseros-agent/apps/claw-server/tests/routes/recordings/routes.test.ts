@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'bun:test'
 import { Hono } from 'hono'
 import { createRecordingsRoute } from '../../../src/routes/recordings'
-import app from '../../../src/server'
+import { createServer } from '../../../src/server'
 import type { RecordingEventInput } from '../../../src/services/recordings'
+
+const app = createServer()
 
 function createFixture(targetId: string | null = 'target-a') {
   const appended: Array<{

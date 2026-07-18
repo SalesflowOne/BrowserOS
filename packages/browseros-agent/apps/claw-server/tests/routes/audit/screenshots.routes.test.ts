@@ -11,9 +11,11 @@ import {
   resetAuditDbForTesting,
   setAuditDbForTesting,
 } from '../../../src/modules/db/db'
-import app from '../../../src/server'
+import { createServer } from '../../../src/server'
 import { screenshotPath } from '../../../src/services/screenshots'
 import { withTempBrowserClawDir } from '../../_helpers/temp-browserclaw-dir'
+
+const app = createServer()
 
 describe('GET /audit/screenshot/:dispatchId', () => {
   beforeEach(() => setAuditDbForTesting())

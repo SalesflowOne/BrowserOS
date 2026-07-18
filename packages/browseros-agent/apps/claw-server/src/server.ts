@@ -3,14 +3,9 @@
  * Copyright 2025 BrowserOS
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * Hono application composition. The chained `.route('/', xxxRoute)`
- * calls give us a `routes` reference whose inferred type captures
- * every endpoint's input / output shape; we re-export that as
- * `AppType` so the future claw-app can build a fully typed
- * hono-rpc client with `hc<AppType>(baseUrl)`.
- *
- * Bun + loopback-only bind; the chain shape is the standard hono-rpc
- * recipe.
+ * Hono application composition for the standalone BrowserClaw server.
+ * Callers create an isolated app instance so tests can inject lifecycle
+ * hooks and the production entry point can own shutdown behavior.
  */
 
 import type { MiddlewareHandler } from 'hono'
@@ -153,8 +148,3 @@ export function createServer(options: CreateServerOptions = {}) {
     .route('/', recordingsRoute)
     .route('/', auditReplaysRoute)
 }
-
-const routes = createServer()
-
-export type AppType = typeof routes
-export default routes

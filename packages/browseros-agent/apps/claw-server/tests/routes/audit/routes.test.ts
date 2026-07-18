@@ -3,8 +3,10 @@ import {
   resetAuditDbForTesting,
   setAuditDbForTesting,
 } from '../../../src/modules/db/db'
-import app from '../../../src/server'
+import { createServer } from '../../../src/server'
 import { recordToolDispatch } from '../../../src/services/audit-log'
+
+const app = createServer()
 
 function seed(over: { agentId?: string; sessionId?: string } = {}): void {
   recordToolDispatch({

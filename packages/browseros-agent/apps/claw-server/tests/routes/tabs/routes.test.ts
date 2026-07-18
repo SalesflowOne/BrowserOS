@@ -17,11 +17,14 @@ import {
   identityService,
 } from '../../../src/lib/mcp-session'
 import { tabActivityRegistry } from '../../../src/lib/tab-activity'
-import app, { type AppType } from '../../../src/server'
+import { createServer } from '../../../src/server'
 import { screencastCache } from '../../../src/services/screencast-cache'
 
+const app = createServer()
+type TestApp = ReturnType<typeof createServer>
+
 function client() {
-  return hc<AppType>('http://localhost', {
+  return hc<TestApp>('http://localhost', {
     fetch: (input, init) => app.fetch(new Request(input, init)),
   })
 }

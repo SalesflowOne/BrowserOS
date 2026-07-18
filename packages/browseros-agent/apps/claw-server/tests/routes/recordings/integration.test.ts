@@ -13,8 +13,10 @@ import {
   setAuditDbForTesting,
 } from '../../../src/modules/db/db'
 import { tabClaims } from '../../../src/modules/db/schema/tab-claims.sql'
-import app from '../../../src/server'
+import { createServer } from '../../../src/server'
 import { recordingStore } from '../../../src/services/recordings'
+
+const app = createServer()
 
 let dir: string
 let previousRoot: string | undefined

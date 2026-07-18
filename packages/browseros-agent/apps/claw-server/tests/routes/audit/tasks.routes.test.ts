@@ -11,11 +11,13 @@ import {
   resetAuditDbForTesting,
   setAuditDbForTesting,
 } from '../../../src/modules/db/db'
-import app from '../../../src/server'
+import { createServer } from '../../../src/server'
 import { recordToolDispatch } from '../../../src/services/audit-log'
 import { screenshotPath } from '../../../src/services/screenshots'
 import { recordSessionEnd } from '../../../src/services/session-events'
 import { withTempBrowserClawDir } from '../../_helpers/temp-browserclaw-dir'
+
+const app = createServer()
 
 function seedScreenshotFile(dispatchId: number | null | undefined): void {
   if (typeof dispatchId !== 'number') return

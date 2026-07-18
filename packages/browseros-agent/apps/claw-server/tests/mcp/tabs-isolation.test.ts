@@ -118,7 +118,8 @@ const { clearFirstCapturesForTesting, screenshotPath } = await import(
 const { withTempBrowserClawDir } = await import(
   '../_helpers/temp-browserclaw-dir'
 )
-const app = (await import('../../src/server')).default
+const { createServer } = await import('../../src/server')
+const app = createServer()
 
 function stubSessionForPage(
   pageId: number,
