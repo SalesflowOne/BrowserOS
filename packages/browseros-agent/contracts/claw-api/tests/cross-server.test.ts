@@ -1,8 +1,8 @@
 /**
  * Cross-server contract suite: runs every shared case against both
- * server implementations over real HTTP, through the generated client.
- * This is the gate that keeps claw-server and claw-server-rust
- * interchangeable behind the canonical API.
+ * server implementations over real HTTP. This is the gate that keeps
+ * claw-server and claw-server-rust interchangeable behind the canonical
+ * API.
  *
  * Each server boots lazily on the first case that needs it; the
  * `shutdown` case kills it, so it is torn down there rather than in

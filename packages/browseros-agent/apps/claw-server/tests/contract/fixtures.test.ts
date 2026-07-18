@@ -1,9 +1,9 @@
 /**
  * Round-trips every shared contract fixture through the generated
- * deserializers and back, asserting byte-for-byte JSON equality. The
- * same fixtures feed the Rust server's `contract_fixtures` tests, so a
- * fixture that survives both proves the two type systems agree on the
- * wire shape.
+ * deserializers and back, asserting the JSON survives value-for-value.
+ * The same fixtures feed the Rust server's `contract_fixtures` tests,
+ * so a fixture that survives both proves the two type systems agree on
+ * the wire shape.
  */
 
 import { describe, expect, test } from 'bun:test'

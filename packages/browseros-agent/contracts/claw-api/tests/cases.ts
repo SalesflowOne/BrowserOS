@@ -1,9 +1,10 @@
 /**
  * The behavioral half of the contract: every case runs verbatim against
- * both server implementations through the generated client, asserting
- * observable wire behavior only — status codes, envelopes, headers —
- * never anything implementation-specific. A case that passes on one
- * server and fails on the other is by definition a contract violation.
+ * both server implementations through the generated client (raw fetch
+ * where the client can't express the check), asserting observable wire
+ * behavior only — status codes, envelopes, headers — never anything
+ * implementation-specific. A case that passes on one server and fails
+ * on the other is by definition a contract violation.
  *
  * Cases assume the seeded world the adapters provide (a live and an
  * ended session, tab 101 / page 7 / target-7, one screenshot). The
@@ -27,8 +28,8 @@ export interface ContractCase {
 // replaced agents/tasks/runs), and the inline-frame key the tab list
 // must not carry (binary travels via the preview/screenshot endpoints).
 // Spelled via concatenation so the forbidden names never appear
-// literally in contract sources — a plain grep for them across the
-// canonical surface should come up empty.
+// literally in the contract package — a plain grep for them under
+// `contracts/claw-api` should come up empty.
 const FORBIDDEN_IDENTITY_KEYS = ['agent', 'task', 'run'].map(
   (scope) => `${scope}Id`,
 )
