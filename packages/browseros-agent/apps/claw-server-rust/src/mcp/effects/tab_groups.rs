@@ -1,10 +1,12 @@
 use crate::{
-    domain::{AgentKey, AgentPageOwnership, Session, color_for_slug},
+    ids::ConvoId,
     mcp::{
         dispatch::{ToolCall, ToolEffect, ToolEffectContext, result_page_id},
         naming::desired_group_title,
         timeouts::TAB_GROUP_OPERATION,
     },
+    sessions::Session,
+    tabs::{PageOwnership, color_for_slug},
 };
 use browseros_core::{BrowserSession, PageId};
 use browseros_mcp::{
@@ -24,7 +26,7 @@ use tracing::warn;
 
 type GroupOperationLock = Mutex<()>;
 
-static GROUP_OPERATION_LOCKS: OnceLock<Mutex<HashMap<AgentKey, Weak<GroupOperationLock>>>> =
+static GROUP_OPERATION_LOCKS: OnceLock<Mutex<HashMap<ConvoId, Weak<GroupOperationLock>>>> =
     OnceLock::new();
 
 /// Creates or joins the durable tab group for a successful `tabs new` call.
@@ -118,7 +120,7 @@ async fn ensure_agent_tab_group_unlocked(
     call: &ToolCall,
     tab_groups: &ToolDef,
     browser: &Arc<BrowserSession>,
-    ownership: &Arc<AgentPageOwnership>,
+    ownership: &Arc<PageOwnership>,
     operation_cancel: &CancellationToken,
     page_id: u32,
 ) {
@@ -225,7 +227,7 @@ async fn ensure_agent_tab_group_unlocked(
     }
 }
 
-async fn group_operation_lock(key: &AgentKey) -> Arc<GroupOperationLock> {
+async fn group_operation_lock(key: &ConvoId) -> Arc<GroupOperationLock> {
     let locks = GROUP_OPERATION_LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
     let mut locks = locks.lock().await;
     locks.retain(|_, lock| lock.strong_count() > 0);
@@ -240,8 +242,8 @@ async fn group_operation_lock(key: &AgentKey) -> Arc<GroupOperationLock> {
 /// Collapses the durable group when its session enters retention.
 pub async fn collapse_agent_tab_group(
     browser: Option<&Arc<BrowserSession>>,
-    ownership: &Arc<AgentPageOwnership>,
-    key: &AgentKey,
+    ownership: &Arc<PageOwnership>,
+    key: &ConvoId,
 ) -> bool {
     let operation_lock = group_operation_lock(key).await;
     let _guard = operation_lock.lock().await;
@@ -279,8 +281,8 @@ pub async fn collapse_agent_tab_group(
 /// Closes a retained session group, confirming absence after a failed close.
 pub async fn close_agent_tab_group(
     browser: Option<&Arc<BrowserSession>>,
-    ownership: &Arc<AgentPageOwnership>,
-    key: &AgentKey,
+    ownership: &Arc<PageOwnership>,
+    key: &ConvoId,
 ) -> bool {
     let operation_lock = group_operation_lock(key).await;
     let _guard = operation_lock.lock().await;
@@ -343,8 +345,8 @@ async fn group_exists_unlocked(
 async fn expand_agent_tab_group_unlocked(
     tab_groups: &ToolDef,
     browser: &Arc<BrowserSession>,
-    ownership: &Arc<AgentPageOwnership>,
-    key: &AgentKey,
+    ownership: &Arc<PageOwnership>,
+    key: &ConvoId,
     cancel: CancellationToken,
     output_files: OutputFileAccess,
 ) {
@@ -375,8 +377,8 @@ async fn expand_agent_tab_group_unlocked(
 /// Stores the desired title and best-effort applies it to the current group.
 pub async fn apply_agent_tab_group_title(
     browser: Option<&Arc<BrowserSession>>,
-    ownership: &Arc<AgentPageOwnership>,
-    key: &AgentKey,
+    ownership: &Arc<PageOwnership>,
+    key: &ConvoId,
     session: &Session,
     cancel: CancellationToken,
 ) {
@@ -401,8 +403,8 @@ pub async fn apply_agent_tab_group_title(
 async fn sync_pending_group_title_unlocked(
     tab_groups: &ToolDef,
     browser: &Arc<BrowserSession>,
-    ownership: &Arc<AgentPageOwnership>,
-    key: &AgentKey,
+    ownership: &Arc<PageOwnership>,
+    key: &ConvoId,
     cancel: CancellationToken,
     output_files: OutputFileAccess,
 ) {
@@ -832,8 +834,8 @@ mod tests {
         recorder.seed_group("group-1", [101]);
         let browser = BrowserSession::new(recorder, BrowserSessionHooks::default());
         assert_eq!(browser.pages.list().await?.len(), 2);
-        let ownership = Arc::new(AgentPageOwnership::new());
-        let key = AgentKey::new("codex-agile-alpaca");
+        let ownership = Arc::new(PageOwnership::new());
+        let key = ConvoId::new("codex-agile-alpaca");
         ownership
             .set_tab_group_ref(key.clone(), Some("group-1".to_string()))
             .await;
@@ -855,8 +857,8 @@ mod tests {
         recorder.seed_group("group-1", [101]);
         let browser = BrowserSession::new(recorder.clone(), BrowserSessionHooks::default());
         assert_eq!(browser.pages.list().await?.len(), 2);
-        let ownership = Arc::new(AgentPageOwnership::new());
-        let key = AgentKey::new("codex-agile-alpaca");
+        let ownership = Arc::new(PageOwnership::new());
+        let key = ConvoId::new("codex-agile-alpaca");
         ownership
             .set_tab_group_ref(key.clone(), Some("group-1".to_string()))
             .await;
@@ -877,8 +879,8 @@ mod tests {
         recorder.fail_close(true);
         let browser = BrowserSession::new(recorder.clone(), BrowserSessionHooks::default());
         assert_eq!(browser.pages.list().await?.len(), 2);
-        let ownership = Arc::new(AgentPageOwnership::new());
-        let key = AgentKey::new("codex-agile-alpaca");
+        let ownership = Arc::new(PageOwnership::new());
+        let key = ConvoId::new("codex-agile-alpaca");
         ownership
             .set_tab_group_ref(key.clone(), Some("group-1".to_string()))
             .await;

@@ -7,8 +7,8 @@ use crate::{
             tasks, tool_dispatches,
         },
     },
-    domain::DispatchId,
     error::AppResult,
+    ids::DispatchId,
     services::now_epoch_ms,
 };
 use sea_orm::{
@@ -664,7 +664,7 @@ mod tests {
             title: None,
             raw_args: json!({ "url": url }),
             duration_ms: 10,
-            dispatch_id: crate::domain::DispatchId::new(),
+            dispatch_id: crate::ids::DispatchId::new(),
             result: DispatchResultSummary {
                 is_error,
                 structured_content: json!({ "page": 1 }),

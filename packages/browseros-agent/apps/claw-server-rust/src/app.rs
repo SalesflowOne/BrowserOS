@@ -1,6 +1,5 @@
 use crate::{
     config::Config,
-    domain::SessionRegistry,
     error::AppResult,
     routes,
     services::{
@@ -9,6 +8,7 @@ use crate::{
         screenshots::ScreenshotService, tab_activity::TabActivityService,
         telemetry::TelemetryService,
     },
+    sessions::Sessions,
     storage::JsonStore,
 };
 use axum::{Router, middleware};
@@ -25,7 +25,7 @@ pub struct AppState {
     pub harness: Arc<HarnessService>,
     pub telemetry: Arc<TelemetryService>,
     pub agents: Arc<AgentService>,
-    pub sessions: Arc<SessionRegistry>,
+    pub sessions: Arc<Sessions>,
     pub browser: Arc<BrowserService>,
     pub screencast: Arc<ScreencastService>,
     pub shutdown: Arc<Mutex<Option<oneshot::Sender<()>>>>,
@@ -65,7 +65,7 @@ impl AppState {
         ));
         let telemetry = Arc::new(TelemetryService::new(&config.browserclaw_dir));
         let agents = Arc::new(AgentService::new(store.clone()));
-        let sessions = SessionRegistry::new(
+        let sessions = Sessions::new(
             audit.clone(),
             replay.clone(),
             config.session_idle,

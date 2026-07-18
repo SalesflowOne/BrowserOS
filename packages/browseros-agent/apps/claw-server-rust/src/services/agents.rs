@@ -1,5 +1,7 @@
 use crate::{
     error::{AppError, AppResult},
+    identity::ProfileView,
+    ids::ProfileId,
     storage::JsonStore,
 };
 use serde::{Deserialize, Serialize};
@@ -150,6 +152,16 @@ pub struct StoredAgentProfile {
     pub status: ProfileStatus,
     pub created_at: String,
     pub updated_at: String,
+}
+
+impl From<&StoredAgentProfile> for ProfileView {
+    fn from(profile: &StoredAgentProfile) -> Self {
+        Self {
+            id: ProfileId::new(profile.id.clone()),
+            slug: profile.slug.clone(),
+            name: profile.name.clone(),
+        }
+    }
 }
 
 #[derive(Clone)]
