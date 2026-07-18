@@ -1,0 +1,29 @@
+SessionId:
+  name: sessionId
+  in: path
+  required: true
+  schema:
+    type: string
+    minLength: 1
+PageId:
+  name: pageId
+  in: path
+  required: true
+  schema:
+    type: integer
+    format: int64
+    minimum: 1
+DispatchId:
+  name: dispatchId
+  in: path
+  required: true
+  schema:
+    type: integer
+    format: int64
+    minimum: 1
+Harness:
+  name: harness
+  in: path
+  required: true
+  schema:
+    $ref: ./schemas/connections.yaml#/Harness

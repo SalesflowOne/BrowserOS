@@ -1,0 +1,57 @@
+ApiError:
+  type: object
+  additionalProperties: false
+  required: [code, message]
+  properties:
+    code:
+      type: string
+    message:
+      type: string
+    requestId:
+      type: string
+HealthResponse:
+  type: object
+  additionalProperties: false
+  required: [status]
+  properties:
+    status:
+      type: string
+      enum: [ok]
+ShutdownResponse:
+  type: object
+  additionalProperties: false
+  required: [status]
+  properties:
+    status:
+      type: string
+      enum: [ok]
+SystemInfo:
+  type: object
+  additionalProperties: false
+  required: [product, version, url]
+  properties:
+    product:
+      type: string
+    version:
+      type: string
+    url:
+      type: string
+      format: uri
+TelemetryState:
+  type: object
+  additionalProperties: false
+  required: [distinctId, enabled, consent]
+  properties:
+    distinctId:
+      type: string
+    enabled:
+      type: boolean
+    consent:
+      type: boolean
+UpdateTelemetryRequest:
+  type: object
+  additionalProperties: false
+  required: [consent]
+  properties:
+    consent:
+      type: boolean

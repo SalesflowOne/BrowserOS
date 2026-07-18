@@ -19,6 +19,7 @@
         "picocolors": "^1.1.1",
         "typedoc": "^0.28.19",
         "typescript": "^5.9.3",
+        "yaml": "2.9.0",
       },
     },
     "apps/app": {
@@ -329,6 +330,10 @@
       "name": "@browseros/cdp-protocol",
       "version": "0.0.1",
     },
+    "packages/claw-api": {
+      "name": "@browseros/claw-api",
+      "version": "1.0.0",
+    },
     "packages/onboarding-video": {
       "name": "@browseros/onboarding-video",
       "version": "0.2.0",
@@ -579,6 +584,8 @@
     "@browseros/build-server-tools": ["@browseros/build-server-tools@workspace:packages/build-server-tools"],
 
     "@browseros/cdp-protocol": ["@browseros/cdp-protocol@workspace:packages/cdp-protocol"],
+
+    "@browseros/claw-api": ["@browseros/claw-api@workspace:packages/claw-api"],
 
     "@browseros/claw-app": ["@browseros/claw-app@workspace:apps/claw-app"],
 

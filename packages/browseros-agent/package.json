@@ -63,6 +63,8 @@
     "fallow": "fallow check",
     "lint:fix": "bunx @biomejs/biome check --write --unsafe",
     "gen:cdp": "bun --env-file=.env.development scripts/codegen/cdp-protocol.ts",
+    "codegen:claw-api": "bun scripts/codegen/claw-api.ts",
+    "codegen:claw-api:check": "bun scripts/codegen/claw-api.ts --check",
     "env:examples": "bun scripts/env/generate-examples.ts",
     "env:examples:check": "bun scripts/env/generate-examples.ts --check",
     "env:migrate": "bun scripts/env/migrate-local.ts",
@@ -89,7 +91,8 @@
     "lefthook": "^2.1.9",
     "picocolors": "^1.1.1",
     "typedoc": "^0.28.19",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "yaml": "2.9.0"
   },
   "trustedDependencies": [
     "lefthook"

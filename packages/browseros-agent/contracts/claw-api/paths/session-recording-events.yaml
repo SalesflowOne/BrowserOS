@@ -1,0 +1,40 @@
+get:
+  operationId: downloadRecordingEvents
+  parameters:
+    - $ref: ../parameters.yaml#/SessionId
+  responses:
+    '200':
+      description: Opaque newline-delimited rrweb events.
+      content:
+        application/x-ndjson:
+          schema:
+            type: string
+    '404':
+      $ref: ../responses.yaml#/NotFound
+    '500':
+      $ref: ../responses.yaml#/InternalError
+post:
+  operationId: appendRecordingEvents
+  parameters:
+    - $ref: ../parameters.yaml#/SessionId
+  requestBody:
+    required: true
+    content:
+      application/x-ndjson:
+        schema:
+          type: string
+  responses:
+    '200':
+      description: Number of accepted event lines.
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/sessions.yaml#/AppendRecordingEventsResponse
+    '400':
+      $ref: ../responses.yaml#/BadRequest
+    '404':
+      $ref: ../responses.yaml#/NotFound
+    '410':
+      $ref: ../responses.yaml#/Gone
+    '500':
+      $ref: ../responses.yaml#/InternalError

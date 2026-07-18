@@ -1,0 +1,30 @@
+BadRequest:
+  description: Invalid request input.
+  content:
+    application/json:
+      schema:
+        $ref: ./schemas/system.yaml#/ApiError
+NotFound:
+  description: Resource not found.
+  content:
+    application/json:
+      schema:
+        $ref: ./schemas/system.yaml#/ApiError
+Conflict:
+  description: Resource is not in the required state.
+  content:
+    application/json:
+      schema:
+        $ref: ./schemas/system.yaml#/ApiError
+Gone:
+  description: Resource no longer accepts writes.
+  content:
+    application/json:
+      schema:
+        $ref: ./schemas/system.yaml#/ApiError
+InternalError:
+  description: Internal server error.
+  content:
+    application/json:
+      schema:
+        $ref: ./schemas/system.yaml#/ApiError
