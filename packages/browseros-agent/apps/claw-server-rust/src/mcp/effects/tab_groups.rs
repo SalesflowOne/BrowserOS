@@ -217,19 +217,22 @@ async fn group_operation_lock(key: &AgentKey) -> Arc<GroupOperationLock> {
     lock
 }
 
-/// Collapses the durable group after its final live session ends.
+/// Collapses the durable group when its session enters retention.
 pub async fn collapse_agent_tab_group(
-    browser: &Arc<BrowserSession>,
+    browser: Option<&Arc<BrowserSession>>,
     ownership: &Arc<AgentPageOwnership>,
     key: &AgentKey,
-) {
+) -> bool {
     let operation_lock = group_operation_lock(key).await;
     let _guard = operation_lock.lock().await;
     if ownership.tab_group_collapsed(key).await {
-        return;
+        return true;
     }
     let Some(group_id) = ownership.tab_group_ref(key).await else {
-        return;
+        return true;
+    };
+    let Some(browser) = browser else {
+        return false;
     };
     match dispatch_tab_groups(
         cached_tab_groups_tool(),
@@ -244,9 +247,77 @@ pub async fn collapse_agent_tab_group(
             ownership
                 .set_tab_group_collapsed_if_current(key, &group_id, true)
                 .await;
+            true
         }
-        Err(reason) => warn!(key = %key, error = %reason, "agent tab group collapse failed"),
+        Err(reason) => {
+            warn!(key = %key, error = %reason, "agent tab group collapse failed");
+            false
+        }
     }
+}
+
+/// Closes a retained session group, confirming absence after a failed close.
+pub async fn close_agent_tab_group(
+    browser: Option<&Arc<BrowserSession>>,
+    ownership: &Arc<AgentPageOwnership>,
+    key: &AgentKey,
+) -> bool {
+    let operation_lock = group_operation_lock(key).await;
+    let _guard = operation_lock.lock().await;
+    let Some(group_id) = ownership.tab_group_ref(key).await else {
+        return true;
+    };
+    let Some(browser) = browser else {
+        return false;
+    };
+    let output_files = browseros_mcp::output_file::create_browser_output_file_access();
+    let closed = dispatch_tab_groups(
+        cached_tab_groups_tool(),
+        browser,
+        CancellationToken::new(),
+        output_files.clone(),
+        json!({ "action": "close", "groupId": group_id }),
+    )
+    .await;
+    let close_error = match closed {
+        Ok(_) => {
+            ownership.set_tab_group_ref(key.clone(), None).await;
+            return true;
+        }
+        Err(error) => error,
+    };
+    if group_exists_unlocked(browser, &group_id, output_files).await == Some(false) {
+        ownership.set_tab_group_ref(key.clone(), None).await;
+        return true;
+    }
+    warn!(key = %key, error = %close_error, "agent tab group close failed");
+    false
+}
+
+async fn group_exists_unlocked(
+    browser: &Arc<BrowserSession>,
+    group_id: &str,
+    output_files: OutputFileAccess,
+) -> Option<bool> {
+    let result = dispatch_tab_groups(
+        cached_tab_groups_tool(),
+        browser,
+        CancellationToken::new(),
+        output_files,
+        json!({ "action": "list" }),
+    )
+    .await
+    .ok()?;
+    let groups = result
+        .structured_content
+        .as_ref()?
+        .get("groups")?
+        .as_array()?;
+    Some(
+        groups
+            .iter()
+            .any(|group| group.get("groupId").and_then(Value::as_str) == Some(group_id)),
+    )
 }
 
 async fn expand_agent_tab_group_unlocked(
@@ -425,6 +496,8 @@ mod tests {
         members: StdMutex<HashMap<String, BTreeSet<i64>>>,
         block_create: AtomicBool,
         fail_title_updates: AtomicBool,
+        fail_close: AtomicBool,
+        fail_list: AtomicBool,
         create_release: Notify,
     }
 
@@ -437,6 +510,8 @@ mod tests {
                 members: StdMutex::new(HashMap::new()),
                 block_create: AtomicBool::new(false),
                 fail_title_updates: AtomicBool::new(false),
+                fail_close: AtomicBool::new(false),
+                fail_list: AtomicBool::new(false),
                 create_release: Notify::new(),
             }
         }
@@ -520,6 +595,21 @@ mod tests {
         fn fail_title_updates(&self, fail: bool) {
             self.fail_title_updates.store(fail, Ordering::SeqCst);
         }
+
+        fn seed_group(&self, group_id: &str, tab_ids: impl IntoIterator<Item = i64>) {
+            self.members
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .insert(group_id.to_string(), tab_ids.into_iter().collect());
+        }
+
+        fn fail_close(&self, fail: bool) {
+            self.fail_close.store(fail, Ordering::SeqCst);
+        }
+
+        fn fail_list(&self, fail: bool) {
+            self.fail_list.store(fail, Ordering::SeqCst);
+        }
     }
 
     impl CdpConnection for GroupDispatchRecorder {
@@ -535,6 +625,31 @@ mod tests {
                     "Browser.getTabs" => Ok(json!({
                         "tabs": [test_tab(101, "target-1"), test_tab(102, "target-2")]
                     })),
+                    "Browser.getTabGroups" => {
+                        if self.fail_list.load(Ordering::SeqCst) {
+                            return Err(CdpError::Protocol {
+                                code: -1,
+                                message: "group list failed".to_string(),
+                            });
+                        }
+                        let group_ids = self
+                            .members
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner())
+                            .keys()
+                            .cloned()
+                            .collect::<Vec<_>>();
+                        let groups = group_ids
+                            .iter()
+                            .map(|group_id| {
+                                self.group_result(group_id, &json!({}))
+                                    .get("group")
+                                    .cloned()
+                                    .unwrap_or(Value::Null)
+                            })
+                            .collect::<Vec<_>>();
+                        Ok(json!({ "groups": groups }))
+                    }
                     "Browser.createTabGroup" => {
                         if self.block_create.load(Ordering::SeqCst) {
                             self.create_release.notified().await;
@@ -587,6 +702,21 @@ mod tests {
                             .and_then(Value::as_str)
                             .unwrap_or("group-1");
                         Ok(self.group_result(group_id, &params))
+                    }
+                    "Browser.closeTabGroup" => {
+                        if self.fail_close.load(Ordering::SeqCst) {
+                            return Err(CdpError::Protocol {
+                                code: -1,
+                                message: "group close failed".to_string(),
+                            });
+                        }
+                        if let Some(group_id) = params.get("groupId").and_then(Value::as_str) {
+                            self.members
+                                .lock()
+                                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                                .remove(group_id);
+                        }
+                        Ok(json!({}))
                     }
                     _ => Err(CdpError::Protocol {
                         code: -1,
@@ -657,11 +787,79 @@ mod tests {
     }
 
     #[test]
-    fn teardown_fallback_tool_definition_is_cached() {
+    fn cached_tab_groups_tool_definition_is_reused() {
         assert!(std::ptr::eq(
             cached_tab_groups_tool(),
             cached_tab_groups_tool()
         ));
+    }
+
+    #[tokio::test]
+    async fn retained_group_collapse_updates_state_and_disconnected_close_retries()
+    -> anyhow::Result<()> {
+        let recorder = Arc::new(GroupDispatchRecorder::new());
+        recorder.seed_group("group-1", [101]);
+        let browser = BrowserSession::new(recorder, BrowserSessionHooks::default());
+        assert_eq!(browser.pages.list().await?.len(), 2);
+        let ownership = Arc::new(AgentPageOwnership::new());
+        let key = AgentKey::new("codex-agile-alpaca");
+        ownership
+            .set_tab_group_ref(key.clone(), Some("group-1".to_string()))
+            .await;
+
+        assert!(collapse_agent_tab_group(Some(&browser), &ownership, &key).await);
+        assert!(ownership.tab_group_collapsed(&key).await);
+        assert!(!close_agent_tab_group(None, &ownership, &key).await);
+        assert_eq!(
+            ownership.tab_group_ref(&key).await.as_deref(),
+            Some("group-1")
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn retained_group_close_succeeds_and_confirms_already_absent_groups() -> anyhow::Result<()>
+    {
+        let recorder = Arc::new(GroupDispatchRecorder::new());
+        recorder.seed_group("group-1", [101]);
+        let browser = BrowserSession::new(recorder.clone(), BrowserSessionHooks::default());
+        assert_eq!(browser.pages.list().await?.len(), 2);
+        let ownership = Arc::new(AgentPageOwnership::new());
+        let key = AgentKey::new("codex-agile-alpaca");
+        ownership
+            .set_tab_group_ref(key.clone(), Some("group-1".to_string()))
+            .await;
+
+        assert!(close_agent_tab_group(Some(&browser), &ownership, &key).await);
+        ownership
+            .set_tab_group_ref(key.clone(), Some("group-1".to_string()))
+            .await;
+        recorder.fail_close(true);
+        assert!(close_agent_tab_group(Some(&browser), &ownership, &key).await);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn retained_group_close_keeps_state_when_group_may_still_exist() -> anyhow::Result<()> {
+        let recorder = Arc::new(GroupDispatchRecorder::new());
+        recorder.seed_group("group-1", [101]);
+        recorder.fail_close(true);
+        let browser = BrowserSession::new(recorder.clone(), BrowserSessionHooks::default());
+        assert_eq!(browser.pages.list().await?.len(), 2);
+        let ownership = Arc::new(AgentPageOwnership::new());
+        let key = AgentKey::new("codex-agile-alpaca");
+        ownership
+            .set_tab_group_ref(key.clone(), Some("group-1".to_string()))
+            .await;
+
+        assert!(!close_agent_tab_group(Some(&browser), &ownership, &key).await);
+        recorder.fail_list(true);
+        assert!(!close_agent_tab_group(Some(&browser), &ownership, &key).await);
+        assert_eq!(
+            ownership.tab_group_ref(&key).await.as_deref(),
+            Some("group-1")
+        );
+        Ok(())
     }
 
     #[tokio::test]

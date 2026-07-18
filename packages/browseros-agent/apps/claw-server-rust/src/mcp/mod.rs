@@ -9,7 +9,7 @@ mod timeouts;
 #[cfg(test)]
 pub mod test_support;
 
-use crate::AppState;
+use crate::{AppState, domain::RetainedGroupAction};
 use rmcp::transport::streamable_http_server::{
     session::local::LocalSessionManager,
     tower::{StreamableHttpServerConfig, StreamableHttpService},
@@ -24,16 +24,31 @@ pub fn browser_mcp_service(state: AppState) -> ClawMcpService {
     let browser = Arc::downgrade(&state.browser);
     state
         .sessions
-        .set_last_session_teardown_hook(Arc::new(move |ownership, key| {
+        .set_retained_group_hook(Arc::new(move |ownership, key, action| {
             let browser = browser.clone();
             Box::pin(async move {
-                let Some(browser) = browser.upgrade() else {
-                    return;
+                let session = match browser.upgrade() {
+                    Some(browser) => browser.session().await,
+                    None => None,
                 };
-                let Some(session) = browser.session().await else {
-                    return;
-                };
-                effects::tab_groups::collapse_agent_tab_group(&session, &ownership, &key).await;
+                match action {
+                    RetainedGroupAction::Collapse => {
+                        effects::tab_groups::collapse_agent_tab_group(
+                            session.as_ref(),
+                            &ownership,
+                            &key,
+                        )
+                        .await
+                    }
+                    RetainedGroupAction::Close => {
+                        effects::tab_groups::close_agent_tab_group(
+                            session.as_ref(),
+                            &ownership,
+                            &key,
+                        )
+                        .await
+                    }
+                }
             })
         }));
     ClawMcpService::new(state)
