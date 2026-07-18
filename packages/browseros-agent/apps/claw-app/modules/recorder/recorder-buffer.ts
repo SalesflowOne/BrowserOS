@@ -4,14 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-interface RecorderEventTarget {
+export interface RecorderEventTarget {
   addEventListener(
     type: string,
     listener: EventListenerOrEventListenerObject,
   ): void
 }
 
-interface RecorderBufferOptions {
+export interface RecorderBufferOptions {
   send: (ndjson: string) => void
   warnDropped?: (count: number) => void
   now?: () => number
@@ -41,7 +41,11 @@ export function createRecorderBuffer(
   const flushAtSize = options.flushAtSize ?? DEFAULT_FLUSH_AT_SIZE
   const flushIntervalMs = options.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS
   const now = options.now ?? Date.now
-  const enqueueMicrotask = options.queueMicrotask ?? queueMicrotask
+  const enqueueMicrotask =
+    options.queueMicrotask ??
+    (typeof queueMicrotask === 'function'
+      ? queueMicrotask
+      : (callback: () => void) => setTimeout(callback, 0))
   const schedule =
     options.setTimeout ??
     ((callback: () => void, delay: number) => setTimeout(callback, delay))

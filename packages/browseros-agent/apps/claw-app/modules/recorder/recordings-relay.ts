@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-type Fetcher = (
+export type Fetcher = (
   input: Parameters<typeof globalThis.fetch>[0],
   init?: Parameters<typeof globalThis.fetch>[1],
 ) => ReturnType<typeof globalThis.fetch>
 
-interface RecordingsRelayOptions {
+export interface RecordingsRelayOptions {
   resolveServerBaseUrl: () => Promise<string>
   fetch?: Fetcher
   now?: () => number

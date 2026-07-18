@@ -25,8 +25,7 @@ describe('createRecorderBuffer', () => {
     const lines = batches[0].split('\n').map((line) => JSON.parse(line))
     expect(lines).toHaveLength(50)
     expect(lines[0]).toEqual({ ts: 1, type: 3, data: { source: 1 } })
-    expect(lines[0]).not.toHaveProperty('sessionId')
-    expect(lines[0]).not.toHaveProperty('tabPageId')
+    expect(Object.keys(lines[0])).toEqual(['ts', 'type', 'data'])
   })
 
   it('flushes a partial batch when the timer fires', () => {
