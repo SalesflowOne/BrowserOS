@@ -252,7 +252,9 @@ export function createRecordingsRelay(
     }
   }
 
-  function markLegacy(): void {
+  function markLegacy(triggeringTabId: number): void {
+    gappedTabs.add(triggeringTabId)
+    for (const queuedTabId of queues.keys()) gappedTabs.add(queuedTabId)
     legacyUntil = now() + LEGACY_TTL_MS
     clearQueues()
   }
@@ -298,7 +300,7 @@ export function createRecordingsRelay(
           progressed = true
 
           if (outcome.kind === 'legacy') {
-            markLegacy()
+            markLegacy(tabId)
             return
           }
           if (outcome.kind === 'unknown-tab') {
@@ -319,7 +321,10 @@ export function createRecordingsRelay(
 
   async function post(tabId: number, ndjson: string): Promise<void> {
     try {
-      if (now() < legacyUntil) return
+      if (now() < legacyUntil) {
+        gappedTabs.add(tabId)
+        return
+      }
       const batch = makeBatch(ndjson)
       if ((queues.get(tabId)?.length ?? 0) > 0 || sendingTabs.has(tabId)) {
         addBatch(tabId, batch)
@@ -332,11 +337,12 @@ export function createRecordingsRelay(
       sendingTabs.delete(tabId)
 
       if (outcome.kind === 'legacy') {
-        markLegacy()
+        markLegacy(tabId)
         return
       }
       if (outcome.kind === 'transient') {
         if (now() >= legacyUntil) addBatch(tabId, batch, true)
+        else gappedTabs.add(tabId)
         warnRateLimited(
           'transient-send',
           '[browseros-claw replay] events POST failed',

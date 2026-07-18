@@ -134,6 +134,42 @@ describe('createRecordingsRelay', () => {
     expect(bodies).toEqual(['legacy-detected', 'after-ttl'])
   })
 
+  it('heals tabs whose batches were dropped by a legacy interval', async () => {
+    const clock = createFakeClock()
+    const recoveredTabs: number[] = []
+    let response: 'transient' | 'legacy' | 'success' = 'transient'
+    let attempts = 0
+    const relay = createRecordingsRelay({
+      resolveServerBaseUrl: async () => serverBaseUrl,
+      fetch: async () => {
+        attempts++
+        if (response === 'transient') throw new TypeError('connection refused')
+        if (response === 'legacy') return new Response('{}', { status: 404 })
+        return Response.json({ ok: true, accepted: 1 })
+      },
+      now: clock.now,
+      setTimeout: clock.setTimeout,
+      clearTimeout: clock.clearTimeout,
+      warn: () => {},
+    })
+    relay.onTabRecoveredAfterLoss((tabId) => recoveredTabs.push(tabId))
+
+    await relay.post(1, 'queued-trigger')
+    await relay.post(2, 'queued-cleared')
+    response = 'legacy'
+    await clock.advanceBy(5_000)
+    const attemptsAfter404 = attempts
+    await relay.post(3, 'dropped-inside-ttl')
+    expect(attempts).toBe(attemptsAfter404)
+
+    response = 'success'
+    await clock.advanceBy(10 * 60_000)
+    await relay.post(1, 'tab-1-recovers')
+    await relay.post(2, 'tab-2-recovers')
+    await relay.post(3, 'tab-3-recovers')
+    expect(recoveredTabs).toEqual([1, 2, 3])
+  })
+
   it('marks an evicted tab gapped and requests a resnapshot after recovery', async () => {
     const clock = createFakeClock()
     const recoveredTabs: number[] = []
