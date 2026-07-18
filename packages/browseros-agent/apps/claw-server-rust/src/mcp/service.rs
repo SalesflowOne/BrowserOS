@@ -99,7 +99,7 @@ impl ClawMcpService {
             browser.as_ref(),
             &self.state.sessions.ownership(),
             session.ownership_key(),
-            &rename.new_title,
+            session.as_ref(),
             session.child_token(),
         )
         .await;
@@ -344,7 +344,6 @@ impl ServerHandler for ClawMcpService {
 
 #[derive(Debug, PartialEq, Eq)]
 struct SessionRename {
-    new_title: String,
     response: String,
 }
 
@@ -373,7 +372,6 @@ async fn rename_session(
     let new_title = build_session_group_title(prefix, &label);
     Ok(SessionRename {
         response: format!("renamed to {new_title} (was {old_title})"),
-        new_title,
     })
 }
 
