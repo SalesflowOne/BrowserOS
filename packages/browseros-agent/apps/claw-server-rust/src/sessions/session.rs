@@ -1,4 +1,7 @@
-use crate::domain::{ClientIdentity, ConversationIdentity, ConvoId, DispatchId, SessionId};
+use crate::{
+    identity::{ClientIdentity, ConversationIdentity},
+    ids::{ConvoId, DispatchId, SessionId},
+};
 use browseros_core::PageId;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -53,12 +56,7 @@ impl Session {
     }
 
     #[must_use]
-    pub fn agent_id(&self) -> &ConvoId {
-        self.identity.convo_id()
-    }
-
-    #[must_use]
-    pub fn ownership_key(&self) -> &ConvoId {
+    pub fn convo_id(&self) -> &ConvoId {
         self.identity.convo_id()
     }
 

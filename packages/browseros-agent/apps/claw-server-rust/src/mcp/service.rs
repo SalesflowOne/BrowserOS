@@ -98,7 +98,7 @@ impl ClawMcpService {
         apply_agent_tab_group_title(
             browser.as_ref(),
             &self.state.sessions.ownership(),
-            session.ownership_key(),
+            session.convo_id(),
             session.as_ref(),
             session.child_token(),
         )
@@ -170,7 +170,7 @@ impl ClawMcpService {
             lifecycle.started = true;
             tracing::info!(
                 session_id = %session.id(),
-                agent = %session.agent_id(),
+                agent = %session.convo_id(),
                 "mcp session initialized"
             );
             session
@@ -306,7 +306,7 @@ impl ServerHandler for ClawMcpService {
             return Err(McpError::method_not_found::<CallToolRequestMethod>());
         };
         let browser_session = self.state.browser.session().await;
-        let ownership_key = started.session.ownership_key().clone();
+        let ownership_key = started.session.convo_id().clone();
         let default_tab_group_id = self
             .state
             .sessions

@@ -288,7 +288,7 @@ async fn replay_tabs_tracks_only_live_agent_sessions() -> anyhow::Result<()> {
             page_id: 7,
             url: "https://example.com/live".to_string(),
             title: "Live Tab".to_string(),
-            agent_id: session.agent_id().as_str().to_string(),
+            agent_id: session.convo_id().as_str().to_string(),
             slug: "codex".to_string(),
             tool_name: "tabs".to_string(),
         })
@@ -316,7 +316,7 @@ async fn replay_tabs_tracks_only_live_agent_sessions() -> anyhow::Result<()> {
         .sessions
         .ownership()
         .set_tab_group(
-            session.ownership_key().clone(),
+            session.convo_id().clone(),
             Some("group-live".to_string()),
             Some(TabGroupColor::Purple),
         )
@@ -350,7 +350,7 @@ async fn replay_tabs_maps_each_session_scoped_agent_id() -> anyhow::Result<()> {
                 page_id: u32::try_from(index + 8)?,
                 url: format!("https://example.com/{index}"),
                 title: format!("Session {index}"),
-                agent_id: session.agent_id().as_str().to_string(),
+                agent_id: session.convo_id().as_str().to_string(),
                 slug: "codex".to_string(),
                 tool_name: "tabs".to_string(),
             })
@@ -866,8 +866,7 @@ async fn same_name_mcp_sessions_have_distinct_groups_and_reject_cross_page_acces
         .lookup(&SessionId::new(session_b_id.clone()))
         .await
         .ok_or_else(|| anyhow::anyhow!("second session missing"))?;
-    assert_ne!(session_a.agent_id(), session_b.agent_id());
-    assert_ne!(session_a.ownership_key(), session_b.ownership_key());
+    assert_ne!(session_a.convo_id(), session_b.convo_id());
 
     for (id, session_id) in [(10, &session_a_id), (11, &session_b_id)] {
         let (status, _headers, body) = request_json_with_headers(
@@ -883,15 +882,12 @@ async fn same_name_mcp_sessions_have_distinct_groups_and_reject_cross_page_acces
     }
 
     let ownership = app.state.sessions.ownership();
-    let (group_a, group_b) = wait_for_distinct_session_groups(
-        &ownership,
-        session_a.ownership_key(),
-        session_b.ownership_key(),
-    )
-    .await?;
+    let (group_a, group_b) =
+        wait_for_distinct_session_groups(&ownership, session_a.convo_id(), session_b.convo_id())
+            .await?;
     assert_ne!(group_a, group_b);
-    let pages_a = ownership.owned_pages(session_a.ownership_key()).await;
-    let pages_b = ownership.owned_pages(session_b.ownership_key()).await;
+    let pages_a = ownership.owned_pages(session_a.convo_id()).await;
+    let pages_b = ownership.owned_pages(session_b.convo_id()).await;
     assert_eq!(pages_a.len(), 1);
     assert_eq!(pages_b.len(), 1);
     assert!(pages_a.is_disjoint(&pages_b));
@@ -1004,7 +1000,7 @@ async fn cancel_endpoint_aborts_in_flight_dispatch() -> anyhow::Result<()> {
         .lookup(&SessionId::new(session_id.clone()))
         .await
         .ok_or_else(|| anyhow::anyhow!("missing test session"))?;
-    let agent_id = session.agent_id().as_str().to_string();
+    let agent_id = session.convo_id().as_str().to_string();
 
     let (status, _headers, body) = request_json_with_headers(
         &app.router,
@@ -1137,7 +1133,7 @@ async fn tabs_activity_enriches_through_live_session_profile_identity() -> anyho
             page_id: 1,
             url: "https://example.com/exact".to_string(),
             title: "Exact".to_string(),
-            agent_id: stored_session.agent_id().as_str().to_string(),
+            agent_id: stored_session.convo_id().as_str().to_string(),
             slug: "mcp".to_string(),
             tool_name: "tabs".to_string(),
         })
@@ -1149,7 +1145,7 @@ async fn tabs_activity_enriches_through_live_session_profile_identity() -> anyho
             page_id: 2,
             url: "https://example.com/fallback".to_string(),
             title: "Fallback".to_string(),
-            agent_id: ephemeral_session.agent_id().as_str().to_string(),
+            agent_id: ephemeral_session.convo_id().as_str().to_string(),
             slug: "mcp".to_string(),
             tool_name: "tabs".to_string(),
         })

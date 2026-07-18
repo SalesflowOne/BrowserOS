@@ -1,5 +1,8 @@
+mod session;
+
+pub use session::Session;
+
 use crate::{
-    domain::Session,
     error::{AppError, AppResult},
     identity::{ClientIdentity, ClientInfo, ConversationIdentity, generate_fun_name},
     ids::{ConvoId, SessionId},
@@ -37,7 +40,9 @@ struct RetainedSession {
     ended_at: Instant,
 }
 
-pub struct SessionRegistry {
+/// Owns live MCP sessions and their lifecycle. Minting resolves conversation identity and records
+/// the audit start; remove, sweep, and shutdown close replay, record the end, and release tabs.
+pub struct Sessions {
     sessions: RwLock<HashMap<SessionId, Arc<Session>>>,
     ownership: Arc<PageOwnership>,
     audit: Arc<AuditService>,
@@ -51,7 +56,7 @@ pub struct SessionRegistry {
     sweep_interval: Duration,
 }
 
-impl SessionRegistry {
+impl Sessions {
     #[must_use]
     pub fn new(
         audit: Arc<AuditService>,
@@ -115,7 +120,7 @@ impl SessionRegistry {
             .audit
             .record_session_start(
                 id.as_str(),
-                session.agent_id().as_str(),
+                session.convo_id().as_str(),
                 session.agent().slug(),
                 session.agent().label(),
                 client.name.as_str(),
@@ -123,10 +128,7 @@ impl SessionRegistry {
             )
             .await
         {
-            self.reserved_keys
-                .lock()
-                .await
-                .remove(session.ownership_key());
+            self.reserved_keys.lock().await.remove(session.convo_id());
             return Err(error);
         }
         self.sessions.write().await.insert(id, session.clone());
@@ -137,7 +139,7 @@ impl SessionRegistry {
         self.reserved_keys
             .lock()
             .await
-            .insert(session.ownership_key().clone());
+            .insert(session.convo_id().clone());
         self.sessions
             .write()
             .await
@@ -171,11 +173,11 @@ impl SessionRegistry {
         self.sessions.read().await.len()
     }
 
-    pub async fn cancel_by_agent(&self, agent_id: &str) -> usize {
+    pub async fn cancel_by_convo(&self, convo_id: &ConvoId) -> usize {
         let sessions: Vec<Arc<Session>> = self.sessions.read().await.values().cloned().collect();
         let mut cancelled = 0;
         for session in sessions {
-            if session.agent_id().as_str() == agent_id {
+            if session.convo_id() == convo_id {
                 cancelled += session.cancel_active_dispatches().await;
             }
         }
@@ -267,7 +269,7 @@ impl SessionRegistry {
             .audit
             .record_session_end(session.id().as_str(), kind, reason)
             .await;
-        let key = session.ownership_key().clone();
+        let key = session.convo_id().clone();
         self.retained.write().await.insert(
             key.clone(),
             RetainedSession {
@@ -343,9 +345,8 @@ impl SessionRegistry {
 
 #[cfg(test)]
 mod tests {
-    use super::{RetainedGroupAction, SessionRegistry};
+    use super::{RetainedGroupAction, Session, Sessions};
     use crate::{
-        domain::Session,
         identity::{ClientIdentity, ClientInfo, ConversationIdentity, generate_fun_name},
         ids::{ConvoId, SessionId},
         services::{audit::AuditService, replay::ReplayService},
@@ -369,7 +370,7 @@ mod tests {
             50,
             Duration::from_secs(30),
         ));
-        let registry = SessionRegistry::new(
+        let registry = Sessions::new(
             audit.clone(),
             replay,
             Duration::from_secs(5),
@@ -403,7 +404,7 @@ mod tests {
             50,
             Duration::from_secs(30),
         ));
-        let registry = SessionRegistry::new(
+        let registry = Sessions::new(
             audit,
             replay,
             Duration::from_secs(60),
@@ -436,7 +437,7 @@ mod tests {
             50,
             Duration::from_secs(30),
         ));
-        let registry = SessionRegistry::new(
+        let registry = Sessions::new(
             audit,
             replay,
             Duration::from_secs(60),
@@ -453,19 +454,18 @@ mod tests {
             label: "Codex".to_string(),
         };
         let session1 = registry.mint(agent.clone(), client.clone()).await?;
-        let key1 = session1.ownership_key().clone();
+        let key1 = session1.convo_id().clone();
         registry
             .ownership()
             .claim_page(key1.clone(), browseros_core::PageId(1))
             .await;
         let session2 = registry.mint(agent, client).await?;
-        let key2 = session2.ownership_key().clone();
+        let key2 = session2.convo_id().clone();
         registry
             .ownership()
             .claim_page(key2.clone(), browseros_core::PageId(2))
             .await;
 
-        assert_ne!(session1.agent_id(), session2.agent_id());
         assert_ne!(key1, key2);
         assert_eq!(
             registry
@@ -500,7 +500,7 @@ mod tests {
             50,
             Duration::from_secs(30),
         ));
-        let registry = SessionRegistry::new(
+        let registry = Sessions::new(
             audit,
             replay,
             Duration::from_secs(60),
@@ -529,7 +529,7 @@ mod tests {
             ConversationIdentity::new("codex", "agile-alpaca".to_string()),
             Instant::now(),
         );
-        let key = session.ownership_key().clone();
+        let key = session.convo_id().clone();
         registry.insert_for_testing(session.clone()).await;
         registry
             .ownership()
@@ -593,7 +593,7 @@ mod tests {
             50,
             Duration::from_secs(30),
         ));
-        let registry = SessionRegistry::new(
+        let registry = Sessions::new(
             audit,
             replay,
             Duration::from_secs(60),
@@ -624,7 +624,7 @@ mod tests {
             ConversationIdentity::new("codex", "agile-alpaca".to_string()),
             Instant::now(),
         );
-        let key = session.ownership_key().clone();
+        let key = session.convo_id().clone();
         registry.insert_for_testing(session.clone()).await;
         registry
             .ownership()
@@ -671,7 +671,7 @@ mod tests {
             50,
             Duration::from_secs(30),
         ));
-        let registry = SessionRegistry::new(
+        let registry = Sessions::new(
             audit,
             replay,
             Duration::from_secs(60),
@@ -721,7 +721,7 @@ mod tests {
             50,
             Duration::from_secs(30),
         ));
-        let registry = SessionRegistry::new(
+        let registry = Sessions::new(
             audit,
             replay,
             Duration::from_secs(60),

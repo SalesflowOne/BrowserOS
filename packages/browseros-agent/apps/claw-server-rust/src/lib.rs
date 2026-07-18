@@ -8,6 +8,7 @@ pub mod ids;
 pub mod mcp;
 pub mod routes;
 pub mod services;
+pub mod sessions;
 pub mod storage;
 pub mod tabs;
 

@@ -39,7 +39,7 @@ pub fn apply(context: ToolEffectContext<'_>) -> BoxFuture<'_, anyhow::Result<Opt
             .into_iter()
             .map(|session| {
                 (
-                    session.ownership_key().clone(),
+                    session.convo_id().clone(),
                     session.agent().label().to_string(),
                 )
             })
@@ -185,12 +185,12 @@ mod tests {
         call.state
             .sessions
             .ownership()
-            .claim_page(other_session.ownership_key().clone(), PageId(3))
+            .claim_page(other_session.convo_id().clone(), PageId(3))
             .await;
         call.state
             .sessions
             .ownership()
-            .claim_page(other_session.ownership_key().clone(), PageId(9))
+            .claim_page(other_session.convo_id().clone(), PageId(9))
             .await;
         let result = ToolResult::text(
             "all tabs",

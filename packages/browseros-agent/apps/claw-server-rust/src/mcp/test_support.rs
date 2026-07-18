@@ -57,7 +57,7 @@ pub async fn tool_call_with_fallback(
         client_cancel.clone(),
         dispatch_cancel.clone(),
     );
-    let ownership_key = session.ownership_key().clone();
+    let ownership_key = session.convo_id().clone();
     Ok(ToolCall::new(
         catalog,
         tool_index,
