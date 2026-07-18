@@ -1,7 +1,7 @@
 use crate::{
     AppState,
     config::Config,
-    domain::{AgentId, AgentRef, Session, SessionId},
+    domain::{AgentRef, Session, SessionId, SessionIdentity},
     mcp::dispatch::{ToolCall, ToolIdentity, linked_cancel_token},
 };
 use rmcp::model::RequestId;
@@ -38,10 +38,10 @@ pub async fn tool_call_with_fallback(
     let session = Session::new(
         SessionId::new("s1"),
         AgentRef::Ephemeral {
-            agent_id: AgentId::new("codex-a"),
             slug: "codex".to_string(),
             label: "Codex".to_string(),
         },
+        SessionIdentity::new("codex", "agile-alpaca".to_string()),
         tokio::time::Instant::now(),
     );
     state.sessions.insert_for_testing(session.clone()).await;
@@ -57,7 +57,7 @@ pub async fn tool_call_with_fallback(
         client_cancel.clone(),
         dispatch_cancel.clone(),
     );
-    let ownership_key = session.agent().ownership_key();
+    let ownership_key = session.ownership_key().clone();
     Ok(ToolCall::new(
         catalog,
         tool_index,

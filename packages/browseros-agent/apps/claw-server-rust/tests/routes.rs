@@ -7,7 +7,7 @@ use browseros_core::TargetId;
 use claw_server_rust::{
     AppState, build_router,
     config::Config,
-    domain::{AgentId, AgentRef, Session, SessionId, TabGroupColor},
+    domain::{AgentRef, ProfileId, Session, SessionId, SessionIdentity, TabGroupColor},
     services::tab_activity::RecordToolInput,
 };
 use futures_util::{SinkExt, StreamExt};
@@ -278,6 +278,8 @@ async fn audit_empty_and_replay_gone() -> anyhow::Result<()> {
 #[tokio::test]
 async fn replay_tabs_tracks_only_live_agent_sessions() -> anyhow::Result<()> {
     let app = test_app().await?;
+    let session_id = SessionId::new("session-live");
+    let session = test_session(session_id.clone(), "agent-live", "codex");
     app.state
         .tab_activity
         .record_tool(RecordToolInput {
@@ -285,7 +287,7 @@ async fn replay_tabs_tracks_only_live_agent_sessions() -> anyhow::Result<()> {
             page_id: 7,
             url: "https://example.com/live".to_string(),
             title: "Live Tab".to_string(),
-            agent_id: "agent-live".to_string(),
+            agent_id: session.agent_id().as_str().to_string(),
             slug: "codex".to_string(),
             tool_name: "tabs".to_string(),
         })
@@ -295,8 +297,6 @@ async fn replay_tabs_tracks_only_live_agent_sessions() -> anyhow::Result<()> {
     assert_eq!(status, StatusCode::OK, "initialize body: {body:?}");
     assert_eq!(body, json!({ "tabs": [] }));
 
-    let session_id = SessionId::new("session-live");
-    let session = test_session(session_id.clone(), "agent-live", "codex");
     app.state.sessions.insert_for_testing(session.clone()).await;
 
     let (status, body) = request_json(&app.router, "GET", "/replay/tabs", None).await?;
@@ -315,7 +315,7 @@ async fn replay_tabs_tracks_only_live_agent_sessions() -> anyhow::Result<()> {
         .sessions
         .ownership()
         .set_tab_group(
-            session.agent().ownership_key(),
+            session.ownership_key().clone(),
             Some("group-live".to_string()),
             Some(TabGroupColor::Purple),
         )
@@ -337,40 +337,39 @@ async fn replay_tabs_tracks_only_live_agent_sessions() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn replay_tabs_keeps_first_live_session_per_agent_id() -> anyhow::Result<()> {
+async fn replay_tabs_maps_each_session_scoped_agent_id() -> anyhow::Result<()> {
     let app = test_app().await?;
-    app.state
-        .tab_activity
-        .record_tool(RecordToolInput {
-            target_id: TargetId::from("target-duplicate".to_string()),
-            page_id: 8,
-            url: "https://example.com/duplicate".to_string(),
-            title: "Duplicate".to_string(),
-            agent_id: "agent-duplicate".to_string(),
-            slug: "codex".to_string(),
-            tool_name: "tabs".to_string(),
-        })
-        .await;
-    app.state
-        .sessions
-        .insert_for_testing(test_session(
-            SessionId::new("session-a"),
-            "agent-duplicate",
-            "codex",
-        ))
-        .await;
-    app.state
-        .sessions
-        .insert_for_testing(test_session(
-            SessionId::new("session-b"),
-            "agent-duplicate",
-            "codex",
-        ))
-        .await;
+    let session_a = test_session(SessionId::new("session-a"), "agile-alpaca", "codex");
+    let session_b = test_session(SessionId::new("session-b"), "bright-beaver", "codex");
+    for (index, session) in [&session_a, &session_b].into_iter().enumerate() {
+        app.state
+            .tab_activity
+            .record_tool(RecordToolInput {
+                target_id: TargetId::from(format!("target-{index}")),
+                page_id: u32::try_from(index + 8)?,
+                url: format!("https://example.com/{index}"),
+                title: format!("Session {index}"),
+                agent_id: session.agent_id().as_str().to_string(),
+                slug: "codex".to_string(),
+                tool_name: "tabs".to_string(),
+            })
+            .await;
+    }
+    app.state.sessions.insert_for_testing(session_a).await;
+    app.state.sessions.insert_for_testing(session_b).await;
 
     let (status, body) = request_json(&app.router, "GET", "/replay/tabs", None).await?;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["tabs"][0]["sessionId"], "session-a");
+    let session_ids = body["tabs"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("tabs not array"))?
+        .iter()
+        .filter_map(|tab| tab["sessionId"].as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        session_ids,
+        std::collections::BTreeSet::from(["session-a", "session-b"])
+    );
     Ok(())
 }
 
@@ -598,7 +597,7 @@ async fn mcp_session_naming_triggers_once_after_first_successful_tabs_new() -> a
         .lookup(&SessionId::new(session_id.clone()))
         .await
         .ok_or_else(|| anyhow::anyhow!("session not minted"))?;
-    assert_eq!(session.session_label().await, None);
+    assert_eq!(session.label().await, session.generated_label());
 
     let mut stream = McpSseStream::open(&app.router, &session_id).await?;
     let (status, _headers, body) = request_json_with_headers(
@@ -642,7 +641,7 @@ async fn mcp_session_naming_triggers_once_after_first_successful_tabs_new() -> a
 
     let mut applied = false;
     for _ in 0..100 {
-        let label_ready = session.session_label().await.as_deref() == Some("invoice-processing");
+        let label_ready = session.label().await == "invoice-processing";
         let title_ready = mock.group_updates.lock().await.iter().any(|params| {
             params.get("title").and_then(Value::as_str) == Some("claude/invoice-processing")
         });
@@ -657,7 +656,7 @@ async fn mcp_session_naming_triggers_once_after_first_successful_tabs_new() -> a
         app.state
             .sessions
             .ownership()
-            .tab_group_ref(&session.agent().ownership_key())
+            .tab_group_ref(session.ownership_key())
             .await
             .as_deref(),
         Some("group-1")
@@ -852,7 +851,7 @@ async fn cancel_endpoint_aborts_in_flight_dispatch() -> anyhow::Result<()> {
         .lookup(&SessionId::new(session_id.clone()))
         .await
         .ok_or_else(|| anyhow::anyhow!("missing test session"))?;
-    let agent_id = session.agent().agent_id().as_str().to_string();
+    let agent_id = session.agent_id().as_str().to_string();
 
     let (status, _headers, body) = request_json_with_headers(
         &app.router,
@@ -932,7 +931,7 @@ async fn cancel_endpoint_aborts_in_flight_dispatch() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn tabs_activity_enriches_by_agent_id_only() -> anyhow::Result<()> {
+async fn tabs_activity_enriches_through_live_session_profile_identity() -> anyhow::Result<()> {
     let app = test_app().await?;
     let agents_dir = app.state.config.browserclaw_dir.join("agents");
     tokio::fs::create_dir_all(&agents_dir).await?;
@@ -957,6 +956,27 @@ async fn tabs_activity_enriches_by_agent_id_only() -> anyhow::Result<()> {
     )
     .await?;
 
+    let stored_session = Session::new(
+        SessionId::new("stored-session"),
+        AgentRef::Profile {
+            profile_id: ProfileId::new("stored-agent"),
+            slug: "mcp".to_string(),
+            label: "Stored Agent".to_string(),
+        },
+        SessionIdentity::new("mcp", "agile-alpaca".to_string()),
+        tokio::time::Instant::now(),
+    );
+    let ephemeral_session =
+        test_session(SessionId::new("ephemeral-session"), "bright-beaver", "mcp");
+    app.state
+        .sessions
+        .insert_for_testing(stored_session.clone())
+        .await;
+    app.state
+        .sessions
+        .insert_for_testing(ephemeral_session.clone())
+        .await;
+
     app.state
         .tab_activity
         .record_tool(RecordToolInput {
@@ -964,7 +984,7 @@ async fn tabs_activity_enriches_by_agent_id_only() -> anyhow::Result<()> {
             page_id: 1,
             url: "https://example.com/exact".to_string(),
             title: "Exact".to_string(),
-            agent_id: "stored-agent".to_string(),
+            agent_id: stored_session.agent_id().as_str().to_string(),
             slug: "mcp".to_string(),
             tool_name: "tabs".to_string(),
         })
@@ -976,7 +996,7 @@ async fn tabs_activity_enriches_by_agent_id_only() -> anyhow::Result<()> {
             page_id: 2,
             url: "https://example.com/fallback".to_string(),
             title: "Fallback".to_string(),
-            agent_id: "ephemeral-agent".to_string(),
+            agent_id: ephemeral_session.agent_id().as_str().to_string(),
             slug: "mcp".to_string(),
             tool_name: "tabs".to_string(),
         })
@@ -1104,13 +1124,17 @@ async fn tabs_activity_embeds_polled_screenshot_frames() -> anyhow::Result<()> {
 }
 
 fn test_session(session_id: SessionId, agent_id: &str, slug: &str) -> Arc<Session> {
+    let generated_label = agent_id
+        .strip_prefix(&format!("{slug}-"))
+        .unwrap_or(agent_id)
+        .to_string();
     Session::new(
         session_id,
         AgentRef::Ephemeral {
-            agent_id: AgentId::new(agent_id),
             slug: slug.to_string(),
             label: slug.to_string(),
         },
+        claw_server_rust::domain::SessionIdentity::new(slug, generated_label),
         tokio::time::Instant::now(),
     )
 }

@@ -67,7 +67,7 @@ pub fn apply(context: ToolEffectContext<'_>) -> BoxFuture<'_, anyhow::Result<Opt
                 debug!(session_id = %session.id(), "session closed before naming applied");
                 return;
             }
-            session.set_session_label(name.clone()).await;
+            session.rename(name.clone()).await;
             let title = build_session_group_title(&prefix, &name);
             tracing::info!(session_id = %session.id(), title = %title, "mcp session named");
             let Some(browser) = state.browser.session().await else {

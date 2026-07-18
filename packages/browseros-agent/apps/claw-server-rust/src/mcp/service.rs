@@ -128,7 +128,7 @@ impl ClawMcpService {
             let profiles = self.state.agents.list_profiles().await.map_err(|error| {
                 McpError::internal_error(format!("agent profile lookup failed: {error}"), None)
             })?;
-            let agent = AgentRef::resolve(&session_id, &client, &profiles);
+            let agent = AgentRef::resolve(&client, &profiles);
             let session = self
                 .state
                 .sessions
@@ -140,7 +140,7 @@ impl ClawMcpService {
             lifecycle.started = true;
             tracing::info!(
                 session_id = %session.id(),
-                agent = %session.agent().agent_id(),
+                agent = %session.agent_id(),
                 "mcp session initialized"
             );
             session
@@ -279,7 +279,7 @@ impl ServerHandler for ClawMcpService {
         let started = self.learn_session_from_request(&context).await?;
         started.session.touch(tokio::time::Instant::now()).await;
         let browser_session = self.state.browser.session().await;
-        let ownership_key = started.session.agent().ownership_key();
+        let ownership_key = started.session.ownership_key().clone();
         let default_tab_group_id = self
             .state
             .sessions

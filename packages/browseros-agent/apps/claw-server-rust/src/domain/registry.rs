@@ -1,6 +1,9 @@
 use crate::{
-    domain::{AgentKey, AgentPageOwnership, AgentRef, ClientInfo, Session, SessionId},
-    error::AppResult,
+    domain::{
+        AgentKey, AgentPageOwnership, AgentRef, ClientInfo, Session, SessionId, SessionIdentity,
+        generate_fun_name,
+    },
+    error::{AppError, AppResult},
     services::{audit::AuditService, replay::ReplayService},
 };
 use futures_util::future::BoxFuture;
@@ -10,7 +13,7 @@ use std::{
     time::Duration,
 };
 use tokio::{
-    sync::RwLock,
+    sync::{Mutex, RwLock},
     task::JoinHandle,
     time::{Instant, MissedTickBehavior, interval},
 };
@@ -25,6 +28,7 @@ pub struct SessionRegistry {
     ownership: Arc<AgentPageOwnership>,
     audit: Arc<AuditService>,
     replay: Arc<ReplayService>,
+    reserved_keys: Mutex<HashSet<AgentKey>>,
     fallback_sessions: RwLock<HashSet<SessionId>>,
     last_session_teardown_hook: OnceLock<LastSessionTeardownHook>,
     idle_after: Duration,
@@ -44,6 +48,7 @@ impl SessionRegistry {
             ownership: Arc::new(AgentPageOwnership::new()),
             audit,
             replay,
+            reserved_keys: Mutex::new(HashSet::new()),
             fallback_sessions: RwLock::new(HashSet::new()),
             last_session_teardown_hook: OnceLock::new(),
             idle_after,
@@ -76,17 +81,35 @@ impl SessionRegistry {
         agent: AgentRef,
         client: ClientInfo,
     ) -> AppResult<Arc<Session>> {
-        let session = Session::new(id.clone(), agent, Instant::now());
-        self.audit
+        let identity = {
+            let mut reserved_keys = self.reserved_keys.lock().await;
+            let generated_label = generate_fun_name(rand::random::<f64>, |label| {
+                !reserved_keys.contains(&AgentKey::new(format!("{}-{label}", agent.slug())))
+            })
+            .map_err(|error| AppError::Internal(error.to_string()))?;
+            let identity = SessionIdentity::new(agent.slug(), generated_label);
+            reserved_keys.insert(identity.ownership_key().clone());
+            identity
+        };
+        let session = Session::new(id.clone(), agent, identity, Instant::now());
+        if let Err(error) = self
+            .audit
             .record_session_start(
                 id.as_str(),
-                session.agent().agent_id().as_str(),
+                session.agent_id().as_str(),
                 session.agent().slug(),
                 session.agent().label(),
                 client.name.as_str(),
                 client.version.as_str(),
             )
-            .await?;
+            .await
+        {
+            self.reserved_keys
+                .lock()
+                .await
+                .remove(session.ownership_key());
+            return Err(error);
+        }
         if super::agent_ref::slugify_client_name(&client.name).is_none() {
             self.fallback_sessions.write().await.insert(id.clone());
         }
@@ -95,6 +118,10 @@ impl SessionRegistry {
     }
 
     pub async fn insert_for_testing(&self, session: Arc<Session>) {
+        self.reserved_keys
+            .lock()
+            .await
+            .insert(session.ownership_key().clone());
         self.sessions
             .write()
             .await
@@ -132,7 +159,7 @@ impl SessionRegistry {
         let sessions: Vec<Arc<Session>> = self.sessions.read().await.values().cloned().collect();
         let mut cancelled = 0;
         for session in sessions {
-            if session.agent().agent_id().as_str() == agent_id {
+            if session.agent_id().as_str() == agent_id {
                 cancelled += session.cancel_active_dispatches().await;
             }
         }
@@ -191,27 +218,11 @@ impl SessionRegistry {
             let mut guard = self.fallback_sessions.write().await;
             std::mem::take(&mut *guard)
         };
-        let mut remaining_by_key = HashMap::<AgentKey, usize>::new();
-        for session in sessions.values() {
-            *remaining_by_key
-                .entry(session.agent().ownership_key())
-                .or_default() += 1;
-        }
         let mut count = 0;
         for session in sessions.into_values() {
-            let key = session.agent().ownership_key();
-            let remaining = remaining_by_key.entry(key).or_default();
-            *remaining = remaining.saturating_sub(1);
-            let last_for_key = *remaining == 0;
             let fallback = fallback_sessions.contains(session.id());
-            self.teardown(
-                session,
-                "closed",
-                Some("server shutdown"),
-                last_for_key,
-                fallback,
-            )
-            .await?;
+            self.teardown(session, "closed", Some("server shutdown"), true, fallback)
+                .await?;
             count += 1;
         }
         Ok(count)
@@ -247,7 +258,7 @@ impl SessionRegistry {
             .audit
             .record_session_end(session.id().as_str(), kind, reason)
             .await;
-        let key = session.agent().ownership_key();
+        let key = session.ownership_key().clone();
         for page_id in self.ownership.owned_pages(&key).await {
             session.forget_first_capture(&page_id).await;
         }
@@ -263,7 +274,7 @@ impl SessionRegistry {
         let sessions = self.sessions.read().await;
         if sessions
             .values()
-            .any(|candidate| candidate.agent().ownership_key() == *key)
+            .any(|candidate| candidate.ownership_key() == key)
         {
             return;
         }
@@ -280,7 +291,7 @@ impl SessionRegistry {
 mod tests {
     use super::SessionRegistry;
     use crate::{
-        domain::{AgentRef, ClientInfo, Session, SessionId},
+        domain::{AgentRef, ClientInfo, Session, SessionId, SessionIdentity},
         services::{audit::AuditService, replay::ReplayService},
     };
     use std::{
@@ -311,10 +322,10 @@ mod tests {
         let session = Session::new(
             SessionId::new("s1"),
             AgentRef::Ephemeral {
-                agent_id: crate::domain::AgentId::new("a1"),
                 slug: "a1".to_string(),
                 label: "A1".to_string(),
             },
+            SessionIdentity::new("a1", "agile-alpaca".to_string()),
             Instant::now(),
         );
         registry.insert_for_testing(session).await;
@@ -344,7 +355,6 @@ mod tests {
         let session = registry
             .mint(
                 AgentRef::Ephemeral {
-                    agent_id: crate::domain::AgentId::new("agent-1"),
                     slug: "agent".to_string(),
                     label: "Agent".to_string(),
                 },
@@ -360,7 +370,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ownership_survives_reconnect_and_preserves_tab_group() -> anyhow::Result<()> {
+    async fn same_client_sessions_get_distinct_identity_and_ownership() -> anyhow::Result<()> {
         let dir = tempdir()?;
         let audit = Arc::new(AuditService::open(dir.path().join("audit.sqlite")).await?);
         let replay = Arc::new(ReplayService::new(
@@ -374,69 +384,49 @@ mod tests {
             Duration::from_secs(60),
             Duration::from_secs(1),
         );
-        let session1 = Session::new(
-            SessionId::new("s1"),
-            AgentRef::Ephemeral {
-                agent_id: crate::domain::AgentId::new("codex-a"),
-                slug: "codex".to_string(),
-                label: "Codex".to_string(),
-            },
-            Instant::now(),
-        );
-        let key1 = session1.agent().ownership_key();
-        registry.insert_for_testing(session1.clone()).await;
+        let client = ClientInfo {
+            name: "Codex".to_string(),
+            version: "1".to_string(),
+            title: None,
+        };
+        let agent = AgentRef::Ephemeral {
+            slug: "codex".to_string(),
+            label: "Codex".to_string(),
+        };
+        let session1 = registry.mint(agent.clone(), client.clone()).await?;
+        let key1 = session1.ownership_key().clone();
         registry
             .ownership()
             .claim_page(key1.clone(), browseros_core::PageId(1))
             .await;
+        let session2 = registry.mint(agent, client).await?;
+        let key2 = session2.ownership_key().clone();
         registry
             .ownership()
-            .claim_page(key1.clone(), browseros_core::PageId(2))
-            .await;
-        registry
-            .ownership()
-            .set_tab_group(
-                key1.clone(),
-                Some("group-1".to_string()),
-                Some(crate::domain::TabGroupColor::Purple),
-            )
+            .claim_page(key2.clone(), browseros_core::PageId(2))
             .await;
 
-        assert!(
-            registry
-                .remove(session1.id(), "closed", Some("reconnect"))
-                .await?
-        );
-
-        let session2 = Session::new(
-            SessionId::new("s2"),
-            AgentRef::Ephemeral {
-                agent_id: crate::domain::AgentId::new("codex-b"),
-                slug: "codex".to_string(),
-                label: "Codex".to_string(),
-            },
-            Instant::now(),
-        );
-        let key2 = session2.agent().ownership_key();
-        registry.insert_for_testing(session2).await;
-
-        assert_eq!(key1, key2);
+        assert_ne!(session1.agent_id(), session2.agent_id());
+        assert_ne!(key1, key2);
         assert_eq!(
             registry
                 .ownership()
-                .owned_pages(&key2)
+                .owned_pages(&key1)
                 .await
                 .into_iter()
                 .collect::<Vec<_>>(),
-            vec![browseros_core::PageId(1), browseros_core::PageId(2)]
+            vec![browseros_core::PageId(1)]
         );
+        assert!(Arc::ptr_eq(
+            &registry
+                .lookup(session1.id())
+                .await
+                .ok_or_else(|| anyhow::anyhow!("session missing"))?,
+            &session1
+        ));
         assert_eq!(
-            registry.ownership().tab_group_ref(&key2).await.as_deref(),
-            Some("group-1")
-        );
-        assert_eq!(
-            registry.ownership().tab_group_color(&key2).await,
-            Some(crate::domain::TabGroupColor::Purple)
+            registry.ownership().owned_pages(&key2).await,
+            std::collections::BTreeSet::from([browseros_core::PageId(2)])
         );
         Ok(())
     }
@@ -461,7 +451,6 @@ mod tests {
             .mint_with_id(
                 session_id.clone(),
                 AgentRef::Ephemeral {
-                    agent_id: crate::domain::AgentId::new("unknown-a"),
                     slug: "unknown-a".to_string(),
                     label: "unknown-a".to_string(),
                 },
@@ -472,7 +461,7 @@ mod tests {
                 },
             )
             .await?;
-        let key = session.agent().ownership_key();
+        let key = session.ownership_key().clone();
         registry
             .ownership()
             .claim_page(key.clone(), browseros_core::PageId(4))
@@ -500,7 +489,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn last_session_teardown_hook_fires_once_per_ownership_key() -> anyhow::Result<()> {
+    async fn teardown_hook_fires_for_each_session_key() -> anyhow::Result<()> {
         let dir = tempdir()?;
         let audit = Arc::new(AuditService::open(dir.path().join("audit.sqlite")).await?);
         let replay = Arc::new(ReplayService::new(
@@ -528,10 +517,10 @@ mod tests {
                 .insert_for_testing(Session::new(
                     SessionId::new(id),
                     AgentRef::Ephemeral {
-                        agent_id: crate::domain::AgentId::new(format!("codex-{id}")),
                         slug: "codex".to_string(),
                         label: "Codex".to_string(),
                     },
+                    SessionIdentity::new("codex", format!("agile-{id}")),
                     Instant::now(),
                 ))
                 .await;
@@ -540,79 +529,11 @@ mod tests {
         registry
             .remove(&SessionId::new("s1"), "closed", None)
             .await?;
-        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
         registry
             .remove(&SessionId::new("s2"), "closed", None)
             .await?;
-        assert_eq!(calls.load(Ordering::SeqCst), 1);
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn inactive_key_finalization_rechecks_for_a_reconnected_session() -> anyhow::Result<()> {
-        let dir = tempdir()?;
-        let audit = Arc::new(AuditService::open(dir.path().join("audit.sqlite")).await?);
-        let replay = Arc::new(ReplayService::new(
-            dir.path().join("replays"),
-            50,
-            Duration::from_secs(30),
-        ));
-        let registry = SessionRegistry::new(
-            audit,
-            replay,
-            Duration::from_secs(60),
-            Duration::from_secs(1),
-        );
-        let calls = Arc::new(AtomicUsize::new(0));
-        let hook_calls = calls.clone();
-        registry.set_last_session_teardown_hook(Arc::new(move |ownership, key| {
-            let hook_calls = hook_calls.clone();
-            Box::pin(async move {
-                let _ = (ownership, key);
-                hook_calls.fetch_add(1, Ordering::SeqCst);
-            })
-        }));
-        let session1 = Session::new(
-            SessionId::new("s1"),
-            AgentRef::Ephemeral {
-                agent_id: crate::domain::AgentId::new("codex-a"),
-                slug: "codex".to_string(),
-                label: "Codex".to_string(),
-            },
-            Instant::now(),
-        );
-        let key = session1.agent().ownership_key();
-        registry.insert_for_testing(session1.clone()).await;
-        registry
-            .ownership()
-            .set_tab_group_ref(key.clone(), Some("group-1".to_string()))
-            .await;
-
-        let removed = registry.sessions.write().await.remove(session1.id());
-        assert!(removed.is_some());
-        registry
-            .mint_with_id(
-                SessionId::new("s2"),
-                AgentRef::Ephemeral {
-                    agent_id: crate::domain::AgentId::new("codex-b"),
-                    slug: "codex".to_string(),
-                    label: "Codex".to_string(),
-                },
-                ClientInfo {
-                    name: "Codex".to_string(),
-                    version: "1".to_string(),
-                    title: None,
-                },
-            )
-            .await?;
-
-        registry.finalize_inactive_key(&key, true).await;
-
-        assert_eq!(calls.load(Ordering::SeqCst), 0);
-        assert_eq!(
-            registry.ownership().tab_group_ref(&key).await.as_deref(),
-            Some("group-1")
-        );
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
         Ok(())
     }
 }

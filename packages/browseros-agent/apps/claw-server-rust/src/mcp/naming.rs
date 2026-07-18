@@ -71,12 +71,10 @@ fn session_name_schema() -> ElicitationSchema {
 
 /// Tab-group title the orchestrator should apply for this session right now.
 pub async fn desired_group_title(session: &Session) -> String {
-    match session.session_label().await {
-        Some(label) => {
-            build_session_group_title(client_prefix_from_slug(session.agent().slug()), &label)
-        }
-        None => session.agent().slug().to_string(),
-    }
+    build_session_group_title(
+        client_prefix_from_slug(session.agent().slug()),
+        &session.label().await,
+    )
 }
 
 /// One elicitation attempt's result, folded into the TS retry table.
@@ -149,7 +147,7 @@ pub async fn peer_elicit_session_name(peer: &Peer<RoleServer>, prefix: &str) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{AgentId, AgentRef, SessionId};
+    use crate::domain::{AgentRef, SessionId, SessionIdentity};
     use serde_json::json;
 
     #[tokio::test]
@@ -157,14 +155,14 @@ mod tests {
         let session = Session::new(
             SessionId::new("s1"),
             AgentRef::Ephemeral {
-                agent_id: AgentId::new("claude-code-abc123"),
                 slug: "claude-code".to_string(),
                 label: "Claude Code".to_string(),
             },
+            SessionIdentity::new("claude-code", "agile-alpaca".to_string()),
             tokio::time::Instant::now(),
         );
-        assert_eq!(desired_group_title(&session).await, "claude-code");
-        session.set_session_label("flight-search".to_string()).await;
+        assert_eq!(desired_group_title(&session).await, "claude/agile-alpaca");
+        session.rename("flight-search".to_string()).await;
         assert_eq!(desired_group_title(&session).await, "claude/flight-search");
     }
 
