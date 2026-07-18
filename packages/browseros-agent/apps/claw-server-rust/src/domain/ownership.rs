@@ -44,6 +44,17 @@ struct AgentOwnershipState {
     tab_group_ref: Option<String>,
     tab_group_color: Option<TabGroupColor>,
     tab_group_collapsed: bool,
+    desired_group_title: Option<String>,
+    group_title_sync_pending: bool,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct AgentTabGroupState {
+    pub group_ref: Option<String>,
+    pub color: Option<TabGroupColor>,
+    pub collapsed: bool,
+    pub desired_title: Option<String>,
+    pub title_sync_pending: bool,
 }
 
 impl AgentPageOwnership {
@@ -127,6 +138,7 @@ impl AgentPageOwnership {
         agent.tab_group_ref = value;
         if agent.tab_group_ref.is_none() {
             agent.tab_group_collapsed = false;
+            agent.group_title_sync_pending = false;
         }
         inner.remove_empty_agents();
     }
@@ -162,6 +174,21 @@ impl AgentPageOwnership {
         inner.remove_empty_agents();
     }
 
+    pub async fn set_tab_group_collapsed_if_current(
+        &self,
+        agent_key: &AgentKey,
+        group_ref: &str,
+        collapsed: bool,
+    ) {
+        let mut inner = self.inner.write().await;
+        let Some(agent) = inner.agents.get_mut(agent_key) else {
+            return;
+        };
+        if agent.tab_group_ref.as_deref() == Some(group_ref) {
+            agent.tab_group_collapsed = collapsed;
+        }
+    }
+
     pub async fn set_tab_group(
         &self,
         agent_key: AgentKey,
@@ -173,7 +200,79 @@ impl AgentPageOwnership {
         agent.tab_group_ref = group_ref;
         agent.tab_group_color = color;
         agent.tab_group_collapsed = false;
+        if agent.tab_group_ref.is_none() {
+            agent.group_title_sync_pending = false;
+        }
         inner.remove_empty_agents();
+    }
+
+    /// Installs a newly created group with the title already applied by Chromium.
+    pub async fn set_tab_group_with_title(
+        &self,
+        agent_key: AgentKey,
+        group_ref: String,
+        color: TabGroupColor,
+        title: String,
+    ) {
+        let mut inner = self.inner.write().await;
+        let agent = inner.agents.entry(agent_key).or_default();
+        agent.tab_group_ref = Some(group_ref);
+        agent.tab_group_color = Some(color);
+        agent.tab_group_collapsed = false;
+        agent.desired_group_title = Some(title);
+        agent.group_title_sync_pending = false;
+    }
+
+    pub async fn tab_group_state(&self, agent_key: &AgentKey) -> Option<AgentTabGroupState> {
+        self.inner
+            .read()
+            .await
+            .agents
+            .get(agent_key)
+            .map(|agent| AgentTabGroupState {
+                group_ref: agent.tab_group_ref.clone(),
+                color: agent.tab_group_color,
+                collapsed: agent.tab_group_collapsed,
+                desired_title: agent.desired_group_title.clone(),
+                title_sync_pending: agent.group_title_sync_pending,
+            })
+    }
+
+    /// Records the authoritative title before any best-effort browser update.
+    pub async fn set_desired_group_title(&self, agent_key: AgentKey, title: String) {
+        let mut inner = self.inner.write().await;
+        let agent = inner.agents.entry(agent_key).or_default();
+        agent.desired_group_title = Some(title);
+        agent.group_title_sync_pending = agent.tab_group_ref.is_some();
+    }
+
+    pub async fn pending_group_title(&self, agent_key: &AgentKey) -> Option<(String, String)> {
+        let inner = self.inner.read().await;
+        let agent = inner.agents.get(agent_key)?;
+        if !agent.group_title_sync_pending {
+            return None;
+        }
+        Some((
+            agent.tab_group_ref.clone()?,
+            agent.desired_group_title.clone()?,
+        ))
+    }
+
+    pub async fn mark_group_title_synced(
+        &self,
+        agent_key: &AgentKey,
+        group_ref: &str,
+        title: &str,
+    ) {
+        let mut inner = self.inner.write().await;
+        let Some(agent) = inner.agents.get_mut(agent_key) else {
+            return;
+        };
+        if agent.tab_group_ref.as_deref() == Some(group_ref)
+            && agent.desired_group_title.as_deref() == Some(title)
+        {
+            agent.group_title_sync_pending = false;
+        }
     }
 
     /// Removes all durable ownership and tab-group state for an agent key.
@@ -195,6 +294,8 @@ impl OwnershipInner {
             !agent.pages.is_empty()
                 || agent.tab_group_ref.is_some()
                 || agent.tab_group_color.is_some()
+                || agent.desired_group_title.is_some()
+                || agent.group_title_sync_pending
         });
     }
 }
@@ -296,5 +397,49 @@ mod tests {
         ownership.set_tab_group_ref(codex.clone(), None).await;
 
         assert!(!ownership.tab_group_collapsed(&codex).await);
+    }
+
+    #[tokio::test]
+    async fn desired_title_stays_pending_until_matching_group_sync() {
+        let ownership = AgentPageOwnership::new();
+        let codex = AgentKey::new("codex");
+        ownership
+            .set_desired_group_title(codex.clone(), "codex/first".to_string())
+            .await;
+        assert_eq!(ownership.pending_group_title(&codex).await, None);
+        ownership
+            .set_tab_group_with_title(
+                codex.clone(),
+                "group-1".to_string(),
+                TabGroupColor::Purple,
+                "codex/first".to_string(),
+            )
+            .await;
+        ownership
+            .set_desired_group_title(codex.clone(), "codex/second".to_string())
+            .await;
+        assert_eq!(
+            ownership.pending_group_title(&codex).await,
+            Some(("group-1".to_string(), "codex/second".to_string()))
+        );
+
+        ownership
+            .mark_group_title_synced(&codex, "group-1", "codex/first")
+            .await;
+        assert!(
+            ownership
+                .tab_group_state(&codex)
+                .await
+                .is_some_and(|state| state.title_sync_pending)
+        );
+        ownership
+            .mark_group_title_synced(&codex, "group-1", "codex/second")
+            .await;
+        assert!(
+            ownership
+                .tab_group_state(&codex)
+                .await
+                .is_some_and(|state| !state.title_sync_pending)
+        );
     }
 }

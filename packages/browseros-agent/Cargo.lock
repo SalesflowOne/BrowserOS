@@ -407,6 +407,7 @@ dependencies = [
  "browseros-mcp",
  "clap",
  "futures-util",
+ "rand 0.9.4",
  "rmcp",
  "sea-orm",
  "sea-orm-migration",
@@ -1785,7 +1786,6 @@ dependencies = [
  "tokio-util",
  "tower-service",
  "tracing",
- "url",
  "uuid",
 ]
 

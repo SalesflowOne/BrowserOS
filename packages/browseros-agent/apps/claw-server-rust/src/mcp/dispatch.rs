@@ -10,15 +10,11 @@ use browseros_mcp::{
 };
 use futures_util::future::BoxFuture;
 use rmcp::{
-    ErrorData as McpError, RoleServer,
-    model::{CallToolResult, ContentBlock, RequestId},
-    service::Peer,
+    ErrorData as McpError,
+    model::{CallToolResult, ContentBlock},
 };
 use serde_json::{Value, json};
-use std::{
-    sync::{Arc, atomic::AtomicBool},
-    time::Instant,
-};
+use std::{sync::Arc, time::Instant};
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
@@ -48,7 +44,6 @@ pub struct ToolCall {
     tool_index: usize,
     pub raw_args: Value,
     pub session_id: SessionId,
-    pub request_id: RequestId,
     pub identity: Option<ToolIdentity>,
     pub browser_session: Option<Arc<BrowserSession>>,
     pub cancel: CancellationToken,
@@ -59,8 +54,6 @@ pub struct ToolCall {
     pub state: AppState,
     pub dispatch_id: DispatchId,
     pub output_files: OutputFileAccess,
-    pub peer: Option<Peer<RoleServer>>,
-    pub naming_started: Arc<AtomicBool>,
 }
 
 impl ToolCall {
@@ -72,7 +65,6 @@ impl ToolCall {
         tool_index: usize,
         raw_args: Value,
         session_id: SessionId,
-        request_id: RequestId,
         identity: Option<ToolIdentity>,
         browser_session: Option<Arc<BrowserSession>>,
         cancel: CancellationToken,
@@ -81,8 +73,6 @@ impl ToolCall {
         default_tab_group_id: Option<String>,
         state: AppState,
         output_files: OutputFileAccess,
-        peer: Option<Peer<RoleServer>>,
-        naming_started: Arc<AtomicBool>,
     ) -> Self {
         let tool_name = catalog[tool_index].name;
         let flags = if tool_name == "tabs" {
@@ -113,7 +103,6 @@ impl ToolCall {
             tool_index,
             raw_args,
             session_id,
-            request_id,
             identity,
             browser_session,
             cancel,
@@ -124,8 +113,6 @@ impl ToolCall {
             state,
             dispatch_id: DispatchId::new(),
             output_files,
-            peer,
-            naming_started,
         }
     }
 
