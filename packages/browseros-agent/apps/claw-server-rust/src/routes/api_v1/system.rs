@@ -22,6 +22,8 @@ pub(super) async fn shutdown(
         .shutdown()
         .await
         .map_err(|source| internal(&request_id, source))?;
+    state.audit.drain_claim_writes().await;
+    state.recordings.close().await;
     state.screencast.stop();
     state.browser.stop();
     if let Some(tx) = state.shutdown.lock().await.take() {
@@ -60,6 +62,6 @@ pub(super) async fn update_telemetry(
     )))
 }
 
-fn to_contract_state(state: crate::services::telemetry::TelemetryState) -> TelemetryState {
+fn to_contract_state(state: crate::telemetry::TelemetryState) -> TelemetryState {
     TelemetryState::new(state.distinct_id, state.enabled, state.consent)
 }

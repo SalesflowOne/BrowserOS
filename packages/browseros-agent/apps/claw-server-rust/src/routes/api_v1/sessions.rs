@@ -1,12 +1,12 @@
 use super::{error, internal};
 use crate::{
     AppState,
-    error::{CanonicalError, RequestId},
-    ids::SessionId,
-    services::{
+    capture::{
         audit::{ListTasksQuery, TaskDetail, TaskStatus, TaskSummary, ToolDispatchRow},
         recordings::RecordingEventInput,
     },
+    error::{CanonicalError, RequestId},
+    ids::SessionId,
     sessions::Session,
 };
 use axum::{

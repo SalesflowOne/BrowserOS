@@ -25,7 +25,7 @@ impl AuditDb {
 #[cfg(test)]
 mod tests {
     use super::AuditDb;
-    use crate::services::audit::{AuditService, ListDispatchesQuery};
+    use crate::capture::audit::{AuditService, ListDispatchesQuery};
     use sea_orm::{
         ConnectionTrait, DbBackend, Statement,
         sqlx::{

@@ -6,14 +6,12 @@ use axum::{
 use browseros_core::TargetId;
 use claw_server_rust::{
     AppState, build_router,
+    capture::audit::{DispatchResultSummary, RecordToolDispatchInput},
     config::Config,
     identity::{ClientIdentity, ConversationIdentity},
     ids::{DispatchId, SessionId},
-    services::{
-        audit::{DispatchResultSummary, RecordToolDispatchInput},
-        tab_activity::{RecordToolInput, ScreencastFrame},
-    },
     sessions::Session,
+    tabs::activity::{RecordToolInput, ScreencastFrame},
 };
 use serde_json::{Value, json};
 use std::{sync::Arc, time::Duration};

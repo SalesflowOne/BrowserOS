@@ -1,4 +1,4 @@
-use crate::{services::tab_targets::TabTargetMap, tabs::PageOwnership};
+use crate::tabs::{PageOwnership, targets::TabTargetMap};
 use browseros_cdp::{CdpClient, ConnectOptions, ReconnectPolicy};
 use browseros_core::{
     BrowserSession, BrowserSessionHooks,

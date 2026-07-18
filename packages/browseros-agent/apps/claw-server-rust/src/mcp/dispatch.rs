@@ -111,7 +111,7 @@ impl ToolCall {
             identity,
             browser_session,
             page_snapshot: None,
-            started_at_ms: crate::services::now_epoch_ms(),
+            started_at_ms: crate::clock::now_epoch_ms(),
             cancel,
             client_cancel,
             dispatch_cancel,
@@ -437,7 +437,7 @@ pub fn linked_cancel_token(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::audit::ListDispatchesQuery;
+    use crate::capture::audit::ListDispatchesQuery;
     use std::sync::{
         Mutex,
         atomic::{AtomicUsize, Ordering},

@@ -1,14 +1,19 @@
+pub mod agents;
 pub mod app;
+pub mod browser;
+pub mod capture;
+mod clock;
 pub mod config;
 pub mod db;
 pub mod error;
+pub mod harness;
 pub mod identity;
 pub mod ids;
 pub mod mcp;
 pub mod routes;
-pub mod services;
 pub mod sessions;
 pub mod storage;
 pub mod tabs;
+pub mod telemetry;
 
 pub use app::{AppState, build_router};

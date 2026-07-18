@@ -1,7 +1,7 @@
-use crate::services::{
+use crate::{
     browser::BrowserService,
-    now_epoch_ms,
-    tab_activity::{ScreencastFrame, TabActivityRecord, TabActivityService},
+    clock::now_epoch_ms,
+    tabs::activity::{ScreencastFrame, TabActivityRecord, TabActivityService},
 };
 use browseros_core::{
     BrowserSession, PageId,
@@ -321,7 +321,7 @@ fn plan_tick(
 #[cfg(test)]
 mod tests {
     use super::{FailureState, ScreencastService, TickPlan, plan_tick};
-    use crate::services::tab_activity::{ScreencastFrame, TabActivityRecord};
+    use crate::tabs::activity::{ScreencastFrame, TabActivityRecord};
     use std::collections::{HashMap, HashSet};
 
     const NOW: i64 = 1_000_000;

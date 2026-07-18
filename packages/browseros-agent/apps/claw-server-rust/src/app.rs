@@ -1,16 +1,19 @@
 use crate::{
+    agents::AgentService,
+    browser::BrowserService,
+    capture::{
+        audit::AuditService, recordings::RecordingStore,
+        replays::ReplayService as ReplayReadService, screencast::ScreencastService,
+        screenshots::ScreenshotService,
+    },
     config::Config,
     error::AppResult,
+    harness::HarnessService,
     routes,
-    services::{
-        agents::AgentService, audit::AuditService, browser::BrowserService,
-        harness::HarnessService, recordings::RecordingStore,
-        replays::ReplayService as ReplayReadService, screencast::ScreencastService,
-        screenshots::ScreenshotService, tab_activity::TabActivityService,
-        tab_targets::TabTargetMap, telemetry::TelemetryService,
-    },
     sessions::Sessions,
     storage::JsonStore,
+    tabs::{activity::TabActivityService, targets::TabTargetMap},
+    telemetry::TelemetryService,
 };
 use axum::{Router, middleware};
 use std::{env, path::PathBuf, sync::Arc, time::Duration};
