@@ -28,7 +28,7 @@ const DAY_MS = 24 * 60 * 60 * 1000
 
 export interface RecordingEventInput {
   ts: number
-  type: number
+  type: unknown
   data: unknown
 }
 
@@ -323,11 +323,7 @@ function sanitizeTargetId(targetId: string): string {
 function parseRecordedEvent(line: string): RecordedEvent | null {
   try {
     const event = JSON.parse(line) as Partial<RecordedEvent>
-    if (
-      typeof event.tabId !== 'number' ||
-      typeof event.ts !== 'number' ||
-      typeof event.type !== 'number'
-    ) {
+    if (typeof event.tabId !== 'number' || typeof event.ts !== 'number') {
       return null
     }
     return {

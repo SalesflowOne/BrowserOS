@@ -52,10 +52,11 @@ describe('GET /audit/dispatches', () => {
       new Request('http://localhost/audit/dispatches'),
     )
     const body = (await res.json()) as {
-      rows: Array<{ agentId: string }>
+      rows: Array<{ agentId: string; targetId: string | null }>
     }
     expect(body.rows.length).toBe(3)
     expect(body.rows[0]?.agentId).toBe('c')
+    expect(body.rows[0]?.targetId).toBe('t1')
   })
 
   it('filters by agentId', async () => {
