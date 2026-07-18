@@ -29,22 +29,21 @@ import { tabsToAgentActivity } from './cockpit.helpers'
 
 function tab(over: Partial<TabActivityRecord>): TabActivityRecord {
   return {
+    tabId: 101,
     targetId: 't?',
     pageId: 0,
     url: 'https://example.com/',
     title: 'Ex',
-    agentId: 'a1',
+    profileId: 'a1',
     slug: 'finance-ops',
-    firstToolAt: 0,
-    lastToolAt: 0,
+    firstActivityAt: 0,
+    lastActivityAt: 0,
     lastToolName: 'snapshot',
     toolCount: 1,
     recentTools: [{ name: 'snapshot', at: 0 }],
     status: 'active',
-    agentLabel: 'Finance Ops',
+    label: 'Finance Ops',
     harness: 'Claude Code',
-    color: null,
-    screencast: null,
     ...over,
   }
 }
@@ -59,8 +58,8 @@ function makeBurstTabs(
       pageId: 7 + i,
       url: `https://${targetId}.example/`,
       title: `Tab ${targetId}`,
-      firstToolAt: lastToolAtByTarget.get(targetId) ?? 0,
-      lastToolAt: lastToolAtByTarget.get(targetId) ?? 0,
+      firstActivityAt: lastToolAtByTarget.get(targetId) ?? 0,
+      lastActivityAt: lastToolAtByTarget.get(targetId) ?? 0,
     }),
   )
 }
@@ -170,11 +169,11 @@ describe('rollup-sequence (sticky focus across polls)', () => {
     ): TabActivityRecord[] {
       return visible.map(([agentId, targetId], i) =>
         tab({
-          agentId,
+          profileId: agentId,
           targetId,
           pageId: 100 + i,
-          firstToolAt: landings.get(targetId) ?? 0,
-          lastToolAt: landings.get(targetId) ?? 0,
+          firstActivityAt: landings.get(targetId) ?? 0,
+          lastActivityAt: landings.get(targetId) ?? 0,
         }),
       )
     }

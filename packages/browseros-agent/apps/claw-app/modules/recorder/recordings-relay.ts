@@ -4,6 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
+import {
+  Configuration,
+  DefaultApi,
+  ResponseError,
+  type Tab,
+} from '@browseros/claw-api'
+
 export type Fetcher = (
   input: Parameters<typeof globalThis.fetch>[0],
   init?: Parameters<typeof globalThis.fetch>[1],
@@ -29,6 +36,8 @@ interface QueuedBatch {
   batchId: string
   ndjson: string
   bytes: number
+  /** Pins retries to the session/page/target that produced these events. */
+  association?: TabAssociation
 }
 
 type SendOutcome =
@@ -41,6 +50,12 @@ export const RECORDINGS_QUEUE_MAX_BYTES = 10 * 1024 * 1024
 const LEGACY_TTL_MS = 10 * 60_000
 const RETRY_INTERVAL_MS = 5_000
 const WARNING_INTERVAL_MS = 60_000
+
+interface TabAssociation {
+  sessionId: string
+  pageId: number
+  targetId: string
+}
 
 /**
  * Session-lived delivery boundary between recorder content scripts and the
@@ -68,6 +83,7 @@ export function createRecordingsRelay(
   let queuedBatchCount = 0
   let retryTimer: TimerHandle | null = null
   let drainPromise: Promise<void> | null = null
+  const associations = new Map<number, TabAssociation>()
 
   function safeWarn(...args: unknown[]): void {
     try {
@@ -107,6 +123,7 @@ export function createRecordingsRelay(
 
   function addBatch(tabId: number, batch: QueuedBatch, atFront = false): void {
     const previousCount = queuedBatchCount
+    batch.association ??= associations.get(tabId)
     const queue = queues.get(tabId)
     if (queue) {
       if (atFront) queue.unshift(batch)
@@ -220,40 +237,85 @@ export function createRecordingsRelay(
   ): Promise<SendOutcome> {
     try {
       const baseUrl = await options.resolveServerBaseUrl()
+      const client = new DefaultApi(
+        new Configuration({ basePath: baseUrl, fetchApi: fetch }),
+      )
+      const tab = (await client.listTabs()).items.find(
+        (candidate) =>
+          candidate.tabId === tabId && typeof candidate.sessionId === 'string',
+      )
+      if (!tab?.sessionId) {
+        associations.delete(tabId)
+        return { kind: 'unknown-tab' }
+      }
+      const association = rememberAssociation(tabId, tab)
+      if (
+        batch.association &&
+        !associationsMatch(batch.association, association)
+      ) {
+        return { kind: 'unknown-tab' }
+      }
+      batch.association = association
+      for (const queuedBatch of queues.get(tabId) ?? []) {
+        queuedBatch.association ??= association
+      }
       const response = await fetch(
-        `${baseUrl}/recordings/tabs/${tabId}/events`,
+        `${baseUrl}/api/v1/sessions/${encodeURIComponent(batch.association.sessionId)}/recording/events`,
         {
           method: 'POST',
           headers: {
             'content-type': 'application/x-ndjson',
             'X-Recording-Batch-Id': batch.batchId,
+            'X-Recording-Tab-Id': tabId.toString(),
+            'X-Recording-Page-Id': association.pageId.toString(),
+            'X-Recording-Target-Id': association.targetId,
           },
           body: batch.ndjson,
           credentials: 'omit',
         },
       )
-      if (response.status === 404) return { kind: 'legacy' }
+      if ([404, 409, 410].includes(response.status)) {
+        associations.delete(tabId)
+        return { kind: 'unknown-tab' }
+      }
       if (!response.ok) {
         return {
           kind: 'transient',
           error: new Error(`recordings ingest returned ${response.status}`),
         }
       }
-      try {
-        const body = (await response.json()) as {
-          ok?: unknown
-          reason?: unknown
-        }
-        if (body.ok === false && body.reason === 'unknown tab') {
-          return { kind: 'unknown-tab' }
-        }
-      } catch {
-        // Successful ingest responses may not have a JSON body.
-      }
       return { kind: 'success' }
     } catch (error) {
+      if (error instanceof ResponseError && error.response.status === 404) {
+        return { kind: 'legacy' }
+      }
       return { kind: 'transient', error }
     }
+  }
+
+  function rememberAssociation(tabId: number, tab: Tab): TabAssociation {
+    const association = {
+      sessionId: tab.sessionId as string,
+      pageId: tab.pageId,
+      targetId: tab.targetId,
+    }
+    const previous = associations.get(tabId)
+    if (previous && !associationsMatch(previous, association)) {
+      gappedTabs.add(tabId)
+    }
+    associations.set(tabId, association)
+    return association
+  }
+
+  function associationsMatch(
+    left: TabAssociation,
+    right: TabAssociation,
+  ): boolean {
+    return (
+      left.sessionId === right.sessionId &&
+      left.pageId === right.pageId &&
+      left.targetId === right.targetId
+    )
   }
 
   function markLegacy(triggeringTabId: number): void {

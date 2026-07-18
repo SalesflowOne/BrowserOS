@@ -223,6 +223,7 @@ pub struct ListTasksResult {
 #[derive(Debug, Clone, Default)]
 pub struct ListTasksQuery {
     pub agent_id: Option<String>,
+    pub slug: Option<String>,
     pub status: Option<TaskStatus>,
     pub site: Option<String>,
     pub search: Option<String>,
@@ -485,6 +486,7 @@ impl AuditService {
         });
         let condition = Condition::all()
             .add_option(query.agent_id.map(|value| tasks::Column::AgentId.eq(value)))
+            .add_option(query.slug.map(|value| tasks::Column::Slug.eq(value)))
             .add_option(
                 query
                     .status

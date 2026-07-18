@@ -61,6 +61,7 @@ pub(super) async fn tasks(
         .audit
         .list_tasks(ListTasksQuery {
             agent_id: query.agent_id,
+            slug: None,
             status: query.status,
             site: query.site,
             search: query.search,

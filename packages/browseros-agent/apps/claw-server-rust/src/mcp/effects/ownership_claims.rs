@@ -27,7 +27,9 @@ pub fn apply(
                     .tab_activity
                     .record_tool(crate::tabs::activity::RecordToolInput {
                         target_id: info.target_id,
+                        tab_id: info.tab_id.0,
                         page_id,
+                        session_id: context.call.session_id.as_str().to_string(),
                         url: info.url,
                         title: info.title,
                         agent_id: identity.session.convo_id().as_str().to_string(),

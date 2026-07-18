@@ -29,8 +29,10 @@ export const applyOwnershipClaims: ToolEffect = ({
     const live = call.session?.pages.getInfo(pageId)
     if (live) {
       tabActivityRegistry.recordTool({
+        sessionId: call.sessionId,
         agentId: call.agent.agentId,
         slug: call.agent.slug,
+        tabId: live.tabId,
         pageId,
         targetId: live.targetId,
         toolName: 'tabs',

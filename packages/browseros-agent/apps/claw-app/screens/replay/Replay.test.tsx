@@ -3,13 +3,9 @@ import { parseHTML } from 'linkedom'
 import { act, createContext, type ReactNode, useContext } from 'react'
 import type { Root } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
-import type {
-  ReplayEvent,
-  ReplayFrame,
-  ReplayMetadata,
-} from '@/modules/api/replay.hooks'
+import type { ReplayEvent, ReplayFrame } from '@/modules/api/replay.hooks'
 import * as replayDataModule from './replay.data'
-import { buildReplayEventTargets, buildReplayTargetIds } from './replay-events'
+import { buildReplayEventTargets } from './replay-events'
 
 let replayResult: replayDataModule.UseReplayDataResult
 
@@ -100,27 +96,6 @@ mock.module('@/components/ui/tabs', () => ({
   },
 }))
 
-const metadata: ReplayMetadata = {
-  exists: true,
-  firstEventAt: 1_000,
-  lastEventAt: 15_000,
-  sizeBytes: 1_024,
-  targets: [
-    {
-      targetId: 'target-b',
-      tabId: 2,
-      firstEventAt: 10_000,
-      lastEventAt: 15_000,
-    },
-    {
-      targetId: 'target-a',
-      tabId: 1,
-      firstEventAt: 1_000,
-      lastEventAt: 5_000,
-    },
-  ],
-}
-
 const events: ReplayEvent[] = [
   {
     sessionId: 'session-1',
@@ -195,7 +170,7 @@ const frames: ReplayFrame[] = [
 
 function replayData(
   replayEvents: readonly ReplayEvent[],
-  replayMetadata = metadata,
+  targetOrder?: string[],
 ) {
   const eventTargets = buildReplayEventTargets(replayEvents)
   return {
@@ -212,10 +187,7 @@ function replayData(
     steps: '2',
     totalSeconds: 15,
     frames,
-    targetIds: buildReplayTargetIds(
-      replayMetadata.targets,
-      eventTargets.targetIds,
-    ),
+    targetIds: targetOrder ?? eventTargets.targetIds,
     eventsForTarget: eventTargets.eventsForTarget,
   }
 }
@@ -279,7 +251,7 @@ afterEach(async () => {
 })
 
 describe('Replay', () => {
-  it('renders metadata targets before events and switches target on frame click', async () => {
+  it('discovers stream targets and switches target on frame click', async () => {
     await act(async () => {
       root.render(
         <MemoryRouter initialEntries={['/audit/session-1/replay']}>
@@ -292,7 +264,7 @@ describe('Replay', () => {
       [...container.querySelectorAll('[data-target-chip]')].map(
         (chip) => chip.textContent,
       ),
-    ).toEqual(['Tab 1', 'Tab 2'])
+    ).toEqual([])
     expect(container.textContent).toContain('No visual recording for this tab')
     expect(container.querySelector('[data-player-targets]')).toBeNull()
 
@@ -342,20 +314,7 @@ describe('Replay', () => {
 
     replayResult = {
       ...replayResult,
-      replay: replayData(events, {
-        exists: true,
-        firstEventAt: 1_000,
-        lastEventAt: 5_000,
-        sizeBytes: 512,
-        targets: [
-          {
-            targetId: 'target-a',
-            tabId: 1,
-            firstEventAt: 1_000,
-            lastEventAt: 5_000,
-          },
-        ],
-      }),
+      replay: replayData(events, ['target-a']),
     }
     await act(async () => {
       root.render(

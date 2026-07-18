@@ -18,6 +18,7 @@ agent-mcp-manager.workspace = true
 browseros-cdp.workspace = true
 browseros-core.workspace = true
 browseros-mcp.workspace = true
+claw-api.workspace = true
 
 anyhow.workspace = true
 axum.workspace = true

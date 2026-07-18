@@ -42,7 +42,7 @@ export function groupDispatchesByTab(
   const buckets = new Map<number, ToolDispatchRow[]>()
   const pageBuckets: Array<[number, ToolDispatchRow[]]> = []
   for (const d of dispatches) {
-    if (d.pageId === null) continue
+    if (d.pageId === undefined) continue
     const arr = buckets.get(d.pageId)
     if (arr) {
       arr.push(d)
@@ -65,7 +65,7 @@ export function groupDispatchesByTab(
       dispatches,
       dispatchCount: dispatches.length,
       screenshotDispatchIds: dispatches
-        .map((d) => d.id)
+        .map((d) => d.dispatchId)
         .filter((id) => screenshotSet.has(id)),
     })
   }
@@ -73,9 +73,9 @@ export function groupDispatchesByTab(
   pageBuckets.forEach(([pageId, rows], idx) => {
     // Prefer a paired title/url snapshot to avoid showing a stale title beside a fresh URL.
     const reversed = [...rows].reverse()
-    const lastPaired = reversed.find((d) => d.url !== null && d.title !== null)
-    const lastWithUrl = lastPaired ?? reversed.find((d) => d.url !== null)
-    const lastWithTitle = lastPaired ?? reversed.find((d) => d.title !== null)
+    const lastPaired = reversed.find((d) => d.url && d.title)
+    const lastWithUrl = lastPaired ?? reversed.find((d) => d.url)
+    const lastWithTitle = lastPaired ?? reversed.find((d) => d.title)
     groups.push({
       id: `page-${pageId}`,
       pageId,
@@ -85,7 +85,7 @@ export function groupDispatchesByTab(
       dispatches: rows,
       dispatchCount: rows.length,
       screenshotDispatchIds: rows
-        .map((d) => d.id)
+        .map((d) => d.dispatchId)
         .filter((id) => screenshotSet.has(id)),
     })
   })

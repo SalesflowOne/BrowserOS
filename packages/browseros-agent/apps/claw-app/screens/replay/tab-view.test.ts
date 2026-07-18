@@ -224,15 +224,11 @@ describe('buildReplayTargetIds', () => {
         [
           {
             targetId: 'target-later',
-            tabId: 2,
             firstEventAt: 4_000,
-            lastEventAt: 5_000,
           },
           {
             targetId: 'target-first',
-            tabId: 1,
             firstEventAt: 1_000,
-            lastEventAt: 3_000,
           },
         ],
         ['stream-only'],

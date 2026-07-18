@@ -17,11 +17,14 @@ import {
   agentIdentityFromClient,
   identityService,
 } from '../../../src/lib/mcp-session'
-import app, { type AppType } from '../../../src/server'
+import { createServer } from '../../../src/server'
 import { dispatchCancellation } from '../../../src/services/dispatch-cancellation'
 
+const app = createServer()
+type TestApp = ReturnType<typeof createServer>
+
 function client() {
-  return hc<AppType>('http://localhost', {
+  return hc<TestApp>('http://localhost', {
     fetch: (input, init) => app.fetch(new Request(input, init)),
   })
 }

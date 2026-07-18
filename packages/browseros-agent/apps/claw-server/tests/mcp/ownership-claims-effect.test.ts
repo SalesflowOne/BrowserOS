@@ -22,7 +22,7 @@ describe('recording claims effect', () => {
         key: 'agent-a',
         session: {
           pages: {
-            getInfo: () => ({ targetId: 'target-a' }),
+            getInfo: () => ({ targetId: 'target-a', tabId: 101 }),
           },
         },
         flags: { newPage: true, closePage: false, listTabs: false },

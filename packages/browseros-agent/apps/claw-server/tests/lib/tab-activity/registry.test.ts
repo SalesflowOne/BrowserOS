@@ -40,6 +40,8 @@ describe('TabActivityRegistry', () => {
   it('records a tool dispatch and surfaces it via snapshot', () => {
     pages.set(1, { targetId: 't1', url: 'https://example.com/', title: 'Ex' })
     registry.recordTool({
+      sessionId: 'session-1',
+      tabId: 101,
       agentId: 'a1',
       slug: 'finance-ops',
       pageId: 1,
@@ -50,9 +52,11 @@ describe('TabActivityRegistry', () => {
     expect(snap).toHaveLength(1)
     expect(snap[0]).toMatchObject({
       targetId: 't1',
+      tabId: 101,
       pageId: 1,
       url: 'https://example.com/',
       title: 'Ex',
+      sessionId: 'session-1',
       agentId: 'a1',
       slug: 'finance-ops',
       firstToolAt: nowMs,
@@ -67,6 +71,8 @@ describe('TabActivityRegistry', () => {
   it('updates an existing record rather than appending a duplicate', () => {
     pages.set(1, { targetId: 't1', url: 'https://example.com/', title: 'Ex' })
     registry.recordTool({
+      sessionId: 'session-1',
+      tabId: 101,
       agentId: 'a1',
       slug: 'finance-ops',
       pageId: 1,
@@ -75,6 +81,8 @@ describe('TabActivityRegistry', () => {
     })
     nowMs += 1000
     registry.recordTool({
+      sessionId: 'session-1',
+      tabId: 101,
       agentId: 'a1',
       slug: 'finance-ops',
       pageId: 1,
@@ -111,6 +119,8 @@ describe('TabActivityRegistry', () => {
     for (let i = 0; i < tools.length; i++) {
       nowMs = 1_000_000 + i * 100
       registry.recordTool({
+        sessionId: 'session-1',
+        tabId: 101,
         agentId: 'a1',
         slug: 'finance-ops',
         pageId: 1,
@@ -131,6 +141,8 @@ describe('TabActivityRegistry', () => {
   it('hands consumers a defensive copy of recentTools', () => {
     pages.set(1, { targetId: 't1', url: 'https://example.com/', title: 'Ex' })
     registry.recordTool({
+      sessionId: 'session-1',
+      tabId: 101,
       agentId: 'a1',
       slug: 'finance-ops',
       pageId: 1,
@@ -144,9 +156,11 @@ describe('TabActivityRegistry', () => {
     expect(second[0].name).toBe('navigate')
   })
 
-  it('overwrites attribution but preserves firstToolAt when a different agent claims the same tab', () => {
+  it('updates session and tab attribution when a different session claims the target', () => {
     pages.set(1, { targetId: 't1', url: 'https://example.com/', title: 'Ex' })
     registry.recordTool({
+      sessionId: 'session-1',
+      tabId: 101,
       agentId: 'a1',
       slug: 'finance',
       pageId: 1,
@@ -155,6 +169,8 @@ describe('TabActivityRegistry', () => {
     })
     nowMs += 500
     registry.recordTool({
+      sessionId: 'session-2',
+      tabId: 202,
       agentId: 'a2',
       slug: 'travel',
       pageId: 1,
@@ -163,6 +179,8 @@ describe('TabActivityRegistry', () => {
     })
     const snap = registry.snapshot()
     expect(snap).toHaveLength(1)
+    expect(snap[0].sessionId).toBe('session-2')
+    expect(snap[0].tabId).toBe(202)
     expect(snap[0].agentId).toBe('a2')
     expect(snap[0].slug).toBe('travel')
     expect(snap[0].firstToolAt).toBe(1_000_000)
@@ -172,6 +190,8 @@ describe('TabActivityRegistry', () => {
   it('marks records active within the window and idle outside it', () => {
     pages.set(1, { targetId: 't1', url: 'https://example.com/', title: 'Ex' })
     registry.recordTool({
+      sessionId: 'session-1',
+      tabId: 101,
       agentId: 'a1',
       slug: 'finance-ops',
       pageId: 1,
@@ -196,6 +216,8 @@ describe('TabActivityRegistry', () => {
   it('evicts records whose pageId no longer maps to the original targetId', () => {
     pages.set(1, { targetId: 't1', url: 'https://example.com/', title: 'Ex' })
     registry.recordTool({
+      sessionId: 'session-1',
+      tabId: 101,
       agentId: 'a1',
       slug: 'finance-ops',
       pageId: 1,
@@ -212,6 +234,8 @@ describe('TabActivityRegistry', () => {
   it('evicts records whose pageId no longer exists at all', () => {
     pages.set(1, { targetId: 't1', url: 'https://example.com/', title: 'Ex' })
     registry.recordTool({
+      sessionId: 'session-1',
+      tabId: 101,
       agentId: 'a1',
       slug: 'finance-ops',
       pageId: 1,
@@ -226,6 +250,8 @@ describe('TabActivityRegistry', () => {
   it('returns an empty snapshot when no session is connected', () => {
     pages.set(1, { targetId: 't1', url: 'https://example.com/', title: 'Ex' })
     registry.recordTool({
+      sessionId: 'session-1',
+      tabId: 101,
       agentId: 'a1',
       slug: 'finance-ops',
       pageId: 1,
@@ -237,6 +263,8 @@ describe('TabActivityRegistry', () => {
       now: () => nowMs,
     })
     detached.recordTool({
+      sessionId: 'session-1',
+      tabId: 101,
       agentId: 'a1',
       slug: 'finance-ops',
       pageId: 1,
@@ -250,6 +278,8 @@ describe('TabActivityRegistry', () => {
     pages.set(1, { targetId: 't1', url: 'https://a.com/', title: 'A' })
     pages.set(2, { targetId: 't2', url: 'https://b.com/', title: 'B' })
     registry.recordTool({
+      sessionId: 'session-1',
+      tabId: 101,
       agentId: 'a1',
       slug: 'finance',
       pageId: 1,
@@ -258,6 +288,8 @@ describe('TabActivityRegistry', () => {
     })
     nowMs += 100
     registry.recordTool({
+      sessionId: 'session-1',
+      tabId: 101,
       agentId: 'a2',
       slug: 'travel',
       pageId: 2,
@@ -273,6 +305,8 @@ describe('TabActivityRegistry', () => {
     pages.set(1, { targetId: 't1', url: 'https://a.com/', title: 'A' })
     pages.set(2, { targetId: 't2', url: 'https://b.com/', title: 'B' })
     registry.recordTool({
+      sessionId: 'session-1',
+      tabId: 101,
       agentId: 'a1',
       slug: 'finance',
       pageId: 1,
@@ -281,6 +315,8 @@ describe('TabActivityRegistry', () => {
     })
     nowMs += 100
     registry.recordTool({
+      sessionId: 'session-1',
+      tabId: 101,
       agentId: 'a2',
       slug: 'travel',
       pageId: 2,
@@ -289,6 +325,8 @@ describe('TabActivityRegistry', () => {
     })
     nowMs += 100
     registry.recordTool({
+      sessionId: 'session-1',
+      tabId: 101,
       agentId: 'a1',
       slug: 'finance',
       pageId: 1,

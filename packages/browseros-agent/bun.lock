@@ -19,6 +19,7 @@
         "picocolors": "^1.1.1",
         "typedoc": "^0.28.19",
         "typescript": "^5.9.3",
+        "yaml": "2.9.0",
       },
     },
     "apps/app": {
@@ -123,7 +124,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@base-ui/react": "^1.5.0",
-        "@browseros/claw-server": "*",
+        "@browseros/claw-api": "workspace:*",
         "@fontsource-variable/jetbrains-mono": "^5.2.5",
         "@fontsource-variable/schibsted-grotesk": "^5.2.5",
         "@fontsource/newsreader": "^5.2.5",
@@ -145,7 +146,6 @@
         "clsx": "^2.1.1",
         "cmdk": "^1.1.1",
         "embla-carousel-react": "^8.6.0",
-        "hono": "^4.12.3",
         "lucide-react": "^1.17.0",
         "media-chrome": "^4.19.1",
         "motion": "^12.40.0",
@@ -214,6 +214,7 @@
         "@browseros/agent-mcp-manager": "workspace:*",
         "@browseros/browser-core": "workspace:*",
         "@browseros/browser-mcp": "workspace:*",
+        "@browseros/claw-api": "workspace:*",
         "@browseros/shared": "workspace:*",
         "@hono/zod-validator": "^0.8.0",
         "@modelcontextprotocol/sdk": "^1.27.1",
@@ -328,6 +329,10 @@
     "packages/cdp-protocol": {
       "name": "@browseros/cdp-protocol",
       "version": "0.0.1",
+    },
+    "packages/claw-api": {
+      "name": "@browseros/claw-api",
+      "version": "1.0.0",
     },
     "packages/onboarding-video": {
       "name": "@browseros/onboarding-video",
@@ -579,6 +584,8 @@
     "@browseros/build-server-tools": ["@browseros/build-server-tools@workspace:packages/build-server-tools"],
 
     "@browseros/cdp-protocol": ["@browseros/cdp-protocol@workspace:packages/cdp-protocol"],
+
+    "@browseros/claw-api": ["@browseros/claw-api@workspace:packages/claw-api"],
 
     "@browseros/claw-app": ["@browseros/claw-app@workspace:apps/claw-app"],
 

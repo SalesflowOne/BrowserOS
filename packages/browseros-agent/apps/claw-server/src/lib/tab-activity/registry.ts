@@ -35,9 +35,11 @@ export interface ToolEvent {
 
 export interface TabActivityRecord {
   targetId: string
+  tabId: number
   pageId: number
   url: string
   title: string
+  sessionId: string
   agentId: string
   slug: string
   firstToolAt: number
@@ -67,7 +69,9 @@ export interface RegistryDeps {
 
 interface RawRecord {
   targetId: string
+  tabId: number
   pageId: number
+  sessionId: string
   agentId: string
   slug: string
   firstToolAt: number
@@ -79,8 +83,10 @@ interface RawRecord {
 
 export interface TabActivityRegistry {
   recordTool(input: {
+    sessionId: string
     agentId: string
     slug: string
+    tabId: number
     pageId: number
     targetId: string
     toolName: string
@@ -110,7 +116,9 @@ export function createTabActivityRegistry(
         // most-recent caller. firstToolAt is preserved so the card
         // can render "started 47s ago" against the original touch.
         existing.agentId = input.agentId
+        existing.sessionId = input.sessionId
         existing.slug = input.slug
+        existing.tabId = input.tabId
         existing.pageId = input.pageId
         existing.lastToolAt = t
         existing.lastToolName = input.toolName
@@ -123,7 +131,9 @@ export function createTabActivityRegistry(
       }
       records.set(input.targetId, {
         targetId: input.targetId,
+        tabId: input.tabId,
         pageId: input.pageId,
+        sessionId: input.sessionId,
         agentId: input.agentId,
         slug: input.slug,
         firstToolAt: t,
@@ -150,9 +160,11 @@ export function createTabActivityRegistry(
         }
         out.push({
           targetId: raw.targetId,
+          tabId: raw.tabId,
           pageId: raw.pageId,
           url: live.url,
           title: live.title,
+          sessionId: raw.sessionId,
           agentId: raw.agentId,
           slug: raw.slug,
           firstToolAt: raw.firstToolAt,

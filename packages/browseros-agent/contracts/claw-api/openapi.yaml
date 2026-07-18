@@ -1,0 +1,108 @@
+openapi: 3.0.3
+info:
+  title: BrowserClaw API
+  version: 1.0.0
+  description: Implementation-neutral REST contract shared by BrowserClaw clients and servers.
+servers:
+  - url: http://127.0.0.1:9200
+paths:
+  /system/health:
+    $ref: ./paths/system-health.yaml
+  /system/shutdown:
+    $ref: ./paths/system-shutdown.yaml
+  /api/v1/system:
+    $ref: ./paths/system-info.yaml
+  /api/v1/settings/telemetry:
+    $ref: ./paths/telemetry.yaml
+  /api/v1/sessions:
+    $ref: ./paths/sessions.yaml
+  /api/v1/sessions/{sessionId}:
+    $ref: ./paths/session.yaml
+  /api/v1/sessions/{sessionId}/cancel:
+    $ref: ./paths/session-cancel.yaml
+  /api/v1/sessions/{sessionId}/recording:
+    $ref: ./paths/session-recording.yaml
+  /api/v1/sessions/{sessionId}/recording/events:
+    $ref: ./paths/session-recording-events.yaml
+  /api/v1/tabs:
+    $ref: ./paths/tabs.yaml
+  /api/v1/tabs/{pageId}/preview:
+    $ref: ./paths/tab-preview.yaml
+  /api/v1/dispatches/{dispatchId}/screenshot:
+    $ref: ./paths/dispatch-screenshot.yaml
+  /api/v1/connections:
+    $ref: ./paths/connections.yaml
+  /api/v1/connections/{harness}:
+    $ref: ./paths/connection.yaml
+components:
+  parameters:
+    SessionId:
+      $ref: ./parameters.yaml#/SessionId
+    PageId:
+      $ref: ./parameters.yaml#/PageId
+    DispatchId:
+      $ref: ./parameters.yaml#/DispatchId
+    Harness:
+      $ref: ./parameters.yaml#/Harness
+    RecordingTabId:
+      $ref: ./parameters.yaml#/RecordingTabId
+    RecordingPageId:
+      $ref: ./parameters.yaml#/RecordingPageId
+    RecordingTargetId:
+      $ref: ./parameters.yaml#/RecordingTargetId
+    RecordingBatchId:
+      $ref: ./parameters.yaml#/RecordingBatchId
+  responses:
+    BadRequest:
+      $ref: ./responses.yaml#/BadRequest
+    NotFound:
+      $ref: ./responses.yaml#/NotFound
+    Conflict:
+      $ref: ./responses.yaml#/Conflict
+    Gone:
+      $ref: ./responses.yaml#/Gone
+    InternalError:
+      $ref: ./responses.yaml#/InternalError
+  schemas:
+    ApiError:
+      $ref: ./schemas/system.yaml#/ApiError
+    HealthResponse:
+      $ref: ./schemas/system.yaml#/HealthResponse
+    ShutdownResponse:
+      $ref: ./schemas/system.yaml#/ShutdownResponse
+    SystemInfo:
+      $ref: ./schemas/system.yaml#/SystemInfo
+    TelemetryState:
+      $ref: ./schemas/system.yaml#/TelemetryState
+    UpdateTelemetryRequest:
+      $ref: ./schemas/system.yaml#/UpdateTelemetryRequest
+    SessionStatus:
+      $ref: ./schemas/sessions.yaml#/SessionStatus
+    SessionSummary:
+      $ref: ./schemas/sessions.yaml#/SessionSummary
+    SessionList:
+      $ref: ./schemas/sessions.yaml#/SessionList
+    SessionDetail:
+      $ref: ./schemas/sessions.yaml#/SessionDetail
+    Dispatch:
+      $ref: ./schemas/sessions.yaml#/Dispatch
+    CancelSessionResponse:
+      $ref: ./schemas/sessions.yaml#/CancelSessionResponse
+    RecordingMetadata:
+      $ref: ./schemas/sessions.yaml#/RecordingMetadata
+    AppendRecordingEventsResponse:
+      $ref: ./schemas/sessions.yaml#/AppendRecordingEventsResponse
+    ToolEvent:
+      $ref: ./schemas/tabs.yaml#/ToolEvent
+    TabStatus:
+      $ref: ./schemas/tabs.yaml#/TabStatus
+    Tab:
+      $ref: ./schemas/tabs.yaml#/Tab
+    TabList:
+      $ref: ./schemas/tabs.yaml#/TabList
+    Harness:
+      $ref: ./schemas/connections.yaml#/Harness
+    Connection:
+      $ref: ./schemas/connections.yaml#/Connection
+    ConnectionList:
+      $ref: ./schemas/connections.yaml#/ConnectionList

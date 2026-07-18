@@ -183,6 +183,11 @@ impl Sessions {
         cancelled
     }
 
+    pub async fn cancel_by_session(&self, session_id: &SessionId) -> Option<usize> {
+        let session = self.lookup(session_id).await?;
+        Some(session.cancel_active_dispatches().await)
+    }
+
     pub async fn owner_of_page(&self, page_id: &browseros_core::PageId) -> Option<ConvoId> {
         self.ownership.owner_of_page(page_id).await
     }

@@ -30,7 +30,7 @@ export function RunRow({ task, now }: RunRowProps) {
     >
       <span className="inline-flex items-center gap-2 font-mono text-[11.5px] text-ink-3 uppercase tracking-[0.06em]">
         <AgentDot slug={task.slug} />
-        <span className="text-ink-2">{task.agentLabel}</span>
+        <span className="text-ink-2">{task.label}</span>
         {isLive && (
           <span className="inline-flex items-center gap-1 text-accent">
             <span
@@ -41,9 +41,7 @@ export function RunRow({ task, now }: RunRowProps) {
           </span>
         )}
       </span>
-      <span className="min-w-0 truncate text-[13px] text-ink">
-        {task.title}
-      </span>
+      <span className="min-w-0 truncate text-[13px] text-ink">{task.name}</span>
       <span className="hidden truncate font-mono text-[11.5px] text-ink-3 md:inline-block md:max-w-[240px]">
         {abbreviateSequence(task.toolSequence)}
       </span>

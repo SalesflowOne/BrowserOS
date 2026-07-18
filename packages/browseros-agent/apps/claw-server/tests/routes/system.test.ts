@@ -6,8 +6,10 @@
 
 import { describe, expect, mock, test } from 'bun:test'
 import pkg from '../../package.json' with { type: 'json' }
-import app, { createServer } from '../../src/server'
+import { createServer } from '../../src/server'
 import { VERSION } from '../../src/version'
+
+const app = createServer()
 
 describe('system routes', () => {
   test('default server exposes system health', async () => {

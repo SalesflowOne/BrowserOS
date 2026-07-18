@@ -10,7 +10,7 @@ import type { RunStatus } from '@/lib/status'
 import {
   type TaskDetail,
   type ToolDispatchRow,
-  useTaskDetail,
+  useSessionDetail,
 } from '@/modules/api/audit.hooks'
 import {
   type ReplayEvent,
@@ -18,7 +18,6 @@ import {
   type ReplayKind,
   type ReplayVerb,
   useReplayEvents,
-  useReplayMetadata,
 } from '@/modules/api/replay.hooks'
 import {
   buildReplayEventTargets,
@@ -74,7 +73,7 @@ export interface UseReplayDataResult {
 export function useReplayData(): UseReplayDataResult {
   const { sessionId = '' } = useParams<{ sessionId: string }>()
   const navigate = useNavigate()
-  const taskQuery = useTaskDetail({
+  const taskQuery = useSessionDetail({
     variables: { sessionId },
     enabled: sessionId.length > 0,
   })
@@ -82,17 +81,11 @@ export function useReplayData(): UseReplayDataResult {
     variables: { sessionId },
     enabled: sessionId.length > 0,
   })
-  const metadataQuery = useReplayMetadata({
-    variables: { sessionId },
-    enabled: sessionId.length > 0,
-  })
-
   const events = eventsQuery.data?.events ?? EMPTY_REPLAY_EVENTS
   const eventTargets = useMemo(() => buildReplayEventTargets(events), [events])
   const targetIds = useMemo(
-    () =>
-      buildReplayTargetIds(metadataQuery.data?.targets, eventTargets.targetIds),
-    [eventTargets.targetIds, metadataQuery.data?.targets],
+    () => buildReplayTargetIds(undefined, eventTargets.targetIds),
+    [eventTargets.targetIds],
   )
   const replay = useMemo<ReplayData | null>(() => {
     if (!taskQuery.data) return null
@@ -109,28 +102,29 @@ export function useReplayData(): UseReplayDataResult {
 
 /** Converts task rows into replay metadata while reusing event buckets. */
 function buildReplayData(
-  task: TaskDetail,
+  detail: TaskDetail,
   eventTargets: ReplayEventTargets,
   targetIds: string[],
 ): ReplayData {
+  const { session: task, dispatches } = detail
   const sessionStartMs = task.startedAt
-  const lastDispatchAt = task.dispatches.length
-    ? task.dispatches[task.dispatches.length - 1].createdAt
+  const lastDispatchAt = dispatches.length
+    ? dispatches[dispatches.length - 1].createdAt
     : sessionStartMs
   const totalMs = Math.max(
     1_000,
     (task.endedAt ?? lastDispatchAt) - sessionStartMs,
   )
 
-  const frames: ReplayFrame[] = task.dispatches.map((row) =>
+  const frames: ReplayFrame[] = dispatches.map((row) =>
     mapDispatchToFrame(row, sessionStartMs),
   )
 
   return {
     sessionId: task.sessionId,
-    agentLabel: task.agentLabel || task.slug,
-    taskTitle: task.title,
-    harness: task.startEvent?.clientName ?? 'unknown',
+    agentLabel: task.label || task.slug,
+    taskTitle: task.name,
+    harness: task.profileId ?? 'unknown',
     status: mapTaskStatus(task.status),
     site: task.site ?? 'about:blank',
     startedAt: formatStartedAt(task.startedAt),
@@ -188,7 +182,7 @@ function mapDispatchToFrame(
     pageId: row.pageId,
     targetId: row.targetId,
     note,
-    dispatchId: row.id,
+    dispatchId: row.dispatchId,
   }
 }
 
@@ -213,7 +207,7 @@ function safeParse(json: string): Record<string, unknown> | null {
   }
 }
 
-function mapTaskStatus(status: TaskDetail['status']): RunStatus {
+function mapTaskStatus(status: TaskDetail['session']['status']): RunStatus {
   if (status === 'live') return 'running'
   if (status === 'failed') return 'blocked'
   return 'done'

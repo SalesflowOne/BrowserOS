@@ -5,10 +5,6 @@
   "version": "0.0.11",
   "description": "Hono backend for BrowserClaw: typed JSON API plus MCP route mux. File-based config under <browserclawDir>/.",
   "exports": {
-    "./server": {
-      "types": "./src/server.ts",
-      "default": null
-    },
     "./shared/port": {
       "types": "./src/shared/port.ts",
       "default": "./src/shared/port.ts"
@@ -35,6 +31,7 @@
   },
   "dependencies": {
     "@browseros/agent-mcp-manager": "workspace:*",
+    "@browseros/claw-api": "workspace:*",
     "@browseros/browser-core": "workspace:*",
     "@browseros/browser-mcp": "workspace:*",
     "@browseros/shared": "workspace:*",

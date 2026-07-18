@@ -15,8 +15,10 @@ export const applyTabActivity: ToolEffect = ({ call, result }) => {
   const live = call.session.pages.getInfo(pageId)
   if (!live) return undefined
   tabActivityRegistry.recordTool({
+    sessionId: call.sessionId,
     agentId: call.agent.agentId,
     slug: call.agent.slug,
+    tabId: live.tabId,
     pageId,
     targetId: live.targetId,
     toolName: call.tool.name,

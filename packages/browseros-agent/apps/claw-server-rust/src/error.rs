@@ -3,6 +3,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
+use claw_api::models::ApiError;
 use serde::Serialize;
 use std::{io, path::PathBuf};
 use thiserror::Error;
@@ -113,6 +114,34 @@ impl IntoResponse for AppError {
 }
 
 pub type AppResult<T> = Result<T, AppError>;
+
+#[derive(Clone, Debug)]
+pub struct RequestId(pub String);
+
+pub struct CanonicalError {
+    status: StatusCode,
+    body: ApiError,
+}
+
+impl CanonicalError {
+    #[must_use]
+    pub fn new(
+        status: StatusCode,
+        code: impl Into<String>,
+        message: impl Into<String>,
+        request_id: Option<&RequestId>,
+    ) -> Self {
+        let mut body = ApiError::new(code.into(), message.into());
+        body.request_id = request_id.map(|request_id| request_id.0.clone());
+        Self { status, body }
+    }
+}
+
+impl IntoResponse for CanonicalError {
+    fn into_response(self) -> Response {
+        (self.status, Json(self.body)).into_response()
+    }
+}
 
 pub trait IoPath<T> {
     fn with_path(self, path: impl Into<PathBuf>) -> AppResult<T>;

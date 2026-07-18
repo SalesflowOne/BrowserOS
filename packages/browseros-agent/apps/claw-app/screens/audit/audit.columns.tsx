@@ -28,7 +28,7 @@ export const TASK_COLUMNS: ColumnDef<TaskSummary>[] = [
       <div className="inline-flex items-center gap-2">
         <AgentDot slug={row.original.slug} />
         <span className="font-mono text-[11px] text-ink-2 uppercase tracking-[0.06em]">
-          {row.original.agentLabel}
+          {row.original.label}
         </span>
         {row.original.status === 'live' && <LiveInlineChip />}
         {row.original.status === 'failed' && <FailedInlineChip />}
@@ -42,7 +42,7 @@ export const TASK_COLUMNS: ColumnDef<TaskSummary>[] = [
     accessorKey: 'title',
     cell: ({ row }) => (
       <span className="block truncate text-[13px] text-ink">
-        {row.original.title}
+        {row.original.name}
       </span>
     ),
     enableSorting: false,

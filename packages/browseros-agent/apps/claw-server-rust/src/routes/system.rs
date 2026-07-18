@@ -1,50 +1,7 @@
 use super::wire::WireJson;
-use crate::{
-    AppState, browser::BrowserConnectionState, error::AppResult, telemetry::TelemetryState,
-};
+use crate::{AppState, telemetry::TelemetryState};
 use axum::{Json, extract::State};
 use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(super) struct HealthResponse {
-    cdp: BrowserConnectionState,
-    sessions: SessionCountResponse,
-    status: &'static str,
-}
-
-#[derive(Debug, Serialize)]
-struct SessionCountResponse {
-    count: usize,
-}
-
-pub(super) async fn health(State(state): State<AppState>) -> WireJson<HealthResponse> {
-    WireJson(HealthResponse {
-        cdp: state.browser.state(),
-        sessions: SessionCountResponse {
-            count: state.sessions.count().await,
-        },
-        status: "ok",
-    })
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(super) struct ShutdownResponse {
-    drained_sessions: usize,
-    status: &'static str,
-}
-
-pub(super) async fn shutdown(
-    State(state): State<AppState>,
-) -> AppResult<WireJson<ShutdownResponse>> {
-    let drained = state.sessions.shutdown().await?;
-    state.shutdown.request();
-    Ok(WireJson(ShutdownResponse {
-        drained_sessions: drained,
-        status: "ok",
-    }))
-}
 
 #[derive(Debug, Serialize)]
 pub(super) struct VersionResponse {

@@ -21,11 +21,11 @@ mock.module('./cockpit.data', () => ({
 
 mock.module('@/modules/api/audit.hooks', () => ({
   ..._auditHooks,
-  useTasks: () => ({
-    data: { pages: [{ tasks: [], nextCursor: null }] },
+  useSessions: () => ({
+    data: { pages: [{ items: [] }] },
     isPending: false,
   }),
-  taskScreenshotUrl: (id: number) => `/audit/screenshot/${id}`,
+  taskScreenshotUrl: (id: number) => `/api/v1/dispatches/${id}/screenshot`,
   useTaskScreenshotBaseUrl: () => null,
 }))
 
@@ -45,7 +45,7 @@ function setConnectionsProbePending() {
 
 function setConnectionsProbeEmpty() {
   connectionsHookState()[connectionsHookResultKey] = {
-    data: { connections: [] },
+    data: { items: [] },
     isPending: false,
     isError: false,
   }
@@ -53,7 +53,7 @@ function setConnectionsProbeEmpty() {
 
 mock.module('@/modules/api/connections.hooks', () => ({
   ..._connectionsHooks,
-  useBrowserosConnections: Object.assign(
+  useConnections: Object.assign(
     () =>
       connectionsHookState()[connectionsHookResultKey] ?? {
         data: undefined,
@@ -62,12 +62,12 @@ mock.module('@/modules/api/connections.hooks', () => ({
       },
     { getKey: () => ['cockpit', 'connections'] },
   ),
-  useConnectBrowseros: () => ({
+  useConnectHarness: () => ({
     isPending: false,
     variables: undefined,
     mutateAsync: async () => ({ installed: true }),
   }),
-  useDisconnectBrowseros: () => ({
+  useDisconnectHarness: () => ({
     isPending: false,
     variables: undefined,
     mutateAsync: async () => ({ installed: false }),

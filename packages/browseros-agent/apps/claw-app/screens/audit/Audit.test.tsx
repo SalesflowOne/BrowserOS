@@ -57,10 +57,9 @@ function renderApp(): string {
 
 const sampleTask: TaskSummary = {
   sessionId: 'sess-1',
-  agentId: 'claude-code',
   slug: 'claude-code',
-  agentLabel: 'Claude Code',
-  title: 'Browsed example.com',
+  label: 'Claude Code',
+  name: 'Browsed example.com',
   site: 'example.com',
   startedAt: Date.now() - 12000,
   endedAt: Date.now(),
@@ -70,7 +69,6 @@ const sampleTask: TaskSummary = {
   status: 'done',
   errorCount: 0,
   lastScreenshotDispatchId: 7,
-  cursorId: 8,
 }
 
 describe('Audit screen', () => {

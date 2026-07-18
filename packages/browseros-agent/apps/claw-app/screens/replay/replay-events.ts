@@ -4,10 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import type {
-  ReplayEvent,
-  ReplayTargetMetadata,
-} from '@/modules/api/replay.hooks'
+import type { ReplayEvent } from '@/modules/api/replay.hooks'
+
+interface ReplayTargetMetadata {
+  targetId: string
+  firstEventAt: number
+}
 
 export const EMPTY_REPLAY_EVENTS: readonly ReplayEvent[] = []
 

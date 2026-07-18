@@ -1,0 +1,170 @@
+SessionStatus:
+  type: string
+  enum: [live, done, failed]
+SessionSummary:
+  type: object
+  additionalProperties: false
+  required:
+    - sessionId
+    - slug
+    - label
+    - name
+    - startedAt
+    - durationMs
+    - dispatchCount
+    - toolSequence
+    - status
+    - errorCount
+  properties:
+    sessionId:
+      type: string
+    profileId:
+      type: string
+    slug:
+      type: string
+    label:
+      type: string
+    name:
+      type: string
+    site:
+      type: string
+    startedAt:
+      type: integer
+      format: int64
+    endedAt:
+      type: integer
+      format: int64
+    durationMs:
+      type: integer
+      format: int64
+      minimum: 0
+    dispatchCount:
+      type: integer
+      format: int64
+      minimum: 0
+    toolSequence:
+      type: array
+      items:
+        type: string
+    status:
+      $ref: '#/SessionStatus'
+    errorCount:
+      type: integer
+      format: int64
+      minimum: 0
+    lastScreenshotDispatchId:
+      type: integer
+      format: int64
+      minimum: 1
+SessionList:
+  type: object
+  additionalProperties: false
+  required: [items]
+  properties:
+    items:
+      type: array
+      items:
+        $ref: '#/SessionSummary'
+    nextCursor:
+      type: integer
+      format: int64
+      minimum: 1
+SessionDetail:
+  type: object
+  additionalProperties: false
+  required: [session, dispatches]
+  properties:
+    session:
+      $ref: '#/SessionSummary'
+    dispatches:
+      type: array
+      items:
+        $ref: '#/Dispatch'
+Dispatch:
+  type: object
+  additionalProperties: false
+  required:
+    - dispatchId
+    - createdAt
+    - slug
+    - label
+    - sessionId
+    - toolName
+    - hasScreenshot
+  properties:
+    dispatchId:
+      type: integer
+      format: int64
+      minimum: 1
+    createdAt:
+      type: integer
+      format: int64
+    profileId:
+      type: string
+    slug:
+      type: string
+    label:
+      type: string
+    sessionId:
+      type: string
+    toolName:
+      type: string
+    pageId:
+      type: integer
+      format: int64
+    targetId:
+      type: string
+    url:
+      type: string
+    title:
+      type: string
+    argsJson:
+      type: string
+    resultMeta:
+      type: string
+    durationMs:
+      type: integer
+      format: int64
+      minimum: 0
+    hasScreenshot:
+      type: boolean
+CancelSessionResponse:
+  type: object
+  additionalProperties: false
+  required: [cancelled]
+  properties:
+    cancelled:
+      type: integer
+      format: int64
+      minimum: 0
+RecordingMetadata:
+  type: object
+  additionalProperties: false
+  required: [hasData, sizeBytes, pageIds]
+  properties:
+    hasData:
+      type: boolean
+    sizeBytes:
+      type: integer
+      format: int64
+      minimum: 0
+    firstEventAt:
+      type: integer
+      format: int64
+    lastEventAt:
+      type: integer
+      format: int64
+    pageIds:
+      type: array
+      items:
+        type: integer
+        format: int64
+AppendRecordingEventsResponse:
+  type: object
+  additionalProperties: false
+  required: [accepted]
+  properties:
+    accepted:
+      type: integer
+      format: int64
+      minimum: 0

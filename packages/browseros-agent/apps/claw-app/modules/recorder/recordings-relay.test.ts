@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import type { Tab } from '@browseros/claw-api'
 import { createRecordingsRelay } from './recordings-relay'
 
 const serverBaseUrl = 'http://127.0.0.1:9511'
@@ -7,6 +8,26 @@ interface FakeTimer {
   id: number
   at: number
   callback: () => void
+}
+
+function tab(overrides: Partial<Tab> = {}): Tab {
+  return {
+    tabId: 42,
+    pageId: 7,
+    targetId: 'target-7',
+    sessionId: 'session-1',
+    slug: 'claude-code',
+    label: 'Claude Code',
+    url: 'https://example.com',
+    title: 'Example',
+    status: 'active',
+    firstActivityAt: 1,
+    lastActivityAt: 2,
+    lastToolName: 'click',
+    toolCount: 1,
+    recentTools: [],
+    ...overrides,
+  }
 }
 
 function createFakeClock() {
@@ -51,21 +72,31 @@ describe('createRecordingsRelay', () => {
       body: string
       batchId: string
       contentType: string
+      tabId: string
+      pageId: string
+      targetId: string
       succeeded: boolean
     }> = []
     let serverUp = false
     const relay = createRecordingsRelay({
       resolveServerBaseUrl: async () => serverBaseUrl,
       fetch: async (input, init) => {
+        const url = String(input)
+        if (url.endsWith('/tabs')) {
+          return Response.json({ items: [tab()] })
+        }
         attempts.push({
-          url: String(input),
+          url,
           body: String(init?.body),
           batchId: requestHeader(init, 'X-Recording-Batch-Id'),
           contentType: requestHeader(init, 'content-type'),
+          tabId: requestHeader(init, 'X-Recording-Tab-Id'),
+          pageId: requestHeader(init, 'X-Recording-Page-Id'),
+          targetId: requestHeader(init, 'X-Recording-Target-Id'),
           succeeded: serverUp,
         })
         if (!serverUp) throw new TypeError('connection refused')
-        return Response.json({ ok: true, accepted: 1 })
+        return Response.json({ accepted: 1 })
       },
       now: clock.now,
       setTimeout: clock.setTimeout,
@@ -78,12 +109,19 @@ describe('createRecordingsRelay', () => {
 
     expect(
       attempts.every(
-        ({ url }) => url === `${serverBaseUrl}/recordings/tabs/42/events`,
+        ({ url }) =>
+          url === `${serverBaseUrl}/api/v1/sessions/session-1/recording/events`,
       ),
     ).toBe(true)
     expect(
       attempts.every(
         ({ contentType }) => contentType === 'application/x-ndjson',
+      ),
+    ).toBe(true)
+    expect(
+      attempts.every(
+        ({ tabId, pageId, targetId }) =>
+          tabId === '42' && pageId === '7' && targetId === 'target-7',
       ),
     ).toBe(true)
     expect(attempts.every(({ body }) => body === 'first')).toBe(true)
@@ -104,18 +142,23 @@ describe('createRecordingsRelay', () => {
     expect(clock.pendingTimers()).toBe(0)
   })
 
-  it('drops during the legacy TTL after a real 404, then attempts again', async () => {
+  it('drops during the legacy TTL when canonical tab discovery is absent', async () => {
     const clock = createFakeClock()
-    const bodies: string[] = []
-    let status = 404
+    let canonicalAvailable = false
+    let listAttempts = 0
+    const postedBodies: string[] = []
     const relay = createRecordingsRelay({
       resolveServerBaseUrl: async () => serverBaseUrl,
-      fetch: async (_input, init) => {
-        bodies.push(String(init?.body))
-        return Response.json(
-          status === 404 ? { ok: false } : { ok: true, accepted: 1 },
-          { status },
-        )
+      fetch: async (input, init) => {
+        const url = String(input)
+        if (url.endsWith('/tabs')) {
+          listAttempts++
+          return canonicalAvailable
+            ? Response.json({ items: [tab({ tabId: 1 })] })
+            : new Response('{}', { status: 404 })
+        }
+        postedBodies.push(String(init?.body))
+        return Response.json({ accepted: 1 })
       },
       now: clock.now,
       setTimeout: clock.setTimeout,
@@ -125,13 +168,15 @@ describe('createRecordingsRelay', () => {
 
     await relay.post(1, 'legacy-detected')
     await relay.post(1, 'dropped-inside-ttl')
-    expect(bodies).toEqual(['legacy-detected'])
+    expect(listAttempts).toBe(1)
+    expect(postedBodies).toEqual([])
     expect(clock.pendingTimers()).toBe(0)
 
-    status = 200
+    canonicalAvailable = true
     await clock.advanceBy(10 * 60_000)
     await relay.post(1, 'after-ttl')
-    expect(bodies).toEqual(['legacy-detected', 'after-ttl'])
+    expect(listAttempts).toBe(2)
+    expect(postedBodies).toEqual(['after-ttl'])
   })
 
   it('heals tabs whose batches were dropped by a legacy interval', async () => {
@@ -141,11 +186,16 @@ describe('createRecordingsRelay', () => {
     let attempts = 0
     const relay = createRecordingsRelay({
       resolveServerBaseUrl: async () => serverBaseUrl,
-      fetch: async () => {
+      fetch: async (input) => {
+        const url = String(input)
         attempts++
         if (response === 'transient') throw new TypeError('connection refused')
         if (response === 'legacy') return new Response('{}', { status: 404 })
-        return Response.json({ ok: true, accepted: 1 })
+        return url.endsWith('/tabs')
+          ? Response.json({
+              items: [tab({ tabId: 1 }), tab({ tabId: 2 }), tab({ tabId: 3 })],
+            })
+          : Response.json({ accepted: 1 })
       },
       now: clock.now,
       setTimeout: clock.setTimeout,
@@ -176,9 +226,15 @@ describe('createRecordingsRelay', () => {
     let serverUp = false
     const relay = createRecordingsRelay({
       resolveServerBaseUrl: async () => serverBaseUrl,
-      fetch: async () => {
+      fetch: async (input) => {
+        const url = String(input)
+        if (url.endsWith('/tabs')) {
+          return Response.json({
+            items: [tab({ tabId: 1 }), tab({ tabId: 2 })],
+          })
+        }
         if (!serverUp) throw new TypeError('connection refused')
-        return Response.json({ ok: true, accepted: 1 })
+        return Response.json({ accepted: 1 })
       },
       now: clock.now,
       setTimeout: clock.setTimeout,
@@ -198,17 +254,27 @@ describe('createRecordingsRelay', () => {
     expect(recoveredTabs).toEqual([1])
   })
 
-  it('drops an unknown-tab response without retrying and heals on the next success', async () => {
+  it('drops an unassociated tab without retrying and heals on the next success', async () => {
     const clock = createFakeClock()
-    const bodies: string[] = []
+    const postedBodies: string[] = []
     const recoveredTabs: number[] = []
+    let associated = false
     const relay = createRecordingsRelay({
       resolveServerBaseUrl: async () => serverBaseUrl,
-      fetch: async (_input, init) => {
-        bodies.push(String(init?.body))
-        return bodies.length === 1
-          ? Response.json({ ok: false, reason: 'unknown tab' })
-          : Response.json({ ok: true, accepted: 1 })
+      fetch: async (input, init) => {
+        const url = String(input)
+        if (url.endsWith('/tabs')) {
+          return Response.json({
+            items: [
+              tab({
+                tabId: 7,
+                sessionId: associated ? 'session-1' : undefined,
+              }),
+            ],
+          })
+        }
+        postedBodies.push(String(init?.body))
+        return Response.json({ accepted: 1 })
       },
       now: clock.now,
       setTimeout: clock.setTimeout,
@@ -220,9 +286,211 @@ describe('createRecordingsRelay', () => {
     await relay.post(7, 'terminal')
     expect(clock.pendingTimers()).toBe(0)
 
+    associated = true
     await relay.post(7, 'next')
-    expect(bodies).toEqual(['terminal', 'next'])
+    expect(postedBodies).toEqual(['next'])
     expect(recoveredTabs).toEqual([7])
+  })
+
+  it('maps exact tab identity and resnapshots when its association changes', async () => {
+    const posts: Array<{
+      url: string
+      tabId: string
+      pageId: string
+      targetId: string
+    }> = []
+    const recoveredTabs: number[] = []
+    const associations = [
+      tab(),
+      tab({ sessionId: 'session-2', pageId: 8 }),
+      tab({ sessionId: 'session-3', pageId: 9, targetId: 'target-9' }),
+    ]
+    let listIndex = 0
+    const relay = createRecordingsRelay({
+      resolveServerBaseUrl: async () => serverBaseUrl,
+      fetch: async (input, init) => {
+        const url = String(input)
+        if (url.endsWith('/tabs')) {
+          return Response.json({
+            items: [
+              tab({
+                tabId: 41,
+                sessionId: 'wrong-session',
+                pageId: 6,
+                targetId: 'wrong-target',
+              }),
+              associations[listIndex++],
+            ],
+          })
+        }
+        posts.push({
+          url,
+          tabId: requestHeader(init, 'X-Recording-Tab-Id'),
+          pageId: requestHeader(init, 'X-Recording-Page-Id'),
+          targetId: requestHeader(init, 'X-Recording-Target-Id'),
+        })
+        expect(init?.body).toBe(`batch-${listIndex}`)
+        return Response.json({ accepted: 1 })
+      },
+    })
+    relay.onTabRecoveredAfterLoss((tabId) => recoveredTabs.push(tabId))
+
+    await relay.post(42, 'batch-1')
+    await relay.post(42, 'batch-2')
+    await relay.post(42, 'batch-3')
+
+    expect(posts).toEqual([
+      {
+        url: `${serverBaseUrl}/api/v1/sessions/session-1/recording/events`,
+        tabId: '42',
+        pageId: '7',
+        targetId: 'target-7',
+      },
+      {
+        url: `${serverBaseUrl}/api/v1/sessions/session-2/recording/events`,
+        tabId: '42',
+        pageId: '8',
+        targetId: 'target-7',
+      },
+      {
+        url: `${serverBaseUrl}/api/v1/sessions/session-3/recording/events`,
+        tabId: '42',
+        pageId: '9',
+        targetId: 'target-9',
+      },
+    ])
+    expect(recoveredTabs).toEqual([42, 42])
+  })
+
+  it('treats a server-side association race as a gap and heals after rediscovery', async () => {
+    const recoveredTabs: number[] = []
+    let associationChanged = true
+    const relay = createRecordingsRelay({
+      resolveServerBaseUrl: async () => serverBaseUrl,
+      fetch: async (input) => {
+        const url = String(input)
+        if (url.endsWith('/tabs')) return Response.json({ items: [tab()] })
+        if (associationChanged) return new Response('{}', { status: 409 })
+        return Response.json({ accepted: 1 })
+      },
+      warn: () => {},
+    })
+    relay.onTabRecoveredAfterLoss((tabId) => recoveredTabs.push(tabId))
+
+    await relay.post(42, 'stale-association')
+    expect(recoveredTabs).toEqual([])
+
+    associationChanged = false
+    await relay.post(42, 'fresh-association')
+    expect(recoveredTabs).toEqual([42])
+  })
+
+  it('drops a queued batch instead of rerouting it after tab reassociation', async () => {
+    const clock = createFakeClock()
+    const recoveredTabs: number[] = []
+    const posted: Array<{ body: string; sessionId: string }> = []
+    let currentAssociation = tab()
+    let serverUp = false
+    const relay = createRecordingsRelay({
+      resolveServerBaseUrl: async () => serverBaseUrl,
+      fetch: async (input, init) => {
+        const url = String(input)
+        if (url.endsWith('/tabs')) {
+          return Response.json({ items: [currentAssociation] })
+        }
+        posted.push({
+          body: String(init?.body),
+          sessionId: url.split('/sessions/')[1]?.split('/')[0] ?? '',
+        })
+        if (!serverUp) throw new TypeError('connection refused')
+        return Response.json({ accepted: 1 })
+      },
+      now: clock.now,
+      setTimeout: clock.setTimeout,
+      clearTimeout: clock.clearTimeout,
+      warn: () => {},
+    })
+    relay.onTabRecoveredAfterLoss((tabId) => recoveredTabs.push(tabId))
+
+    await relay.post(42, 'old-session-events')
+    currentAssociation = tab({
+      sessionId: 'session-2',
+      pageId: 8,
+      targetId: 'target-8',
+    })
+    serverUp = true
+    await clock.advanceBy(5_000)
+
+    expect(posted).toEqual([
+      { body: 'old-session-events', sessionId: 'session-1' },
+    ])
+    expect(recoveredTabs).toEqual([])
+
+    await relay.post(42, 'new-session-checkpoint')
+    expect(posted).toEqual([
+      { body: 'old-session-events', sessionId: 'session-1' },
+      { body: 'new-session-checkpoint', sessionId: 'session-2' },
+    ])
+    expect(recoveredTabs).toEqual([42])
+  })
+
+  it('pins overlapping posts to the association resolved by the in-flight batch', async () => {
+    const recoveredTabs: number[] = []
+    const posted: Array<{ body: string; sessionId: string }> = []
+    let releaseFirstLookup: ((response: Response) => void) | undefined
+    let notifyFirstLookupStarted: () => void = () => {}
+    const firstLookupStarted = new Promise<void>((resolve) => {
+      notifyFirstLookupStarted = resolve
+    })
+    let currentAssociation = tab()
+    let lookupCount = 0
+    const relay = createRecordingsRelay({
+      resolveServerBaseUrl: async () => serverBaseUrl,
+      fetch: async (input, init) => {
+        const url = String(input)
+        if (url.endsWith('/tabs')) {
+          lookupCount++
+          if (lookupCount === 1) {
+            return new Promise<Response>((resolve) => {
+              releaseFirstLookup = resolve
+              notifyFirstLookupStarted()
+            })
+          }
+          return Response.json({ items: [currentAssociation] })
+        }
+        posted.push({
+          body: String(init?.body),
+          sessionId: url.split('/sessions/')[1]?.split('/')[0] ?? '',
+        })
+        return Response.json({ accepted: 1 })
+      },
+      warn: () => {},
+    })
+    relay.onTabRecoveredAfterLoss((tabId) => recoveredTabs.push(tabId))
+
+    const firstPost = relay.post(42, 'first-old-session-batch')
+    await firstLookupStarted
+    expect(releaseFirstLookup).toBeDefined()
+    const overlappingPost = relay.post(42, 'second-old-session-batch')
+    currentAssociation = tab({
+      sessionId: 'session-2',
+      pageId: 8,
+      targetId: 'target-8',
+    })
+    releaseFirstLookup?.(Response.json({ items: [tab()] }))
+    await Promise.all([firstPost, overlappingPost])
+
+    expect(posted).toEqual([
+      { body: 'first-old-session-batch', sessionId: 'session-1' },
+    ])
+    expect(recoveredTabs).toEqual([])
+
+    await relay.post(42, 'new-session-checkpoint')
+    expect(posted).toEqual([
+      { body: 'first-old-session-batch', sessionId: 'session-1' },
+      { body: 'new-session-checkpoint', sessionId: 'session-2' },
+    ])
+    expect(recoveredTabs).toEqual([42])
   })
 
   it('warns again when a new outage begins after delivery recovered', async () => {
@@ -231,9 +499,13 @@ describe('createRecordingsRelay', () => {
     let serverUp = false
     const relay = createRecordingsRelay({
       resolveServerBaseUrl: async () => serverBaseUrl,
-      fetch: async () => {
+      fetch: async (input) => {
+        const url = String(input)
+        if (url.endsWith('/tabs')) {
+          return Response.json({ items: [tab({ tabId: 3 })] })
+        }
         if (!serverUp) throw new TypeError('connection refused')
-        return Response.json({ ok: true, accepted: 1 })
+        return Response.json({ accepted: 1 })
       },
       now: clock.now,
       setTimeout: clock.setTimeout,

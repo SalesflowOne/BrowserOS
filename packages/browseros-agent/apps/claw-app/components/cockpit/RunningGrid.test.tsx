@@ -19,22 +19,21 @@ function renderWithRouter(ui: React.ReactNode): string {
 
 function tab(over: Partial<TabActivityRecord> = {}): TabActivityRecord {
   return {
+    tabId: 101,
     targetId: 't1',
     pageId: 1,
     url: 'https://example.com/foo',
     title: 'Example',
-    agentId: 'claude-code',
+    sessionId: 'session-live',
+    profileId: 'claude-code',
     slug: 'claude-code',
-    firstToolAt: 0,
-    lastToolAt: 0,
+    firstActivityAt: 0,
+    lastActivityAt: 0,
     lastToolName: 'navigate',
     toolCount: 3,
     recentTools: [{ name: 'navigate', at: 0 }],
     status: 'active',
-    agentLabel: 'claude-code',
-    harness: null,
-    color: null,
-    screencast: null,
+    label: 'claude-code',
     ...over,
   }
 }

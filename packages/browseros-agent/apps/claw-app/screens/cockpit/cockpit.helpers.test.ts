@@ -12,22 +12,21 @@ import {
 
 function record(over: Partial<TabActivityRecord> = {}): TabActivityRecord {
   return {
+    tabId: 101,
     targetId: 't1',
     pageId: 1,
     url: 'https://example.com/foo',
     title: 'Ex',
-    agentId: 'a1',
+    profileId: 'a1',
     slug: 'finance',
-    firstToolAt: 1_000_000,
-    lastToolAt: 1_000_000,
+    firstActivityAt: 1_000_000,
+    lastActivityAt: 1_000_000,
     lastToolName: 'navigate',
     toolCount: 1,
     recentTools: [{ name: 'navigate', at: 1_000_000 }],
     status: 'active',
-    agentLabel: 'Finance Ops',
+    label: 'Finance Ops',
     harness: 'Claude Code',
-    color: null,
-    screencast: null,
     ...over,
   }
 }
@@ -93,8 +92,8 @@ describe('harnessForRow', () => {
     expect(harnessForRow('Cursor')).toBe('Cursor')
     expect(harnessForRow('Codex')).toBe('Codex')
   })
-  it('falls back to Claude Code for null', () => {
-    expect(harnessForRow(null)).toBe('Claude Code')
+  it('falls back to Claude Code when omitted', () => {
+    expect(harnessForRow(undefined)).toBe('Claude Code')
   })
   it('falls back to Claude Code for unknown values', () => {
     expect(harnessForRow('Atlas-9000')).toBe('Claude Code')
@@ -110,7 +109,7 @@ describe('tabsToActivityRows', () => {
           targetId: 't2',
           status: 'idle',
           slug: 'travel',
-          lastToolAt: 950_000,
+          lastActivityAt: 950_000,
           lastToolName: 'read',
         }),
       ],
@@ -132,7 +131,7 @@ describe('tabsToActivityRows', () => {
         record({
           targetId: 't2',
           status: 'idle',
-          lastToolAt: 950_000,
+          lastActivityAt: 950_000,
           lastToolName: 'read',
           recentTools: [
             { name: 'navigate', at: 900_000 },
@@ -163,16 +162,16 @@ describe('tabsToAgentActivity', () => {
     const agents = tabsToAgentActivity([
       record({
         targetId: 't1',
-        firstToolAt: 1_000_000,
-        lastToolAt: 1_000_200,
+        firstActivityAt: 1_000_000,
+        lastActivityAt: 1_000_200,
         lastToolName: 'navigate',
         toolCount: 1,
         recentTools: [{ name: 'navigate', at: 1_000_200 }],
       }),
       record({
         targetId: 't2',
-        firstToolAt: 1_000_100,
-        lastToolAt: 1_000_500,
+        firstActivityAt: 1_000_100,
+        lastActivityAt: 1_000_500,
         lastToolName: 'snapshot',
         toolCount: 2,
         recentTools: [
@@ -182,8 +181,8 @@ describe('tabsToAgentActivity', () => {
       }),
       record({
         targetId: 't3',
-        firstToolAt: 1_000_050,
-        lastToolAt: 1_001_000,
+        firstActivityAt: 1_000_050,
+        lastActivityAt: 1_001_000,
         lastToolName: 'act',
         toolCount: 3,
         recentTools: [
@@ -237,17 +236,17 @@ describe('tabsToAgentActivity', () => {
     const agents = tabsToAgentActivity([
       record({
         targetId: 't1',
-        agentId: 'a1',
+        profileId: 'a1',
         slug: 'older',
-        firstToolAt: 1_000_000,
-        lastToolAt: 1_000_000,
+        firstActivityAt: 1_000_000,
+        lastActivityAt: 1_000_000,
       }),
       record({
         targetId: 't2',
-        agentId: 'a2',
+        profileId: 'a2',
         slug: 'newer',
-        firstToolAt: 2_000_000,
-        lastToolAt: 5_000_000,
+        firstActivityAt: 2_000_000,
+        lastActivityAt: 5_000_000,
       }),
     ])
     expect(agents).toHaveLength(2)
@@ -271,14 +270,14 @@ describe('tabsToAgentActivity', () => {
     expect(agents[0].status).toBe('idle')
   })
 
-  it('falls back to slug when the server-side agentLabel is missing', () => {
+  it('falls back to slug when the server-side label is missing', () => {
     const agents = tabsToAgentActivity([
       record({
         targetId: 't1',
         slug: 'orphan',
-        agentLabel: '',
-        harness: null,
-        color: null,
+        label: '',
+        harness: undefined,
+        color: undefined,
       }),
     ])
     expect(agents[0].agentLabel).toBe('orphan')
@@ -293,14 +292,14 @@ describe('tabsToAgentActivity', () => {
         url: 'https://busy.example.com/',
         title: 'Busy',
         toolCount: 100,
-        lastToolAt: 1_000_000,
+        lastActivityAt: 1_000_000,
       }),
       record({
         targetId: 't-fresh',
         url: 'https://fresh.example.com/',
         title: 'Fresh',
         toolCount: 1,
-        lastToolAt: 2_000_000,
+        lastActivityAt: 2_000_000,
       }),
     ])
     expect(agents[0].currentFocus.targetId).toBe('t-fresh')
@@ -315,8 +314,8 @@ describe('tabsToAgentActivity', () => {
 describe('tabsToAgentActivity sticky focus', () => {
   it('falls back to freshest when no sticky map is supplied (PR 3 behaviour preserved)', () => {
     const agents = tabsToAgentActivity([
-      record({ targetId: 't-old', lastToolAt: 1_000 }),
-      record({ targetId: 't-fresh', lastToolAt: 2_000 }),
+      record({ targetId: 't-old', lastActivityAt: 1_000 }),
+      record({ targetId: 't-fresh', lastActivityAt: 2_000 }),
     ])
     expect(agents[0].currentFocus.targetId).toBe('t-fresh')
   })
@@ -327,14 +326,14 @@ describe('tabsToAgentActivity sticky focus', () => {
         targetId: 't-anchor',
         url: 'https://anchor.example/',
         title: 'Anchor',
-        lastToolAt: 1_000,
+        lastActivityAt: 1_000,
         lastToolName: 'snapshot',
       }),
       record({
         targetId: 't-newer',
         url: 'https://newer.example/',
         title: 'Newer',
-        lastToolAt: 2_000,
+        lastActivityAt: 2_000,
         lastToolName: 'read',
       }),
     ]
@@ -352,8 +351,8 @@ describe('tabsToAgentActivity sticky focus', () => {
     const sticky = new Map([['a1', 't-ghost']])
     const agents = tabsToAgentActivity(
       [
-        record({ targetId: 't-old', lastToolAt: 1_000 }),
-        record({ targetId: 't-fresh', lastToolAt: 2_000 }),
+        record({ targetId: 't-old', lastActivityAt: 1_000 }),
+        record({ targetId: 't-fresh', lastActivityAt: 2_000 }),
       ],
       { stickyFocus: sticky },
     )
@@ -367,7 +366,7 @@ describe('tabsToAgentActivity sticky focus', () => {
         targetId: 't-anchor',
         url: 'https://anchor.example/',
         title: 'Anchor',
-        lastToolAt: 1_000,
+        lastActivityAt: 1_000,
       }),
     ])
     expect(first[0].currentFocus.targetId).toBe('t-anchor')
@@ -385,13 +384,13 @@ describe('tabsToAgentActivity sticky focus', () => {
           targetId: 't-anchor',
           url: 'https://anchor.example/',
           title: 'Anchor',
-          lastToolAt: 1_000,
+          lastActivityAt: 1_000,
         }),
         record({
           targetId: 't-fresher',
           url: 'https://fresher.example/',
           title: 'Fresher',
-          lastToolAt: 2_500,
+          lastActivityAt: 2_500,
         }),
       ],
       { stickyFocus: sticky },
@@ -407,10 +406,26 @@ describe('tabsToAgentActivity sticky focus', () => {
     ])
     const agents = tabsToAgentActivity(
       [
-        record({ agentId: 'a1', targetId: 't1-anchor', lastToolAt: 1_000 }),
-        record({ agentId: 'a1', targetId: 't1-fresh', lastToolAt: 2_000 }),
-        record({ agentId: 'a2', targetId: 't2-anchor', lastToolAt: 3_000 }),
-        record({ agentId: 'a2', targetId: 't2-fresh', lastToolAt: 4_000 }),
+        record({
+          profileId: 'a1',
+          targetId: 't1-anchor',
+          lastActivityAt: 1_000,
+        }),
+        record({
+          profileId: 'a1',
+          targetId: 't1-fresh',
+          lastActivityAt: 2_000,
+        }),
+        record({
+          profileId: 'a2',
+          targetId: 't2-anchor',
+          lastActivityAt: 3_000,
+        }),
+        record({
+          profileId: 'a2',
+          targetId: 't2-fresh',
+          lastActivityAt: 4_000,
+        }),
       ],
       { stickyFocus: sticky },
     )
@@ -422,22 +437,22 @@ describe('tabsToAgentActivity sticky focus', () => {
   })
 
   it('orders cards by firstToolAt asc (stable arrival order), not by lastToolAt', () => {
-    // a1 appeared first (firstToolAt: 1000) but is currently idler.
-    // a2 appeared later (firstToolAt: 2000) and is currently the
+    // a1 appeared first (firstActivityAt: 1000) but is currently idler.
+    // a2 appeared later (firstActivityAt: 2000) and is currently the
     // freshest. The card order MUST follow arrival, not recency,
     // so a1 stays on top.
     const agents = tabsToAgentActivity([
       record({
-        agentId: 'a1',
+        profileId: 'a1',
         targetId: 't1',
-        firstToolAt: 1_000,
-        lastToolAt: 1_500,
+        firstActivityAt: 1_000,
+        lastActivityAt: 1_500,
       }),
       record({
-        agentId: 'a2',
+        profileId: 'a2',
         targetId: 't2',
-        firstToolAt: 2_000,
-        lastToolAt: 9_000,
+        firstActivityAt: 2_000,
+        lastActivityAt: 9_000,
       }),
     ])
     expect(agents.map((a) => a.agentId)).toEqual(['a1', 'a2'])
@@ -446,32 +461,32 @@ describe('tabsToAgentActivity sticky focus', () => {
   it('keeps card order stable across polls even when lastToolAt swaps', () => {
     const before = tabsToAgentActivity([
       record({
-        agentId: 'a1',
+        profileId: 'a1',
         targetId: 't1',
-        firstToolAt: 1_000,
-        lastToolAt: 5_000,
+        firstActivityAt: 1_000,
+        lastActivityAt: 5_000,
       }),
       record({
-        agentId: 'a2',
+        profileId: 'a2',
         targetId: 't2',
-        firstToolAt: 2_000,
-        lastToolAt: 4_000,
+        firstActivityAt: 2_000,
+        lastActivityAt: 4_000,
       }),
     ])
     // Next poll: a2 just fired a tool call so its lastToolAt
     // overtakes a1. firstToolAt does not change.
     const after = tabsToAgentActivity([
       record({
-        agentId: 'a1',
+        profileId: 'a1',
         targetId: 't1',
-        firstToolAt: 1_000,
-        lastToolAt: 5_000,
+        firstActivityAt: 1_000,
+        lastActivityAt: 5_000,
       }),
       record({
-        agentId: 'a2',
+        profileId: 'a2',
         targetId: 't2',
-        firstToolAt: 2_000,
-        lastToolAt: 6_000,
+        firstActivityAt: 2_000,
+        lastActivityAt: 6_000,
       }),
     ])
     expect(before.map((a) => a.agentId)).toEqual(['a1', 'a2'])

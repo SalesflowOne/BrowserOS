@@ -3,8 +3,8 @@ import { CockpitOnboarding } from '@/components/cockpit/CockpitOnboarding'
 import { RecentActivity } from '@/components/cockpit/RecentActivity'
 import { RunningGrid } from '@/components/cockpit/RunningGrid'
 import { isUserFacingHarness } from '@/components/harness/harness.types'
-import { useTasks } from '@/modules/api/audit.hooks'
-import { useBrowserosConnections } from '@/modules/api/connections.hooks'
+import { useSessions } from '@/modules/api/audit.hooks'
+import { useConnections } from '@/modules/api/connections.hooks'
 import { useCockpitData } from './cockpit.data'
 import { getOnboardingState } from './cockpit-onboarding.helpers'
 
@@ -18,8 +18,8 @@ export function Cockpit() {
   // queries live in react-query's cache under stable keys, so the
   // downstream components (RecentActivity / Mcp screen) that read
   // the same keys hit the cache instead of refetching.
-  const connections = useBrowserosConnections()
-  const taskProbe = useTasks({
+  const connections = useConnections()
+  const taskProbe = useSessions({
     variables: { limit: ONBOARDING_PROBE_LIMIT },
     // Scoped to the onboarding shells: poll every 4s while the
     // reader has no activity yet so the 'ready' handoff lands
@@ -30,7 +30,7 @@ export function Cockpit() {
     // no-polling behaviour is unchanged.
     refetchInterval: (query) => {
       const pages = query.state.data?.pages ?? []
-      const hasAnyActivity = pages.some((p) => p.tasks.length > 0)
+      const hasAnyActivity = pages.some((p) => p.items.length > 0)
       return hasAnyActivity ? false : 4000
     },
   })
@@ -39,11 +39,11 @@ export function Cockpit() {
   // preinstalled but are never something the reader intentionally
   // connected, so lighting up 'MCP installed' for them is misleading.
   const hasConnection =
-    connections.data?.connections.some(
+    connections.data?.items.some(
       (c) => c.installed && isUserFacingHarness(c.harness),
     ) ?? false
   const hasActivity = (taskProbe.data?.pages ?? []).some(
-    (p) => p.tasks.length > 0,
+    (p) => p.items.length > 0,
   )
 
   // Wait for both probes to resolve at least once before deciding

@@ -1,0 +1,11 @@
+get:
+  operationId: listConnections
+  responses:
+    '200':
+      description: Supported harness connection states.
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/connections.yaml#/ConnectionList
+    '500':
+      $ref: ../responses.yaml#/InternalError

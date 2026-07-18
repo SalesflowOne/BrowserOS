@@ -20,7 +20,9 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { Hono } from 'hono'
 import { HttpError } from '../../src/lib/errors'
 import { logger } from '../../src/lib/logger'
-import app, { requestFailureLog } from '../../src/server'
+import { createServer, requestFailureLog } from '../../src/server'
+
+const app = createServer()
 
 let warnSpy: ReturnType<typeof spyOn<typeof logger, 'warn'>>
 let errorSpy: ReturnType<typeof spyOn<typeof logger, 'error'>>

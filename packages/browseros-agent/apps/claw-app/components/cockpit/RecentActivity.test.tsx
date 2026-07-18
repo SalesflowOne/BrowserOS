@@ -6,7 +6,7 @@ import type { TaskSummary } from '@/modules/api/audit.hooks'
 import * as _auditHooks from '@/modules/api/audit.hooks'
 
 interface MockQueryShape {
-  data?: { pages: { tasks: TaskSummary[] }[] }
+  data?: { pages: { items: TaskSummary[] }[] }
   isPending: boolean
 }
 
@@ -19,8 +19,8 @@ let queryOverride: MockQueryShape = { isPending: true }
 // 2026-07-17 test reliability audit).
 mock.module('@/modules/api/audit.hooks', () => ({
   ..._auditHooks,
-  useTasks: () => queryOverride,
-  taskScreenshotUrl: (id: number) => `/audit/screenshot/${id}`,
+  useSessions: () => queryOverride,
+  taskScreenshotUrl: (id: number) => `/api/v1/dispatches/${id}/screenshot`,
   useTaskScreenshotBaseUrl: () => null,
 }))
 
@@ -41,10 +41,9 @@ function render(): string {
 
 const sampleTask: TaskSummary = {
   sessionId: 'sess-1',
-  agentId: 'claude-code',
   slug: 'claude-code',
-  agentLabel: 'Claude Code',
-  title: 'Browsed example.com',
+  label: 'Claude Code',
+  name: 'Browsed example.com',
   site: 'example.com',
   startedAt: Date.now() - 12000,
   endedAt: Date.now(),
@@ -54,7 +53,6 @@ const sampleTask: TaskSummary = {
   status: 'done',
   errorCount: 0,
   lastScreenshotDispatchId: 7,
-  cursorId: 8,
 }
 
 describe('RecentActivity', () => {
@@ -65,7 +63,7 @@ describe('RecentActivity', () => {
   })
 
   it('renders the empty state when there are no tasks', () => {
-    queryOverride = { isPending: false, data: { pages: [{ tasks: [] }] } }
+    queryOverride = { isPending: false, data: { pages: [{ items: [] }] } }
     const html = render()
     expect(html).toContain('No recent activity')
   })
@@ -73,7 +71,7 @@ describe('RecentActivity', () => {
   it('renders the freshest task as the lead tile with title, agent, and meta', () => {
     queryOverride = {
       isPending: false,
-      data: { pages: [{ tasks: [sampleTask] }] },
+      data: { pages: [{ items: [sampleTask] }] },
     }
     const html = render()
     expect(html).toContain('Browsed example.com')
@@ -84,7 +82,7 @@ describe('RecentActivity', () => {
   })
 
   it('renders the section header + view-all CTA in the empty state', () => {
-    queryOverride = { isPending: false, data: { pages: [{ tasks: [] }] } }
+    queryOverride = { isPending: false, data: { pages: [{ items: [] }] } }
     const html = render()
     expect(html).toContain('Recent activity')
     expect(html).toContain('View all activity')

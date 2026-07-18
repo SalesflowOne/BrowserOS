@@ -225,7 +225,7 @@ impl ScreencastService {
     }
 
     async fn store_capture(&self, page_id: u32, capture: ScreenshotCaptureResult) {
-        self.store_frame(
+        self.cache_frame(
             page_id,
             ScreencastFrame {
                 jpeg_base64: capture.data,
@@ -235,7 +235,7 @@ impl ScreencastService {
         .await;
     }
 
-    async fn store_frame(&self, page_id: u32, frame: ScreencastFrame) {
+    pub async fn cache_frame(&self, page_id: u32, frame: ScreencastFrame) {
         let mut inner = self.inner.lock().await;
         inner.frames.remove(&page_id);
         inner.order.retain(|existing| *existing != page_id);
@@ -329,9 +329,11 @@ mod tests {
     fn record(page_id: u32, status: &'static str, last_tool_at: i64) -> TabActivityRecord {
         TabActivityRecord {
             target_id: format!("target-{page_id}"),
+            tab_id: i64::from(page_id) + 100,
             page_id,
             url: format!("https://example.com/{page_id}"),
             title: format!("Page {page_id}"),
+            session_id: "session-1".to_string(),
             agent_id: "agent".to_string(),
             slug: "codex".to_string(),
             first_tool_at: last_tool_at,
@@ -438,10 +440,10 @@ mod tests {
     #[tokio::test]
     async fn frame_cache_is_lru_capped_and_updates_recency() {
         let service = ScreencastService::new(2);
-        service.store_frame(1, frame("a", 1)).await;
-        service.store_frame(2, frame("b", 2)).await;
-        service.store_frame(1, frame("new-a", 3)).await;
-        service.store_frame(3, frame("c", 4)).await;
+        service.cache_frame(1, frame("a", 1)).await;
+        service.cache_frame(2, frame("b", 2)).await;
+        service.cache_frame(1, frame("new-a", 3)).await;
+        service.cache_frame(3, frame("c", 4)).await;
 
         let Some(refreshed) = service.frame_for(1).await else {
             panic!("missing page 1 frame");
@@ -459,7 +461,7 @@ mod tests {
     #[tokio::test]
     async fn entering_backoff_drops_frame_but_keeps_failure_state() {
         let service = ScreencastService::new(2);
-        service.store_frame(1, frame("stale", 1)).await;
+        service.cache_frame(1, frame("stale", 1)).await;
         assert!(!service.record_failure(1, NOW - 2).await);
         assert!(!service.record_failure(1, NOW - 1).await);
         assert!(service.record_failure(1, NOW).await);
@@ -475,7 +477,7 @@ mod tests {
         assert!(!service.record_failure(1, NOW - 2).await);
         assert!(!service.record_failure(1, NOW - 1).await);
         assert!(service.record_failure(1, NOW).await);
-        service.store_frame(1, frame("fresh", NOW + 1)).await;
+        service.cache_frame(1, frame("fresh", NOW + 1)).await;
 
         assert!(!service.inner.lock().await.failures.contains_key(&1));
     }
@@ -492,7 +494,7 @@ mod tests {
     #[tokio::test]
     async fn garbage_collection_drops_frame_and_failure_state() {
         let service = ScreencastService::new(2);
-        service.store_frame(1, frame("stale", 1)).await;
+        service.cache_frame(1, frame("stale", 1)).await;
         service.record_failure(1, NOW).await;
         service.gc_pages(&[1]).await;
 

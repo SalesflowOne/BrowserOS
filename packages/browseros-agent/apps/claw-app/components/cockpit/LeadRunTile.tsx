@@ -34,7 +34,7 @@ interface LeadRunTileProps {
 export function LeadRunTile({ task, now, className }: LeadRunTileProps) {
   const isLive = task.status === 'live'
   const isFailed = task.status === 'failed'
-  const screenshotId = task.lastScreenshotDispatchId
+  const screenshotId = task.lastScreenshotDispatchId ?? null
   const screenshotBaseUrl = useTaskScreenshotBaseUrl()
   const location = useLocation()
   return (
@@ -51,7 +51,7 @@ export function LeadRunTile({ task, now, className }: LeadRunTileProps) {
         {screenshotId !== null && screenshotBaseUrl !== null ? (
           <img
             src={taskScreenshotUrl(screenshotId, screenshotBaseUrl)}
-            alt={`Session hero from ${task.agentLabel}`}
+            alt={`Session hero from ${task.label}`}
             loading="lazy"
             decoding="async"
             className="absolute inset-0 h-full w-full object-cover object-top"
@@ -86,7 +86,7 @@ function Caption({
       <div className="flex items-center gap-3 font-mono text-[10.5px] text-white/80 uppercase tracking-[0.08em]">
         <span className="inline-flex items-center gap-1.5">
           <AgentDot slug={task.slug} />
-          <span className="text-white">{task.agentLabel}</span>
+          <span className="text-white">{task.label}</span>
         </span>
         {isLive && (
           <span className="inline-flex items-center gap-1.5 text-[#8fb4ff]">
@@ -108,7 +108,7 @@ function Caption({
         )}
       </div>
       <h2 className="truncate font-semibold text-[17px] text-white leading-tight tracking-tight md:text-[19px]">
-        {task.title}
+        {task.name}
       </h2>
       <p className="font-mono text-[11.5px] text-white/70 tabular-nums">
         {formatDuration(task.durationMs)}{' '}

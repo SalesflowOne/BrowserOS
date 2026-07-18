@@ -1,0 +1,54 @@
+get:
+  operationId: listSessions
+  parameters:
+    - name: profileId
+      in: query
+      schema:
+        type: string
+    - name: slug
+      in: query
+      schema:
+        type: string
+    - name: status
+      in: query
+      schema:
+        $ref: ../schemas/sessions.yaml#/SessionStatus
+    - name: site
+      in: query
+      schema:
+        type: string
+    - name: search
+      in: query
+      schema:
+        type: string
+    - name: since
+      in: query
+      schema:
+        type: integer
+        format: int64
+        minimum: 0
+    - name: cursor
+      in: query
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    - name: limit
+      in: query
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+        maximum: 100
+        default: 25
+  responses:
+    '200':
+      description: Cursor-paginated sessions.
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/sessions.yaml#/SessionList
+    '400':
+      $ref: ../responses.yaml#/BadRequest
+    '500':
+      $ref: ../responses.yaml#/InternalError

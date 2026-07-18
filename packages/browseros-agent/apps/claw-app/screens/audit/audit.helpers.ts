@@ -99,7 +99,7 @@ export function agentChipsFor(tasks: TaskSummary[]): AgentChip[] {
     }
     map.set(t.slug, {
       slug: t.slug,
-      agentLabel: t.agentLabel,
+      agentLabel: t.label,
       count: 1,
     })
   }
@@ -129,7 +129,7 @@ export function siteOptions(
     .sort((a, b) => b.count - a.count)
 }
 
-export function parseResultMeta(raw: string | null): {
+export function parseResultMeta(raw: string | null | undefined): {
   isError: boolean
   contentSummary: string
   structuredKeys: string[]

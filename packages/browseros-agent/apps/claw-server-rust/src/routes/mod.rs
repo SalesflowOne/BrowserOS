@@ -1,4 +1,5 @@
 mod agents;
+mod api_v1;
 mod audit;
 mod connections;
 mod replay;
@@ -6,7 +7,11 @@ mod system;
 mod tabs;
 mod wire;
 
-use crate::{AppState, error::AppError, mcp::streamable_http_service};
+use crate::{
+    AppState,
+    error::{AppError, RequestId},
+    mcp::streamable_http_service,
+};
 use axum::{
     Router,
     extract::Request,
@@ -21,8 +26,7 @@ use ulid::Ulid;
 
 pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
-        .route("/system/health", get(system::health))
-        .route("/system/shutdown", post(system::shutdown))
+        .merge(api_v1::router())
         .route("/system/version", get(system::version))
         .route("/system/url", get(system::url))
         .route(
@@ -92,11 +96,12 @@ async fn mcp_request_hygiene(req: Request, next: Next) -> Response {
     next.run(req).await
 }
 
-pub async fn request_context(req: Request, next: Next) -> Response {
-    let request_id = Ulid::new().to_string();
+pub async fn request_context(mut req: Request, next: Next) -> Response {
+    let request_id = RequestId(Ulid::new().to_string());
+    req.extensions_mut().insert(request_id.clone());
     let method = req.method().clone();
     let path = req.uri().path().to_string();
-    let span = info_span!("http_request", %request_id, %method, %path);
+    let span = info_span!("http_request", request_id = %request_id.0, %method, %path);
     async move {
         let start = Instant::now();
         let mut response = next.run(req).await;
@@ -118,15 +123,15 @@ pub async fn request_context(req: Request, next: Next) -> Response {
         );
         headers.insert(
             header::ACCESS_CONTROL_ALLOW_METHODS,
-            HeaderValue::from_static("GET,POST,PATCH,DELETE,OPTIONS"),
+            HeaderValue::from_static("GET,POST,PUT,PATCH,DELETE,OPTIONS"),
         );
         headers.insert(
             header::ACCESS_CONTROL_ALLOW_HEADERS,
             HeaderValue::from_static(
-                "accept,content-type,authorization,mcp-session-id,mcp-protocol-version,last-event-id,x-recording-batch-id",
+                "accept,content-type,authorization,mcp-session-id,mcp-protocol-version,last-event-id,x-recording-batch-id,x-recording-tab-id,x-recording-page-id,x-recording-target-id",
             ),
         );
-        if let Ok(value) = HeaderValue::from_str(&request_id) {
+        if let Ok(value) = HeaderValue::from_str(&request_id.0) {
             headers.insert("x-request-id", value);
         }
         response

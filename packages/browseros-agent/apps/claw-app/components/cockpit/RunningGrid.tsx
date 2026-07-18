@@ -1,4 +1,4 @@
-import { useCancelAgent } from '@/modules/api/cancel.hooks'
+import { useCancelSession } from '@/modules/api/cancel.hooks'
 import { useFocusAgent } from '@/modules/api/focus.hooks'
 import type { AgentActivityRecord } from '@/screens/cockpit/cockpit.helpers'
 import { AgentRunningCard } from './AgentRunningCard'
@@ -10,7 +10,7 @@ interface RunningGridProps {
 /** Renders live agent cards and switches to the agent's focus tab on Watch. */
 export function RunningGrid({ agents }: RunningGridProps) {
   const focus = useFocusAgent()
-  const cancel = useCancelAgent()
+  const cancel = useCancelSession()
   const liveCount = agents.filter((a) => a.status === 'active').length
 
   if (agents.length === 0) return null
@@ -26,21 +26,21 @@ export function RunningGrid({ agents }: RunningGridProps) {
       },
     )
   }
-  const onStop = (agentId: string) => {
+  const onStop = (sessionId: string) => {
     cancel.mutate(
-      { agentId },
+      { sessionId },
       {
         onError: (err) => {
           // eslint-disable-next-line no-console
-          console.warn('cancel agent failed', { agentId, err })
+          console.warn('cancel session failed', { sessionId, err })
         },
       },
     )
   }
   const pendingAgentId =
     focus.isPending && focus.variables ? focus.variables.agentId : null
-  const cancelPendingAgentId =
-    cancel.isPending && cancel.variables ? cancel.variables.agentId : null
+  const cancelPendingSessionId =
+    cancel.isPending && cancel.variables ? cancel.variables.sessionId : null
 
   return (
     <section className="space-y-4">
@@ -60,9 +60,15 @@ export function RunningGrid({ agents }: RunningGridProps) {
             key={a.agentId}
             agent={a}
             onWatch={() => onWatch(a)}
-            onStop={() => onStop(a.agentId)}
+            onStop={
+              a.currentFocus.sessionId
+                ? () => onStop(a.currentFocus.sessionId as string)
+                : undefined
+            }
             isFocusPending={pendingAgentId === a.agentId}
-            isCancelPending={cancelPendingAgentId === a.agentId}
+            isCancelPending={
+              cancelPendingSessionId === a.currentFocus.sessionId
+            }
           />
         ))}
       </div>

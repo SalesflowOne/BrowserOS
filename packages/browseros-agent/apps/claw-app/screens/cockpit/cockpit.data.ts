@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import type { ActivityRow } from '@/modules/api/activity.hooks'
-import { useTabsActivity } from '@/modules/api/tabs.hooks'
+import { useTabs } from '@/modules/api/tabs.hooks'
 import {
   type AgentActivityRecord,
   tabsToActivityRows,
@@ -15,7 +15,7 @@ export interface CockpitData {
 
 /** Aggregates active-tab rollups and recent activity for the homepage. */
 export function useCockpitData(): CockpitData {
-  const tabs = useTabsActivity()
+  const tabs = useTabs()
 
   // The ref is the canonical store for last-seen focus: render N
   // reads from it; render N+1 sees what render N wrote. We mutate in
@@ -26,7 +26,7 @@ export function useCockpitData(): CockpitData {
   // We pass `Date.now()` at render time; the slight non-determinism
   // is fine for a 1.5s-polling display and avoids dragging a clock
   // injection through the component tree.
-  const records = tabs.data?.tabs ?? []
+  const records = tabs.data?.items ?? []
   const now = Date.now()
   const agents = tabsToAgentActivity(
     records.filter((r) => r.status === 'active'),

@@ -85,7 +85,8 @@ const { resetSingleMcpInstanceForTesting } = await import(
 const { resetTabGroupEffectsForTesting } = await import(
   '../../src/mcp/effects/tab-groups'
 )
-const app = (await import('../../src/server')).default
+const { createServer } = await import('../../src/server')
+const app = createServer()
 
 function stubSessionForPageId(pageId: number, targetId: string): void {
   setBrowserSession({

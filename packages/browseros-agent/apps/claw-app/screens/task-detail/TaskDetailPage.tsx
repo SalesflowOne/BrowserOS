@@ -26,15 +26,21 @@ import { groupDispatchesByTab, pickDefaultTabId } from './task-detail.helpers'
  */
 export function TaskDetailPage() {
   const { sessionId = '' } = useParams()
-  const { task, isPending, isError, error } = useTaskDetailScreenData(sessionId)
+  const { detail, isPending, isError, error } =
+    useTaskDetailScreenData(sessionId)
   const [lightboxId, setLightboxId] = useState<number | null>(null)
 
   const groups = useMemo(
     () =>
-      task
-        ? groupDispatchesByTab(task.dispatches, task.screenshotDispatchIds)
+      detail
+        ? groupDispatchesByTab(
+            detail.dispatches,
+            detail.dispatches
+              .filter((dispatch) => dispatch.hasScreenshot)
+              .map((dispatch) => dispatch.dispatchId),
+          )
         : [],
-    [task],
+    [detail],
   )
 
   if (isPending) {
@@ -47,7 +53,7 @@ export function TaskDetailPage() {
       </div>
     )
   }
-  if (isError || !task) {
+  if (isError || !detail) {
     return (
       <div className="mx-auto w-full max-w-5xl px-8 pt-10 pb-20">
         <EmptyState
@@ -63,8 +69,20 @@ export function TaskDetailPage() {
 
   const selectedDispatch =
     lightboxId !== null
-      ? (task.dispatches.find((d) => d.id === lightboxId) ?? null)
+      ? (detail.dispatches.find((d) => d.dispatchId === lightboxId) ?? null)
       : null
+
+  const { session } = detail
+  const endEvent = session.endedAt
+    ? {
+        createdAt: session.endedAt,
+        kind:
+          session.status === 'failed'
+            ? ('errored' as const)
+            : ('closed' as const),
+        reason: null,
+      }
+    : null
 
   const items: AutoHideTabsItem[] = groups.map((g) => ({
     id: g.id,
@@ -79,8 +97,8 @@ export function TaskDetailPage() {
     content: (
       <TabView
         group={g}
-        startedAt={task.startedAt}
-        endEvent={task.endEvent}
+        startedAt={session.startedAt}
+        endEvent={endEvent}
         onScreenshotClick={setLightboxId}
       />
     ),
@@ -88,7 +106,7 @@ export function TaskDetailPage() {
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-6 px-8 pt-10 pb-20">
-      <TaskHeader task={task} />
+      <TaskHeader detail={detail} />
       <AutoHideTabs
         items={items}
         defaultId={pickDefaultTabId(groups)}
@@ -99,7 +117,7 @@ export function TaskDetailPage() {
         sourceUrl={selectedDispatch?.url ?? null}
         offsetMs={
           selectedDispatch
-            ? Math.max(0, selectedDispatch.createdAt - task.startedAt)
+            ? Math.max(0, selectedDispatch.createdAt - session.startedAt)
             : null
         }
         onClose={() => setLightboxId(null)}

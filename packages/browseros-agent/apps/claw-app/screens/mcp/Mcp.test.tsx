@@ -15,44 +15,37 @@ const mcpBrowserosConnections = [
   {
     harness: 'Claude Code',
     installed: false,
-    agentId: 'claude-code',
     message: '',
   },
   {
     harness: 'Cursor',
     installed: true,
-    agentId: 'cursor',
     configPath: '/tmp/cursor.json',
     message: 'Configured in Cursor.',
   },
   {
     harness: 'Codex',
     installed: false,
-    agentId: 'codex',
     message: '',
   },
   {
     harness: 'OpenCode',
     installed: false,
-    agentId: 'opencode',
     message: '',
   },
   {
     harness: 'Antigravity',
     installed: false,
-    agentId: 'antigravity',
     message: '',
   },
   {
     harness: 'VS Code',
     installed: false,
-    agentId: 'vscode',
     message: '',
   },
   {
     harness: 'Zed',
     installed: false,
-    agentId: 'zed',
     message: '',
   },
 ]
@@ -71,7 +64,7 @@ function getConnectionsHookResult() {
   return (
     connectionsHookState()[connectionsHookResultKey] ?? {
       data: {
-        connections: mcpBrowserosConnections,
+        items: mcpBrowserosConnections,
       },
       isPending: false,
       isError: false,
@@ -85,15 +78,15 @@ function getConnectionsHookResult() {
 // 2026-07-17 test reliability audit).
 mock.module('@/modules/api/connections.hooks', () => ({
   ..._connectionsHooks,
-  useBrowserosConnections: Object.assign(() => getConnectionsHookResult(), {
+  useConnections: Object.assign(() => getConnectionsHookResult(), {
     getKey: () => ['cockpit', 'connections'],
   }),
-  useConnectBrowseros: () => ({
+  useConnectHarness: () => ({
     isPending: false,
     variables: undefined,
     mutateAsync: async () => ({ installed: true }),
   }),
-  useDisconnectBrowseros: () => ({
+  useDisconnectHarness: () => ({
     isPending: false,
     variables: undefined,
     mutateAsync: async () => ({ installed: false }),
@@ -103,7 +96,7 @@ mock.module('@/modules/api/connections.hooks', () => ({
 beforeEach(() => {
   setConnectionsHookResult({
     data: {
-      connections: mcpBrowserosConnections,
+      items: mcpBrowserosConnections,
     },
     isPending: false,
     isError: false,

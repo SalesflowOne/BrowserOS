@@ -8,8 +8,9 @@
  * repeatedly downloading the session-keyed NDJSON event snapshot.
  */
 
+import type { RecordingMetadata } from '@browseros/claw-api'
 import { createQuery } from 'react-query-kit'
-import { resolveApiBaseUrl } from './client'
+import { apiClient, resolveApiBaseUrl } from './client'
 import { parseResponse } from './parseResponse'
 
 export type ReplayVerb =
@@ -63,22 +64,7 @@ export interface ReplayEvent {
   ts: number
 }
 
-export interface ReplayTargetMetadata {
-  targetId: string
-  tabId: number
-  /** Earliest claim start clamped to catalog bounds, in Unix epoch milliseconds. */
-  firstEventAt: number
-  /** Latest claim end clamped to catalog bounds; event reads may include a release tail. */
-  lastEventAt: number
-}
-
-export interface ReplayMetadata {
-  exists: boolean
-  sizeBytes: number
-  firstEventAt?: number
-  lastEventAt?: number
-  targets: ReplayTargetMetadata[]
-}
+export type ReplayMetadata = RecordingMetadata
 
 export interface UseReplayMetadataVariables {
   sessionId: string
@@ -88,11 +74,7 @@ export interface UseReplayMetadataVariables {
 export async function fetchReplayMetadata({
   sessionId,
 }: UseReplayMetadataVariables): Promise<ReplayMetadata> {
-  const baseUrl = await resolveApiBaseUrl()
-  const res = await fetch(
-    `${baseUrl}/audit/replays/${encodeURIComponent(sessionId)}/meta`,
-  )
-  return parseResponse<ReplayMetadata>(res)
+  return (await apiClient()).getRecording({ sessionId })
 }
 
 export const useReplayMetadata = createQuery<
@@ -131,7 +113,7 @@ export async function fetchReplayEvents({
 }: UseReplayEventsVariables): Promise<ReplayEventsBundle> {
   const baseUrl = await resolveApiBaseUrl()
   const res = await fetch(
-    `${baseUrl}/audit/replays/${encodeURIComponent(sessionId)}`,
+    `${baseUrl}/api/v1/sessions/${encodeURIComponent(sessionId)}/recording/events`,
   )
   if (!res.ok) {
     if (res.status === 404) return { events: [], targetIds: [] }

@@ -4,8 +4,10 @@ import {
   resetMcpManagerForTesting,
   setMcpManagerForTesting,
 } from '../../../src/lib/mcp-manager'
-import app from '../../../src/server'
+import { createServer } from '../../../src/server'
 import { createStubMcpManager } from '../../_helpers/stub-mcp-manager'
+
+const app = createServer()
 
 describe('/connections route chain', () => {
   beforeEach(() => {
