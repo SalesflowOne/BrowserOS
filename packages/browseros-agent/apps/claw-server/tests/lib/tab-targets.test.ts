@@ -105,14 +105,16 @@ describe('TabTargetMap', () => {
     expect(await map.targetForTab(44)).toBe('target-d')
   })
 
-  it('removes destroyed targets and closes their open claims', async () => {
+  it('resolves a destroyed target during grace and closes its claims immediately', async () => {
     const source = new FakeSource()
     source.tabs = [{ tabId: 55, targetId: 'target-e' }]
     const released: string[] = []
+    const now = 1_000
     const map = new TabTargetMap(source, {
       releaseTargetClaims: async (targetId) => {
         released.push(targetId)
       },
+      now: () => now,
     })
     await map.start()
 
@@ -120,7 +122,23 @@ describe('TabTargetMap', () => {
     await Promise.resolve()
 
     expect(map.tabForTarget('target-e')).toBeUndefined()
+    expect(await map.targetForTab(55)).toBe('target-e')
+    expect(source.getCalls).toBe(0)
     expect(released).toEqual(['target-e'])
+  })
+
+  it('expires destroyed-target resolution after five minutes', async () => {
+    const source = new FakeSource()
+    source.tabs = [{ tabId: 56, targetId: 'target-expired' }]
+    let now = 1_000
+    const map = new TabTargetMap(source, { now: () => now })
+    await map.start()
+
+    source.emitDestroyed('target-expired')
+    now += 5 * 60 * 1_000
+
+    expect(await map.targetForTab(56)).toBeUndefined()
+    expect(source.getCalls).toBe(1)
   })
 
   it('rebuilds before lookup after the CDP connection epoch changes', async () => {
