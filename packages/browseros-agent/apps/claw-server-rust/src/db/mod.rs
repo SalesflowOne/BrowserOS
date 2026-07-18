@@ -36,11 +36,18 @@ async fn connect_and_migrate<M: MigratorTrait>(path: &Path) -> Result<DatabaseCo
         .foreign_keys(true)
         .busy_timeout(Duration::from_secs(5));
     // A single connection preserves the old mutex-serialized write behavior and avoids SQLite write-upgrade contention.
-    let pool = SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect_with(options)
-        .await
-        .map_err(|error| DbErr::Conn(RuntimeErr::SqlxError(error)))?;
+    // A blocking task prevents paused Tokio clocks from expiring SQLx's acquire timeout before its SQLite worker responds.
+    let runtime = tokio::runtime::Handle::current();
+    let pool = tokio::task::spawn_blocking(move || {
+        runtime.block_on(
+            SqlitePoolOptions::new()
+                .max_connections(1)
+                .connect_with(options),
+        )
+    })
+    .await
+    .map_err(|error| DbErr::Custom(format!("SQLite connection task failed: {error}")))?
+    .map_err(|error| DbErr::Conn(RuntimeErr::SqlxError(error)))?;
     let conn = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool);
     if let Err(error) = M::up(&conn, None).await {
         conn.close().await?;
