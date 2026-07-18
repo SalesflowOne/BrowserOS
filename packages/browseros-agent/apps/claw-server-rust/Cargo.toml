@@ -27,6 +27,7 @@ futures-util.workspace = true
 rusqlite.workspace = true
 rusqlite_migration.workspace = true
 rmcp.workspace = true
+rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

@@ -382,6 +382,7 @@ dependencies = [
  "browseros-mcp",
  "clap",
  "futures-util",
+ "rand 0.9.4",
  "rmcp",
  "rusqlite",
  "rusqlite_migration",
