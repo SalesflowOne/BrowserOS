@@ -12,7 +12,8 @@ import type { ReplayEvent, ReplayFrame } from '@/modules/api/replay.hooks'
  *   - `frames`: filtered AND time-shifted so `t=0` is the tab's
  *     first activity, not session start.
  *   - `events`: pass-through. rrweb treats the first event's `ts`
- *     as the tab-relative playback origin.
+ *     as the tab-relative playback origin, except when leading orphan
+ *     mutations must be dropped before the first usable checkpoint.
  *   - `totalSeconds`: duration of this tab's activity window (from
  *     first event to last event). 0 for empty tabs.
  */
@@ -20,13 +21,20 @@ export interface TabView {
   frames: ReplayFrame[]
   events: readonly ReplayEvent[]
   totalSeconds: number
+  hasFullSnapshot: boolean
+  /** Captured time omitted before the first playable checkpoint. */
+  incompleteUntilMs: number | null
 }
 
 export const EMPTY_TAB_VIEW: TabView = {
   frames: [],
   events: [],
   totalSeconds: 0,
+  hasFullSnapshot: false,
+  incompleteUntilMs: null,
 }
+
+const NO_VISUAL_EVENTS: readonly ReplayEvent[] = []
 
 export interface BuildTabViewInput {
   frames: ReplayFrame[]
@@ -41,16 +49,33 @@ export function buildTabView(
 ): TabView {
   if (targetId === null) return EMPTY_TAB_VIEW
   const rawFrames = input.frames.filter((frame) => frame.targetId === targetId)
-  const events = input.eventsForTarget(targetId)
-  if (rawFrames.length === 0 && events.length === 0) return EMPTY_TAB_VIEW
+  const rawEvents = input.eventsForTarget(targetId)
+  if (rawFrames.length === 0 && rawEvents.length === 0) return EMPTY_TAB_VIEW
+  const firstSnapshotIndex = rawEvents.findIndex((event) => event.type === 2)
+  const hasFullSnapshot = firstSnapshotIndex !== -1
+  const hasLeadingMutation =
+    firstSnapshotIndex > 0 &&
+    rawEvents.slice(0, firstSnapshotIndex).some((event) => event.type === 3)
+  const events = !hasFullSnapshot
+    ? NO_VISUAL_EVENTS
+    : hasLeadingMutation
+      ? rawEvents.slice(firstSnapshotIndex)
+      : rawEvents
+  const incompleteUntilMs = hasLeadingMutation
+    ? Math.max(
+        0,
+        (rawEvents[firstSnapshotIndex]?.ts ?? 0) - (rawEvents[0]?.ts ?? 0),
+      )
+    : null
+  const timingEvents = hasFullSnapshot ? events : rawEvents
   const startedMs = input.startedAtMs
   const originMs =
-    events.length > 0
-      ? events[0]?.ts
+    timingEvents.length > 0
+      ? timingEvents[0]?.ts
       : startedMs + (rawFrames[0]?.t ?? 0) * 1000
   const endMs =
-    events.length > 0
-      ? events[events.length - 1]?.ts
+    timingEvents.length > 0
+      ? timingEvents[timingEvents.length - 1]?.ts
       : startedMs + (rawFrames[rawFrames.length - 1]?.t ?? 0) * 1000
   const totalSeconds = Math.max(0, (endMs - originMs) / 1000)
   const originT = (originMs - startedMs) / 1000
@@ -58,7 +83,13 @@ export function buildTabView(
     ...f,
     t: Math.max(0, f.t - originT),
   }))
-  return { frames, events, totalSeconds }
+  return {
+    frames,
+    events,
+    totalSeconds,
+    hasFullSnapshot,
+    incompleteUntilMs,
+  }
 }
 
 export interface TargetSeek {
@@ -78,17 +109,17 @@ export function targetSeekForFrame(
   const targetFrames = input.frames.filter(
     (candidate) => candidate.targetId === targetId,
   )
+  const targetView = buildTabView(input, targetId)
   if (frame.targetId == null) {
-    const targetEvents = input.eventsForTarget(targetId)
     const originT =
-      targetEvents.length > 0
-        ? ((targetEvents[0]?.ts ?? input.startedAtMs) - input.startedAtMs) /
+      targetView.events.length > 0
+        ? ((targetView.events[0]?.ts ?? input.startedAtMs) -
+            input.startedAtMs) /
           1000
         : (targetFrames[0]?.t ?? 0)
     return { targetId, seconds: Math.max(0, frame.t - originT) }
   }
   const targetFrameIndex = targetFrames.indexOf(frame)
-  const targetView = buildTabView(input, targetId)
   const shiftedFrame = targetView.frames[targetFrameIndex]
   return { targetId, seconds: shiftedFrame?.t ?? frame.t }
 }
