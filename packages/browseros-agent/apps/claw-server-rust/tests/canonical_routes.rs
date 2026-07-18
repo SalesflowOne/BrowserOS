@@ -352,8 +352,17 @@ async fn canonical_sessions_cancel_and_recordings() -> anyhow::Result<()> {
     assert_eq!(events.matches("session-live").count(), 3);
     assert!(events.contains("\"targetId\":\"target-7\""));
     assert!(events.contains("\"targetId\":\"target-8\""));
-    assert!(events.find("seven-a").unwrap() < events.find("eight").unwrap());
-    assert!(events.find("eight").unwrap() < events.find("seven-b").unwrap());
+    let seven_a = events
+        .find("seven-a")
+        .ok_or_else(|| anyhow::anyhow!("missing first target-7 event"))?;
+    let eight = events
+        .find("eight")
+        .ok_or_else(|| anyhow::anyhow!("missing target-8 event"))?;
+    let seven_b = events
+        .find("seven-b")
+        .ok_or_else(|| anyhow::anyhow!("missing second target-7 event"))?;
+    assert!(seven_a < eight);
+    assert!(eight < seven_b);
 
     assert!(
         app.state
