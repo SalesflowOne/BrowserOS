@@ -9,7 +9,8 @@ import { defineContentScript } from 'wxt/utils/define-content-script'
 import {
   createRecorderBuffer,
   installRecorderFlushListeners,
-} from '@/modules/recorder/recorder-buffer'
+  type RecorderMessage,
+} from '@/modules/recorder'
 
 /** Records each eligible main-frame document from load and relays rrweb batches. */
 export default defineContentScript({
@@ -28,7 +29,7 @@ export default defineContentScript({
             .sendMessage({
               type: 'recorder-events',
               ndjson,
-            })
+            } satisfies RecorderMessage)
             .catch((error) => {
               console.warn(
                 '[browseros-claw replay] sendMessage to background failed',
