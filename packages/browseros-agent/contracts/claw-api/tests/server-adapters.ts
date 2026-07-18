@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import type { CanonicalApiDependencies } from '../../../apps/claw-server/src/routes/api-v1'
@@ -198,6 +198,9 @@ export async function startRustServer(): Promise<ContractServer> {
   await portProbe.stop(true)
   if (port === undefined) throw new Error('failed to allocate a test port')
   const dataDir = await mkdtemp(resolve(tmpdir(), 'claw-contract-rust-'))
+  const homeDir = resolve(dataDir, 'home')
+  // Exercise harness detection and Codex linking without touching host MCP config.
+  await mkdir(resolve(homeDir, '.codex'), { recursive: true })
   const process = Bun.spawn({
     cmd: [
       resolve(root, 'target/debug/examples/contract-server'),
@@ -205,6 +208,15 @@ export async function startRustServer(): Promise<ContractServer> {
       dataDir,
     ],
     cwd: root,
+    env: {
+      ...globalThis.process.env,
+      HOME: homeDir,
+      USERPROFILE: homeDir,
+      XDG_CONFIG_HOME: resolve(homeDir, '.config'),
+      CLAUDE_CONFIG_DIR: homeDir,
+      APPDATA: resolve(homeDir, 'AppData', 'Roaming'),
+      LOCALAPPDATA: resolve(homeDir, 'AppData', 'Local'),
+    },
     stdout: 'pipe',
     stderr: 'pipe',
   })
