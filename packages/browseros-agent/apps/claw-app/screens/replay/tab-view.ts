@@ -60,3 +60,26 @@ export function buildTabView(
   }))
   return { frames, events, totalSeconds }
 }
+
+export interface TargetSeek {
+  targetId: string | null
+  seconds: number
+}
+
+/** Resolves a session frame to its target and target-relative playback time. */
+export function targetSeekForFrame(
+  input: BuildTabViewInput,
+  selectedTargetId: string | null,
+  frame: ReplayFrame,
+): TargetSeek {
+  const targetId = frame.targetId ?? selectedTargetId
+  if (targetId === null) return { targetId, seconds: frame.t }
+
+  const targetFrames = input.frames.filter(
+    (candidate) => candidate.targetId === targetId,
+  )
+  const targetFrameIndex = targetFrames.indexOf(frame)
+  const targetView = buildTabView(input, targetId)
+  const shiftedFrame = targetView.frames[targetFrameIndex]
+  return { targetId, seconds: shiftedFrame?.t ?? frame.t }
+}

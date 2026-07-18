@@ -11,7 +11,11 @@
 import { describe, expect, it } from 'bun:test'
 import type { ReplayEvent, ReplayFrame } from '@/modules/api/replay.hooks'
 import { buildReplayEventTargets, buildReplayTargetIds } from './replay-events'
-import { type BuildTabViewInput, buildTabView } from './tab-view'
+import {
+  type BuildTabViewInput,
+  buildTabView,
+  targetSeekForFrame,
+} from './tab-view'
 
 function frame(
   t: number,
@@ -191,5 +195,23 @@ describe('buildReplayTargetIds', () => {
       'target-b',
       'target-a',
     ])
+  })
+})
+
+describe('targetSeekForFrame', () => {
+  it('switches to the frame target and returns its target-relative time', () => {
+    const targetFrame = frame(12, 'target-b', { dispatchId: 22 })
+    const input = makeInput({
+      frames: [frame(1, 'target-a'), targetFrame],
+      eventsForTarget: (targetId) =>
+        targetId === 'target-b'
+          ? [event(1_010_000, targetId), event(1_015_000, targetId)]
+          : [event(1_001_000, targetId), event(1_005_000, targetId)],
+    })
+
+    expect(targetSeekForFrame(input, 'target-a', targetFrame)).toEqual({
+      targetId: 'target-b',
+      seconds: 2,
+    })
   })
 })
