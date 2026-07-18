@@ -50,7 +50,7 @@ pub fn generate_fun_name(
 }
 
 fn pick<'a>(words: &'a [&str], draw: f64) -> &'a str {
-    let clamped = draw.max(0.0).min(1.0 - f64::EPSILON);
+    let clamped = draw.clamp(0.0, 1.0 - f64::EPSILON);
     let index = (clamped * words.len() as f64).floor() as usize;
     words.get(index).copied().unwrap_or(words[0])
 }
