@@ -39,12 +39,6 @@ export interface ReplayFrame {
    * result comes back).
    */
   url?: string | null
-  /**
-   * BrowserOS pageId this frame belongs to, or null when the tool
-   * did not target a page. Enables per-tab filtering on the replay
-   * screen so the address bar + caption reflect the selected tab
-   * as the operator switches between them.
-   */
   pageId?: number | null
   /** Stable CDP target this frame belongs to, when known. */
   targetId?: string | null
