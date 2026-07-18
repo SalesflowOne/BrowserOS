@@ -3,7 +3,7 @@ use crate::{
     domain::{AgentRef, ClientInfo, Session, SessionId},
     mcp::{
         dispatch::{ToolCall, ToolIdentity, dispatch_tool_call, linked_cancel_token},
-        effects::tab_groups::retitle_agent_tab_group,
+        effects::tab_groups::apply_agent_tab_group_title,
         naming::{build_session_group_title, client_prefix_from_slug, normalize_small_name},
         prompt::BROWSERCLAW_MCP_INSTRUCTIONS,
     },
@@ -94,20 +94,15 @@ impl ClawMcpService {
                 return CallToolResult::error(vec![rmcp::model::ContentBlock::text(message)]);
             }
         };
-        if let (Some(browser), Some(tab_groups)) = (
-            self.state.browser.session().await,
-            self.catalog.iter().find(|tool| tool.name == "tab_groups"),
-        ) {
-            retitle_agent_tab_group(
-                tab_groups,
-                &browser,
-                &self.state.sessions.ownership(),
-                session.ownership_key(),
-                &rename.new_title,
-                session.child_token(),
-            )
-            .await;
-        }
+        let browser = self.state.browser.session().await;
+        apply_agent_tab_group_title(
+            browser.as_ref(),
+            &self.state.sessions.ownership(),
+            session.ownership_key(),
+            &rename.new_title,
+            session.child_token(),
+        )
+        .await;
         CallToolResult::success(vec![rmcp::model::ContentBlock::text(rename.response)])
     }
 

@@ -22,9 +22,9 @@ use tokio::{sync::Mutex, task::JoinHandle, time::timeout};
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
-type GroupCreateLock = Mutex<()>;
+type GroupOperationLock = Mutex<()>;
 
-static INFLIGHT_CREATES: OnceLock<Mutex<HashMap<AgentKey, Weak<GroupCreateLock>>>> =
+static GROUP_OPERATION_LOCKS: OnceLock<Mutex<HashMap<AgentKey, Weak<GroupOperationLock>>>> =
     OnceLock::new();
 
 /// Creates or joins the durable tab group for a successful `tabs new` call.
@@ -59,16 +59,27 @@ async fn run_tab_group_work(call: ToolCall, page_id: Option<u32>) {
         return;
     };
     let ownership = call.state.sessions.ownership();
-    let expand = expand_agent_tab_group(
+    let operation_lock = group_operation_lock(&identity.ownership_key).await;
+    let _guard = operation_lock.lock().await;
+    sync_pending_group_title_unlocked(
         tab_groups,
         browser,
         &ownership,
         &identity.ownership_key,
         identity.session.child_token(),
         call.output_files.clone(),
-    );
+    )
+    .await;
+    expand_agent_tab_group_unlocked(
+        tab_groups,
+        browser,
+        &ownership,
+        &identity.ownership_key,
+        identity.session.child_token(),
+        call.output_files.clone(),
+    )
+    .await;
     let Some(page_id) = page_id else {
-        expand.await;
         return;
     };
     if let Some(default_group_id) = &call.default_tab_group_id {
@@ -78,21 +89,16 @@ async fn run_tab_group_work(call: ToolCall, page_id: Option<u32>) {
             .await
             .and_then(|page| page.group_id);
         if page_group_id.as_ref() == Some(default_group_id) {
-            expand.await;
             return;
         }
         ownership
             .set_tab_group_ref(identity.ownership_key.clone(), None)
             .await;
     }
-    tokio::join!(
-        expand,
-        ensure_agent_tab_group(&call, tab_groups, browser, &ownership, page_id)
-    );
+    ensure_agent_tab_group_unlocked(&call, tab_groups, browser, &ownership, page_id).await;
 }
 
-/// Serializes durable group creation and joins concurrent pages to the winning group.
-async fn ensure_agent_tab_group(
+async fn ensure_agent_tab_group_unlocked(
     call: &ToolCall,
     tab_groups: &ToolDef,
     browser: &Arc<BrowserSession>,
@@ -102,8 +108,6 @@ async fn ensure_agent_tab_group(
     let Some(identity) = call.identity.as_ref() else {
         return;
     };
-    let create_lock = group_create_lock(&identity.ownership_key).await;
-    let _guard = create_lock.lock().await;
     if let Some(group_id) = ownership.tab_group_ref(&identity.ownership_key).await {
         if let Err(reason) = dispatch_tab_groups(
             tab_groups,
@@ -131,6 +135,9 @@ async fn ensure_agent_tab_group(
         .await
         .unwrap_or_else(|| color_for_slug(identity.agent.slug()));
     let creation_title = desired_group_title(&identity.session).await;
+    ownership
+        .set_desired_group_title(identity.ownership_key.clone(), creation_title.clone())
+        .await;
     let group_result = match dispatch_tab_groups(
         tab_groups,
         browser,
@@ -158,10 +165,11 @@ async fn ensure_agent_tab_group(
         return;
     };
     ownership
-        .set_tab_group(
+        .set_tab_group_with_title(
             identity.ownership_key.clone(),
-            Some(group_id.clone()),
-            Some(color),
+            group_id.clone(),
+            color,
+            creation_title.clone(),
         )
         .await;
     if let Err(reason) = dispatch_tab_groups(
@@ -181,26 +189,24 @@ async fn ensure_agent_tab_group(
         );
     }
     let desired_title = desired_group_title(&identity.session).await;
-    if desired_title != creation_title
-        && let Err(reason) = dispatch_tab_groups(
+    if desired_title != creation_title {
+        ownership
+            .set_desired_group_title(identity.ownership_key.clone(), desired_title)
+            .await;
+        sync_pending_group_title_unlocked(
             tab_groups,
             browser,
+            ownership,
+            &identity.ownership_key,
             identity.session.child_token(),
             call.output_files.clone(),
-            json!({ "action": "update", "groupId": group_id, "title": desired_title }),
         )
-        .await
-    {
-        warn!(
-            dispatch_id = %call.dispatch_id,
-            error = %reason,
-            "tab group late title apply failed"
-        );
+        .await;
     }
 }
 
-async fn group_create_lock(key: &AgentKey) -> Arc<GroupCreateLock> {
-    let locks = INFLIGHT_CREATES.get_or_init(|| Mutex::new(HashMap::new()));
+async fn group_operation_lock(key: &AgentKey) -> Arc<GroupOperationLock> {
+    let locks = GROUP_OPERATION_LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
     let mut locks = locks.lock().await;
     locks.retain(|_, lock| lock.strong_count() > 0);
     if let Some(lock) = locks.get(key).and_then(Weak::upgrade) {
@@ -217,6 +223,8 @@ pub async fn collapse_agent_tab_group(
     ownership: &Arc<AgentPageOwnership>,
     key: &AgentKey,
 ) {
+    let operation_lock = group_operation_lock(key).await;
+    let _guard = operation_lock.lock().await;
     if ownership.tab_group_collapsed(key).await {
         return;
     }
@@ -233,13 +241,15 @@ pub async fn collapse_agent_tab_group(
     .await
     {
         Ok(_) => {
-            ownership.set_tab_group_collapsed(key.clone(), true).await;
+            ownership
+                .set_tab_group_collapsed_if_current(key, &group_id, true)
+                .await;
         }
         Err(reason) => warn!(key = %key, error = %reason, "agent tab group collapse failed"),
     }
 }
 
-async fn expand_agent_tab_group(
+async fn expand_agent_tab_group_unlocked(
     tab_groups: &ToolDef,
     browser: &Arc<BrowserSession>,
     ownership: &Arc<AgentPageOwnership>,
@@ -263,34 +273,69 @@ async fn expand_agent_tab_group(
     .await
     {
         Ok(_) => {
-            ownership.set_tab_group_collapsed(key.clone(), false).await;
+            ownership
+                .set_tab_group_collapsed_if_current(key, &group_id, false)
+                .await;
         }
         Err(reason) => warn!(key = %key, error = %reason, "agent tab group expand failed"),
     }
 }
 
-/// Applies a completed session name to the durable group when it exists.
-pub async fn retitle_agent_tab_group(
-    tab_groups: &ToolDef,
-    browser: &Arc<BrowserSession>,
+/// Stores the desired title and best-effort applies it to the current group.
+pub async fn apply_agent_tab_group_title(
+    browser: Option<&Arc<BrowserSession>>,
     ownership: &Arc<AgentPageOwnership>,
     key: &AgentKey,
     title: &str,
     cancel: CancellationToken,
 ) {
-    let Some(group_id) = ownership.tab_group_ref(key).await else {
+    let operation_lock = group_operation_lock(key).await;
+    let _guard = operation_lock.lock().await;
+    ownership
+        .set_desired_group_title(key.clone(), title.to_string())
+        .await;
+    let Some(browser) = browser else {
         return;
     };
-    if let Err(reason) = dispatch_tab_groups(
+    sync_pending_group_title_unlocked(
+        cached_tab_groups_tool(),
+        browser,
+        ownership,
+        key,
+        cancel,
+        browseros_mcp::output_file::create_browser_output_file_access(),
+    )
+    .await;
+}
+
+async fn sync_pending_group_title_unlocked(
+    tab_groups: &ToolDef,
+    browser: &Arc<BrowserSession>,
+    ownership: &Arc<AgentPageOwnership>,
+    key: &AgentKey,
+    cancel: CancellationToken,
+    output_files: OutputFileAccess,
+) {
+    let Some((group_id, title)) = ownership.pending_group_title(key).await else {
+        return;
+    };
+    match dispatch_tab_groups(
         tab_groups,
         browser,
         cancel,
-        browseros_mcp::output_file::create_browser_output_file_access(),
+        output_files,
         json!({ "action": "update", "groupId": group_id, "title": title }),
     )
     .await
     {
-        warn!(key = %key, error = %reason, "session name tab group retitle failed");
+        Ok(_) => {
+            ownership
+                .mark_group_title_synced(key, &group_id, &title)
+                .await;
+        }
+        Err(reason) => {
+            warn!(key = %key, error = %reason, "session name tab group retitle failed");
+        }
     }
 }
 
@@ -379,6 +424,7 @@ mod tests {
         calls: StdMutex<Vec<(String, Value)>>,
         members: StdMutex<HashMap<String, BTreeSet<i64>>>,
         block_create: AtomicBool,
+        fail_title_updates: AtomicBool,
         create_release: Notify,
     }
 
@@ -390,6 +436,7 @@ mod tests {
                 calls: StdMutex::new(Vec::new()),
                 members: StdMutex::new(HashMap::new()),
                 block_create: AtomicBool::new(false),
+                fail_title_updates: AtomicBool::new(false),
                 create_release: Notify::new(),
             }
         }
@@ -439,12 +486,39 @@ mod tests {
                 .unwrap_or_default()
         }
 
+        fn create_title(&self) -> Option<String> {
+            self.calls
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .iter()
+                .find(|(method, _)| method == "Browser.createTabGroup")
+                .and_then(|(_, params)| params.get("title"))
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        }
+
+        fn title_updates(&self) -> Vec<String> {
+            self.calls
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .iter()
+                .filter(|(method, _)| method == "Browser.updateTabGroup")
+                .filter_map(|(_, params)| params.get("title"))
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        }
+
         fn block_group_creation(&self) {
             self.block_create.store(true, Ordering::SeqCst);
         }
 
         fn release_group_creation(&self) {
             self.create_release.notify_one();
+        }
+
+        fn fail_title_updates(&self, fail: bool) {
+            self.fail_title_updates.store(fail, Ordering::SeqCst);
         }
     }
 
@@ -500,6 +574,14 @@ mod tests {
                         Ok(self.group_result(group_id, &params))
                     }
                     "Browser.updateTabGroup" => {
+                        if params.get("title").is_some()
+                            && self.fail_title_updates.load(Ordering::SeqCst)
+                        {
+                            return Err(CdpError::Protocol {
+                                code: -1,
+                                message: "title update failed".to_string(),
+                            });
+                        }
                         let group_id = params
                             .get("groupId")
                             .and_then(Value::as_str)
@@ -555,6 +637,17 @@ mod tests {
             "windowId": 1,
             "index": tab_id - 101
         })
+    }
+
+    async fn connected_call(
+        recorder: Arc<GroupDispatchRecorder>,
+    ) -> anyhow::Result<(ToolCall, Arc<BrowserSession>)> {
+        let browser = BrowserSession::new(recorder, BrowserSessionHooks::default());
+        assert_eq!(browser.pages.list().await?.len(), 2);
+        let mut call =
+            crate::mcp::test_support::tool_call("tabs", json!({ "action": "new" })).await?;
+        call.browser_session = Some(browser.clone());
+        Ok((call, browser))
     }
 
     #[test]
@@ -637,6 +730,175 @@ mod tests {
                 .as_deref(),
             Some("group-1")
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rename_before_first_tab_sets_the_creation_title() -> anyhow::Result<()> {
+        let recorder = Arc::new(GroupDispatchRecorder::new());
+        let (call, _browser) = connected_call(recorder.clone()).await?;
+        let identity = call
+            .identity
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("identity missing"))?;
+        identity
+            .session
+            .rename("invoice-processing".to_string())
+            .await;
+
+        spawn_tab_group_work(call.clone(), Some(1)).await?;
+
+        assert_eq!(
+            recorder.create_title().as_deref(),
+            Some("codex/invoice-processing")
+        );
+        let state = call
+            .state
+            .sessions
+            .ownership()
+            .tab_group_state(&identity.ownership_key)
+            .await
+            .ok_or_else(|| anyhow::anyhow!("group state missing"))?;
+        assert_eq!(
+            state.desired_title.as_deref(),
+            Some("codex/invoice-processing")
+        );
+        assert!(!state.title_sync_pending);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn existing_group_rename_and_rapid_second_rename_keep_the_newest_title()
+    -> anyhow::Result<()> {
+        let recorder = Arc::new(GroupDispatchRecorder::new());
+        let (call, browser) = connected_call(recorder.clone()).await?;
+        spawn_tab_group_work(call.clone(), Some(1)).await?;
+        let identity = call
+            .identity
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("identity missing"))?;
+        let ownership = call.state.sessions.ownership();
+
+        for title in ["codex/invoice-processing", "codex/quarterly-reporting"] {
+            apply_agent_tab_group_title(
+                Some(&browser),
+                &ownership,
+                &identity.ownership_key,
+                title,
+                identity.session.child_token(),
+            )
+            .await;
+        }
+
+        assert_eq!(
+            recorder.title_updates().last().map(String::as_str),
+            Some("codex/quarterly-reporting")
+        );
+        let state = ownership
+            .tab_group_state(&identity.ownership_key)
+            .await
+            .ok_or_else(|| anyhow::anyhow!("group state missing"))?;
+        assert_eq!(
+            state.desired_title.as_deref(),
+            Some("codex/quarterly-reporting")
+        );
+        assert!(!state.title_sync_pending);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rename_during_group_creation_ends_with_the_newest_title() -> anyhow::Result<()> {
+        let recorder = Arc::new(GroupDispatchRecorder::new());
+        recorder.block_group_creation();
+        let (call, browser) = connected_call(recorder.clone()).await?;
+        let identity = call
+            .identity
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("identity missing"))?;
+        let creation = spawn_tab_group_work(call.clone(), Some(1));
+        for _ in 0..100 {
+            if recorder.create_count() > 0 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+        assert_eq!(recorder.create_count(), 1);
+        identity
+            .session
+            .rename("invoice-processing".to_string())
+            .await;
+        recorder.release_group_creation();
+        creation.await?;
+        apply_agent_tab_group_title(
+            Some(&browser),
+            &call.state.sessions.ownership(),
+            &identity.ownership_key,
+            "codex/invoice-processing",
+            identity.session.child_token(),
+        )
+        .await;
+
+        assert_eq!(
+            recorder.title_updates().last().map(String::as_str),
+            Some("codex/invoice-processing")
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn disconnected_and_failed_title_updates_retry_on_later_dispatch() -> anyhow::Result<()> {
+        let recorder = Arc::new(GroupDispatchRecorder::new());
+        let (call, browser) = connected_call(recorder.clone()).await?;
+        spawn_tab_group_work(call.clone(), Some(1)).await?;
+        let identity = call
+            .identity
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("identity missing"))?;
+        let ownership = call.state.sessions.ownership();
+
+        apply_agent_tab_group_title(
+            None,
+            &ownership,
+            &identity.ownership_key,
+            "codex/disconnected-rename",
+            identity.session.child_token(),
+        )
+        .await;
+        assert!(
+            ownership
+                .tab_group_state(&identity.ownership_key)
+                .await
+                .is_some_and(|state| state.title_sync_pending)
+        );
+        run_tab_group_work(call.clone(), None).await;
+        assert_eq!(
+            recorder.title_updates().last().map(String::as_str),
+            Some("codex/disconnected-rename")
+        );
+
+        recorder.fail_title_updates(true);
+        apply_agent_tab_group_title(
+            Some(&browser),
+            &ownership,
+            &identity.ownership_key,
+            "codex/retry-title",
+            identity.session.child_token(),
+        )
+        .await;
+        assert!(
+            ownership
+                .tab_group_state(&identity.ownership_key)
+                .await
+                .is_some_and(|state| state.title_sync_pending)
+        );
+        recorder.fail_title_updates(false);
+        run_tab_group_work(call.clone(), None).await;
+        let state = ownership
+            .tab_group_state(&identity.ownership_key)
+            .await
+            .ok_or_else(|| anyhow::anyhow!("group state missing"))?;
+        assert_eq!(state.desired_title.as_deref(), Some("codex/retry-title"));
+        assert!(!state.title_sync_pending);
         Ok(())
     }
 
