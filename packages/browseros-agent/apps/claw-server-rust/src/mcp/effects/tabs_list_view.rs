@@ -73,9 +73,9 @@ fn page_id(page: &Value) -> Option<u32> {
 
 fn annotate_page(
     page: &Value,
-    owner: Option<&crate::domain::AgentKey>,
-    caller: &crate::domain::AgentKey,
-    labels: &HashMap<crate::domain::AgentKey, String>,
+    owner: Option<&crate::ids::ConvoId>,
+    caller: &crate::ids::ConvoId,
+    labels: &HashMap<crate::ids::ConvoId, String>,
 ) -> Value {
     let mut annotated = page.clone();
     let Value::Object(fields) = &mut annotated else {

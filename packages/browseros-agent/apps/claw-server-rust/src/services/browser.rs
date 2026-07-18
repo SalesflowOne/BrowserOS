@@ -1,4 +1,4 @@
-use crate::domain::AgentPageOwnership;
+use crate::tabs::PageOwnership;
 use browseros_cdp::{CdpClient, ConnectOptions, ReconnectPolicy};
 use browseros_core::{
     BrowserSession, BrowserSessionHooks,
@@ -23,7 +23,7 @@ pub struct BrowserConnectionState {
 
 pub struct BrowserService {
     cdp_port: u16,
-    ownership: Arc<AgentPageOwnership>,
+    ownership: Arc<PageOwnership>,
     state_tx: watch::Sender<BrowserConnectionState>,
     session: Arc<RwLock<Option<Arc<browseros_core::BrowserSession>>>>,
     cancel: CancellationToken,
@@ -31,7 +31,7 @@ pub struct BrowserService {
 
 impl BrowserService {
     #[must_use]
-    pub fn new(cdp_port: u16, ownership: Arc<AgentPageOwnership>) -> Arc<Self> {
+    pub fn new(cdp_port: u16, ownership: Arc<PageOwnership>) -> Arc<Self> {
         let (state_tx, _) = watch::channel(BrowserConnectionState {
             connected: false,
             epoch: 0,

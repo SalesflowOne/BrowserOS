@@ -9,5 +9,6 @@ pub mod mcp;
 pub mod routes;
 pub mod services;
 pub mod storage;
+pub mod tabs;
 
 pub use app::{AppState, build_router};

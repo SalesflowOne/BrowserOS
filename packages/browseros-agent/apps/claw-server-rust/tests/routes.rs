@@ -1396,9 +1396,9 @@ async fn wait_for_cdp_connected(router: &Router) -> anyhow::Result<()> {
 }
 
 async fn wait_for_distinct_session_groups(
-    ownership: &Arc<claw_server_rust::domain::AgentPageOwnership>,
-    key_a: &claw_server_rust::domain::AgentKey,
-    key_b: &claw_server_rust::domain::AgentKey,
+    ownership: &Arc<claw_server_rust::domain::PageOwnership>,
+    key_a: &claw_server_rust::domain::ConvoId,
+    key_b: &claw_server_rust::domain::ConvoId,
 ) -> anyhow::Result<(String, String)> {
     for _ in 0..100 {
         let group_a = ownership.tab_group_ref(key_a).await;

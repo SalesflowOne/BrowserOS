@@ -1,10 +1,10 @@
 use crate::{
-    domain::{
-        AgentKey, AgentPageOwnership, ClientIdentity, ClientInfo, ConversationIdentity, Session,
-        SessionId, generate_fun_name,
-    },
+    domain::Session,
     error::{AppError, AppResult},
+    identity::{ClientIdentity, ClientInfo, ConversationIdentity, generate_fun_name},
+    ids::{ConvoId, SessionId},
     services::{audit::AuditService, replay::ReplayService},
+    tabs::PageOwnership,
 };
 use futures_util::future::BoxFuture;
 use std::{
@@ -27,7 +27,7 @@ pub enum RetainedGroupAction {
 }
 
 pub type RetainedGroupHook = Arc<
-    dyn Fn(Arc<AgentPageOwnership>, AgentKey, RetainedGroupAction) -> BoxFuture<'static, bool>
+    dyn Fn(Arc<PageOwnership>, ConvoId, RetainedGroupAction) -> BoxFuture<'static, bool>
         + Send
         + Sync,
 >;
@@ -39,12 +39,12 @@ struct RetainedSession {
 
 pub struct SessionRegistry {
     sessions: RwLock<HashMap<SessionId, Arc<Session>>>,
-    ownership: Arc<AgentPageOwnership>,
+    ownership: Arc<PageOwnership>,
     audit: Arc<AuditService>,
     replay: Arc<ReplayService>,
-    reserved_keys: Mutex<HashSet<AgentKey>>,
-    retained: RwLock<HashMap<AgentKey, RetainedSession>>,
-    reaping_keys: Mutex<HashSet<AgentKey>>,
+    reserved_keys: Mutex<HashSet<ConvoId>>,
+    retained: RwLock<HashMap<ConvoId, RetainedSession>>,
+    reaping_keys: Mutex<HashSet<ConvoId>>,
     retained_group_hook: OnceLock<RetainedGroupHook>,
     idle_after: Duration,
     retention: Duration,
@@ -62,7 +62,7 @@ impl SessionRegistry {
     ) -> Arc<Self> {
         Arc::new(Self {
             sessions: RwLock::new(HashMap::new()),
-            ownership: Arc::new(AgentPageOwnership::new()),
+            ownership: Arc::new(PageOwnership::new()),
             audit,
             replay,
             reserved_keys: Mutex::new(HashSet::new()),
@@ -76,7 +76,7 @@ impl SessionRegistry {
     }
 
     #[must_use]
-    pub fn ownership(&self) -> Arc<AgentPageOwnership> {
+    pub fn ownership(&self) -> Arc<PageOwnership> {
         self.ownership.clone()
     }
 
@@ -103,7 +103,7 @@ impl SessionRegistry {
         let identity = {
             let mut reserved_keys = self.reserved_keys.lock().await;
             let generated_label = generate_fun_name(rand::random::<f64>, |label| {
-                !reserved_keys.contains(&AgentKey::new(format!("{}-{label}", agent.slug())))
+                !reserved_keys.contains(&ConvoId::new(format!("{}-{label}", agent.slug())))
             })
             .map_err(|error| AppError::Internal(error.to_string()))?;
             let identity = ConversationIdentity::new(agent.slug(), generated_label);
@@ -182,7 +182,7 @@ impl SessionRegistry {
         cancelled
     }
 
-    pub async fn owner_of_page(&self, page_id: &browseros_core::PageId) -> Option<AgentKey> {
+    pub async fn owner_of_page(&self, page_id: &browseros_core::PageId) -> Option<ConvoId> {
         self.ownership.owner_of_page(page_id).await
     }
 
@@ -284,7 +284,7 @@ impl SessionRegistry {
     }
 
     async fn reap_retained(&self, now: Instant) -> usize {
-        let retained: Vec<(AgentKey, Instant)> = self
+        let retained: Vec<(ConvoId, Instant)> = self
             .retained
             .read()
             .await
@@ -345,10 +345,9 @@ impl SessionRegistry {
 mod tests {
     use super::{RetainedGroupAction, SessionRegistry};
     use crate::{
-        domain::{
-            AgentKey, ClientIdentity, ClientInfo, ConversationIdentity, Session, SessionId,
-            generate_fun_name,
-        },
+        domain::Session,
+        identity::{ClientIdentity, ClientInfo, ConversationIdentity, generate_fun_name},
+        ids::{ConvoId, SessionId},
         services::{audit::AuditService, replay::ReplayService},
     };
     use std::{
@@ -695,7 +694,7 @@ mod tests {
             let reserved = registry.reserved_keys.lock().await;
             generate_fun_name(
                 || 0.0,
-                |label| !reserved.contains(&AgentKey::new(format!("codex-{label}"))),
+                |label| !reserved.contains(&ConvoId::new(format!("codex-{label}"))),
             )?
         };
         assert_eq!(candidate_while_retained, "agile-alpaca-2");
@@ -706,7 +705,7 @@ mod tests {
             let reserved = registry.reserved_keys.lock().await;
             generate_fun_name(
                 || 0.0,
-                |label| !reserved.contains(&AgentKey::new(format!("codex-{label}"))),
+                |label| !reserved.contains(&ConvoId::new(format!("codex-{label}"))),
             )?
         };
         assert_eq!(candidate_after_cleanup, "agile-alpaca");

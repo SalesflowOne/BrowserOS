@@ -58,7 +58,7 @@ const _: ToolGuard = guard;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::AgentKey;
+    use crate::ids::ConvoId;
     use rmcp::model::ContentBlock;
     use serde_json::json;
 
@@ -68,7 +68,7 @@ mod tests {
         call.state
             .sessions
             .ownership()
-            .claim_page(AgentKey::new("other"), PageId(7))
+            .claim_page(ConvoId::new("other"), PageId(7))
             .await;
         let result = guard(&call)
             .await
