@@ -9,9 +9,8 @@ use claw_server_rust::{
     config::Config,
     identity::{ClientIdentity, ConversationIdentity},
     ids::{ConvoId, ProfileId, SessionId},
-    services::tab_activity::RecordToolInput,
     sessions::Session,
-    tabs::PageOwnership,
+    tabs::{PageOwnership, activity::RecordToolInput},
 };
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};

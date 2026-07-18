@@ -1,15 +1,14 @@
 use crate::{
     AppState,
+    capture::{
+        audit::{ListDispatchesQuery, ListTasksQuery, TaskStatus},
+        recordings::RecordingEventInput,
+    },
     error::{AppError, AppResult},
     ids::ConvoId,
     mcp::streamable_http_service,
-    services::{
-        audit::{ListDispatchesQuery, ListTasksQuery, TaskStatus},
-        harness::Harness,
-        recordings::RecordingEventInput,
-        tab_activity::EnrichedTabRecord,
-    },
-    tabs::hex_for_slug,
+    services::harness::Harness,
+    tabs::{activity::EnrichedTabRecord, hex_for_slug},
 };
 use axum::{
     Json, Router,

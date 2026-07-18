@@ -3,10 +3,10 @@ mod session;
 pub use session::Session;
 
 use crate::{
+    capture::audit::AuditService,
     error::{AppError, AppResult},
     identity::{ClientIdentity, ClientInfo, ConversationIdentity, generate_fun_name},
     ids::{ConvoId, SessionId},
-    services::audit::AuditService,
     tabs::PageOwnership,
 };
 use futures_util::future::BoxFuture;
@@ -345,10 +345,10 @@ impl Sessions {
 mod tests {
     use super::{RetainedGroupAction, Session, Sessions};
     use crate::{
+        capture::audit::AuditService,
         db::audit::entities::prelude::TabClaims,
         identity::{ClientIdentity, ClientInfo, ConversationIdentity, generate_fun_name},
         ids::{ConvoId, SessionId},
-        services::audit::AuditService,
     };
     use sea_orm::EntityTrait;
     use std::{

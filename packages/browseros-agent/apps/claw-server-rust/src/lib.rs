@@ -1,4 +1,6 @@
 pub mod app;
+pub mod browser;
+pub mod capture;
 pub mod config;
 pub mod db;
 pub mod error;

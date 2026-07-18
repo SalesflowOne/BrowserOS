@@ -437,7 +437,7 @@ pub fn linked_cancel_token(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::audit::ListDispatchesQuery;
+    use crate::capture::audit::ListDispatchesQuery;
     use std::sync::{
         Mutex,
         atomic::{AtomicUsize, Ordering},
