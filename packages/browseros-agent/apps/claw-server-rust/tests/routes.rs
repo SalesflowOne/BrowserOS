@@ -230,7 +230,7 @@ async fn recordings_pipeline_ingests_and_replays_only_the_claimed_target() -> an
     let retry = Request::builder()
         .method("POST")
         .uri("/recordings/tabs/11/events")
-        .header("x-recording-batch-id", "batch-a")
+        .header("X-Recording-Batch-Id", "batch-a")
         .body(Body::from(first_body))?;
     let response = app.router.clone().oneshot(retry).await?;
     assert_eq!(response.status(), StatusCode::OK);
