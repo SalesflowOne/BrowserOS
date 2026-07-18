@@ -21,13 +21,10 @@ import { parseResultMeta } from '@/screens/audit/audit.helpers'
 interface TimelineProps {
   dispatches: ToolDispatchRow[]
   /**
-   * Dispatch ids whose screenshot file is confirmed to exist on
-   * disk (from `TaskDetail.screenshotDispatchIds`). Used to decide
-   * which rows show the screenshot preview block. Predates PR #1488:
-   * previously the row derived this from `toolName === 'screenshot'`
-   * but the screencast fallback and first-capture policy now write
-   * screenshots for many non-screenshot-tool dispatches, so the
-   * server-side disk-existence list is authoritative.
+   * Dispatch ids whose canonical `hasScreenshot` flag confirms a
+   * screenshot artifact exists. The screencast fallback and first-capture
+   * policy write screenshots for non-screenshot tools, so tool names are not
+   * sufficient to decide which rows show the preview block.
    */
   screenshotDispatchIds: readonly number[]
   startedAt: number

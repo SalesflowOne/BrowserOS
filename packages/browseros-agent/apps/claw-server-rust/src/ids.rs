@@ -3,9 +3,9 @@
 //!   by `services/agents`.
 //! - `SessionId` — one MCP transport connection, minted per handshake.
 //! - `ConvoId` — one conversation, `"{client_slug}-{fun_name}"`, minted with
-//!   the session and stable for its life. Serialized as `agentId` in JSON and
-//!   `agent_id` in the database because those wire names predate this type.
-//!   Keys page ownership and audit attribution.
+//!   the session and stable for its life. Legacy JSON and database records call
+//!   it `agentId` and `agent_id`; canonical API responses expose profile and
+//!   slug identity instead. Keys page ownership and audit attribution.
 //! - `DispatchId` — one tool call.
 
 use serde::{Deserialize, Serialize};

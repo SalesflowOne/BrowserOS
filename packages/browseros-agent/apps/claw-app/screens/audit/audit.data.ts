@@ -48,7 +48,7 @@ export interface AuditScreenData {
 /**
  * Single data hook for the audit screen. Reads filters from URL
  * search params so browser back / forward restores prior views; the
- * useTasks infinite query is variables-keyed off the same filter
+ * `useSessions` infinite query is variables-keyed off the same filter
  * shape so changing a filter starts a fresh paginated stream.
  *
  * Every returned value (`tasks`, `agentOptions`, etc.) is memoised so

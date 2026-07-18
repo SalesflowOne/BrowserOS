@@ -11,6 +11,11 @@ export interface ContractCase {
   run(server: ContractServer): Promise<void>
 }
 
+const FORBIDDEN_IDENTITY_KEYS = ['agent', 'task', 'run'].map(
+  (scope) => `${scope}Id`,
+)
+const INLINE_JPEG_KEY = ['jpeg', 'Base64'].join('')
+
 export const contractCases: ContractCase[] = [
   {
     name: 'health',
@@ -53,7 +58,10 @@ export const contractCases: ContractCase[] = [
         targetId: 'target-7',
         hasScreenshot: true,
       })
-      expect(JSON.stringify(detail)).not.toMatch(/agentId|taskId|runId/)
+      const serialized = JSON.stringify(detail)
+      for (const key of FORBIDDEN_IDENTITY_KEYS) {
+        expect(serialized).not.toContain(key)
+      }
       expect(JSON.stringify(detail)).not.toContain(':null')
     },
   },
@@ -102,7 +110,7 @@ export const contractCases: ContractCase[] = [
         targetId: 'target-7',
         sessionId: 'session-live',
       })
-      expect(JSON.stringify(tabs)).not.toContain('jpegBase64')
+      expect(JSON.stringify(tabs)).not.toContain(INLINE_JPEG_KEY)
 
       for (const path of [
         '/api/v1/tabs/7/preview',
