@@ -17,7 +17,7 @@ use tokio::time::Instant;
 use tracing::warn;
 
 const NO_EPOCH: u64 = u64::MAX;
-const DESTROYED_TARGET_GRACE: Duration = Duration::from_secs(5 * 60);
+const GRACE_MS: u64 = 5 * 60 * 1_000;
 
 type TargetClaimReleaser = Arc<dyn Fn(String) -> BoxFuture<'static, AppResult<()>> + Send + Sync>;
 
@@ -40,8 +40,8 @@ impl TabIdentity {
 struct TargetMaps {
     target_by_tab: HashMap<i64, String>,
     tab_by_target: HashMap<String, i64>,
-    /// Chrome tab ids increase monotonically within a browser session, so live
-    /// entries cannot alias these destroyed entries.
+    /// Chrome never reuses tab ids within a browser session, so live entries
+    /// cannot alias these destroyed entries; lookups still prefer live.
     recently_destroyed: HashMap<i64, RecentlyDestroyed>,
 }
 
@@ -329,8 +329,9 @@ impl TabTargetMap {
 }
 
 fn prune_recently_destroyed(maps: &mut TargetMaps, now: Instant) {
-    maps.recently_destroyed
-        .retain(|_, entry| now.duration_since(entry.destroyed_at) < DESTROYED_TARGET_GRACE);
+    maps.recently_destroyed.retain(|_, entry| {
+        now.duration_since(entry.destroyed_at) < Duration::from_millis(GRACE_MS)
+    });
 }
 
 #[cfg(test)]
@@ -546,7 +547,7 @@ mod tests {
                 None
             })
             .await;
-        tokio::time::advance(super::DESTROYED_TARGET_GRACE).await;
+        tokio::time::advance(Duration::from_millis(super::GRACE_MS)).await;
         let after_grace = map
             .resolve_with(55, |_| async {
                 calls.fetch_add(1, Ordering::SeqCst);
