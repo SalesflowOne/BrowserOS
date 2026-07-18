@@ -1,0 +1,390 @@
+use axum::{
+    Router,
+    body::{Body, to_bytes},
+    http::{HeaderMap, Request, StatusCode, header},
+};
+use browseros_core::TargetId;
+use claw_server_rust::{
+    AppState, build_router,
+    config::Config,
+    domain::{AgentRef, DispatchId, Session, SessionId, SessionIdentity},
+    services::{
+        audit::{DispatchResultSummary, RecordToolDispatchInput},
+        tab_activity::{RecordToolInput, ScreencastFrame},
+    },
+};
+use serde_json::{Value, json};
+use std::{sync::Arc, time::Duration};
+use tempfile::TempDir;
+use tokio_util::sync::CancellationToken;
+use tower::ServiceExt;
+
+struct TestApp {
+    router: Router,
+    state: AppState,
+    _dir: TempDir,
+}
+
+async fn test_app() -> anyhow::Result<TestApp> {
+    let dir = tempfile::tempdir()?;
+    let config = Arc::new(Config {
+        server_port: 9200,
+        cdp_port: 49337,
+        proxy_port: None,
+        resources_dir: dir.path().join("resources"),
+        browserclaw_dir: dir.path().join("browserclaw"),
+        session_idle: Duration::from_secs(300),
+        session_retention: Duration::from_secs(7_200),
+        session_sweep_interval: Duration::from_secs(60),
+        screencast_screenshot_fallback: true,
+        dev_mode: false,
+        auth_token: None,
+    });
+    let state = AppState::new_with_home(config, None, dir.path().join("home")).await?;
+    Ok(TestApp {
+        router: build_router(state.clone()),
+        state,
+        _dir: dir,
+    })
+}
+
+async fn request(
+    router: &Router,
+    method: &str,
+    uri: &str,
+    content_type: Option<&str>,
+    body: impl Into<Body>,
+) -> anyhow::Result<(StatusCode, HeaderMap, Vec<u8>)> {
+    let mut builder = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header(header::HOST, "localhost");
+    if let Some(content_type) = content_type {
+        builder = builder.header(header::CONTENT_TYPE, content_type);
+    }
+    let response = router.clone().oneshot(builder.body(body.into())?).await?;
+    let status = response.status();
+    let headers = response.headers().clone();
+    let bytes = to_bytes(response.into_body(), usize::MAX).await?.to_vec();
+    Ok((status, headers, bytes))
+}
+
+fn json_body(bytes: &[u8]) -> anyhow::Result<Value> {
+    Ok(serde_json::from_slice(bytes)?)
+}
+
+fn live_session(session_id: &str) -> Arc<Session> {
+    Session::new(
+        SessionId::new(session_id),
+        AgentRef::Ephemeral {
+            slug: "codex".to_string(),
+            label: "Codex".to_string(),
+        },
+        SessionIdentity::new("codex", "research-browserclaw".to_string()),
+        tokio::time::Instant::now(),
+    )
+}
+
+async fn seed_dispatch(app: &TestApp, session_id: &str) -> anyhow::Result<i64> {
+    Ok(app
+        .state
+        .audit
+        .record_tool_dispatch(RecordToolDispatchInput {
+            agent_id: "codex-research-browserclaw".to_string(),
+            slug: "codex".to_string(),
+            agent_label: "Codex".to_string(),
+            session_id: session_id.to_string(),
+            tool_name: "snapshot".to_string(),
+            page_id: Some(7),
+            target_id: Some("target-7".to_string()),
+            url: None,
+            title: None,
+            raw_args: json!({}),
+            duration_ms: 5,
+            dispatch_id: DispatchId::new(),
+            result: DispatchResultSummary {
+                is_error: false,
+                structured_content: json!({}),
+                content: json!([]),
+            },
+        })
+        .await?)
+}
+
+#[tokio::test]
+async fn canonical_control_settings_and_empty_lists() -> anyhow::Result<()> {
+    let app = test_app().await?;
+    let (status, _, bytes) =
+        request(&app.router, "GET", "/system/health", None, Body::empty()).await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json_body(&bytes)?, json!({ "status": "ok" }));
+
+    for (path, key) in [
+        ("/api/v1/system", "product"),
+        ("/api/v1/settings/telemetry", "distinctId"),
+        ("/api/v1/sessions", "items"),
+        ("/api/v1/tabs", "items"),
+        ("/api/v1/connections", "items"),
+    ] {
+        let (status, _, bytes) = request(&app.router, "GET", path, None, Body::empty()).await?;
+        assert_eq!(status, StatusCode::OK, "GET {path}: {bytes:?}");
+        assert!(json_body(&bytes)?.get(key).is_some(), "GET {path}");
+    }
+
+    let (status, _, bytes) = request(
+        &app.router,
+        "PUT",
+        "/api/v1/settings/telemetry",
+        Some("application/json"),
+        json!({ "consent": false }).to_string(),
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json_body(&bytes)?["consent"], false);
+
+    let (status, _, bytes) =
+        request(&app.router, "POST", "/system/shutdown", None, Body::empty()).await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json_body(&bytes)?, json!({ "status": "ok" }));
+    Ok(())
+}
+
+#[tokio::test]
+async fn canonical_sessions_cancel_and_recordings() -> anyhow::Result<()> {
+    let app = test_app().await?;
+    let session = live_session("session-live");
+    app.state.sessions.insert_for_testing(session.clone()).await;
+    seed_dispatch(&app, "session-live").await?;
+
+    let (status, _, bytes) = request(
+        &app.router,
+        "GET",
+        "/api/v1/sessions/session-live",
+        None,
+        Body::empty(),
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    let detail = json_body(&bytes)?;
+    assert_eq!(detail["session"]["name"], "research-browserclaw");
+    assert_eq!(detail["dispatches"][0]["dispatchId"], 1);
+    assert_eq!(detail["dispatches"][0]["hasScreenshot"], false);
+    assert!(detail["dispatches"][0].get("agentId").is_none());
+    assert!(detail["dispatches"][0].get("url").is_none());
+
+    let (status, _, bytes) = request(
+        &app.router,
+        "POST",
+        "/api/v1/sessions/session-live/cancel",
+        None,
+        Body::empty(),
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json_body(&bytes)?, json!({ "cancelled": 0 }));
+
+    let dispatch_token = CancellationToken::new();
+    session
+        .register_dispatch(DispatchId::new(), dispatch_token.clone())
+        .await;
+    let (status, _, bytes) = request(
+        &app.router,
+        "POST",
+        "/api/v1/sessions/session-live/cancel",
+        None,
+        Body::empty(),
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json_body(&bytes)?, json!({ "cancelled": 1 }));
+    assert!(dispatch_token.is_cancelled());
+    assert!(app.state.sessions.contains(session.id()).await);
+
+    let (status, _, bytes) = request(
+        &app.router,
+        "GET",
+        "/api/v1/sessions/session-live/recording",
+        None,
+        Body::empty(),
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        json_body(&bytes)?,
+        json!({ "hasData": false, "sizeBytes": 0, "pageIds": [] })
+    );
+
+    let events = "{\"tabPageId\":7,\"ts\":100}\n{\"tabPageId\":7,\"ts\":200}\n";
+    let (status, _, bytes) = request(
+        &app.router,
+        "POST",
+        "/api/v1/sessions/session-live/recording/events",
+        Some("application/x-ndjson"),
+        events,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json_body(&bytes)?, json!({ "accepted": 2 }));
+
+    let (status, headers, bytes) = request(
+        &app.router,
+        "GET",
+        "/api/v1/sessions/session-live/recording/events",
+        None,
+        Body::empty(),
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        headers
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok()),
+        Some("application/x-ndjson")
+    );
+    assert!(String::from_utf8(bytes)?.contains("session-live"));
+
+    assert!(
+        app.state
+            .sessions
+            .remove(session.id(), "closed", Some("test"))
+            .await?
+    );
+    let (status, _, bytes) = request(
+        &app.router,
+        "POST",
+        "/api/v1/sessions/session-live/recording/events",
+        Some("application/x-ndjson"),
+        "{\"ts\":300}\n",
+    )
+    .await?;
+    assert_eq!(status, StatusCode::GONE);
+    assert_eq!(json_body(&bytes)?["code"], "session_ended");
+
+    let (status, _, bytes) = request(
+        &app.router,
+        "POST",
+        "/api/v1/sessions/session-live/cancel",
+        None,
+        Body::empty(),
+    )
+    .await?;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(json_body(&bytes)?["code"], "session_not_live");
+    Ok(())
+}
+
+#[tokio::test]
+async fn canonical_tabs_previews_screenshots_and_errors() -> anyhow::Result<()> {
+    let app = test_app().await?;
+    let session = live_session("session-live");
+    app.state.sessions.insert_for_testing(session.clone()).await;
+    let dispatch_id = seed_dispatch(&app, "session-live").await?;
+    app.state
+        .tab_activity
+        .record_tool(RecordToolInput {
+            target_id: TargetId::from("target-7".to_string()),
+            tab_id: 101,
+            page_id: 7,
+            session_id: "session-live".to_string(),
+            url: "https://browseros.com".to_string(),
+            title: "BrowserOS".to_string(),
+            agent_id: session.agent_id().as_str().to_string(),
+            slug: "codex".to_string(),
+            tool_name: "snapshot".to_string(),
+        })
+        .await;
+    app.state
+        .screencast
+        .cache_frame(
+            7,
+            ScreencastFrame {
+                jpeg_base64: "/9g=".to_string(),
+                captured_at: 123,
+            },
+        )
+        .await;
+    app.state
+        .screenshots
+        .write(&dispatch_id.to_string(), &[0xff, 0xd8])
+        .await?;
+
+    let (status, _, bytes) =
+        request(&app.router, "GET", "/api/v1/tabs", None, Body::empty()).await?;
+    assert_eq!(status, StatusCode::OK);
+    let tabs = json_body(&bytes)?;
+    assert_eq!(tabs["items"][0]["tabId"], 101);
+    assert_eq!(tabs["items"][0]["pageId"], 7);
+    assert_eq!(tabs["items"][0]["targetId"], "target-7");
+    assert_eq!(tabs["items"][0]["sessionId"], "session-live");
+    assert_eq!(tabs["items"][0]["previewCapturedAt"], 123);
+    assert!(tabs["items"][0].get("jpegBase64").is_none());
+
+    for path in [
+        "/api/v1/tabs/7/preview".to_string(),
+        format!("/api/v1/dispatches/{dispatch_id}/screenshot"),
+    ] {
+        let (status, headers, bytes) =
+            request(&app.router, "GET", &path, None, Body::empty()).await?;
+        assert_eq!(status, StatusCode::OK, "GET {path}");
+        assert_eq!(
+            headers
+                .get(header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some("image/jpeg")
+        );
+        assert_eq!(bytes, vec![0xff, 0xd8]);
+    }
+
+    for (method, path, expected_status, code) in [
+        (
+            "GET",
+            "/api/v1/sessions?limit=0",
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+        ),
+        (
+            "GET",
+            "/api/v1/sessions/missing",
+            StatusCode::NOT_FOUND,
+            "session_not_found",
+        ),
+        (
+            "POST",
+            "/api/v1/sessions/missing/cancel",
+            StatusCode::NOT_FOUND,
+            "session_not_found",
+        ),
+        (
+            "GET",
+            "/api/v1/tabs/8/preview",
+            StatusCode::NOT_FOUND,
+            "preview_not_found",
+        ),
+        (
+            "GET",
+            "/api/v1/dispatches/999/screenshot",
+            StatusCode::NOT_FOUND,
+            "screenshot_not_found",
+        ),
+        (
+            "PUT",
+            "/api/v1/connections/Unknown",
+            StatusCode::NOT_FOUND,
+            "harness_not_found",
+        ),
+    ] {
+        let (status, headers, bytes) =
+            request(&app.router, method, path, None, Body::empty()).await?;
+        assert_eq!(status, expected_status, "{method} {path}");
+        let body = json_body(&bytes)?;
+        assert_eq!(body["code"], code, "{method} {path}");
+        assert_eq!(
+            body["requestId"].as_str(),
+            headers
+                .get("x-request-id")
+                .and_then(|value| value.to_str().ok()),
+            "{method} {path}"
+        );
+    }
+    Ok(())
+}

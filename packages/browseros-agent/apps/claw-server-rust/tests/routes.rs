@@ -248,8 +248,7 @@ async fn health_survives_cdp_down() -> anyhow::Result<()> {
     let app = test_app().await?;
     let (status, body) = request_json(&app.router, "GET", "/system/health", None).await?;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["status"], "ok");
-    assert_eq!(body["cdp"]["connected"], false);
+    assert_eq!(body, json!({ "status": "ok" }));
     Ok(())
 }
 
@@ -288,7 +287,9 @@ async fn replay_tabs_tracks_only_live_agent_sessions() -> anyhow::Result<()> {
         .tab_activity
         .record_tool(RecordToolInput {
             target_id: TargetId::from("target-live".to_string()),
+            tab_id: 107,
             page_id: 7,
+            session_id: "session-live".to_string(),
             url: "https://example.com/live".to_string(),
             title: "Live Tab".to_string(),
             agent_id: session.agent_id().as_str().to_string(),
@@ -350,7 +351,9 @@ async fn replay_tabs_maps_each_session_scoped_agent_id() -> anyhow::Result<()> {
             .tab_activity
             .record_tool(RecordToolInput {
                 target_id: TargetId::from(format!("target-{index}")),
+                tab_id: i64::try_from(index + 108)?,
                 page_id: u32::try_from(index + 8)?,
+                session_id: session.id().as_str().to_string(),
                 url: format!("https://example.com/{index}"),
                 title: format!("Session {index}"),
                 agent_id: session.agent_id().as_str().to_string(),
@@ -655,7 +658,7 @@ async fn mcp_session_naming_appends_five_tips_without_elicitation() -> anyhow::R
     let mock = MockCdp::start().await?;
     let app = test_app_with_cdp_port(mock.cdp_port, false).await?;
     app.state.browser.connect_once_for_testing().await?;
-    wait_for_cdp_connected(&app.router).await?;
+    wait_for_cdp_connected(&app).await?;
     let initialize = json!({
         "jsonrpc": "2.0",
         "id": 1,
@@ -740,7 +743,7 @@ async fn mcp_tabs_new_roundtrips_through_mock_cdp() -> anyhow::Result<()> {
     let mock = MockCdp::start().await?;
     let app = test_app_with_cdp_port(mock.cdp_port, false).await?;
     app.state.browser.connect_once_for_testing().await?;
-    wait_for_cdp_connected(&app.router).await?;
+    wait_for_cdp_connected(&app).await?;
     let session_id = initialize_mcp(&app).await?;
 
     let (status, _headers, body) = request_json_with_headers(
@@ -854,7 +857,7 @@ async fn same_name_mcp_sessions_have_distinct_groups_and_reject_cross_page_acces
     let mock = MockCdp::start().await?;
     let app = test_app_with_cdp_port(mock.cdp_port, false).await?;
     app.state.browser.connect_once_for_testing().await?;
-    wait_for_cdp_connected(&app.router).await?;
+    wait_for_cdp_connected(&app).await?;
     let session_a_id = initialize_mcp(&app).await?;
     let session_b_id = initialize_mcp(&app).await?;
     let session_a = app
@@ -960,7 +963,7 @@ async fn screencast_fallback_flag_disables_fallback_screenshots() -> anyhow::Res
     let mock = MockCdp::start().await?;
     let app = test_app_with_options(mock.cdp_port, false, false).await?;
     app.state.browser.connect_once_for_testing().await?;
-    wait_for_cdp_connected(&app.router).await?;
+    wait_for_cdp_connected(&app).await?;
     let session_id = initialize_mcp(&app).await?;
 
     let (status, _headers, body) = request_json_with_headers(
@@ -999,7 +1002,7 @@ async fn cancel_endpoint_aborts_in_flight_dispatch() -> anyhow::Result<()> {
     let mock = MockCdp::start().await?;
     let app = test_app_with_cdp_port(mock.cdp_port, false).await?;
     app.state.browser.connect_once_for_testing().await?;
-    wait_for_cdp_connected(&app.router).await?;
+    wait_for_cdp_connected(&app).await?;
     let session_id = initialize_mcp(&app).await?;
     let session = app
         .state
@@ -1137,7 +1140,9 @@ async fn tabs_activity_enriches_through_live_session_profile_identity() -> anyho
         .tab_activity
         .record_tool(RecordToolInput {
             target_id: TargetId::from("target-exact".to_string()),
+            tab_id: 101,
             page_id: 1,
+            session_id: stored_session.id().as_str().to_string(),
             url: "https://example.com/exact".to_string(),
             title: "Exact".to_string(),
             agent_id: stored_session.agent_id().as_str().to_string(),
@@ -1149,7 +1154,9 @@ async fn tabs_activity_enriches_through_live_session_profile_identity() -> anyho
         .tab_activity
         .record_tool(RecordToolInput {
             target_id: TargetId::from("target-fallback".to_string()),
+            tab_id: 102,
             page_id: 2,
+            session_id: ephemeral_session.id().as_str().to_string(),
             url: "https://example.com/fallback".to_string(),
             title: "Fallback".to_string(),
             agent_id: ephemeral_session.agent_id().as_str().to_string(),
@@ -1186,14 +1193,16 @@ async fn tabs_activity_embeds_polled_screenshot_frames() -> anyhow::Result<()> {
     mock.add_tab(2, "target-2", 2).await;
     let app = test_app_with_cdp_port(mock.cdp_port, false).await?;
     app.state.browser.connect_once_for_testing().await?;
-    wait_for_cdp_connected(&app.router).await?;
+    wait_for_cdp_connected(&app).await?;
 
     for (page_id, target_id, agent_id) in [(1, "target-1", "agent-a"), (2, "target-2", "agent-b")] {
         app.state
             .tab_activity
             .record_tool(RecordToolInput {
                 target_id: TargetId::from(target_id.to_string()),
+                tab_id: i64::from(page_id) + 100,
                 page_id,
+                session_id: format!("session-{target_id}"),
                 url: format!("https://example.com/{target_id}"),
                 title: target_id.to_string(),
                 agent_id: agent_id.to_string(),
@@ -1383,19 +1392,14 @@ async fn send_initialized(router: &Router, session_id: &str) -> anyhow::Result<(
     Ok(())
 }
 
-async fn wait_for_cdp_connected(router: &Router) -> anyhow::Result<()> {
-    let mut last = Value::Null;
+async fn wait_for_cdp_connected(app: &TestApp) -> anyhow::Result<()> {
     for _ in 0..120 {
-        let (status, body) = request_json(router, "GET", "/system/health", None).await?;
-        if status == StatusCode::OK && body["cdp"]["connected"] == true {
+        if app.state.browser.state().connected {
             return Ok(());
         }
-        last = body;
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    Err(anyhow::anyhow!(
-        "mock CDP did not connect; last health: {last}"
-    ))
+    Err(anyhow::anyhow!("mock CDP did not connect"))
 }
 
 async fn wait_for_distinct_session_groups(

@@ -26,10 +26,11 @@ use std::{collections::HashMap, str::FromStr, time::Instant};
 use tracing::{Instrument, info_span};
 use ulid::Ulid;
 
+mod api_v1;
+
 pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
-        .route("/system/health", get(system_health))
-        .route("/system/shutdown", post(system_shutdown))
+        .merge(api_v1::router())
         .route("/system/version", get(system_version))
         .route("/system/url", get(system_url))
         .route(
@@ -126,7 +127,7 @@ pub async fn request_context(mut req: Request, next: Next) -> Response {
         );
         headers.insert(
             header::ACCESS_CONTROL_ALLOW_METHODS,
-            HeaderValue::from_static("GET,POST,PATCH,DELETE,OPTIONS"),
+            HeaderValue::from_static("GET,POST,PUT,PATCH,DELETE,OPTIONS"),
         );
         headers.insert(
             header::ACCESS_CONTROL_ALLOW_HEADERS,
@@ -145,27 +146,6 @@ pub async fn request_context(mut req: Request, next: Next) -> Response {
 
 async fn preflight() -> StatusCode {
     StatusCode::NO_CONTENT
-}
-
-async fn system_health(State(state): State<AppState>) -> Json<Value> {
-    let cdp = state.browser.state();
-    Json(json!({
-        "status": "ok",
-        "cdp": cdp,
-        "sessions": {
-            "count": state.sessions.count().await
-        }
-    }))
-}
-
-async fn system_shutdown(State(state): State<AppState>) -> AppResult<Json<Value>> {
-    let drained = state.sessions.shutdown().await?;
-    state.screencast.stop();
-    state.browser.stop();
-    if let Some(tx) = state.shutdown.lock().await.take() {
-        let _ = tx.send(());
-    }
-    Ok(Json(json!({ "status": "ok", "drainedSessions": drained })))
 }
 
 async fn system_version() -> Json<Value> {
@@ -321,6 +301,7 @@ async fn audit_tasks(
         .audit
         .list_tasks(ListTasksQuery {
             agent_id: query.agent_id,
+            slug: None,
             status: query.status,
             site: query.site,
             search: query.search,

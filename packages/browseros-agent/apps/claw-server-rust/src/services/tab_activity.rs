@@ -22,9 +22,13 @@ pub struct ToolEvent {
 #[serde(rename_all = "camelCase")]
 pub struct TabActivityRecord {
     pub target_id: String,
+    #[serde(skip)]
+    pub tab_id: i64,
     pub page_id: u32,
     pub url: String,
     pub title: String,
+    #[serde(skip)]
+    pub session_id: String,
     pub agent_id: String,
     pub slug: String,
     pub first_tool_at: i64,
@@ -56,9 +60,11 @@ pub struct ScreencastFrame {
 #[derive(Debug, Clone)]
 struct RawRecord {
     target_id: String,
+    tab_id: i64,
     page_id: u32,
     url: String,
     title: String,
+    session_id: String,
     agent_id: String,
     slug: String,
     first_tool_at: i64,
@@ -75,7 +81,9 @@ pub struct TabActivityService {
 
 pub struct RecordToolInput {
     pub target_id: TargetId,
+    pub tab_id: i64,
     pub page_id: u32,
+    pub session_id: String,
     pub url: String,
     pub title: String,
     pub agent_id: String,
@@ -89,9 +97,11 @@ impl TabActivityService {
         let target_key = input.target_id.into_inner();
         let mut records = self.records.lock().await;
         if let Some(existing) = records.get_mut(&target_key) {
+            existing.tab_id = input.tab_id;
             existing.page_id = input.page_id;
             existing.url = input.url;
             existing.title = input.title;
+            existing.session_id = input.session_id;
             existing.agent_id = input.agent_id;
             existing.slug = input.slug;
             existing.last_tool_at = now;
@@ -115,9 +125,11 @@ impl TabActivityService {
             target_key.clone(),
             RawRecord {
                 target_id: target_key,
+                tab_id: input.tab_id,
                 page_id: input.page_id,
                 url: input.url,
                 title: input.title,
+                session_id: input.session_id,
                 agent_id: input.agent_id,
                 slug: input.slug,
                 first_tool_at: now,
@@ -138,9 +150,11 @@ impl TabActivityService {
             .values()
             .map(|record| TabActivityRecord {
                 target_id: record.target_id.clone(),
+                tab_id: record.tab_id,
                 page_id: record.page_id,
                 url: record.url.clone(),
                 title: record.title.clone(),
+                session_id: record.session_id.clone(),
                 agent_id: record.agent_id.clone(),
                 slug: record.slug.clone(),
                 first_tool_at: record.first_tool_at,
@@ -166,5 +180,40 @@ fn now_ms() -> i64 {
     match SystemTime::now().duration_since(UNIX_EPOCH) {
         Ok(duration) => i64::try_from(duration.as_millis()).unwrap_or(i64::MAX),
         Err(_) => 0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{RecordToolInput, TabActivityService};
+    use browseros_core::TargetId;
+
+    #[tokio::test]
+    async fn latest_session_and_tab_replace_the_target_association() {
+        let service = TabActivityService::default();
+        for (session_id, tab_id, tool_name) in [
+            ("session-1", 101, "navigate"),
+            ("session-2", 202, "snapshot"),
+        ] {
+            service
+                .record_tool(RecordToolInput {
+                    target_id: TargetId::from("target-1".to_string()),
+                    tab_id,
+                    page_id: 7,
+                    session_id: session_id.to_string(),
+                    url: "https://example.com".to_string(),
+                    title: "Example".to_string(),
+                    agent_id: session_id.to_string(),
+                    slug: "codex".to_string(),
+                    tool_name: tool_name.to_string(),
+                })
+                .await;
+        }
+
+        let records = service.snapshot().await;
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].session_id, "session-2");
+        assert_eq!(records[0].tab_id, 202);
+        assert_eq!(records[0].tool_count, 2);
     }
 }
