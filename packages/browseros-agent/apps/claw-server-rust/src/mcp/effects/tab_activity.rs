@@ -30,7 +30,7 @@ pub fn apply(context: ToolEffectContext<'_>) -> BoxFuture<'_, anyhow::Result<Opt
                 session_id: context.call.session_id.as_str().to_string(),
                 url: info.url,
                 title: info.title,
-                agent_id: identity.session.agent_id().as_str().to_string(),
+                agent_id: identity.session.convo_id().as_str().to_string(),
                 slug: identity.agent.slug().to_string(),
                 tool_name: context.call.tool().name.to_string(),
             })

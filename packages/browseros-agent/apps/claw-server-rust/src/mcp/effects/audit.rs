@@ -74,7 +74,8 @@ async fn record_dispatch(
     let live = match (&call.browser_session, page_id) {
         (Some(browser), Some(page_id)) => browser.pages.get_info(PageId(page_id)).await,
         _ => None,
-    };
+    }
+    .or_else(|| call.page_snapshot.clone());
     let content = serde_json::to_value(&result.content).unwrap_or_else(|error| {
         warn!(error = %error, "tool content serialization failed");
         json!([])
@@ -84,7 +85,7 @@ async fn record_dispatch(
         .state
         .audit
         .record_tool_dispatch(RecordToolDispatchInput {
-            agent_id: identity.session.agent_id().as_str().to_string(),
+            agent_id: identity.session.convo_id().as_str().to_string(),
             slug: identity.agent.slug().to_string(),
             agent_label: identity.agent_label.clone(),
             session_id: call.session_id.as_str().to_string(),

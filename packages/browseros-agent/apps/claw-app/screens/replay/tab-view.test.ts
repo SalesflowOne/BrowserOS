@@ -33,8 +33,8 @@ function frame(
   }
 }
 
-function event(ts: number, targetId: string): ReplayEvent {
-  return { sessionId: 'test', targetId, tabId: 1, type: 3, data: {}, ts }
+function event(ts: number, targetId: string, type = 2): ReplayEvent {
+  return { sessionId: 'test', targetId, tabId: 1, type, data: {}, ts }
 }
 
 function makeInput(
@@ -164,6 +164,56 @@ describe('buildTabView', () => {
 
     expect(afterTaskPoll.events).toBe(first.events)
     expect(afterTaskPoll.frames).not.toBe(first.frames)
+  })
+
+  it('starts at the first full snapshot when leading mutations are orphaned', () => {
+    const events = [
+      event(1_001_000, 'target-a', 3),
+      event(1_002_000, 'target-a', 3),
+      event(1_004_000, 'target-a', 2),
+      event(1_005_000, 'target-a', 3),
+    ]
+    const view = buildTabView(
+      makeInput({ eventsForTarget: () => events }),
+      'target-a',
+    )
+
+    expect(view.events.map(({ type }) => type)).toEqual([2, 3])
+    expect(view.hasFullSnapshot).toBe(true)
+    expect(view.incompleteUntilMs).toBe(3_000)
+    expect(view.totalSeconds).toBe(1)
+  })
+
+  it('marks a target without a full snapshot as having no visual recording', () => {
+    const view = buildTabView(
+      makeInput({
+        eventsForTarget: () => [
+          event(1_001_000, 'target-a', 4),
+          event(1_002_000, 'target-a', 3),
+        ],
+      }),
+      'target-a',
+    )
+
+    expect(view.events).toEqual([])
+    expect(view.hasFullSnapshot).toBe(false)
+    expect(view.incompleteUntilMs).toBeNull()
+  })
+
+  it('keeps a clean stream including metadata before its full snapshot', () => {
+    const events = [
+      event(1_001_000, 'target-a', 4),
+      event(1_002_000, 'target-a', 2),
+      event(1_003_000, 'target-a', 3),
+    ]
+    const view = buildTabView(
+      makeInput({ eventsForTarget: () => events }),
+      'target-a',
+    )
+
+    expect(view.events).toBe(events)
+    expect(view.hasFullSnapshot).toBe(true)
+    expect(view.incompleteUntilMs).toBeNull()
   })
 })
 

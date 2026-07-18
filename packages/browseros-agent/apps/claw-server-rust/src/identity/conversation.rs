@@ -1,4 +1,4 @@
-use crate::domain::{AgentId, AgentKey};
+use crate::ids::ConvoId;
 use tokio::sync::Mutex;
 
 const ADJECTIVES: [&str; 46] = [
@@ -55,10 +55,12 @@ fn pick<'a>(words: &'a [&str], draw: f64) -> &'a str {
     words.get(index).copied().unwrap_or(words[0])
 }
 
+/// Per-conversation ownership and naming identity.
+/// The conversation id stays fixed when `rename` changes only the
+/// operator-facing label.
 #[derive(Debug)]
-pub struct SessionIdentity {
-    agent_id: AgentId,
-    ownership_key: AgentKey,
+pub struct ConversationIdentity {
+    convo_id: ConvoId,
     generated_label: String,
     naming: Mutex<SessionNamingState>,
 }
@@ -69,14 +71,13 @@ struct SessionNamingState {
     rename_nudges_left: u8,
 }
 
-impl SessionIdentity {
+impl ConversationIdentity {
     /// Creates the per-conversation identity used by MCP, ownership, and naming flows.
     #[must_use]
     pub fn new(client_slug: &str, generated_label: String) -> Self {
         let opaque_id = format!("{client_slug}-{generated_label}");
         Self {
-            agent_id: AgentId::new(opaque_id.clone()),
-            ownership_key: AgentKey::new(opaque_id),
+            convo_id: ConvoId::new(opaque_id),
             generated_label: generated_label.clone(),
             naming: Mutex::new(SessionNamingState {
                 label: generated_label,
@@ -86,13 +87,8 @@ impl SessionIdentity {
     }
 
     #[must_use]
-    pub fn agent_id(&self) -> &AgentId {
-        &self.agent_id
-    }
-
-    #[must_use]
-    pub fn ownership_key(&self) -> &AgentKey {
-        &self.ownership_key
+    pub fn convo_id(&self) -> &ConvoId {
+        &self.convo_id
     }
 
     #[must_use]
@@ -122,7 +118,7 @@ impl SessionIdentity {
 
 #[cfg(test)]
 mod tests {
-    use super::{GenerateFunNameError, SessionIdentity, generate_fun_name};
+    use super::{ConversationIdentity, GenerateFunNameError, generate_fun_name};
     use std::{
         collections::VecDeque,
         sync::{Arc, Mutex},
@@ -174,7 +170,10 @@ mod tests {
 
     #[tokio::test]
     async fn parallel_nudge_attempts_succeed_exactly_five_times() -> anyhow::Result<()> {
-        let identity = Arc::new(SessionIdentity::new("codex", "agile-alpaca".to_string()));
+        let identity = Arc::new(ConversationIdentity::new(
+            "codex",
+            "agile-alpaca".to_string(),
+        ));
         let mut tasks = Vec::new();
         for _ in 0..20 {
             let identity = identity.clone();
@@ -195,9 +194,8 @@ mod tests {
 
     #[tokio::test]
     async fn rename_returns_the_old_label_and_stops_nudges() {
-        let identity = SessionIdentity::new("codex", "agile-alpaca".to_string());
-        assert_eq!(identity.agent_id().as_str(), "codex-agile-alpaca");
-        assert_eq!(identity.ownership_key().as_str(), "codex-agile-alpaca");
+        let identity = ConversationIdentity::new("codex", "agile-alpaca".to_string());
+        assert_eq!(identity.convo_id().as_str(), "codex-agile-alpaca");
         assert_eq!(identity.generated_label(), "agile-alpaca");
         assert_eq!(
             identity.rename("invoice-processing".to_string()).await,

@@ -81,6 +81,96 @@ describe('RecordingStore', () => {
     ])
   })
 
+  it('deduplicates accepted batch ids independently per target', async () => {
+    const events = [{ ts: 100, type: 3, data: {} }]
+
+    expect(await store.appendBatch('target-dedupe', 1, events, 'batch-a')).toBe(
+      true,
+    )
+    const beforeRetry = await readFile(
+      join(dir, 'target-dedupe.ndjson'),
+      'utf8',
+    )
+
+    expect(await store.appendBatch('target-dedupe', 1, events, 'batch-a')).toBe(
+      false,
+    )
+    expect(await readFile(join(dir, 'target-dedupe.ndjson'), 'utf8')).toBe(
+      beforeRetry,
+    )
+    expect(await store.appendBatch('target-other', 2, events, 'batch-a')).toBe(
+      true,
+    )
+  })
+
+  it('appends every batch when no batch id is provided', async () => {
+    const events = [{ ts: 100, type: 3, data: {} }]
+
+    expect(await store.appendBatch('target-no-id', 1, events)).toBe(true)
+    expect(await store.appendBatch('target-no-id', 1, events)).toBe(true)
+
+    const text = await readFile(join(dir, 'target-no-id.ndjson'), 'utf8')
+    expect(text.trim().split('\n')).toHaveLength(2)
+  })
+
+  it('serializes concurrent retries before checking the batch id', async () => {
+    const events = [{ ts: 100, type: 3, data: {} }]
+
+    const results = await Promise.all([
+      store.appendBatch('target-concurrent', 1, events, 'batch-a'),
+      store.appendBatch('target-concurrent', 1, events, 'batch-a'),
+    ])
+
+    expect(results.sort()).toEqual([false, true])
+    const text = await readFile(join(dir, 'target-concurrent.ndjson'), 'utf8')
+    expect(text.trim().split('\n')).toHaveLength(1)
+  })
+
+  it('remembers a batch id only after its append succeeds', async () => {
+    let failCatalog = true
+    store = createRecordingStore({
+      rootDir: dir,
+      getDb: () => {
+        if (failCatalog) throw new Error('catalog unavailable')
+        return getAuditDb()
+      },
+    })
+    const events = [{ ts: 100, type: 3, data: {} }]
+
+    await expect(
+      store.appendBatch('target-retry', 1, events, 'batch-retry'),
+    ).rejects.toThrow('catalog unavailable')
+    failCatalog = false
+
+    expect(
+      await store.appendBatch('target-retry', 1, events, 'batch-retry'),
+    ).toBe(true)
+    const text = await readFile(join(dir, 'target-retry.ndjson'), 'utf8')
+    expect(text.trim().split('\n')).toHaveLength(1)
+  })
+
+  it('evicts the least recently used batch id after 256 entries', async () => {
+    const events = [{ ts: 100, type: 3, data: {} }]
+    for (let index = 0; index < 256; index++) {
+      expect(
+        await store.appendBatch('target-lru', 1, events, `batch-${index}`),
+      ).toBe(true)
+    }
+
+    expect(await store.appendBatch('target-lru', 1, events, 'batch-0')).toBe(
+      false,
+    )
+    expect(await store.appendBatch('target-lru', 1, events, 'batch-256')).toBe(
+      true,
+    )
+    expect(await store.appendBatch('target-lru', 1, events, 'batch-0')).toBe(
+      false,
+    )
+    expect(await store.appendBatch('target-lru', 1, events, 'batch-1')).toBe(
+      true,
+    )
+  })
+
   it('serializes concurrent appends without tearing lines', async () => {
     const events = Array.from({ length: 100 }, (_, index) => ({
       ts: index + 1,

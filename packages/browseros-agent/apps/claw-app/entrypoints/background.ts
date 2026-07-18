@@ -13,6 +13,16 @@ export default defineBackground(() => {
   const relay = createRecordingsRelay({
     resolveServerBaseUrl: resolveBrowserOSServerBaseUrl,
   })
+  const requestResnapshot = (tabId: number) => {
+    // Tabs can disappear between recovery detection and message delivery.
+    try {
+      void chrome.tabs
+        .sendMessage(tabId, { type: 'recorder-resnapshot' })
+        .catch(() => {})
+    } catch {}
+  }
+
+  relay.onTabRecoveredAfterLoss(requestResnapshot)
 
   chrome.runtime.onMessage.addListener((message, sender) => {
     const recorderMessage = message as {
@@ -31,5 +41,14 @@ export default defineBackground(() => {
     return false
   })
 
-  void relay.serverHasRecordings()
+  // Background memory owns the retry queue, so every restart means surviving
+  // documents need a new checkpoint after any batches that died with it.
+  void chrome.tabs
+    .query({})
+    .then((tabs) => {
+      for (const tab of tabs) {
+        if (typeof tab.id === 'number') requestResnapshot(tab.id)
+      }
+    })
+    .catch(() => {})
 })

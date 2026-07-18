@@ -1,8 +1,8 @@
 use super::{error, internal};
 use crate::{
     AppState,
-    domain::SessionId,
     error::{CanonicalError, RequestId},
+    ids::SessionId,
 };
 use axum::{
     Extension, Json,
@@ -75,7 +75,7 @@ pub(super) async fn list(
             .map(|session| session.id().as_str().to_string());
         tab.profile_id = profile.map(|profile| profile.id.clone());
         tab.harness = profile.map(|profile| profile.harness.to_string());
-        tab.color = Some(crate::domain::hex_for_slug(&record.slug).to_string());
+        tab.color = Some(crate::tabs::hex_for_slug(&record.slug).to_string());
         tab.preview_captured_at = state
             .screencast
             .frame_for(record.page_id)

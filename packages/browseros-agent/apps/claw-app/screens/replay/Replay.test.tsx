@@ -18,6 +18,7 @@ mock.module('./ReplayViewport', () => ({
   ReplayViewport: ({ events }: { events: readonly ReplayEvent[] }) => (
     <div
       data-player-targets={events.map((event) => event.targetId).join(',')}
+      data-player-types={events.map((event) => event.type).join(',')}
     />
   ),
 }))
@@ -108,6 +109,14 @@ const events: ReplayEvent[] = [
     sessionId: 'session-1',
     targetId: 'target-a',
     tabId: 1,
+    ts: 1_001,
+    type: 2,
+    data: {},
+  },
+  {
+    sessionId: 'session-1',
+    targetId: 'target-a',
+    tabId: 1,
     ts: 5_000,
     type: 3,
     data: {},
@@ -119,6 +128,14 @@ const events: ReplayEvent[] = [
     ts: 10_000,
     type: 4,
     data: { width: 1280, height: 720 },
+  },
+  {
+    sessionId: 'session-1',
+    targetId: 'target-b',
+    tabId: 2,
+    ts: 10_001,
+    type: 2,
+    data: {},
   },
   {
     sessionId: 'session-1',
@@ -248,11 +265,8 @@ describe('Replay', () => {
         (chip) => chip.textContent,
       ),
     ).toEqual([])
-    expect(
-      container
-        .querySelector('[data-player-targets]')
-        ?.getAttribute('data-player-targets'),
-    ).toBe('')
+    expect(container.textContent).toContain('No visual recording for this tab')
+    expect(container.querySelector('[data-player-targets]')).toBeNull()
 
     replayResult = { ...replayResult, replay: replayData(events) }
     await act(async () => {
@@ -267,7 +281,7 @@ describe('Replay', () => {
       container
         .querySelector('[data-player-targets]')
         ?.getAttribute('data-player-targets'),
-    ).toBe('target-a,target-a')
+    ).toBe('target-a,target-a,target-a')
     expect(
       container
         .querySelector('[data-playback-playing]')
@@ -291,7 +305,7 @@ describe('Replay', () => {
       container
         .querySelector('[data-player-targets]')
         ?.getAttribute('data-player-targets'),
-    ).toBe('target-b,target-b')
+    ).toBe('target-b,target-b,target-b')
     expect(
       container
         .querySelector('[data-playback-time]')
@@ -314,12 +328,62 @@ describe('Replay', () => {
       container
         .querySelector('[data-player-targets]')
         ?.getAttribute('data-player-targets'),
-    ).toBe('target-a,target-a')
+    ).toBe('target-a,target-a,target-a')
     expect(
       container
         .querySelector('[data-playback-time]')
         ?.getAttribute('data-playback-time'),
     ).toBe('0')
+  })
+
+  it('slices orphan mutations and explains where visual playback starts', async () => {
+    const incompleteEvents: ReplayEvent[] = [
+      {
+        sessionId: 'session-1',
+        targetId: 'target-a',
+        tabId: 1,
+        ts: 1_000,
+        type: 3,
+        data: {},
+      },
+      {
+        sessionId: 'session-1',
+        targetId: 'target-a',
+        tabId: 1,
+        ts: 4_000,
+        type: 2,
+        data: {},
+      },
+      {
+        sessionId: 'session-1',
+        targetId: 'target-a',
+        tabId: 1,
+        ts: 5_000,
+        type: 3,
+        data: {},
+      },
+    ]
+    replayResult = {
+      ...replayResult,
+      replay: replayData(incompleteEvents),
+    }
+
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/audit/session-1/replay']}>
+          <Replay />
+        </MemoryRouter>,
+      )
+    })
+
+    expect(
+      container
+        .querySelector('[data-player-types]')
+        ?.getAttribute('data-player-types'),
+    ).toBe('2,3')
+    expect(container.textContent).toContain(
+      'Recording incomplete — playback starts at 0:03',
+    )
   })
 })
 

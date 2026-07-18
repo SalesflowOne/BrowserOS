@@ -3,11 +3,13 @@ use browseros_core::TargetId;
 use claw_server_rust::{
     AppState, build_router,
     config::Config,
-    domain::{AgentRef, DispatchId, Session, SessionId, SessionIdentity},
+    identity::{ClientIdentity, ConversationIdentity},
+    ids::{DispatchId, SessionId},
     services::{
         audit::{DispatchResultSummary, RecordToolDispatchInput},
         tab_activity::{RecordToolInput, ScreencastFrame},
     },
+    sessions::Session,
 };
 use serde_json::json;
 use std::{path::PathBuf, sync::Arc, time::Duration};
@@ -25,6 +27,7 @@ async fn main() -> anyhow::Result<()> {
         session_idle: Duration::from_secs(300),
         session_retention: Duration::from_secs(7_200),
         session_sweep_interval: Duration::from_secs(60),
+        replay_retention_days: 7,
         screencast_screenshot_fallback: true,
         dev_mode: false,
         auth_token: None,
@@ -53,11 +56,11 @@ fn arguments() -> anyhow::Result<(u16, PathBuf)> {
 async fn seed(state: &AppState) -> anyhow::Result<()> {
     let live = Session::new(
         SessionId::new("session-live"),
-        AgentRef::Ephemeral {
+        ClientIdentity::Ephemeral {
             slug: "codex".to_string(),
             label: "Codex".to_string(),
         },
-        SessionIdentity::new("codex", "Research BrowserClaw".to_string()),
+        ConversationIdentity::new("codex", "Research BrowserClaw".to_string()),
         tokio::time::Instant::now(),
     );
     state.sessions.insert_for_testing(live).await;
@@ -106,6 +109,10 @@ async fn seed(state: &AppState) -> anyhow::Result<()> {
             tool_name: "snapshot".to_string(),
         })
         .await;
+    state
+        .audit
+        .claim_target_for_session("target-7", "session-live", "codex-research-browserclaw", 0)
+        .await?;
     state
         .screencast
         .cache_frame(

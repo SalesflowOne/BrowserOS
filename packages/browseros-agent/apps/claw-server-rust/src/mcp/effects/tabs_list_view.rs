@@ -39,7 +39,7 @@ pub fn apply(context: ToolEffectContext<'_>) -> BoxFuture<'_, anyhow::Result<Opt
             .into_iter()
             .map(|session| {
                 (
-                    session.ownership_key().clone(),
+                    session.convo_id().clone(),
                     session.agent().label().to_string(),
                 )
             })
@@ -73,9 +73,9 @@ fn page_id(page: &Value) -> Option<u32> {
 
 fn annotate_page(
     page: &Value,
-    owner: Option<&crate::domain::AgentKey>,
-    caller: &crate::domain::AgentKey,
-    labels: &HashMap<crate::domain::AgentKey, String>,
+    owner: Option<&crate::ids::ConvoId>,
+    caller: &crate::ids::ConvoId,
+    labels: &HashMap<crate::ids::ConvoId, String>,
 ) -> Value {
     let mut annotated = page.clone();
     let Value::Object(fields) = &mut annotated else {
@@ -164,13 +164,13 @@ mod tests {
     -> anyhow::Result<()> {
         let call = crate::mcp::test_support::tool_call("tabs", json!({ "action": "list" })).await?;
         let identity = call.identity.as_ref().unwrap_or_else(|| unreachable!());
-        let other_session = crate::domain::Session::new(
-            crate::domain::SessionId::new("s2"),
-            crate::domain::AgentRef::Ephemeral {
+        let other_session = crate::sessions::Session::new(
+            crate::ids::SessionId::new("s2"),
+            crate::identity::ClientIdentity::Ephemeral {
                 slug: "other".to_string(),
                 label: "Cowork".to_string(),
             },
-            crate::domain::SessionIdentity::new("other", "bright-beaver".to_string()),
+            crate::identity::ConversationIdentity::new("other", "bright-beaver".to_string()),
             tokio::time::Instant::now(),
         );
         call.state
@@ -185,12 +185,12 @@ mod tests {
         call.state
             .sessions
             .ownership()
-            .claim_page(other_session.ownership_key().clone(), PageId(3))
+            .claim_page(other_session.convo_id().clone(), PageId(3))
             .await;
         call.state
             .sessions
             .ownership()
-            .claim_page(other_session.ownership_key().clone(), PageId(9))
+            .claim_page(other_session.convo_id().clone(), PageId(9))
             .await;
         let result = ToolResult::text(
             "all tabs",

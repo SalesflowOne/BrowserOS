@@ -7,11 +7,13 @@ use browseros_core::TargetId;
 use claw_server_rust::{
     AppState, build_router,
     config::Config,
-    domain::{AgentRef, DispatchId, Session, SessionId, SessionIdentity},
+    identity::{ClientIdentity, ConversationIdentity},
+    ids::{DispatchId, SessionId},
     services::{
         audit::{DispatchResultSummary, RecordToolDispatchInput},
         tab_activity::{RecordToolInput, ScreencastFrame},
     },
+    sessions::Session,
 };
 use serde_json::{Value, json};
 use std::{sync::Arc, time::Duration};
@@ -36,6 +38,7 @@ async fn test_app() -> anyhow::Result<TestApp> {
         session_idle: Duration::from_secs(300),
         session_retention: Duration::from_secs(7_200),
         session_sweep_interval: Duration::from_secs(60),
+        replay_retention_days: 7,
         screencast_screenshot_fallback: true,
         dev_mode: false,
         auth_token: None,
@@ -76,11 +79,11 @@ fn json_body(bytes: &[u8]) -> anyhow::Result<Value> {
 fn live_session(session_id: &str) -> Arc<Session> {
     Session::new(
         SessionId::new(session_id),
-        AgentRef::Ephemeral {
+        ClientIdentity::Ephemeral {
             slug: "codex".to_string(),
             label: "Codex".to_string(),
         },
-        SessionIdentity::new("codex", "research-browserclaw".to_string()),
+        ConversationIdentity::new("codex", "research-browserclaw".to_string()),
         tokio::time::Instant::now(),
     )
 }
@@ -214,6 +217,25 @@ async fn canonical_sessions_cancel_and_recordings() -> anyhow::Result<()> {
         json!({ "hasData": false, "sizeBytes": 0, "pageIds": [] })
     );
 
+    app.state
+        .tab_activity
+        .record_tool(RecordToolInput {
+            target_id: TargetId::from("target-7".to_string()),
+            tab_id: 101,
+            page_id: 7,
+            session_id: "session-live".to_string(),
+            url: "https://browseros.com".to_string(),
+            title: "BrowserOS".to_string(),
+            agent_id: session.convo_id().as_str().to_string(),
+            slug: "codex".to_string(),
+            tool_name: "snapshot".to_string(),
+        })
+        .await;
+    app.state
+        .audit
+        .claim_target_for_session("target-7", "session-live", session.convo_id().as_str(), 0)
+        .await?;
+
     let events = "{\"tabPageId\":7,\"ts\":100}\n{\"tabPageId\":7,\"ts\":200}\n";
     let (status, _, bytes) = request(
         &app.router,
@@ -288,7 +310,7 @@ async fn canonical_tabs_previews_screenshots_and_errors() -> anyhow::Result<()> 
             session_id: "session-live".to_string(),
             url: "https://browseros.com".to_string(),
             title: "BrowserOS".to_string(),
-            agent_id: session.agent_id().as_str().to_string(),
+            agent_id: session.convo_id().as_str().to_string(),
             slug: "codex".to_string(),
             tool_name: "snapshot".to_string(),
         })

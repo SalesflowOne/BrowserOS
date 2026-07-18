@@ -25,6 +25,7 @@ const MAX_OPEN_HANDLES = 50
 const IDLE_HANDLE_MS = 30_000
 const RETENTION_INTERVAL_MS = 60 * 60 * 1000
 const DAY_MS = 24 * 60 * 60 * 1000
+const BATCH_ID_LRU_CAPACITY = 256
 
 export interface RecordingEventInput {
   ts: number
@@ -42,11 +43,13 @@ export interface RetentionSweepResult {
 }
 
 export interface RecordingStore {
+  /** Returns false only when this target already accepted the batch id. */
   appendBatch(
     targetId: string,
     tabId: number,
     events: RecordingEventInput[],
-  ): Promise<void>
+    batchId?: string,
+  ): Promise<boolean>
   readRange(
     targetId: string,
     from: number,
@@ -82,7 +85,36 @@ export function createRecordingStore(
   const idleHandleMs = options.idleHandleMs ?? IDLE_HANDLE_MS
   const getDb = options.getDb ?? getAuditDb
   const openHandles = new Map<string, OpenEntry>()
+  /**
+   * Serializes each target's append, retention, and dedupe state so concurrent
+   * relay retries cannot interleave writes or both pass the acceptance check.
+   */
   const chains = new Map<string, Promise<unknown>>()
+  /**
+   * Successful batch ids stay process-local and bounded: enough to absorb
+   * relay retries without turning every target into unbounded durable state.
+   */
+  const acceptedBatchIds = new Map<string, Map<string, undefined>>()
+
+  function hasAcceptedBatchId(targetId: string, batchId: string): boolean {
+    const targetBatchIds = acceptedBatchIds.get(targetId)
+    if (!targetBatchIds?.has(batchId)) return false
+    targetBatchIds.delete(batchId)
+    targetBatchIds.set(batchId, undefined)
+    return true
+  }
+
+  function rememberAcceptedBatchId(targetId: string, batchId: string): void {
+    let targetBatchIds = acceptedBatchIds.get(targetId)
+    if (!targetBatchIds) {
+      targetBatchIds = new Map()
+      acceptedBatchIds.set(targetId, targetBatchIds)
+    }
+    targetBatchIds.set(batchId, undefined)
+    if (targetBatchIds.size <= BATCH_ID_LRU_CAPACITY) return
+    const oldest = targetBatchIds.keys().next().value
+    if (oldest !== undefined) targetBatchIds.delete(oldest)
+  }
 
   function resolvePath(targetId: string): string {
     const root = options.rootDir ?? resolveClawServerPath(RECORDINGS_DIR_NAME)
@@ -171,6 +203,8 @@ export function createRecordingStore(
     }
     const sizeBytes = Buffer.byteLength(payload)
     const entry = await openForAppend(targetId)
+    // The NDJSON append and SQLite catalog cannot share a transaction. Retain
+    // the byte boundary so a catalog failure can restore the file first.
     let originalSize: number | null = null
     try {
       originalSize = (await entry.handle.stat()).size
@@ -257,6 +291,7 @@ export function createRecordingStore(
         .delete(tabRecordings)
         .where(eq(tabRecordings.targetId, targetId))
         .run()
+      acceptedBatchIds.delete(targetId)
       return true
     })
   }
@@ -272,8 +307,19 @@ export function createRecordingStore(
   }
 
   return {
-    appendBatch(targetId, tabId, events) {
-      return enqueue(targetId, () => append(targetId, tabId, events))
+    appendBatch(targetId, tabId, events, batchId) {
+      return enqueue(targetId, async () => {
+        // Check and remember share the target chain; remember only after append
+        // succeeds so a failed delivery remains retryable.
+        if (batchId !== undefined && hasAcceptedBatchId(targetId, batchId)) {
+          return false
+        }
+        await append(targetId, tabId, events)
+        if (batchId !== undefined) {
+          rememberAcceptedBatchId(targetId, batchId)
+        }
+        return true
+      })
     },
     async readRange(targetId, from, to) {
       await chains.get(targetId)?.catch(() => undefined)
@@ -327,6 +373,7 @@ export function createRecordingStore(
     close: closeAll,
     async resetForTesting() {
       await closeAll()
+      acceptedBatchIds.clear()
       if (options.rootDir) {
         await rm(options.rootDir, { recursive: true, force: true })
       }

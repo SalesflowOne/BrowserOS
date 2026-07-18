@@ -1,12 +1,13 @@
 use super::{error, internal};
 use crate::{
     AppState,
-    domain::{Session, SessionId},
     error::{CanonicalError, RequestId},
+    ids::SessionId,
     services::{
         audit::{ListTasksQuery, TaskDetail, TaskStatus, TaskSummary, ToolDispatchRow},
-        replay::ReplayService,
+        recordings::RecordingEventInput,
     },
+    sessions::Session,
 };
 use axum::{
     Extension, Json,
@@ -19,7 +20,10 @@ use claw_api::models::{
     AppendRecordingEventsResponse, CancelSessionResponse, Dispatch, RecordingMetadata,
     SessionDetail, SessionList, SessionStatus, SessionSummary,
 };
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{BTreeSet, HashMap},
+    sync::Arc,
+};
 
 #[derive(Default)]
 struct SessionQuery {
@@ -134,15 +138,26 @@ pub(super) async fn recording(
 ) -> Result<Json<RecordingMetadata>, CanonicalError> {
     require_known_session(&state, &request_id, &session_id).await?;
     let metadata = state
-        .replay
-        .stat_session(&session_id)
+        .replays
+        .meta(&session_id)
         .await
         .map_err(|source| internal(&request_id, source))?;
-    let mut response = RecordingMetadata::new(
-        metadata.has_data,
-        i64::try_from(metadata.size_bytes).unwrap_or(i64::MAX),
-        metadata.tab_page_ids,
-    );
+    let target_ids = metadata
+        .targets
+        .iter()
+        .map(|target| target.target_id.as_str())
+        .collect::<std::collections::HashSet<_>>();
+    let page_ids = state
+        .tab_activity
+        .snapshot()
+        .await
+        .into_iter()
+        .filter(|tab| tab.session_id == session_id && target_ids.contains(tab.target_id.as_str()))
+        .map(|tab| i64::from(tab.page_id))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let mut response = RecordingMetadata::new(metadata.exists, metadata.size_bytes, page_ids);
     response.first_event_at = metadata.first_event_at;
     response.last_event_at = metadata.last_event_at;
     Ok(Json(response))
@@ -154,12 +169,20 @@ pub(super) async fn download_events(
     Path(session_id): Path<String>,
 ) -> Result<Response, CanonicalError> {
     require_known_session(&state, &request_id, &session_id).await?;
-    let bytes = state
-        .replay
-        .read_events(&session_id)
+    let events = state
+        .replays
+        .read_session(&session_id)
         .await
         .map_err(|source| internal(&request_id, source))?;
-    let mut response = Response::new(Body::from(bytes));
+    let mut ndjson = String::new();
+    for event in events {
+        ndjson.push_str(
+            &serde_json::to_string(&event)
+                .map_err(|source| internal(&request_id, source.into()))?,
+        );
+        ndjson.push('\n');
+    }
+    let mut response = Response::new(Body::from(ndjson));
     response.headers_mut().insert(
         header::CONTENT_TYPE,
         HeaderValue::from_static("application/x-ndjson"),
@@ -214,18 +237,44 @@ pub(super) async fn append_events(
             "content-type must be application/x-ndjson",
         ));
     }
-    let lines = body
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(|line| ReplayService::annotate_with_session_id(line, &session_id))
-        .collect::<Vec<_>>();
-    let accepted = i64::try_from(lines.len()).unwrap_or(i64::MAX);
-    state
-        .replay
-        .append_events(&session_id, &lines)
+    let events = parse_recording_events(&body);
+    let Some(target) = state
+        .tab_activity
+        .snapshot()
+        .await
+        .into_iter()
+        .find(|tab| tab.session_id == session_id)
+    else {
+        return Ok(Json(AppendRecordingEventsResponse::new(0)));
+    };
+    let batch_id = headers
+        .get("x-recording-batch-id")
+        .and_then(|value| value.to_str().ok());
+    let appended = state
+        .recordings
+        .append_batch_with_id(&target.target_id, target.tab_id, &events, batch_id)
         .await
         .map_err(|source| internal(&request_id, source))?;
+    let accepted = if appended {
+        i64::try_from(events.len()).unwrap_or(i64::MAX)
+    } else {
+        0
+    };
     Ok(Json(AppendRecordingEventsResponse::new(accepted)))
+}
+
+fn parse_recording_events(body: &str) -> Vec<RecordingEventInput> {
+    body.lines()
+        .filter_map(|line| {
+            let event = serde_json::from_str::<serde_json::Value>(line).ok()?;
+            let ts = event.get("ts")?.as_i64()?;
+            Some(RecordingEventInput {
+                ts,
+                event_type: event.get("type").cloned(),
+                data: event.get("data").cloned(),
+            })
+        })
+        .collect()
 }
 
 async fn require_known_session(
