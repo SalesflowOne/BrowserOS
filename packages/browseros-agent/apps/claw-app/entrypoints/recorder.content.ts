@@ -55,8 +55,22 @@ export default defineContentScript({
       flush: buffer.flushNow,
     })
 
+    let recorderActive = false
+    chrome.runtime.onMessage.addListener((message) => {
+      const recorderMessage = message as { type?: unknown }
+      if (recorderMessage.type !== 'recorder-resnapshot' || !recorderActive) {
+        return false
+      }
+      try {
+        rrweb.record.takeFullSnapshot()
+      } catch (error) {
+        console.warn('[browseros-claw replay] resnapshot failed', error)
+      }
+      return false
+    })
+
     try {
-      rrweb.record({
+      const stopRecording = rrweb.record({
         maskInputOptions: { password: true },
         sampling: {
           mousemove: false,
@@ -67,6 +81,7 @@ export default defineContentScript({
         recordCanvas: false,
         emit: buffer.emit,
       })
+      recorderActive = typeof stopRecording === 'function'
     } catch (error) {
       console.warn('[browseros-claw replay] rrweb.record threw', error)
       buffer.close()
