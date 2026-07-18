@@ -19,6 +19,7 @@ import {
   recordSessionEnd,
   recordSessionStart,
 } from '../../src/services/session-events'
+import { releaseAllOpenClaims } from '../../src/services/tab-claims'
 
 describe('session events', () => {
   beforeEach(() => {
@@ -108,5 +109,36 @@ describe('session events', () => {
         .all()
         .every((claim) => typeof claim.releasedAt === 'number'),
     ).toBe(true)
+  })
+
+  it('releases stale open claims without changing already closed claims', () => {
+    const db = setAuditDbForTesting()
+    db.insert(tabClaims)
+      .values([
+        {
+          targetId: 'target-open',
+          sessionId: 'stale-session',
+          agentId: 'agent',
+          claimedAt: 1,
+        },
+        {
+          targetId: 'target-closed',
+          sessionId: 'closed-session',
+          agentId: 'agent',
+          claimedAt: 2,
+          releasedAt: 3,
+        },
+      ])
+      .run()
+
+    releaseAllOpenClaims(100)
+
+    const claims = db.select().from(tabClaims).all()
+    expect(
+      claims.find((claim) => claim.sessionId === 'stale-session')?.releasedAt,
+    ).toBe(100)
+    expect(
+      claims.find((claim) => claim.sessionId === 'closed-session')?.releasedAt,
+    ).toBe(3)
   })
 })

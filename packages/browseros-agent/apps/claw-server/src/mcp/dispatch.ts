@@ -77,6 +77,7 @@ export interface ToolEffectContext {
   result: ToolResult
   cancelled: boolean
   durationMs: number
+  startedAtMs: number
 }
 
 export type ToolEffect = (context: ToolEffectContext) => ToolResult | undefined
@@ -200,6 +201,7 @@ interface ExecutionOutcome {
   result: ToolResult
   cancelled: boolean
   durationMs: number
+  startedAtMs: number
 }
 
 type ConnectedToolCall = ToolCall & { session: BrowserSession }
@@ -324,6 +326,7 @@ async function executeWithCancellation(
     result,
     cancelled: userCancel.signal.aborted,
     durationMs: Date.now() - dispatchStart,
+    startedAtMs: dispatchStart,
   }
 }
 

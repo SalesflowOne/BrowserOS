@@ -35,6 +35,7 @@ import { captureEvent, shutdownAnalytics } from './services/analytics'
 import { runIntegrityScan } from './services/integrity-scan'
 import { recordingStore, startRecordingRetention } from './services/recordings'
 import { startScreencastPoller } from './services/screencast-poller'
+import { releaseAllOpenClaims } from './services/tab-claims'
 import { publicMcpUrl } from './shared/mcp-url'
 
 async function start(): Promise<void> {
@@ -45,6 +46,14 @@ async function start(): Promise<void> {
     process.exit(1)
   }
   applyClawConfig(config.value)
+
+  releaseAllOpenClaims()
+  // Ingest clients drop unknown-tab batches, so seed identity before health can report ready.
+  const bootstrap = await bootstrapBrowserosBrowser()
+  if (bootstrap) {
+    setBrowserSession(bootstrap.session)
+    await initializeTabTargets(bootstrap.session)
+  }
 
   let shutdown = (): void => process.exit(0)
   const app = createServer({ onShutdown: () => shutdown() })
@@ -73,10 +82,9 @@ async function start(): Promise<void> {
   //
   // Intentionally NOT awaited: writeRuntimeFile owns its own error
   // handling (logs a warning on failure, never throws). Awaiting here
-  // would gate the integrity scan, browser bootstrap, and MCP URL
-  // migration on a best-effort disk write that can hang on a stalled
-  // network / FUSE / container-mounted filesystem even though the
-  // socket is already bound and serving.
+  // would gate the integrity scan and MCP URL migration on a
+  // best-effort disk write that can hang on a stalled network / FUSE /
+  // container-mounted filesystem, even though the socket is already serving.
   void writeRuntimeFile(url)
 
   // Self-heal loop 1: diff manifest vs. on-disk agent configs and
@@ -92,19 +100,7 @@ async function start(): Promise<void> {
     })
   }
 
-  // Attach to the BrowserOS Chromium so MCP `tools/call` dispatches
-  // hit a real browser. The bootstrap soft-fails when BrowserOS is
-  // not reachable: the cockpit keeps serving the UI, connection
-  // routes, and `tools/list`, and `tools/call` continues
-  // to short-circuit with the existing "session not connected"
-  // wire shape until the user restarts the cockpit with BrowserOS
-  // up. Reattach on transient drops is the CdpBackend's job (we
-  // pass `exitOnReconnectFailure: false` so it does not kill the
-  // process).
-  const bootstrap = await bootstrapBrowserosBrowser()
   if (bootstrap) {
-    setBrowserSession(bootstrap.session)
-    await initializeTabTargets(bootstrap.session)
     logger.info('cockpit attached to browseros browser', {
       cdpPort: env.cdpPort,
     })
@@ -128,6 +124,7 @@ async function start(): Promise<void> {
       screencast.stop()
       recordingRetention.stop()
       stopTabTargets()
+      releaseAllOpenClaims()
       setTimeout(() => process.exit(1), 5_000).unref()
       // Drain queued analytics alongside the CDP disconnect so the
       // last session event is not stranded; the 5s kill switch above
@@ -146,6 +143,8 @@ async function start(): Promise<void> {
     const cleanup = (): void => {
       if (exiting) return
       exiting = true
+      recordingRetention.stop()
+      releaseAllOpenClaims()
       setTimeout(() => process.exit(1), 5_000).unref()
       shutdownAnalytics().finally(() => process.exit(0))
     }

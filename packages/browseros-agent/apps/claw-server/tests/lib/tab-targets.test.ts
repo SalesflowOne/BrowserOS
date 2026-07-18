@@ -126,7 +126,12 @@ describe('TabTargetMap', () => {
   it('rebuilds before lookup after the CDP connection epoch changes', async () => {
     const source = new FakeSource()
     source.tabs = [{ tabId: 66, targetId: 'target-f' }]
-    const map = new TabTargetMap(source)
+    const released: string[] = []
+    const map = new TabTargetMap(source, {
+      releaseTargetClaims: (targetId) => {
+        released.push(targetId)
+      },
+    })
     await map.start()
 
     source.currentEpoch++
@@ -134,6 +139,7 @@ describe('TabTargetMap', () => {
 
     expect(await map.targetForTab(77)).toBe('target-g')
     expect(map.tabForTarget('target-f')).toBeUndefined()
+    expect(released).toEqual(['target-f'])
     expect(source.listCalls).toBe(2)
     expect(source.discoveryCalls).toBe(2)
   })

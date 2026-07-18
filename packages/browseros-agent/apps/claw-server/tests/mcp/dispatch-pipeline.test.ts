@@ -58,7 +58,13 @@ describe('dispatch pipeline', () => {
     }> = []
 
     const returned = runEffects(
-      { call: call({}), result, cancelled: false, durationMs: 1 },
+      {
+        call: call({}),
+        result,
+        cancelled: false,
+        durationMs: 1,
+        startedAtMs: 1,
+      },
       [
         {
           name: 'audit',

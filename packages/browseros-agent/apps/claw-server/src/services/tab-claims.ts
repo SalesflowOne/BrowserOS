@@ -13,15 +13,13 @@ export interface ClaimTargetInput {
   targetId: string
   sessionId: string
   agentId: string
+  claimedAt: number
 }
 
 /** Records when an MCP session begins driving a browser target. */
 export function claimTargetForSession(input: ClaimTargetInput): void {
   try {
-    getAuditDb()
-      .insert(tabClaims)
-      .values({ ...input, claimedAt: Date.now() })
-      .run()
+    getAuditDb().insert(tabClaims).values(input).run()
   } catch (error) {
     logClaimWriteFailure('insert', { ...input }, error)
   }
@@ -80,6 +78,19 @@ export function releaseClaimsForTarget(targetId: string): void {
       .run()
   } catch (error) {
     logClaimWriteFailure('release-target', { targetId }, error)
+  }
+}
+
+/** Closes claims left open by sessions that can no longer be alive. */
+export function releaseAllOpenClaims(releasedAt = Date.now()): void {
+  try {
+    getAuditDb()
+      .update(tabClaims)
+      .set({ releasedAt })
+      .where(isNull(tabClaims.releasedAt))
+      .run()
+  } catch (error) {
+    logClaimWriteFailure('release-all', {}, error)
   }
 }
 

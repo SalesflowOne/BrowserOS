@@ -28,6 +28,7 @@ describe('recording claims effect', () => {
         flags: { newPage: true, closePage: false, listTabs: false },
       },
       result: { ...ok, structuredContent: { page: 7 } },
+      startedAtMs: 123,
     } as never)
 
     const claim = getAuditDb().select().from(tabClaims).get()
@@ -35,6 +36,7 @@ describe('recording claims effect', () => {
       targetId: 'target-a',
       sessionId: 'session-a',
       agentId: 'agent-a',
+      claimedAt: 123,
       releasedAt: null,
     })
   })

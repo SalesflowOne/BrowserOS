@@ -101,6 +101,10 @@ export class TabTargetMap {
   private async loadTabs(): Promise<void> {
     await this.source.enableDiscovery()
     const tabs = await this.source.listTabs()
+    const liveTargets = new Set(tabs.map((tab) => tab.targetId))
+    for (const targetId of this.tabByTarget.keys()) {
+      if (!liveTargets.has(targetId)) this.remove(targetId)
+    }
     this.targetByTab.clear()
     this.tabByTarget.clear()
     for (const tab of tabs) this.upsert(tab)

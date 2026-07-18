@@ -13,7 +13,11 @@ import {
 import type { ToolEffect } from '../dispatch'
 
 /** Updates ownership for successful tab creation and closure results. */
-export const applyOwnershipClaims: ToolEffect = ({ call, result }) => {
+export const applyOwnershipClaims: ToolEffect = ({
+  call,
+  result,
+  startedAtMs,
+}) => {
   if (result.isError || !call.agent || !call.key) return undefined
 
   if (call.flags.newPage) {
@@ -35,6 +39,7 @@ export const applyOwnershipClaims: ToolEffect = ({ call, result }) => {
         targetId: live.targetId,
         sessionId: call.sessionId,
         agentId: call.agent.agentId,
+        claimedAt: startedAtMs,
       })
     }
     // The isolation ledger grants this agent access to the result-born page.
