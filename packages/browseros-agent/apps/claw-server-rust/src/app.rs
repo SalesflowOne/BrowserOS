@@ -5,9 +5,9 @@ use crate::{
     routes,
     services::{
         agents::AgentService, audit::AuditService, browser::BrowserService,
-        harness::HarnessService, replay::ReplayService, screencast::ScreencastService,
-        screenshots::ScreenshotService, tab_activity::TabActivityService,
-        tab_targets::TabTargetMap, telemetry::TelemetryService,
+        harness::HarnessService, recordings::RecordingStore, replay::ReplayService,
+        screencast::ScreencastService, screenshots::ScreenshotService,
+        tab_activity::TabActivityService, tab_targets::TabTargetMap, telemetry::TelemetryService,
     },
     storage::JsonStore,
 };
@@ -20,6 +20,7 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub audit: Arc<AuditService>,
     pub replay: Arc<ReplayService>,
+    pub recordings: Arc<RecordingStore>,
     pub screenshots: Arc<ScreenshotService>,
     pub tab_activity: Arc<TabActivityService>,
     pub tab_targets: Arc<TabTargetMap>,
@@ -57,6 +58,12 @@ impl AppState {
             50,
             Duration::from_secs(30),
         ));
+        let recordings = RecordingStore::new(
+            config.browserclaw_dir.join("recordings"),
+            audit.clone(),
+            50,
+            Duration::from_secs(30),
+        );
         let screenshots = Arc::new(ScreenshotService::new(
             config.browserclaw_dir.join("screenshots"),
         ));
@@ -81,6 +88,7 @@ impl AppState {
             config,
             audit,
             replay,
+            recordings,
             screenshots,
             tab_activity,
             tab_targets,

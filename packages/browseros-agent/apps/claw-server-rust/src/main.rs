@@ -16,6 +16,10 @@ async fn main() -> anyhow::Result<()> {
     let _guard = init_tracing(config.clone())?;
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
     let state = AppState::new(config.clone(), Some(shutdown_tx)).await?;
+    let retention_task = state
+        .recordings
+        .clone()
+        .spawn_retention(config.replay_retention_days);
     state.browser.start();
     state
         .screencast
@@ -23,10 +27,14 @@ async fn main() -> anyhow::Result<()> {
         .start(state.browser.clone(), state.tab_activity.clone());
     state.sessions.clone().spawn_idle_sweeper();
     if cli.stdio {
-        return serve_stdio(state).await;
+        let result = serve_stdio(state).await;
+        retention_task.abort();
+        return result;
     }
     spawn_signal_shutdown(state.clone());
-    serve(state, config, shutdown_rx).await
+    let result = serve(state, config, shutdown_rx).await;
+    retention_task.abort();
+    result
 }
 
 fn init_tracing(config: Arc<claw_server_rust::config::Config>) -> anyhow::Result<WorkerGuard> {
@@ -99,6 +107,7 @@ async fn serve_stdio(state: AppState) -> anyhow::Result<()> {
         .context("failed to start stdio MCP server")?;
     running.waiting().await.context("stdio MCP server failed")?;
     state.sessions.shutdown().await?;
+    state.recordings.close().await;
     state.screencast.stop();
     state.browser.stop();
     Ok(())
@@ -125,6 +134,7 @@ fn spawn_signal_shutdown(state: AppState) {
             Ok(drained) => info!(drained, "drained sessions after shutdown signal"),
             Err(err) => error!(error = %err, "session drain after shutdown signal failed"),
         }
+        state.recordings.close().await;
         state.screencast.stop();
         state.browser.stop();
         if let Some(tx) = state.shutdown.lock().await.take() {
@@ -180,6 +190,7 @@ mod tests {
             session_idle: Duration::from_secs(300),
             session_retention: Duration::from_secs(7_200),
             session_sweep_interval: Duration::from_secs(60),
+            replay_retention_days: 7,
             screencast_screenshot_fallback: true,
             dev_mode: false,
             auth_token: None,

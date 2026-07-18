@@ -53,6 +53,7 @@ async fn test_app_with_options(
         session_idle: Duration::from_secs(300),
         session_retention: Duration::from_secs(7_200),
         session_sweep_interval: Duration::from_secs(60),
+        replay_retention_days: 7,
         screencast_screenshot_fallback,
         dev_mode: false,
         auth_token: None,
