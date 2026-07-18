@@ -5,6 +5,7 @@ pub mod harness;
 pub mod recordings;
 pub mod replay;
 pub mod replay_tabs;
+pub mod replays;
 pub mod screencast;
 pub mod screenshots;
 pub mod tab_activity;

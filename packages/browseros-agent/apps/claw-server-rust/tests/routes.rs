@@ -145,6 +145,122 @@ async fn request_status(router: &Router, method: &str, uri: &str) -> anyhow::Res
     Ok(router.clone().oneshot(request).await?.status())
 }
 
+#[tokio::test]
+async fn recordings_routes_expose_health_unknown_tab_and_body_limit_contracts() -> anyhow::Result<()>
+{
+    let app = test_app().await?;
+    let (status, health) = request_json(&app.router, "GET", "/recordings/health", None).await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(health, json!({ "ok": true }));
+
+    let unknown = Request::builder()
+        .method("POST")
+        .uri("/recordings/tabs/99/events")
+        .body(Body::from(r#"{"ts":100,"type":3,"data":{}}"#))?;
+    let response = app.router.clone().oneshot(unknown).await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&to_bytes(response.into_body(), usize::MAX).await?)?,
+        json!({ "ok": false, "reason": "unknown tab", "accepted": 0 })
+    );
+
+    let oversized = Request::builder()
+        .method("POST")
+        .uri("/recordings/tabs/99/events")
+        .header(header::CONTENT_LENGTH, (8 * 1024 * 1024 + 1).to_string())
+        .body(Body::from("{}"))?;
+    assert_eq!(
+        app.router.clone().oneshot(oversized).await?.status(),
+        StatusCode::PAYLOAD_TOO_LARGE
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn recordings_pipeline_ingests_and_replays_only_the_claimed_target() -> anyhow::Result<()> {
+    let mock = MockCdp::start().await?;
+    mock.add_tab(11, "target-a", 1).await;
+    mock.add_tab(22, "target-b", 1).await;
+    let app = test_app_with_cdp_port(mock.cdp_port, false).await?;
+    app.state.browser.connect_once_for_testing().await?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_millis() as i64;
+
+    let first_body = [
+        json!({ "ts": now + 200, "type": 3, "data": { "id": "later" } }),
+        json!({ "ts": now - 100, "type": 3, "data": { "id": "before" } }),
+        json!({ "ts": now + 100, "type": 3, "data": { "id": "earlier" } }),
+        json!({ "ts": now + 6_000, "type": 3, "data": { "id": "after" } }),
+    ]
+    .into_iter()
+    .map(|event| event.to_string())
+    .collect::<Vec<_>>()
+    .join("\n");
+    for (tab_id, body) in [
+        (11, first_body),
+        (
+            22,
+            json!({ "ts": now + 150, "type": 3, "data": { "id": "unclaimed" } }).to_string(),
+        ),
+    ] {
+        let request = Request::builder()
+            .method("POST")
+            .uri(format!("/recordings/tabs/{tab_id}/events"))
+            .body(Body::from(body))?;
+        let response = app.router.clone().oneshot(request).await?;
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+    app.state
+        .audit
+        .claim_target_for_session("target-a", "session-a", "agent", now)
+        .await?;
+    app.state
+        .audit
+        .release_target_for_session("target-a", "session-a")
+        .await?;
+
+    let response = app
+        .router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/audit/replays/session-a")
+                .body(Body::empty())?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok()),
+        Some("application/x-ndjson")
+    );
+    let body = String::from_utf8(to_bytes(response.into_body(), usize::MAX).await?.to_vec())?;
+    let events = body
+        .lines()
+        .map(serde_json::from_str::<Value>)
+        .collect::<Result<Vec<_>, _>>()?;
+    assert_eq!(
+        events
+            .iter()
+            .map(|event| event["ts"].as_i64())
+            .collect::<Vec<_>>(),
+        [Some(now + 100), Some(now + 200)]
+    );
+    assert!(events.iter().all(|event| event["targetId"] == "target-a"));
+
+    let (status, meta) =
+        request_json(&app.router, "GET", "/audit/replays/session-a/meta", None).await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(meta["exists"], true);
+    assert_eq!(meta["targets"][0]["targetId"], "target-a");
+    assert_eq!(meta["targets"][0]["tabId"], 11);
+    drop(mock);
+    Ok(())
+}
+
 fn response_body_value(headers: &HeaderMap, bytes: &[u8]) -> anyhow::Result<Value> {
     if bytes.is_empty() {
         return Ok(Value::Null);

@@ -6,6 +6,7 @@ use crate::{
     services::{
         audit::{ListDispatchesQuery, ListTasksQuery, TaskStatus},
         harness::Harness,
+        recordings::RecordingEventInput,
         replay::ReplayService,
         replay_tabs::{ReplayTabsResponse, list_replay_tabs},
         tab_activity::EnrichedTabRecord,
@@ -13,7 +14,7 @@ use crate::{
 };
 use axum::{
     Json, Router,
-    body::Body,
+    body::{Body, to_bytes},
     extract::{Path, Query, Request, State},
     http::{HeaderValue, Method, StatusCode, header},
     middleware::{self, Next},
@@ -25,6 +26,9 @@ use serde_json::{Value, json};
 use std::{collections::HashMap, str::FromStr, time::Instant};
 use tracing::{Instrument, info_span};
 use ulid::Ulid;
+
+const MAX_RECORDING_BODY_BYTES: usize = 8 * 1024 * 1024;
+const MAX_SAFE_TAB_ID: i64 = 9_007_199_254_740_991;
 
 pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
@@ -48,6 +52,13 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/audit/tasks", get(audit_tasks))
         .route("/audit/tasks/{session_id}", get(audit_task_detail))
         .route("/audit/screenshot/{dispatch_id}", get(audit_screenshot))
+        .route("/recordings/health", get(recordings_health))
+        .route(
+            "/recordings/tabs/{tab_id}/events",
+            post(recordings_post_events),
+        )
+        .route("/audit/replays/{session_id}", get(audit_replay_get))
+        .route("/audit/replays/{session_id}/meta", get(audit_replay_meta))
         .route(
             "/audit/replay/{session_id}/events",
             post(replay_post_events),
@@ -358,6 +369,123 @@ async fn audit_screenshot(
         ],
         bytes,
     ))
+}
+
+async fn recordings_health() -> Json<Value> {
+    Json(json!({ "ok": true }))
+}
+
+async fn recordings_post_events(
+    State(state): State<AppState>,
+    Path(tab_id): Path<String>,
+    request: Request,
+) -> Response {
+    if request
+        .headers()
+        .get(header::CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<usize>().ok())
+        .is_some_and(|length| length > MAX_RECORDING_BODY_BYTES)
+    {
+        return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+    }
+    let bytes = match to_bytes(request.into_body(), MAX_RECORDING_BODY_BYTES + 1).await {
+        Ok(bytes) if bytes.len() <= MAX_RECORDING_BODY_BYTES => bytes,
+        Ok(_) | Err(_) => return StatusCode::PAYLOAD_TOO_LARGE.into_response(),
+    };
+    let tab_id = tab_id
+        .chars()
+        .all(|ch| ch.is_ascii_digit())
+        .then(|| tab_id.parse::<i64>().ok())
+        .flatten()
+        .filter(|tab_id| *tab_id <= MAX_SAFE_TAB_ID);
+    let target_id = match tab_id {
+        Some(tab_id) => {
+            let browser = state.browser.state();
+            state
+                .tab_targets
+                .resolve(tab_id, state.browser.session().await, browser.epoch)
+                .await
+        }
+        None => None,
+    };
+    let (Some(tab_id), Some(target_id)) = (tab_id, target_id) else {
+        return Json(json!({
+            "ok": false,
+            "reason": "unknown tab",
+            "accepted": 0,
+        }))
+        .into_response();
+    };
+    let events = String::from_utf8_lossy(&bytes)
+        .lines()
+        .filter_map(parse_recording_event)
+        .collect::<Vec<_>>();
+    if events.is_empty() {
+        return Json(json!({ "ok": true, "accepted": 0 })).into_response();
+    }
+    if let Err(error) = state
+        .recordings
+        .append_batch(&target_id, tab_id, &events)
+        .await
+    {
+        tracing::warn!(tab_id, target_id, error = %error, "recording batch append failed");
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "ok": false,
+                "reason": "append failed",
+                "accepted": 0,
+            })),
+        )
+            .into_response();
+    }
+    Json(json!({ "ok": true, "accepted": events.len() })).into_response()
+}
+
+fn parse_recording_event(line: &str) -> Option<RecordingEventInput> {
+    if line.trim().is_empty() {
+        return None;
+    }
+    let value = serde_json::from_str::<Value>(line).ok()?;
+    let event = value.as_object()?;
+    Some(RecordingEventInput {
+        ts: event.get("ts")?.as_i64()?,
+        event_type: event.get("type").cloned(),
+        data: event.get("data").cloned(),
+    })
+}
+
+async fn audit_replay_get(
+    State(state): State<AppState>,
+    Path(session_id): Path<String>,
+) -> AppResult<Response> {
+    let events = state.replays.read_session(&session_id).await?;
+    if events.is_empty() {
+        return Ok((
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "ok": false,
+                "reason": "no replay for this session",
+            })),
+        )
+            .into_response());
+    }
+    let mut body = String::new();
+    for event in events {
+        body.push_str(&serde_json::to_string(&event)?);
+        body.push('\n');
+    }
+    Ok(([(header::CONTENT_TYPE, "application/x-ndjson")], body).into_response())
+}
+
+async fn audit_replay_meta(
+    State(state): State<AppState>,
+    Path(session_id): Path<String>,
+) -> AppResult<Json<Value>> {
+    Ok(Json(serde_json::to_value(
+        state.replays.meta(&session_id).await?,
+    )?))
 }
 
 async fn replay_post_events(
