@@ -1,0 +1,216 @@
+import { expect } from 'bun:test'
+import {
+  type ApiError,
+  Harness,
+  ResponseError,
+} from '../../../packages/claw-api/src'
+import type { ContractServer } from './server-adapters'
+
+export interface ContractCase {
+  name: string
+  run(server: ContractServer): Promise<void>
+}
+
+export const contractCases: ContractCase[] = [
+  {
+    name: 'health',
+    async run({ api }) {
+      expect(await api.getHealth()).toEqual({ status: 'ok' })
+    },
+  },
+  {
+    name: 'system info',
+    async run({ api }) {
+      const value = await api.getSystemInfo()
+      expect(value.product).toBe('BrowserClaw')
+      expect(value.version).toBeString()
+      expect(value.url).toStartWith('http://127.0.0.1:')
+    },
+  },
+  {
+    name: 'telemetry read and update',
+    async run({ api }) {
+      expect((await api.getTelemetry()).distinctId).toBeString()
+      const updated = await api.updateTelemetry({
+        updateTelemetryRequest: { consent: false },
+      })
+      expect(updated.consent).toBe(false)
+      expect((await api.getTelemetry()).consent).toBe(false)
+    },
+  },
+  {
+    name: 'session list and detail',
+    async run({ api, liveSessionId }) {
+      const list = await api.listSessions({ limit: 100 })
+      expect(list.items.some((item) => item.sessionId === liveSessionId)).toBe(
+        true,
+      )
+      const detail = await api.getSession({ sessionId: liveSessionId })
+      expect(detail.session.sessionId).toBe(liveSessionId)
+      expect(detail.dispatches[0]).toMatchObject({
+        dispatchId: 1,
+        pageId: 7,
+        targetId: 'target-7',
+        hasScreenshot: true,
+      })
+      expect(JSON.stringify(detail)).not.toMatch(/agentId|taskId|runId/)
+      expect(JSON.stringify(detail)).not.toContain(':null')
+    },
+  },
+  {
+    name: 'idle live cancellation',
+    async run({ api, liveSessionId }) {
+      expect(await api.cancelSession({ sessionId: liveSessionId })).toEqual({
+        cancelled: 0,
+      })
+    },
+  },
+  {
+    name: 'empty recording metadata',
+    async run({ api, liveSessionId }) {
+      expect(await api.getRecording({ sessionId: liveSessionId })).toEqual({
+        hasData: false,
+        sizeBytes: 0,
+        pageIds: [],
+      })
+    },
+  },
+  {
+    name: 'recording append and NDJSON download',
+    async run({ api, baseUrl, liveSessionId }) {
+      const body = '{"tabPageId":7,"ts":100}\n{"tabPageId":7,"ts":200}\n'
+      expect(
+        await api.appendRecordingEvents({ sessionId: liveSessionId, body }),
+      ).toEqual({ accepted: 2 })
+      const response = await fetch(
+        `${baseUrl}/api/v1/sessions/${liveSessionId}/recording/events`,
+      )
+      expect(response.status).toBe(200)
+      expect(response.headers.get('content-type')).toContain(
+        'application/x-ndjson',
+      )
+      expect((await response.text()).trim().split('\n')).toHaveLength(2)
+    },
+  },
+  {
+    name: 'tab list and JPEG artifacts',
+    async run({ api, baseUrl, screenshotDispatchId }) {
+      const tabs = await api.listTabs()
+      expect(tabs.items[0]).toMatchObject({
+        tabId: 101,
+        pageId: 7,
+        targetId: 'target-7',
+        sessionId: 'session-live',
+      })
+      expect(JSON.stringify(tabs)).not.toContain('jpegBase64')
+
+      for (const path of [
+        '/api/v1/tabs/7/preview',
+        `/api/v1/dispatches/${screenshotDispatchId}/screenshot`,
+      ]) {
+        const response = await fetch(`${baseUrl}${path}`)
+        expect(response.status, path).toBe(200)
+        expect(response.headers.get('content-type'), path).toBe('image/jpeg')
+        expect(
+          Array.from(new Uint8Array(await response.arrayBuffer())),
+          path,
+        ).toEqual([0xff, 0xd8])
+      }
+    },
+  },
+  {
+    name: 'connection lifecycle',
+    async run({ api }) {
+      expect(Array.isArray((await api.listConnections()).items)).toBe(true)
+      expect(
+        await api.connectHarness({ harness: Harness.Codex }),
+      ).toMatchObject({ harness: Harness.Codex, installed: true })
+      expect(
+        await api.disconnectHarness({ harness: Harness.Codex }),
+      ).toMatchObject({ harness: Harness.Codex, installed: false })
+    },
+  },
+  {
+    name: 'invalid limit',
+    async run({ api }) {
+      await expectApiError(
+        () => api.listSessions({ limit: 0 }),
+        400,
+        'invalid_request',
+      )
+    },
+  },
+  {
+    name: 'unknown session',
+    async run({ api }) {
+      await expectApiError(
+        () => api.getSession({ sessionId: 'missing' }),
+        404,
+        'session_not_found',
+      )
+    },
+  },
+  {
+    name: 'ended recording write',
+    async run({ api, endedSessionId }) {
+      await expectApiError(
+        () =>
+          api.appendRecordingEvents({
+            sessionId: endedSessionId,
+            body: '{"ts":300}\n',
+          }),
+        410,
+        'session_ended',
+      )
+    },
+  },
+  {
+    name: 'unknown harness',
+    async run({ api }) {
+      await expectApiError(
+        () => api.connectHarness({ harness: 'Unknown' as Harness }),
+        404,
+        'harness_not_found',
+      )
+    },
+  },
+  {
+    name: 'missing binary artifacts',
+    async run({ baseUrl }) {
+      for (const [path, code] of [
+        ['/api/v1/tabs/999/preview', 'preview_not_found'],
+        ['/api/v1/dispatches/999/screenshot', 'screenshot_not_found'],
+      ] as const) {
+        const response = await fetch(`${baseUrl}${path}`)
+        expect(response.status, path).toBe(404)
+        expect(await response.json(), path).toMatchObject({ code })
+      }
+    },
+  },
+  {
+    name: 'shutdown',
+    async run({ api }) {
+      expect(await api.shutdown()).toEqual({ status: 'ok' })
+    },
+  },
+]
+
+async function expectApiError(
+  request: () => Promise<unknown>,
+  status: number,
+  code: string,
+): Promise<void> {
+  try {
+    await request()
+  } catch (error) {
+    expect(error).toBeInstanceOf(ResponseError)
+    const response = (error as ResponseError).response
+    expect(response.status).toBe(status)
+    const body = (await response.json()) as ApiError
+    expect(body).toMatchObject({ code, message: expect.any(String) })
+    if (!body.requestId) throw new Error('canonical error omitted requestId')
+    expect(response.headers.get('x-request-id')).toBe(body.requestId)
+    return
+  }
+  throw new Error(`expected ${status} ${code}`)
+}
