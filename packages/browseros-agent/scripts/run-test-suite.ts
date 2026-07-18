@@ -33,6 +33,10 @@ const testSuites = {
       argv: [bun, 'run', 'test'],
     },
     {
+      label: 'claw API contract tests',
+      argv: [bun, 'run', 'test:claw-api-contract'],
+    },
+    {
       label: 'agent tests',
       cwd: resolve(projectRoot, 'apps/app'),
       argv: [bun, 'run', 'test'],
