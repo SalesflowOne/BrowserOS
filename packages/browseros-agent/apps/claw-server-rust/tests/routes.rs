@@ -195,13 +195,18 @@ async fn recordings_pipeline_ingests_and_replays_only_the_claimed_target() -> an
     ]
     .into_iter()
     .map(|event| event.to_string())
+    .chain([
+        "{bad json".to_string(),
+        json!({ "type": 3, "data": { "id": "missing-ts" } }).to_string(),
+    ])
     .collect::<Vec<_>>()
     .join("\n");
-    for (tab_id, body) in [
-        (11, first_body),
+    for (tab_id, body, accepted) in [
+        (11, first_body, 4),
         (
             22,
             json!({ "ts": now + 150, "type": 3, "data": { "id": "unclaimed" } }).to_string(),
+            1,
         ),
     ] {
         let request = Request::builder()
@@ -210,6 +215,10 @@ async fn recordings_pipeline_ingests_and_replays_only_the_claimed_target() -> an
             .body(Body::from(body))?;
         let response = app.router.clone().oneshot(request).await?;
         assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&to_bytes(response.into_body(), usize::MAX).await?)?,
+            json!({ "ok": true, "accepted": accepted })
+        );
     }
     app.state
         .audit
