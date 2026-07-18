@@ -72,6 +72,8 @@ describe('/tabs/activity route', () => {
     const agent = agentIdentityFromClient(identity)
     stubSession()
     tabActivityRegistry.recordTool({
+      sessionId: 'session-1',
+      tabId: 101,
       agentId: agent.agentId,
       slug: agent.slug,
       pageId: 1,
@@ -98,6 +100,8 @@ describe('/tabs/activity route', () => {
     }
     expect(body.tabs).toHaveLength(1)
     const row = body.tabs[0]
+    expect(row).not.toHaveProperty('sessionId')
+    expect(row).not.toHaveProperty('tabId')
     expect(row).toMatchObject({
       targetId: 't1',
       agentId: agent.agentId,
@@ -116,6 +120,8 @@ describe('/tabs/activity route', () => {
   test('emits screencast: null when the cache has no frame for the page', async () => {
     stubSession()
     tabActivityRegistry.recordTool({
+      sessionId: 'session-1',
+      tabId: 101,
       agentId: 'a',
       slug: 'a',
       pageId: 1,
@@ -132,6 +138,8 @@ describe('/tabs/activity route', () => {
   test('emits screencast frame when the cache has one for the page', async () => {
     stubSession()
     tabActivityRegistry.recordTool({
+      sessionId: 'session-1',
+      tabId: 101,
       agentId: 'a',
       slug: 'a',
       pageId: 1,
@@ -158,6 +166,8 @@ describe('/tabs/activity route', () => {
   test('falls back to slug when the session identity is gone', async () => {
     stubSession()
     tabActivityRegistry.recordTool({
+      sessionId: 'session-1',
+      tabId: 101,
       agentId: 'unknown',
       slug: 'orphan-slug',
       pageId: 1,

@@ -16,10 +16,20 @@
 import type { MiddlewareHandler } from 'hono'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
+import { canonicalApiError } from './lib/api-error'
 import { HttpError } from './lib/errors'
 import { logger } from './lib/logger'
-import { type RequestContextEnv, requestIdMiddleware } from './lib/request-id'
+import {
+  type RequestContextEnv,
+  requestIdFor,
+  requestIdMiddleware,
+} from './lib/request-id'
 import { agentsControlRoute } from './routes/agents-control'
+import {
+  type CanonicalApiDependencies,
+  createCanonicalApiRoute,
+} from './routes/api-v1'
+import { canonicalApiDependencies } from './routes/api-v1/production'
 import { auditRoute } from './routes/audit'
 import { auditScreenshotsRoute } from './routes/audit/screenshots'
 import { auditTasksRoute } from './routes/audit/tasks'
@@ -65,6 +75,7 @@ export const requestFailureLog: MiddlewareHandler = async (c, next) => {
 
 interface CreateServerOptions {
   onShutdown?: () => void
+  canonicalApiDependencies?: CanonicalApiDependencies
 }
 
 export function createServer(options: CreateServerOptions = {}) {
@@ -92,6 +103,25 @@ export function createServer(options: CreateServerOptions = {}) {
   // JSON body.
   app.onError((err, c) => {
     captureRouteError(err, c.req.path, c.req.method)
+    if (
+      c.req.path.startsWith('/api/v1/') ||
+      c.req.path === '/system/health' ||
+      c.req.path === '/system/shutdown'
+    ) {
+      logger.error('Unhandled canonical route error', {
+        path: c.req.path,
+        method: c.req.method,
+        error: err instanceof Error ? err.message : String(err),
+      })
+      return c.json(
+        canonicalApiError(
+          'internal_error',
+          'internal server error',
+          requestIdFor(c),
+        ),
+        500,
+      )
+    }
     if (err instanceof HttpError) {
       return c.json({ error: err.message }, err.status as 400 | 404 | 409 | 500)
     }
@@ -107,6 +137,12 @@ export function createServer(options: CreateServerOptions = {}) {
   // The single MCP endpoint mounts at `/mcp`.
   return app
     .route('/', createSystemRoute({ onShutdown: options.onShutdown }))
+    .route(
+      '/',
+      createCanonicalApiRoute(
+        options.canonicalApiDependencies ?? canonicalApiDependencies,
+      ),
+    )
     .route('/', mcpRoute)
     .route('/', tabsRoute)
     .route('/', agentsControlRoute)

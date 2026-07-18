@@ -112,6 +112,8 @@ describe('TabActivityRegistry parallel-landing simulation', () => {
     for (const landing of PARALLEL_LANDINGS) {
       nowMs = baseline + landing.atMs
       registry.recordTool({
+        sessionId: 'session-1',
+        tabId: 101,
         agentId: 'a1',
         slug: 'finance-ops',
         pageId: landing.pageId,
@@ -181,6 +183,8 @@ describe('TabActivityRegistry parallel-landing simulation', () => {
     // another full window.
     nowMs = baseline + 25_000
     registry.recordTool({
+      sessionId: 'session-1',
+      tabId: 101,
       agentId: 'a1',
       slug: 'finance-ops',
       pageId: 7,

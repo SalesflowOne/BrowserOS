@@ -27,7 +27,9 @@ import {
 import { screencastCache } from '../../services/screencast-cache'
 import { resolveAgentDisplay } from './agent-display'
 
-interface EnrichedTabRecord extends TabActivityRecord {
+type LegacyTabActivityRecord = Omit<TabActivityRecord, 'sessionId' | 'tabId'>
+
+interface EnrichedTabRecord extends LegacyTabActivityRecord {
   agentLabel: string
   harness: string | null
   color: string | null
@@ -66,7 +68,8 @@ export const tabsRoute = new Hono().get('/tabs/activity', (c) => {
     const screencast = frame
       ? { jpegBase64: frame.jpegBase64, capturedAt: frame.capturedAt }
       : null
-    return { ...tab, ...display, screencast }
+    const { sessionId: _sessionId, tabId: _tabId, ...legacyTab } = tab
+    return { ...legacyTab, ...display, screencast }
   })
   return c.json({ tabs: enriched })
 })
