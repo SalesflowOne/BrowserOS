@@ -1,7 +1,9 @@
 use crate::{
     AppState,
-    domain::{AgentKey, AgentRef, DispatchId, Session, SessionId},
+    identity::ClientIdentity,
+    ids::{ConvoId, DispatchId, SessionId},
     mcp::{effects, guards},
+    sessions::Session,
 };
 use browseros_core::{BrowserSession, PageId};
 use browseros_mcp::{
@@ -33,8 +35,8 @@ pub struct ToolFlags {
 #[derive(Clone)]
 pub struct ToolIdentity {
     pub session: Arc<Session>,
-    pub agent: AgentRef,
-    pub ownership_key: AgentKey,
+    pub agent: ClientIdentity,
+    pub ownership_key: ConvoId,
     pub agent_label: String,
 }
 

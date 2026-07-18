@@ -1,15 +1,17 @@
+mod replay_tabs;
+
 use crate::{
     AppState,
-    domain::SessionId,
     error::{AppError, AppResult},
+    ids::{ConvoId, SessionId},
     mcp::streamable_http_service,
     services::{
         audit::{ListDispatchesQuery, ListTasksQuery, TaskStatus},
         harness::Harness,
         replay::ReplayService,
-        replay_tabs::{ReplayTabsResponse, list_replay_tabs},
         tab_activity::EnrichedTabRecord,
     },
+    tabs::hex_for_slug,
 };
 use axum::{
     Json, Router,
@@ -20,6 +22,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, options, post},
 };
+use replay_tabs::{ReplayTabsResponse, list_replay_tabs};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{collections::HashMap, str::FromStr, time::Instant};
@@ -195,7 +198,10 @@ async fn system_telemetry_consent(
 }
 
 async fn agents_cancel(State(state): State<AppState>, Path(agent_id): Path<String>) -> Response {
-    let cancelled = state.sessions.cancel_by_agent(&agent_id).await;
+    let cancelled = state
+        .sessions
+        .cancel_by_convo(&ConvoId::from(agent_id.as_str()))
+        .await;
     if cancelled == 0 {
         // claw-app parses this 404 body as a CancelAgentResult (idle state,
         // not a failure), so it must keep the TS shape, not `{"error":...}`.
@@ -219,7 +225,7 @@ async fn tabs_activity(State(state): State<AppState>) -> AppResult<Json<Value>> 
     let live_sessions = state.sessions.snapshot().await;
     let sessions_by_agent_id = live_sessions
         .iter()
-        .map(|session| (session.agent_id().as_str(), session))
+        .map(|session| (session.convo_id().as_str(), session))
         .collect::<HashMap<_, _>>();
     let tabs = state.tab_activity.snapshot().await;
     let mut enriched = Vec::with_capacity(tabs.len());
@@ -238,7 +244,7 @@ async fn tabs_activity(State(state): State<AppState>) -> AppResult<Json<Value>> 
                 .or_else(|| session.map(|session| session.agent().label().to_string()))
                 .unwrap_or_else(|| record.slug.clone()),
             harness: profile.map(|profile| profile.harness.to_string()),
-            color: Some(crate::domain::hex_for_slug(&record.slug).to_string()),
+            color: Some(hex_for_slug(&record.slug).to_string()),
             screencast: state.screencast.frame_for(record.page_id).await,
             record,
         });

@@ -1,3 +1,13 @@
+//! Identity glossary — the four scopes:
+//! - `ProfileId` — a stored agent profile configured by the user and persisted
+//!   by `services/agents`.
+//! - `SessionId` — one MCP transport connection, minted per handshake.
+//! - `ConvoId` — one conversation, `"{client_slug}-{fun_name}"`, minted with
+//!   the session and stable for its life. Serialized as `agentId` in JSON and
+//!   `agent_id` in the database because those wire names predate this type.
+//!   Keys page ownership and audit attribution.
+//! - `DispatchId` — one tool call.
+
 use serde::{Deserialize, Serialize};
 use std::{fmt, str::FromStr};
 use ulid::Ulid;
@@ -54,8 +64,8 @@ macro_rules! string_id {
 }
 
 string_id!(SessionId);
-string_id!(AgentId);
 string_id!(ProfileId);
+string_id!(ConvoId);
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
