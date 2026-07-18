@@ -1,4 +1,4 @@
-use super::{error, internal};
+use super::error;
 use crate::{AppState, error::CanonicalError, error::RequestId};
 use axum::{
     Extension, Json,
@@ -13,23 +13,9 @@ pub(super) async fn health() -> Json<HealthResponse> {
     Json(HealthResponse::default())
 }
 
-pub(super) async fn shutdown(
-    Extension(request_id): Extension<RequestId>,
-    State(state): State<AppState>,
-) -> Result<Json<ShutdownResponse>, CanonicalError> {
-    state
-        .sessions
-        .shutdown()
-        .await
-        .map_err(|source| internal(&request_id, source))?;
-    state.audit.drain_claim_writes().await;
-    state.recordings.close().await;
-    state.screencast.stop();
-    state.browser.stop();
-    if let Some(tx) = state.shutdown.lock().await.take() {
-        let _ = tx.send(());
-    }
-    Ok(Json(ShutdownResponse::default()))
+pub(super) async fn shutdown(State(state): State<AppState>) -> Json<ShutdownResponse> {
+    state.shutdown.request();
+    Json(ShutdownResponse::default())
 }
 
 pub(super) async fn info(State(state): State<AppState>) -> Json<SystemInfo> {

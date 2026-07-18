@@ -1,8 +1,13 @@
 use super::colors::TabGroupColor;
 use crate::ids::ConvoId;
 use browseros_core::PageId;
-use std::collections::{BTreeSet, HashMap};
-use tokio::sync::RwLock;
+use std::{
+    collections::{BTreeSet, HashMap},
+    sync::{Arc, Weak},
+};
+use tokio::sync::{Mutex, RwLock};
+
+pub(crate) type GroupOperationLock = Mutex<()>;
 
 /// Conversation-keyed BrowserOS page ownership and browser tab-group state.
 /// Both ownership indexes share this lock so page reassignment cannot expose
@@ -10,6 +15,7 @@ use tokio::sync::RwLock;
 #[derive(Debug, Default)]
 pub struct PageOwnership {
     inner: RwLock<Inner>,
+    group_operation_locks: Mutex<HashMap<ConvoId, Weak<GroupOperationLock>>>,
 }
 
 #[derive(Debug, Default)]
@@ -79,6 +85,18 @@ impl PageOwnership {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /** Serializes check, create, and remember so each conversation gets one durable tab group. */
+    pub(crate) async fn group_operation_lock(&self, convo_id: &ConvoId) -> Arc<GroupOperationLock> {
+        let mut locks = self.group_operation_locks.lock().await;
+        locks.retain(|_, lock| lock.strong_count() > 0);
+        if let Some(lock) = locks.get(convo_id).and_then(Weak::upgrade) {
+            return lock;
+        }
+        let lock = Arc::new(Mutex::new(()));
+        locks.insert(convo_id.clone(), Arc::downgrade(&lock));
+        lock
     }
 
     pub async fn owner_of_page(&self, page_id: &PageId) -> Option<ConvoId> {
@@ -330,6 +348,43 @@ mod tests {
     use crate::{ids::ConvoId, tabs::TabGroupColor};
     use browseros_core::PageId;
     use std::collections::BTreeSet;
+
+    #[tokio::test]
+    async fn group_operation_locks_are_reused_within_one_ownership_instance() {
+        let ownership = PageOwnership::new();
+        let convo = ConvoId::new("codex");
+
+        let first = ownership.group_operation_lock(&convo).await;
+        let second = ownership.group_operation_lock(&convo).await;
+
+        assert!(std::sync::Arc::ptr_eq(&first, &second));
+    }
+
+    #[tokio::test]
+    async fn group_operation_locks_are_isolated_between_ownership_instances() {
+        let first_ownership = PageOwnership::new();
+        let second_ownership = PageOwnership::new();
+        let convo = ConvoId::new("codex");
+
+        let first = first_ownership.group_operation_lock(&convo).await;
+        let second = second_ownership.group_operation_lock(&convo).await;
+
+        assert!(!std::sync::Arc::ptr_eq(&first, &second));
+    }
+
+    #[tokio::test]
+    async fn dropped_group_operation_locks_are_replaced() {
+        let ownership = PageOwnership::new();
+        let convo = ConvoId::new("codex");
+        let first = ownership.group_operation_lock(&convo).await;
+        let dropped = std::sync::Arc::downgrade(&first);
+        drop(first);
+
+        let replacement = ownership.group_operation_lock(&convo).await;
+
+        assert!(dropped.upgrade().is_none());
+        assert_eq!(std::sync::Arc::strong_count(&replacement), 1);
+    }
 
     #[tokio::test]
     async fn page_ownership_moves_between_convo_ids() {

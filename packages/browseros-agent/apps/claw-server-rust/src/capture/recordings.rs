@@ -26,6 +26,7 @@ use tokio::{
     task::JoinHandle,
     time::{MissedTickBehavior, interval},
 };
+use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
@@ -255,22 +256,30 @@ impl RecordingStore {
     }
 
     /// Runs recording retention immediately and then hourly.
-    pub fn spawn_retention(self: Arc<Self>, retention_days: u64) -> JoinHandle<()> {
+    pub fn spawn_retention(
+        self: Arc<Self>,
+        retention_days: u64,
+        cancel: CancellationToken,
+    ) -> JoinHandle<()> {
         tokio::spawn(async move {
             let mut ticker = interval(RETENTION_INTERVAL);
             ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
             loop {
-                ticker.tick().await;
-                match self
-                    .sweep_retention(retention_days, crate::clock::now_epoch_ms())
-                    .await
-                {
-                    Ok(result) => info!(
-                        recordings_deleted = result.recordings_deleted,
-                        claims_deleted = result.claims_deleted,
-                        "recording retention sweep finished"
-                    ),
-                    Err(error) => warn!(error = %error, "recording retention sweep failed"),
+                tokio::select! {
+                    () = cancel.cancelled() => return,
+                    _ = ticker.tick() => {
+                        match self
+                            .sweep_retention(retention_days, crate::clock::now_epoch_ms())
+                            .await
+                        {
+                            Ok(result) => info!(
+                                recordings_deleted = result.recordings_deleted,
+                                claims_deleted = result.claims_deleted,
+                                "recording retention sweep finished"
+                            ),
+                            Err(error) => warn!(error = %error, "recording retention sweep failed"),
+                        }
+                    }
                 }
             }
         })

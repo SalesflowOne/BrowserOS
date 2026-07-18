@@ -41,7 +41,7 @@ async fn test_app() -> anyhow::Result<TestApp> {
         dev_mode: false,
         auth_token: None,
     });
-    let state = AppState::new_with_home(config, None, dir.path().join("home")).await?;
+    let state = AppState::new_with_home(config, dir.path().join("home")).await?;
     Ok(TestApp {
         router: build_router(state.clone()),
         state,

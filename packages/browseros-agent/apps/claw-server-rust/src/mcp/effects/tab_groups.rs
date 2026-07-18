@@ -16,18 +16,10 @@ use browseros_mcp::{
 use futures_util::future::BoxFuture;
 use rmcp::model::ContentBlock;
 use serde_json::{Value, json};
-use std::{
-    collections::HashMap,
-    sync::{Arc, LazyLock, OnceLock, Weak},
-};
-use tokio::{sync::Mutex, task::JoinHandle, time::timeout};
+use std::sync::{Arc, LazyLock};
+use tokio::{task::JoinHandle, time::timeout};
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
-
-type GroupOperationLock = Mutex<()>;
-
-static GROUP_OPERATION_LOCKS: OnceLock<Mutex<HashMap<ConvoId, Weak<GroupOperationLock>>>> =
-    OnceLock::new();
 
 /// Creates or joins the durable tab group for a successful `tabs new` call.
 pub fn apply(context: ToolEffectContext<'_>) -> BoxFuture<'_, anyhow::Result<Option<ToolResult>>> {
@@ -65,7 +57,9 @@ async fn run_tab_group_work(call: ToolCall, page_id: Option<u32>) {
         return;
     }
     let ownership = call.state.sessions.ownership();
-    let operation_lock = group_operation_lock(&identity.ownership_key).await;
+    let operation_lock = ownership
+        .group_operation_lock(&identity.ownership_key)
+        .await;
     let _guard = operation_lock.lock().await;
     if session_cancel.is_cancelled() {
         return;
@@ -227,25 +221,13 @@ async fn ensure_agent_tab_group_unlocked(
     }
 }
 
-async fn group_operation_lock(key: &ConvoId) -> Arc<GroupOperationLock> {
-    let locks = GROUP_OPERATION_LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut locks = locks.lock().await;
-    locks.retain(|_, lock| lock.strong_count() > 0);
-    if let Some(lock) = locks.get(key).and_then(Weak::upgrade) {
-        return lock;
-    }
-    let lock = Arc::new(Mutex::new(()));
-    locks.insert(key.clone(), Arc::downgrade(&lock));
-    lock
-}
-
 /// Collapses the durable group when its session enters retention.
 pub async fn collapse_agent_tab_group(
     browser: Option<&Arc<BrowserSession>>,
     ownership: &Arc<PageOwnership>,
     key: &ConvoId,
 ) -> bool {
-    let operation_lock = group_operation_lock(key).await;
+    let operation_lock = ownership.group_operation_lock(key).await;
     let _guard = operation_lock.lock().await;
     if ownership.tab_group_collapsed(key).await {
         return true;
@@ -284,7 +266,7 @@ pub async fn close_agent_tab_group(
     ownership: &Arc<PageOwnership>,
     key: &ConvoId,
 ) -> bool {
-    let operation_lock = group_operation_lock(key).await;
+    let operation_lock = ownership.group_operation_lock(key).await;
     let _guard = operation_lock.lock().await;
     let Some(group_id) = ownership.tab_group_ref(key).await else {
         return true;
@@ -382,7 +364,7 @@ pub async fn apply_agent_tab_group_title(
     session: &Session,
     cancel: CancellationToken,
 ) {
-    let operation_lock = group_operation_lock(key).await;
+    let operation_lock = ownership.group_operation_lock(key).await;
     let _guard = operation_lock.lock().await;
     let title = desired_group_title(session).await;
     ownership.set_desired_group_title(key.clone(), title).await;

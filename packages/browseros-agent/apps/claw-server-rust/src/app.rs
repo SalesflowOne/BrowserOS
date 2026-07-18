@@ -10,6 +10,7 @@ use crate::{
     error::AppResult,
     harness::HarnessService,
     routes,
+    runtime::ShutdownHandle,
     sessions::Sessions,
     storage::JsonStore,
     tabs::{activity::TabActivityService, targets::TabTargetMap},
@@ -17,7 +18,6 @@ use crate::{
 };
 use axum::{Router, middleware};
 use std::{env, path::PathBuf, sync::Arc, time::Duration};
-use tokio::sync::{Mutex, oneshot};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -34,25 +34,18 @@ pub struct AppState {
     pub sessions: Arc<Sessions>,
     pub browser: Arc<BrowserService>,
     pub screencast: Arc<ScreencastService>,
-    pub shutdown: Arc<Mutex<Option<oneshot::Sender<()>>>>,
+    pub shutdown: ShutdownHandle,
 }
 
 impl AppState {
-    pub async fn new(
-        config: Arc<Config>,
-        shutdown_tx: Option<oneshot::Sender<()>>,
-    ) -> AppResult<Self> {
+    pub async fn new(config: Arc<Config>) -> AppResult<Self> {
         let home = env::var_os("HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|| config.browserclaw_dir.clone());
-        Self::new_with_home(config, shutdown_tx, home).await
+        Self::new_with_home(config, home).await
     }
 
-    pub async fn new_with_home(
-        config: Arc<Config>,
-        shutdown_tx: Option<oneshot::Sender<()>>,
-        home_dir: PathBuf,
-    ) -> AppResult<Self> {
+    pub async fn new_with_home(config: Arc<Config>, home_dir: PathBuf) -> AppResult<Self> {
         tokio::fs::create_dir_all(&config.browserclaw_dir).await?;
         let store = JsonStore::new(config.browserclaw_dir.clone());
         let audit =
@@ -98,7 +91,7 @@ impl AppState {
             sessions,
             browser,
             screencast: ScreencastService::new(50),
-            shutdown: Arc::new(Mutex::new(shutdown_tx)),
+            shutdown: ShutdownHandle::new(),
         })
     }
 }

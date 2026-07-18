@@ -1,7 +1,7 @@
 use axum::Router;
 use browseros_core::TargetId;
 use claw_server_rust::{
-    AppState, build_router,
+    AppRuntime, AppState, build_router,
     capture::audit::{DispatchResultSummary, RecordToolDispatchInput},
     config::Config,
     identity::{ClientIdentity, ConversationIdentity},
@@ -11,7 +11,7 @@ use claw_server_rust::{
 };
 use serde_json::json;
 use std::{path::PathBuf, sync::Arc, time::Duration};
-use tokio::{net::TcpListener, sync::oneshot};
+use tokio::net::TcpListener;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -30,12 +30,14 @@ async fn main() -> anyhow::Result<()> {
         dev_mode: false,
         auth_token: None,
     });
-    let (shutdown_tx, shutdown_rx) = oneshot::channel();
-    let state = AppState::new_with_home(config, Some(shutdown_tx), root.join("home")).await?;
+    let state = AppState::new_with_home(config, root.join("home")).await?;
     seed(&state).await?;
 
+    let runtime = AppRuntime::start(state);
     let listener = TcpListener::bind(("127.0.0.1", port)).await?;
-    serve(build_router(state), listener, shutdown_rx).await
+    serve(runtime.state(), listener).await?;
+    runtime.shutdown().await?;
+    Ok(())
 }
 
 fn arguments() -> anyhow::Result<(u16, PathBuf)> {
@@ -158,14 +160,12 @@ async fn seed_dispatch(
         .await?)
 }
 
-async fn serve(
-    app: Router,
-    listener: TcpListener,
-    shutdown_rx: oneshot::Receiver<()>,
-) -> anyhow::Result<()> {
+async fn serve(state: AppState, listener: TcpListener) -> anyhow::Result<()> {
+    let shutdown = state.shutdown.clone();
+    let app: Router = build_router(state);
     axum::serve(listener, app.into_make_service())
         .with_graceful_shutdown(async move {
-            let _ = shutdown_rx.await;
+            shutdown.requested().await;
         })
         .await?;
     Ok(())

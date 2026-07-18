@@ -11,9 +11,11 @@ pub mod identity;
 pub mod ids;
 pub mod mcp;
 pub mod routes;
+pub mod runtime;
 pub mod sessions;
 pub mod storage;
 pub mod tabs;
 pub mod telemetry;
 
 pub use app::{AppState, build_router};
+pub use runtime::{AppRuntime, ShutdownHandle};
