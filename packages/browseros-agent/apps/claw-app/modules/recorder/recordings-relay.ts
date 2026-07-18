@@ -36,6 +36,8 @@ interface QueuedBatch {
   batchId: string
   ndjson: string
   bytes: number
+  /** Pins retries to the session/page/target that produced these events. */
+  association?: TabAssociation
 }
 
 type SendOutcome =
@@ -121,6 +123,7 @@ export function createRecordingsRelay(
 
   function addBatch(tabId: number, batch: QueuedBatch, atFront = false): void {
     const previousCount = queuedBatchCount
+    batch.association ??= associations.get(tabId)
     const queue = queues.get(tabId)
     if (queue) {
       if (atFront) queue.unshift(batch)
@@ -246,8 +249,15 @@ export function createRecordingsRelay(
         return { kind: 'unknown-tab' }
       }
       const association = rememberAssociation(tabId, tab)
+      if (
+        batch.association &&
+        !associationsMatch(batch.association, association)
+      ) {
+        return { kind: 'unknown-tab' }
+      }
+      batch.association = association
       const response = await fetch(
-        `${baseUrl}/api/v1/sessions/${encodeURIComponent(association.sessionId)}/recording/events`,
+        `${baseUrl}/api/v1/sessions/${encodeURIComponent(batch.association.sessionId)}/recording/events`,
         {
           method: 'POST',
           headers: {
@@ -287,16 +297,22 @@ export function createRecordingsRelay(
       targetId: tab.targetId,
     }
     const previous = associations.get(tabId)
-    if (
-      previous &&
-      (previous.sessionId !== association.sessionId ||
-        previous.pageId !== association.pageId ||
-        previous.targetId !== association.targetId)
-    ) {
+    if (previous && !associationsMatch(previous, association)) {
       gappedTabs.add(tabId)
     }
     associations.set(tabId, association)
     return association
+  }
+
+  function associationsMatch(
+    left: TabAssociation,
+    right: TabAssociation,
+  ): boolean {
+    return (
+      left.sessionId === right.sessionId &&
+      left.pageId === right.pageId &&
+      left.targetId === right.targetId
+    )
   }
 
   function markLegacy(triggeringTabId: number): void {
