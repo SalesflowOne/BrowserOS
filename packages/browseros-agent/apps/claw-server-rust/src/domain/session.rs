@@ -1,4 +1,4 @@
-use crate::domain::{AgentRef, DispatchId, SessionId};
+use crate::domain::{AgentId, AgentKey, AgentRef, DispatchId, SessionId, SessionIdentity};
 use browseros_core::PageId;
 use serde::Serialize;
 use std::{
@@ -115,28 +115,31 @@ fn fnv1a(input: &str) -> u32 {
 pub struct Session {
     id: SessionId,
     agent: AgentRef,
+    identity: SessionIdentity,
     first_captures: RwLock<BTreeSet<PageId>>,
     active_dispatches: Mutex<BTreeMap<DispatchId, CancellationToken>>,
     cancel: CancellationToken,
     replay_handle: Mutex<Option<String>>,
     last_activity: Mutex<Instant>,
-    /// User-facing session name gathered via MCP elicitation. In-memory only,
-    /// mirroring the TS identity map's sessionLabel (never persisted to audit).
-    session_label: RwLock<Option<String>>,
 }
 
 impl Session {
     #[must_use]
-    pub fn new(id: SessionId, agent: AgentRef, now: Instant) -> Arc<Self> {
+    pub fn new(
+        id: SessionId,
+        agent: AgentRef,
+        identity: SessionIdentity,
+        now: Instant,
+    ) -> Arc<Self> {
         Arc::new(Self {
             id,
             agent,
+            identity,
             first_captures: RwLock::new(BTreeSet::new()),
             active_dispatches: Mutex::new(BTreeMap::new()),
             cancel: CancellationToken::new(),
             replay_handle: Mutex::new(None),
             last_activity: Mutex::new(now),
-            session_label: RwLock::new(None),
         })
     }
 
@@ -148,6 +151,33 @@ impl Session {
     #[must_use]
     pub fn agent(&self) -> &AgentRef {
         &self.agent
+    }
+
+    #[must_use]
+    pub fn agent_id(&self) -> &AgentId {
+        self.identity.agent_id()
+    }
+
+    #[must_use]
+    pub fn ownership_key(&self) -> &AgentKey {
+        self.identity.ownership_key()
+    }
+
+    #[must_use]
+    pub fn generated_label(&self) -> &str {
+        self.identity.generated_label()
+    }
+
+    pub async fn label(&self) -> String {
+        self.identity.label().await
+    }
+
+    pub async fn rename(&self, new_label: String) -> String {
+        self.identity.rename(new_label).await
+    }
+
+    pub async fn take_rename_nudge(&self) -> Option<String> {
+        self.identity.take_rename_nudge().await
     }
 
     pub async fn touch(&self, now: Instant) {
@@ -172,14 +202,6 @@ impl Session {
 
     pub async fn set_replay_handle(&self, value: Option<String>) {
         *self.replay_handle.lock().await = value;
-    }
-
-    pub async fn session_label(&self) -> Option<String> {
-        self.session_label.read().await.clone()
-    }
-
-    pub async fn set_session_label(&self, label: String) {
-        *self.session_label.write().await = Some(label);
     }
 
     pub fn cancel(&self) {

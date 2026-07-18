@@ -18,9 +18,11 @@ import {
   type ReplayKind,
   type ReplayVerb,
   useReplayEvents,
+  useReplayMetadata,
 } from '@/modules/api/replay.hooks'
 import {
   buildReplayEventTargets,
+  buildReplayTargetIds,
   EMPTY_REPLAY_EVENTS,
   type ReplayEventTargets,
 } from './replay-events'
@@ -47,9 +49,7 @@ export interface ReplayData {
   /** Total seconds the session covers, from start to last dispatch. */
   totalSeconds: number
   frames: ReplayFrame[]
-  /** Stable target ids with rrweb events. */
   targetIds: string[]
-  /** Filter helper: events scoped to one target. */
   eventsForTarget: (targetId: string) => readonly ReplayEvent[]
 }
 
@@ -82,18 +82,27 @@ export function useReplayData(): UseReplayDataResult {
     variables: { sessionId },
     enabled: sessionId.length > 0,
   })
+  const metadataQuery = useReplayMetadata({
+    variables: { sessionId },
+    enabled: sessionId.length > 0,
+  })
 
   const events = eventsQuery.data?.events ?? EMPTY_REPLAY_EVENTS
   const eventTargets = useMemo(() => buildReplayEventTargets(events), [events])
+  const targetIds = useMemo(
+    () =>
+      buildReplayTargetIds(metadataQuery.data?.targets, eventTargets.targetIds),
+    [eventTargets.targetIds, metadataQuery.data?.targets],
+  )
   const replay = useMemo<ReplayData | null>(() => {
     if (!taskQuery.data) return null
-    return buildReplayData(taskQuery.data, eventTargets)
-  }, [taskQuery.data, eventTargets])
+    return buildReplayData(taskQuery.data, eventTargets, targetIds)
+  }, [taskQuery.data, eventTargets, targetIds])
 
   return {
     replay,
     sessionId,
-    isLoading: taskQuery.isLoading || eventsQuery.isLoading,
+    isLoading: taskQuery.isLoading,
     navigate,
   }
 }
@@ -102,6 +111,7 @@ export function useReplayData(): UseReplayDataResult {
 function buildReplayData(
   task: TaskDetail,
   eventTargets: ReplayEventTargets,
+  targetIds: string[],
 ): ReplayData {
   const sessionStartMs = task.startedAt
   const lastDispatchAt = task.dispatches.length
@@ -130,7 +140,7 @@ function buildReplayData(
     steps: String(task.dispatchCount),
     totalSeconds: totalMs / 1000,
     frames,
-    targetIds: eventTargets.targetIds,
+    targetIds,
     eventsForTarget: eventTargets.eventsForTarget,
   }
 }
@@ -175,6 +185,7 @@ function mapDispatchToFrame(
     node,
     caption,
     url: row.url,
+    pageId: row.pageId,
     targetId: row.targetId,
     note,
     dispatchId: row.id,

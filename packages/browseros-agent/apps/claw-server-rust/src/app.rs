@@ -69,6 +69,7 @@ impl AppState {
             audit.clone(),
             replay.clone(),
             config.session_idle,
+            config.session_retention,
             config.session_sweep_interval,
         );
         let browser = BrowserService::new(config.cdp_port, sessions.ownership());

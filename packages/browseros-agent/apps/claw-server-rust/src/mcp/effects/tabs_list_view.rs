@@ -39,7 +39,7 @@ pub fn apply(context: ToolEffectContext<'_>) -> BoxFuture<'_, anyhow::Result<Opt
             .into_iter()
             .map(|session| {
                 (
-                    session.agent().ownership_key(),
+                    session.ownership_key().clone(),
                     session.agent().label().to_string(),
                 )
             })
@@ -167,13 +167,16 @@ mod tests {
         let other_session = crate::domain::Session::new(
             crate::domain::SessionId::new("s2"),
             crate::domain::AgentRef::Ephemeral {
-                agent_id: crate::domain::AgentId::new("cowork-a"),
                 slug: "other".to_string(),
                 label: "Cowork".to_string(),
             },
+            crate::domain::SessionIdentity::new("other", "bright-beaver".to_string()),
             tokio::time::Instant::now(),
         );
-        call.state.sessions.insert_for_testing(other_session).await;
+        call.state
+            .sessions
+            .insert_for_testing(other_session.clone())
+            .await;
         call.state
             .sessions
             .ownership()
@@ -182,12 +185,12 @@ mod tests {
         call.state
             .sessions
             .ownership()
-            .claim_page(crate::domain::AgentKey::new("other"), PageId(3))
+            .claim_page(other_session.ownership_key().clone(), PageId(3))
             .await;
         call.state
             .sessions
             .ownership()
-            .claim_page(crate::domain::AgentKey::new("other"), PageId(9))
+            .claim_page(other_session.ownership_key().clone(), PageId(9))
             .await;
         let result = ToolResult::text(
             "all tabs",
@@ -217,7 +220,7 @@ mod tests {
                         "url": "https://owned.test",
                         "title": "Owned",
                         "ownership": "mine",
-                        "ownerAgentId": "codex",
+                        "ownerAgentId": "codex-agile-alpaca",
                         "ownerLabel": null
                     },
                     {
@@ -233,7 +236,7 @@ mod tests {
                         "url": "https://other.test",
                         "title": "Other",
                         "ownership": "other-agent",
-                        "ownerAgentId": "other",
+                        "ownerAgentId": "other-bright-beaver",
                         "ownerLabel": "Cowork"
                     }
                 ]

@@ -1,6 +1,9 @@
 use crate::{
-    domain::{AgentKey, AgentPageOwnership, AgentRef, ClientInfo, Session, SessionId},
-    error::AppResult,
+    domain::{
+        AgentKey, AgentPageOwnership, AgentRef, ClientInfo, Session, SessionId, SessionIdentity,
+        generate_fun_name,
+    },
+    error::{AppError, AppResult},
     services::{audit::AuditService, replay::ReplayService},
 };
 use futures_util::future::BoxFuture;
@@ -10,24 +13,41 @@ use std::{
     time::Duration,
 };
 use tokio::{
-    sync::RwLock,
+    sync::{Mutex, RwLock},
     task::JoinHandle,
     time::{Instant, MissedTickBehavior, interval},
 };
 use tracing::{debug, warn};
 use ulid::Ulid;
 
-pub type LastSessionTeardownHook =
-    Arc<dyn Fn(Arc<AgentPageOwnership>, AgentKey) -> BoxFuture<'static, ()> + Send + Sync>;
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum RetainedGroupAction {
+    Collapse,
+    Close,
+}
+
+pub type RetainedGroupHook = Arc<
+    dyn Fn(Arc<AgentPageOwnership>, AgentKey, RetainedGroupAction) -> BoxFuture<'static, bool>
+        + Send
+        + Sync,
+>;
+
+struct RetainedSession {
+    session: Arc<Session>,
+    ended_at: Instant,
+}
 
 pub struct SessionRegistry {
     sessions: RwLock<HashMap<SessionId, Arc<Session>>>,
     ownership: Arc<AgentPageOwnership>,
     audit: Arc<AuditService>,
     replay: Arc<ReplayService>,
-    fallback_sessions: RwLock<HashSet<SessionId>>,
-    last_session_teardown_hook: OnceLock<LastSessionTeardownHook>,
+    reserved_keys: Mutex<HashSet<AgentKey>>,
+    retained: RwLock<HashMap<AgentKey, RetainedSession>>,
+    reaping_keys: Mutex<HashSet<AgentKey>>,
+    retained_group_hook: OnceLock<RetainedGroupHook>,
     idle_after: Duration,
+    retention: Duration,
     sweep_interval: Duration,
 }
 
@@ -37,6 +57,7 @@ impl SessionRegistry {
         audit: Arc<AuditService>,
         replay: Arc<ReplayService>,
         idle_after: Duration,
+        retention: Duration,
         sweep_interval: Duration,
     ) -> Arc<Self> {
         Arc::new(Self {
@@ -44,9 +65,12 @@ impl SessionRegistry {
             ownership: Arc::new(AgentPageOwnership::new()),
             audit,
             replay,
-            fallback_sessions: RwLock::new(HashSet::new()),
-            last_session_teardown_hook: OnceLock::new(),
+            reserved_keys: Mutex::new(HashSet::new()),
+            retained: RwLock::new(HashMap::new()),
+            reaping_keys: Mutex::new(HashSet::new()),
+            retained_group_hook: OnceLock::new(),
             idle_after,
+            retention,
             sweep_interval,
         })
     }
@@ -56,9 +80,9 @@ impl SessionRegistry {
         self.ownership.clone()
     }
 
-    /// Installs the host cleanup invoked when an ownership key loses its final session.
-    pub fn set_last_session_teardown_hook(&self, hook: LastSessionTeardownHook) {
-        let _ = self.last_session_teardown_hook.set(hook);
+    /// Installs browser-backed retained-group collapse and close operations.
+    pub fn set_retained_group_hook(&self, hook: RetainedGroupHook) {
+        let _ = self.retained_group_hook.set(hook);
     }
 
     pub async fn mint(
@@ -76,25 +100,44 @@ impl SessionRegistry {
         agent: AgentRef,
         client: ClientInfo,
     ) -> AppResult<Arc<Session>> {
-        let session = Session::new(id.clone(), agent, Instant::now());
-        self.audit
+        let identity = {
+            let mut reserved_keys = self.reserved_keys.lock().await;
+            let generated_label = generate_fun_name(rand::random::<f64>, |label| {
+                !reserved_keys.contains(&AgentKey::new(format!("{}-{label}", agent.slug())))
+            })
+            .map_err(|error| AppError::Internal(error.to_string()))?;
+            let identity = SessionIdentity::new(agent.slug(), generated_label);
+            reserved_keys.insert(identity.ownership_key().clone());
+            identity
+        };
+        let session = Session::new(id.clone(), agent, identity, Instant::now());
+        if let Err(error) = self
+            .audit
             .record_session_start(
                 id.as_str(),
-                session.agent().agent_id().as_str(),
+                session.agent_id().as_str(),
                 session.agent().slug(),
                 session.agent().label(),
                 client.name.as_str(),
                 client.version.as_str(),
             )
-            .await?;
-        if super::agent_ref::slugify_client_name(&client.name).is_none() {
-            self.fallback_sessions.write().await.insert(id.clone());
+            .await
+        {
+            self.reserved_keys
+                .lock()
+                .await
+                .remove(session.ownership_key());
+            return Err(error);
         }
         self.sessions.write().await.insert(id, session.clone());
         Ok(session)
     }
 
     pub async fn insert_for_testing(&self, session: Arc<Session>) {
+        self.reserved_keys
+            .lock()
+            .await
+            .insert(session.ownership_key().clone());
         self.sessions
             .write()
             .await
@@ -132,7 +175,7 @@ impl SessionRegistry {
         let sessions: Vec<Arc<Session>> = self.sessions.read().await.values().cloned().collect();
         let mut cancelled = 0;
         for session in sessions {
-            if session.agent().agent_id().as_str() == agent_id {
+            if session.agent_id().as_str() == agent_id {
                 cancelled += session.cancel_active_dispatches().await;
             }
         }
@@ -151,8 +194,7 @@ impl SessionRegistry {
     ) -> AppResult<bool> {
         let session = self.sessions.write().await.remove(id);
         if let Some(session) = session {
-            let fallback = self.fallback_sessions.write().await.remove(id);
-            self.teardown(session, kind, reason, true, fallback).await?;
+            self.teardown(session, kind, reason).await?;
             return Ok(true);
         }
         Ok(false)
@@ -179,6 +221,7 @@ impl SessionRegistry {
                 removed += 1;
             }
         }
+        self.reap_retained(now).await;
         Ok(removed)
     }
 
@@ -187,31 +230,10 @@ impl SessionRegistry {
             let mut guard = self.sessions.write().await;
             std::mem::take(&mut *guard)
         };
-        let fallback_sessions = {
-            let mut guard = self.fallback_sessions.write().await;
-            std::mem::take(&mut *guard)
-        };
-        let mut remaining_by_key = HashMap::<AgentKey, usize>::new();
-        for session in sessions.values() {
-            *remaining_by_key
-                .entry(session.agent().ownership_key())
-                .or_default() += 1;
-        }
         let mut count = 0;
         for session in sessions.into_values() {
-            let key = session.agent().ownership_key();
-            let remaining = remaining_by_key.entry(key).or_default();
-            *remaining = remaining.saturating_sub(1);
-            let last_for_key = *remaining == 0;
-            let fallback = fallback_sessions.contains(session.id());
-            self.teardown(
-                session,
-                "closed",
-                Some("server shutdown"),
-                last_for_key,
-                fallback,
-            )
-            .await?;
+            self.teardown(session, "closed", Some("server shutdown"))
+                .await?;
             count += 1;
         }
         Ok(count)
@@ -237,8 +259,6 @@ impl SessionRegistry {
         session: Arc<Session>,
         kind: &str,
         reason: Option<&str>,
-        finalize_key: bool,
-        fallback: bool,
     ) -> AppResult<()> {
         session.cancel_active_dispatches().await;
         session.cancel();
@@ -247,46 +267,93 @@ impl SessionRegistry {
             .audit
             .record_session_end(session.id().as_str(), kind, reason)
             .await;
-        let key = session.agent().ownership_key();
-        for page_id in self.ownership.owned_pages(&key).await {
-            session.forget_first_capture(&page_id).await;
-        }
-        if finalize_key {
-            self.finalize_inactive_key(&key, fallback).await;
+        let key = session.ownership_key().clone();
+        self.retained.write().await.insert(
+            key.clone(),
+            RetainedSession {
+                session,
+                ended_at: Instant::now(),
+            },
+        );
+        if let Some(hook) = self.retained_group_hook.get() {
+            hook(self.ownership.clone(), key, RetainedGroupAction::Collapse).await;
         }
         replay_result?;
         audit_result?;
         Ok(())
     }
 
-    async fn finalize_inactive_key(&self, key: &AgentKey, fallback: bool) {
-        let sessions = self.sessions.read().await;
-        if sessions
-            .values()
-            .any(|candidate| candidate.agent().ownership_key() == *key)
+    async fn reap_retained(&self, now: Instant) -> usize {
+        let retained: Vec<(AgentKey, Instant)> = self
+            .retained
+            .read()
+            .await
+            .iter()
+            .map(|(key, retained)| (key.clone(), retained.ended_at))
+            .collect();
+        let mut expired = Vec::new();
+        let mut active = Vec::new();
         {
-            return;
+            let mut reaping = self.reaping_keys.lock().await;
+            for (key, ended_at) in retained {
+                if now.duration_since(ended_at) >= self.retention {
+                    if reaping.insert(key.clone()) {
+                        expired.push(key);
+                    }
+                } else if !reaping.contains(&key) {
+                    active.push(key);
+                }
+            }
         }
-        if let Some(hook) = self.last_session_teardown_hook.get() {
-            hook(self.ownership.clone(), key.clone()).await;
+        if let Some(hook) = self.retained_group_hook.get() {
+            for key in active {
+                hook(self.ownership.clone(), key, RetainedGroupAction::Collapse).await;
+            }
         }
-        if fallback {
-            self.ownership.forget(key).await;
+
+        let mut reaped = 0;
+        for key in expired {
+            let closed = match self.retained_group_hook.get() {
+                Some(hook) => {
+                    hook(
+                        self.ownership.clone(),
+                        key.clone(),
+                        RetainedGroupAction::Close,
+                    )
+                    .await
+                }
+                None => self.ownership.tab_group_ref(&key).await.is_none(),
+            };
+            if closed {
+                let retained = self.retained.write().await.remove(&key);
+                if let Some(retained) = retained {
+                    for page_id in self.ownership.owned_pages(&key).await {
+                        retained.session.forget_first_capture(&page_id).await;
+                    }
+                    self.ownership.forget(&key).await;
+                    self.reserved_keys.lock().await.remove(&key);
+                    reaped += 1;
+                }
+            }
+            self.reaping_keys.lock().await.remove(&key);
         }
+        reaped
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::SessionRegistry;
+    use super::{RetainedGroupAction, SessionRegistry};
     use crate::{
-        domain::{AgentRef, ClientInfo, Session, SessionId},
+        domain::{
+            AgentKey, AgentRef, ClientInfo, Session, SessionId, SessionIdentity, generate_fun_name,
+        },
         services::{audit::AuditService, replay::ReplayService},
     };
     use std::{
         sync::{
             Arc,
-            atomic::{AtomicUsize, Ordering},
+            atomic::{AtomicBool, AtomicUsize, Ordering},
         },
         time::Duration,
     };
@@ -306,15 +373,16 @@ mod tests {
             audit.clone(),
             replay,
             Duration::from_secs(5),
+            Duration::from_secs(60),
             Duration::from_secs(1),
         );
         let session = Session::new(
             SessionId::new("s1"),
             AgentRef::Ephemeral {
-                agent_id: crate::domain::AgentId::new("a1"),
                 slug: "a1".to_string(),
                 label: "A1".to_string(),
             },
+            SessionIdentity::new("a1", "agile-alpaca".to_string()),
             Instant::now(),
         );
         registry.insert_for_testing(session).await;
@@ -339,12 +407,12 @@ mod tests {
             audit,
             replay,
             Duration::from_secs(60),
+            Duration::from_secs(60),
             Duration::from_secs(1),
         );
         let session = registry
             .mint(
                 AgentRef::Ephemeral {
-                    agent_id: crate::domain::AgentId::new("agent-1"),
                     slug: "agent".to_string(),
                     label: "Agent".to_string(),
                 },
@@ -360,7 +428,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ownership_survives_reconnect_and_preserves_tab_group() -> anyhow::Result<()> {
+    async fn same_client_sessions_get_distinct_identity_and_ownership() -> anyhow::Result<()> {
         let dir = tempdir()?;
         let audit = Arc::new(AuditService::open(dir.path().join("audit.sqlite")).await?);
         let replay = Arc::new(ReplayService::new(
@@ -372,77 +440,59 @@ mod tests {
             audit,
             replay,
             Duration::from_secs(60),
+            Duration::from_secs(60),
             Duration::from_secs(1),
         );
-        let session1 = Session::new(
-            SessionId::new("s1"),
-            AgentRef::Ephemeral {
-                agent_id: crate::domain::AgentId::new("codex-a"),
-                slug: "codex".to_string(),
-                label: "Codex".to_string(),
-            },
-            Instant::now(),
-        );
-        let key1 = session1.agent().ownership_key();
-        registry.insert_for_testing(session1.clone()).await;
+        let client = ClientInfo {
+            name: "Codex".to_string(),
+            version: "1".to_string(),
+            title: None,
+        };
+        let agent = AgentRef::Ephemeral {
+            slug: "codex".to_string(),
+            label: "Codex".to_string(),
+        };
+        let session1 = registry.mint(agent.clone(), client.clone()).await?;
+        let key1 = session1.ownership_key().clone();
         registry
             .ownership()
             .claim_page(key1.clone(), browseros_core::PageId(1))
             .await;
+        let session2 = registry.mint(agent, client).await?;
+        let key2 = session2.ownership_key().clone();
         registry
             .ownership()
-            .claim_page(key1.clone(), browseros_core::PageId(2))
-            .await;
-        registry
-            .ownership()
-            .set_tab_group(
-                key1.clone(),
-                Some("group-1".to_string()),
-                Some(crate::domain::TabGroupColor::Purple),
-            )
+            .claim_page(key2.clone(), browseros_core::PageId(2))
             .await;
 
-        assert!(
-            registry
-                .remove(session1.id(), "closed", Some("reconnect"))
-                .await?
-        );
-
-        let session2 = Session::new(
-            SessionId::new("s2"),
-            AgentRef::Ephemeral {
-                agent_id: crate::domain::AgentId::new("codex-b"),
-                slug: "codex".to_string(),
-                label: "Codex".to_string(),
-            },
-            Instant::now(),
-        );
-        let key2 = session2.agent().ownership_key();
-        registry.insert_for_testing(session2).await;
-
-        assert_eq!(key1, key2);
+        assert_ne!(session1.agent_id(), session2.agent_id());
+        assert_ne!(key1, key2);
         assert_eq!(
             registry
                 .ownership()
-                .owned_pages(&key2)
+                .owned_pages(&key1)
                 .await
                 .into_iter()
                 .collect::<Vec<_>>(),
-            vec![browseros_core::PageId(1), browseros_core::PageId(2)]
+            vec![browseros_core::PageId(1)]
         );
+        assert!(Arc::ptr_eq(
+            &registry
+                .lookup(session1.id())
+                .await
+                .ok_or_else(|| anyhow::anyhow!("session missing"))?,
+            &session1
+        ));
         assert_eq!(
-            registry.ownership().tab_group_ref(&key2).await.as_deref(),
-            Some("group-1")
-        );
-        assert_eq!(
-            registry.ownership().tab_group_color(&key2).await,
-            Some(crate::domain::TabGroupColor::Purple)
+            registry.ownership().owned_pages(&key2).await,
+            std::collections::BTreeSet::from([browseros_core::PageId(2)])
         );
         Ok(())
     }
 
-    #[tokio::test]
-    async fn fallback_identity_is_forgotten_after_its_last_session() -> anyhow::Result<()> {
+    #[tokio::test(start_paused = true)]
+    async fn retained_session_collapses_then_closes_and_forgets_after_expiry() -> anyhow::Result<()>
+    {
         let dir = tempdir()?;
         let audit = Arc::new(AuditService::open(dir.path().join("audit.sqlite")).await?);
         let replay = Arc::new(ReplayService::new(
@@ -454,25 +504,33 @@ mod tests {
             audit,
             replay,
             Duration::from_secs(60),
+            Duration::from_secs(10),
             Duration::from_secs(1),
         );
-        let session_id = SessionId::new("fallback-session");
-        let session = registry
-            .mint_with_id(
-                session_id.clone(),
-                AgentRef::Ephemeral {
-                    agent_id: crate::domain::AgentId::new("unknown-a"),
-                    slug: "unknown-a".to_string(),
-                    label: "unknown-a".to_string(),
-                },
-                ClientInfo {
-                    name: "...".to_string(),
-                    version: "1".to_string(),
-                    title: None,
-                },
-            )
-            .await?;
-        let key = session.agent().ownership_key();
+        let actions = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let hook_actions = actions.clone();
+        registry.set_retained_group_hook(Arc::new(move |_, _, action| {
+            let hook_actions = hook_actions.clone();
+            Box::pin(async move {
+                hook_actions
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .push(action);
+                true
+            })
+        }));
+        let session_id = SessionId::new("s1");
+        let session = Session::new(
+            session_id.clone(),
+            AgentRef::Ephemeral {
+                slug: "codex".to_string(),
+                label: "Codex".to_string(),
+            },
+            SessionIdentity::new("codex", "agile-alpaca".to_string()),
+            Instant::now(),
+        );
+        let key = session.ownership_key().clone();
+        registry.insert_for_testing(session.clone()).await;
         registry
             .ownership()
             .claim_page(key.clone(), browseros_core::PageId(4))
@@ -486,21 +544,48 @@ mod tests {
             .await;
 
         assert!(registry.remove(&session_id, "closed", None).await?);
-
+        assert_eq!(registry.retained.read().await.len(), 1);
+        assert_eq!(
+            actions
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .as_slice(),
+            &[RetainedGroupAction::Collapse]
+        );
         assert_eq!(
             registry
                 .ownership()
                 .owner_of_page(&browseros_core::PageId(4))
                 .await,
-            None
+            Some(key.clone())
         );
+        assert!(session.has_first_capture(&browseros_core::PageId(4)).await);
+
+        tokio::time::advance(Duration::from_secs(9)).await;
+        assert_eq!(registry.reap_retained(Instant::now()).await, 0);
+        assert_eq!(registry.retained.read().await.len(), 1);
+        tokio::time::advance(Duration::from_secs(1)).await;
+        assert_eq!(registry.reap_retained(Instant::now()).await, 1);
+        assert_eq!(registry.retained.read().await.len(), 0);
         assert_eq!(registry.ownership().tab_group_ref(&key).await, None);
         assert!(!session.has_first_capture(&browseros_core::PageId(4)).await);
+        assert!(!registry.reserved_keys.lock().await.contains(&key));
+        assert_eq!(
+            actions
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .as_slice(),
+            &[
+                RetainedGroupAction::Collapse,
+                RetainedGroupAction::Collapse,
+                RetainedGroupAction::Close
+            ]
+        );
         Ok(())
     }
 
-    #[tokio::test]
-    async fn last_session_teardown_hook_fires_once_per_ownership_key() -> anyhow::Result<()> {
+    #[tokio::test(start_paused = true)]
+    async fn failed_or_disconnected_close_retries_without_forgetting_state() -> anyhow::Result<()> {
         let dir = tempdir()?;
         let audit = Arc::new(AuditService::open(dir.path().join("audit.sqlite")).await?);
         let replay = Arc::new(ReplayService::new(
@@ -512,107 +597,180 @@ mod tests {
             audit,
             replay,
             Duration::from_secs(60),
+            Duration::from_secs(10),
             Duration::from_secs(1),
         );
-        let calls = Arc::new(AtomicUsize::new(0));
-        let hook_calls = calls.clone();
-        registry.set_last_session_teardown_hook(Arc::new(move |ownership, key| {
-            let hook_calls = hook_calls.clone();
+        let close_allowed = Arc::new(AtomicBool::new(false));
+        let close_attempts = Arc::new(AtomicUsize::new(0));
+        let hook_allowed = close_allowed.clone();
+        let hook_attempts = close_attempts.clone();
+        registry.set_retained_group_hook(Arc::new(move |_, _, action| {
+            let hook_allowed = hook_allowed.clone();
+            let hook_attempts = hook_attempts.clone();
             Box::pin(async move {
-                let _ = (ownership, key);
-                hook_calls.fetch_add(1, Ordering::SeqCst);
+                if matches!(action, RetainedGroupAction::Close) {
+                    hook_attempts.fetch_add(1, Ordering::SeqCst);
+                    return hook_allowed.load(Ordering::SeqCst);
+                }
+                false
             })
         }));
-        for id in ["s1", "s2"] {
-            registry
-                .insert_for_testing(Session::new(
-                    SessionId::new(id),
-                    AgentRef::Ephemeral {
-                        agent_id: crate::domain::AgentId::new(format!("codex-{id}")),
-                        slug: "codex".to_string(),
-                        label: "Codex".to_string(),
-                    },
-                    Instant::now(),
-                ))
-                .await;
-        }
-
-        registry
-            .remove(&SessionId::new("s1"), "closed", None)
-            .await?;
-        assert_eq!(calls.load(Ordering::SeqCst), 0);
-        registry
-            .remove(&SessionId::new("s2"), "closed", None)
-            .await?;
-        assert_eq!(calls.load(Ordering::SeqCst), 1);
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn inactive_key_finalization_rechecks_for_a_reconnected_session() -> anyhow::Result<()> {
-        let dir = tempdir()?;
-        let audit = Arc::new(AuditService::open(dir.path().join("audit.sqlite")).await?);
-        let replay = Arc::new(ReplayService::new(
-            dir.path().join("replays"),
-            50,
-            Duration::from_secs(30),
-        ));
-        let registry = SessionRegistry::new(
-            audit,
-            replay,
-            Duration::from_secs(60),
-            Duration::from_secs(1),
-        );
-        let calls = Arc::new(AtomicUsize::new(0));
-        let hook_calls = calls.clone();
-        registry.set_last_session_teardown_hook(Arc::new(move |ownership, key| {
-            let hook_calls = hook_calls.clone();
-            Box::pin(async move {
-                let _ = (ownership, key);
-                hook_calls.fetch_add(1, Ordering::SeqCst);
-            })
-        }));
-        let session1 = Session::new(
+        let session = Session::new(
             SessionId::new("s1"),
             AgentRef::Ephemeral {
-                agent_id: crate::domain::AgentId::new("codex-a"),
                 slug: "codex".to_string(),
                 label: "Codex".to_string(),
             },
+            SessionIdentity::new("codex", "agile-alpaca".to_string()),
             Instant::now(),
         );
-        let key = session1.agent().ownership_key();
-        registry.insert_for_testing(session1.clone()).await;
+        let key = session.ownership_key().clone();
+        registry.insert_for_testing(session.clone()).await;
         registry
             .ownership()
-            .set_tab_group_ref(key.clone(), Some("group-1".to_string()))
+            .claim_page(key.clone(), browseros_core::PageId(7))
             .await;
-
-        let removed = registry.sessions.write().await.remove(session1.id());
-        assert!(removed.is_some());
         registry
-            .mint_with_id(
-                SessionId::new("s2"),
-                AgentRef::Ephemeral {
-                    agent_id: crate::domain::AgentId::new("codex-b"),
-                    slug: "codex".to_string(),
-                    label: "Codex".to_string(),
-                },
-                ClientInfo {
-                    name: "Codex".to_string(),
-                    version: "1".to_string(),
-                    title: None,
-                },
-            )
-            .await?;
+            .ownership()
+            .set_tab_group_ref(key.clone(), Some("group-7".to_string()))
+            .await;
+        registry.remove(session.id(), "closed", None).await?;
 
-        registry.finalize_inactive_key(&key, true).await;
-
-        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        tokio::time::advance(Duration::from_secs(10)).await;
+        assert_eq!(registry.reap_retained(Instant::now()).await, 0);
+        assert_eq!(close_attempts.load(Ordering::SeqCst), 1);
+        assert_eq!(registry.retained.read().await.len(), 1);
         assert_eq!(
-            registry.ownership().tab_group_ref(&key).await.as_deref(),
-            Some("group-1")
+            registry
+                .ownership()
+                .owner_of_page(&browseros_core::PageId(7))
+                .await,
+            Some(key.clone())
         );
+
+        close_allowed.store(true, Ordering::SeqCst);
+        assert_eq!(registry.reap_retained(Instant::now()).await, 1);
+        assert_eq!(close_attempts.load(Ordering::SeqCst), 2);
+        assert_eq!(registry.retained.read().await.len(), 0);
+        assert_eq!(
+            registry
+                .ownership()
+                .owner_of_page(&browseros_core::PageId(7))
+                .await,
+            None
+        );
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn generated_key_stays_reserved_until_retained_cleanup() -> anyhow::Result<()> {
+        let dir = tempdir()?;
+        let audit = Arc::new(AuditService::open(dir.path().join("audit.sqlite")).await?);
+        let replay = Arc::new(ReplayService::new(
+            dir.path().join("replays"),
+            50,
+            Duration::from_secs(30),
+        ));
+        let registry = SessionRegistry::new(
+            audit,
+            replay,
+            Duration::from_secs(60),
+            Duration::from_secs(10),
+            Duration::from_secs(1),
+        );
+        let session = Session::new(
+            SessionId::new("s1"),
+            AgentRef::Ephemeral {
+                slug: "codex".to_string(),
+                label: "Codex".to_string(),
+            },
+            SessionIdentity::new("codex", "agile-alpaca".to_string()),
+            Instant::now(),
+        );
+        registry.insert_for_testing(session.clone()).await;
+        registry.remove(session.id(), "closed", None).await?;
+
+        let candidate_while_retained = {
+            let reserved = registry.reserved_keys.lock().await;
+            generate_fun_name(
+                || 0.0,
+                |label| !reserved.contains(&AgentKey::new(format!("codex-{label}"))),
+            )?
+        };
+        assert_eq!(candidate_while_retained, "agile-alpaca-2");
+
+        tokio::time::advance(Duration::from_secs(10)).await;
+        assert_eq!(registry.reap_retained(Instant::now()).await, 1);
+        let candidate_after_cleanup = {
+            let reserved = registry.reserved_keys.lock().await;
+            generate_fun_name(
+                || 0.0,
+                |label| !reserved.contains(&AgentKey::new(format!("codex-{label}"))),
+            )?
+        };
+        assert_eq!(candidate_after_cleanup, "agile-alpaca");
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn overlapping_retained_sweeps_issue_one_close() -> anyhow::Result<()> {
+        let dir = tempdir()?;
+        let audit = Arc::new(AuditService::open(dir.path().join("audit.sqlite")).await?);
+        let replay = Arc::new(ReplayService::new(
+            dir.path().join("replays"),
+            50,
+            Duration::from_secs(30),
+        ));
+        let registry = SessionRegistry::new(
+            audit,
+            replay,
+            Duration::from_secs(60),
+            Duration::from_secs(10),
+            Duration::from_secs(1),
+        );
+        let close_attempts = Arc::new(AtomicUsize::new(0));
+        let close_entered = Arc::new(tokio::sync::Notify::new());
+        let close_release = Arc::new(tokio::sync::Notify::new());
+        let hook_attempts = close_attempts.clone();
+        let hook_entered = close_entered.clone();
+        let hook_release = close_release.clone();
+        registry.set_retained_group_hook(Arc::new(move |_, _, action| {
+            let hook_attempts = hook_attempts.clone();
+            let hook_entered = hook_entered.clone();
+            let hook_release = hook_release.clone();
+            Box::pin(async move {
+                if matches!(action, RetainedGroupAction::Close) {
+                    hook_attempts.fetch_add(1, Ordering::SeqCst);
+                    hook_entered.notify_one();
+                    hook_release.notified().await;
+                }
+                true
+            })
+        }));
+        let session = Session::new(
+            SessionId::new("s1"),
+            AgentRef::Ephemeral {
+                slug: "codex".to_string(),
+                label: "Codex".to_string(),
+            },
+            SessionIdentity::new("codex", "agile-alpaca".to_string()),
+            Instant::now(),
+        );
+        registry.insert_for_testing(session.clone()).await;
+        registry.remove(session.id(), "closed", None).await?;
+        tokio::time::advance(Duration::from_secs(10)).await;
+        let now = Instant::now();
+        let entered = close_entered.notified();
+        let first_registry = registry.clone();
+        let first = tokio::spawn(async move { first_registry.reap_retained(now).await });
+        entered.await;
+
+        assert_eq!(registry.reap_retained(now).await, 0);
+        assert_eq!(close_attempts.load(Ordering::SeqCst), 1);
+        close_release.notify_one();
+        assert_eq!(first.await?, 1);
+        assert_eq!(registry.reap_retained(now).await, 0);
+        assert_eq!(close_attempts.load(Ordering::SeqCst), 1);
         Ok(())
     }
 }

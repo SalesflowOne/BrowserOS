@@ -22,7 +22,7 @@ pub fn guard(call: &ToolCall) -> BoxFuture<'_, Option<ToolResult>> {
             tool = call.tool().name,
             session_id = %call.session_id,
             key = %identity.ownership_key,
-            agent_id = %identity.agent.agent_id(),
+            agent_id = %identity.session.agent_id(),
             page = page_id.0,
             "cockpit rejected foreign-page dispatch"
         );

@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import type { ReplayEvent } from '@/modules/api/replay.hooks'
+import type {
+  ReplayEvent,
+  ReplayTargetMetadata,
+} from '@/modules/api/replay.hooks'
 
 export const EMPTY_REPLAY_EVENTS: readonly ReplayEvent[] = []
 
@@ -13,17 +16,7 @@ export interface ReplayEventTargets {
   eventsForTarget: (targetId: string) => readonly ReplayEvent[]
 }
 
-export function resolveSelectedTargetId(
-  selectedTargetId: string | null,
-  targetIds: readonly string[],
-): string | null {
-  if (selectedTargetId && targetIds.includes(selectedTargetId)) {
-    return selectedTargetId
-  }
-  return targetIds[0] ?? null
-}
-
-/** Groups rrweb events by tab while preserving each tab array's identity. */
+/** Groups rrweb events by target while preserving each target array's identity. */
 export function buildReplayEventTargets(
   events: readonly ReplayEvent[],
 ): ReplayEventTargets {
@@ -51,4 +44,15 @@ export function buildReplayEventTargets(
     eventsForTarget: (targetId) =>
       eventsByTarget.get(targetId) ?? EMPTY_REPLAY_EVENTS,
   }
+}
+
+/** Returns metadata-ordered targets, falling back to stream discovery. */
+export function buildReplayTargetIds(
+  targets: readonly ReplayTargetMetadata[] | undefined,
+  discoveredTargetIds: readonly string[],
+): string[] {
+  if (!targets) return [...discoveredTargetIds]
+  return [...targets]
+    .sort((a, b) => a.firstEventAt - b.firstEventAt)
+    .map((target) => target.targetId)
 }

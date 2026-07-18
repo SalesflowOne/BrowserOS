@@ -1,89 +1,32 @@
 use crate::mcp::{
     dispatch::{ToolEffect, ToolEffectContext},
-    effects::tab_groups::retitle_agent_tab_group,
-    naming::{
-        build_session_group_title, client_prefix_from_slug, elicit_session_name,
-        peer_elicit_session_name,
-    },
+    naming::{build_session_group_title, client_prefix_from_slug},
 };
 use browseros_mcp::ToolResult;
 use futures_util::future::BoxFuture;
-use rmcp::service::ElicitationMode;
-use std::sync::atomic::Ordering;
-use tracing::{debug, warn};
+use rmcp::model::ContentBlock;
 
-/// Starts naming on the first successful `tabs new` dispatch for a session.
+/// Appends a bounded rename reminder while the generated session label remains active.
 pub fn apply(context: ToolEffectContext<'_>) -> BoxFuture<'_, anyhow::Result<Option<ToolResult>>> {
     Box::pin(async move {
-        if context.result.is_error || !context.call.flags.new_page {
-            return Ok(None);
-        }
-        if context.call.naming_started.swap(true, Ordering::SeqCst) {
+        if context.result.is_error {
             return Ok(None);
         }
         let Some(identity) = &context.call.identity else {
             return Ok(None);
         };
-        let Some(peer) = context.call.peer.clone() else {
-            warn!(
-                session_id = %context.call.session_id,
-                request_id = ?context.call.request_id,
-                "mcp session naming peer unavailable"
-            );
+        let Some(label) = identity.session.take_rename_nudge().await else {
             return Ok(None);
         };
-        if !peer
-            .supported_elicitation_modes()
-            .contains(&ElicitationMode::Form)
-        {
-            tracing::info!(
-                session_id = %context.call.session_id,
-                "mcp client lacks elicitation capability"
-            );
-            return Ok(None);
-        }
-        let Some(tab_groups) = context.call.tool_named("tab_groups").cloned() else {
-            warn!("tab_groups tool unavailable for session naming");
-            return Ok(None);
-        };
-        let state = context.call.state.clone();
-        let session = identity.session.clone();
-        let ownership_key = identity.ownership_key.clone();
-        // rmcp 2.1 routes server-initiated requests only through its common SSE channel;
-        // it has no related-request API that can target the still-open tool POST stream.
-        tokio::spawn(async move {
-            let prefix = client_prefix_from_slug(session.agent().slug()).to_string();
-            let name = tokio::select! {
-                name = elicit_session_name(|| peer_elicit_session_name(&peer, &prefix)) => name,
-                () = session.child_token().cancelled_owned() => {
-                    debug!(session_id = %session.id(), "session closed during naming elicitation");
-                    return;
-                }
-            };
-            let Some(name) = name else {
-                return;
-            };
-            if state.sessions.lookup(session.id()).await.is_none() {
-                debug!(session_id = %session.id(), "session closed before naming applied");
-                return;
-            }
-            session.set_session_label(name.clone()).await;
-            let title = build_session_group_title(&prefix, &name);
-            tracing::info!(session_id = %session.id(), title = %title, "mcp session named");
-            let Some(browser) = state.browser.session().await else {
-                return;
-            };
-            retitle_agent_tab_group(
-                &tab_groups,
-                &browser,
-                &state.sessions.ownership(),
-                &ownership_key,
-                &title,
-                session.child_token(),
-            )
-            .await;
-        });
-        Ok(None)
+        let title = build_session_group_title(
+            client_prefix_from_slug(identity.session.agent().slug()),
+            &label,
+        );
+        let mut result = context.result.clone();
+        result.content.push(ContentBlock::text(format!(
+            "Tip: this session is \"{title}\" — rename it with name_session name=\"<2-3 word task label>\""
+        )));
+        Ok(Some(result))
     })
 }
 
@@ -94,34 +37,87 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    #[tokio::test]
-    async fn failed_tabs_new_does_not_consume_naming_attempt() -> anyhow::Result<()> {
-        let call = crate::mcp::test_support::tool_call("tabs", json!({ "action": "new" })).await?;
-        let result = ToolResult::error("failed");
-        apply(ToolEffectContext {
-            call: &call,
-            result: &result,
+    async fn apply_result(
+        call: &crate::mcp::dispatch::ToolCall,
+        result: &ToolResult,
+    ) -> anyhow::Result<ToolResult> {
+        Ok(apply(ToolEffectContext {
+            call,
+            result,
             cancelled: false,
             duration_ms: 1,
         })
-        .await
-        .unwrap_or_else(|error| panic!("effect failed: {error}"));
-        assert!(!call.naming_started.load(Ordering::SeqCst));
+        .await?
+        .unwrap_or_else(|| result.clone()))
+    }
+
+    fn assert_result_eq(actual: &ToolResult, expected: &ToolResult) {
+        assert_eq!(actual.content, expected.content);
+        assert_eq!(actual.is_error, expected.is_error);
+        assert_eq!(actual.structured_content, expected.structured_content);
+    }
+
+    #[tokio::test]
+    async fn appends_exactly_five_trailing_tips_and_preserves_image_content() -> anyhow::Result<()>
+    {
+        let call = crate::mcp::test_support::tool_call("tabs", json!({ "action": "list" })).await?;
+        let image = ContentBlock::image("aW1hZ2U=".to_string(), "image/png".to_string());
+        let original = ToolResult {
+            content: vec![ContentBlock::text("ok"), image.clone()],
+            is_error: false,
+            structured_content: Some(json!({ "pages": [] })),
+        };
+
+        for _ in 0..5 {
+            let result = apply_result(&call, &original).await?;
+            assert_eq!(result.content[..2], original.content);
+            assert_eq!(
+                result
+                    .content
+                    .last()
+                    .and_then(ContentBlock::as_text)
+                    .map(|text| text.text.as_str()),
+                Some(
+                    "Tip: this session is \"codex/agile-alpaca\" — rename it with name_session name=\"<2-3 word task label>\""
+                )
+            );
+            assert_eq!(result.structured_content, original.structured_content);
+        }
+        assert_result_eq(&apply_result(&call, &original).await?, &original);
         Ok(())
     }
 
     #[tokio::test]
-    async fn first_successful_tabs_new_consumes_naming_attempt() -> anyhow::Result<()> {
+    async fn errors_do_not_consume_a_nudge_and_rename_stops_tips() -> anyhow::Result<()> {
         let call = crate::mcp::test_support::tool_call("tabs", json!({ "action": "new" })).await?;
-        let result = ToolResult::text("opened", Some(json!({ "page": 1 })));
-        apply(ToolEffectContext {
-            call: &call,
-            result: &result,
-            cancelled: false,
-            duration_ms: 1,
-        })
-        .await?;
-        assert!(call.naming_started.load(Ordering::SeqCst));
+        let error = ToolResult::error("failed");
+        assert_result_eq(&apply_result(&call, &error).await?, &error);
+
+        let success = ToolResult::text("opened", Some(json!({ "page": 1 })));
+        assert_eq!(apply_result(&call, &success).await?.content.len(), 2);
+        let session = &call
+            .identity
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("identity missing"))?
+            .session;
+        session.rename("invoice-processing".to_string()).await;
+        assert_result_eq(&apply_result(&call, &success).await?, &success);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn separate_sessions_have_independent_nudge_budgets() -> anyhow::Result<()> {
+        let first =
+            crate::mcp::test_support::tool_call("tabs", json!({ "action": "list" })).await?;
+        let second =
+            crate::mcp::test_support::tool_call("tabs", json!({ "action": "list" })).await?;
+        let success = ToolResult::text("ok", None);
+
+        for _ in 0..5 {
+            assert_eq!(apply_result(&first, &success).await?.content.len(), 2);
+        }
+        assert_result_eq(&apply_result(&first, &success).await?, &success);
+        assert_eq!(apply_result(&second, &success).await?.content.len(), 2);
         Ok(())
     }
 }

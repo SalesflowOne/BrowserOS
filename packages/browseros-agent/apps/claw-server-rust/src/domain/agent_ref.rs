@@ -1,10 +1,4 @@
-use crate::{
-    domain::{
-        ids::{AgentId, ProfileId, SessionId},
-        ownership::AgentKey,
-    },
-    services::agents::StoredAgentProfile,
-};
+use crate::{domain::ids::ProfileId, services::agents::StoredAgentProfile};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -20,12 +14,10 @@ pub struct ClientInfo {
 pub enum AgentRef {
     Profile {
         profile_id: ProfileId,
-        agent_id: AgentId,
         slug: String,
         label: String,
     },
     Ephemeral {
-        agent_id: AgentId,
         slug: String,
         label: String,
     },
@@ -33,44 +25,22 @@ pub enum AgentRef {
 
 impl AgentRef {
     #[must_use]
-    pub fn resolve(
-        session_id: &SessionId,
-        client_info: &ClientInfo,
-        profiles: &[StoredAgentProfile],
-    ) -> Self {
-        let client_slug = slugify_client_name(&client_info.name)
-            .unwrap_or_else(|| fallback_slug_for_session(session_id));
+    pub fn resolve(client_info: &ClientInfo, profiles: &[StoredAgentProfile]) -> Self {
+        let client_slug = slugify_client_name(&client_info.name).unwrap_or_else(|| "agent".into());
         if let Some(profile) = profiles.iter().find(|profile| {
             profile.slug == client_slug
                 || names_match(profile.name.as_str(), client_info.name.as_str())
         }) {
             return Self::Profile {
                 profile_id: ProfileId::new(profile.id.clone()),
-                agent_id: AgentId::new(format!(
-                    "{}-{}",
-                    profile.slug,
-                    hash_tail(session_id.as_str())
-                )),
                 slug: profile.slug.clone(),
                 label: profile.name.clone(),
             };
         }
         let label = clean_label(&client_info.name).unwrap_or_else(|| client_slug.clone());
         Self::Ephemeral {
-            agent_id: AgentId::new(format!(
-                "{}-{}",
-                client_slug,
-                hash_tail(session_id.as_str())
-            )),
             slug: client_slug,
             label,
-        }
-    }
-
-    #[must_use]
-    pub fn agent_id(&self) -> &AgentId {
-        match self {
-            Self::Profile { agent_id, .. } | Self::Ephemeral { agent_id, .. } => agent_id,
         }
     }
 
@@ -93,16 +63,6 @@ impl AgentRef {
         match self {
             Self::Profile { profile_id, .. } => Some(profile_id),
             Self::Ephemeral { .. } => None,
-        }
-    }
-
-    #[must_use]
-    pub fn ownership_key(&self) -> AgentKey {
-        match self {
-            Self::Profile { profile_id, .. } => AgentKey::new(profile_id.as_str().to_string()),
-            // Ephemeral identity is clientInfo-derived, so two unrelated harnesses that send the
-            // same name intentionally share a pool; configured profiles avoid that collision.
-            Self::Ephemeral { slug, .. } => AgentKey::new(slug.clone()),
         }
     }
 }
@@ -133,10 +93,6 @@ pub fn slugify_client_name(raw: &str) -> Option<String> {
     }
 }
 
-fn fallback_slug_for_session(session_id: &SessionId) -> String {
-    format!("unknown-{}", hash_tail(session_id.as_str()))
-}
-
 fn clean_label(raw: &str) -> Option<String> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
@@ -150,25 +106,10 @@ fn names_match(profile_name: &str, client_name: &str) -> bool {
     slugify_client_name(profile_name).as_deref() == slugify_client_name(client_name).as_deref()
 }
 
-fn hash_tail(input: &str) -> String {
-    let mut hash = 0x811c9dc5_u32;
-    for byte in input.as_bytes() {
-        hash ^= u32::from(*byte);
-        hash = hash.wrapping_add(
-            (hash << 1)
-                .wrapping_add(hash << 4)
-                .wrapping_add(hash << 7)
-                .wrapping_add(hash << 8)
-                .wrapping_add(hash << 24),
-        );
-    }
-    format!("{hash:08x}").chars().take(6).collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::{AgentRef, ClientInfo, slugify_client_name};
-    use crate::{domain::SessionId, services::agents::StoredAgentProfile};
+    use crate::services::agents::StoredAgentProfile;
     use std::collections::BTreeMap;
 
     fn profile() -> StoredAgentProfile {
@@ -201,7 +142,6 @@ mod tests {
     #[test]
     fn resolves_profile_when_client_name_matches_slug() {
         let resolved = AgentRef::resolve(
-            &SessionId::new("s1"),
             &ClientInfo {
                 name: "finance ops".to_string(),
                 version: "1".to_string(),
@@ -223,7 +163,6 @@ mod tests {
     #[test]
     fn falls_back_to_ephemeral_for_unknown_client() {
         let resolved = AgentRef::resolve(
-            &SessionId::new("s1"),
             &ClientInfo {
                 name: "Other".to_string(),
                 version: "1".to_string(),
@@ -238,32 +177,16 @@ mod tests {
     }
 
     #[test]
-    fn ownership_key_prefers_profile_id_over_slug() {
+    fn empty_client_name_uses_agent_slug() {
         let resolved = AgentRef::resolve(
-            &SessionId::new("s1"),
             &ClientInfo {
-                name: "finance ops".to_string(),
+                name: "...".to_string(),
                 version: "1".to_string(),
                 title: None,
             },
-            &[profile()],
+            &[],
         );
 
-        assert_eq!(resolved.ownership_key().as_str(), "p1");
-    }
-
-    #[test]
-    fn ownership_key_uses_slug_for_ephemeral_agent() {
-        let resolved = AgentRef::resolve(
-            &SessionId::new("s1"),
-            &ClientInfo {
-                name: "Other".to_string(),
-                version: "1".to_string(),
-                title: None,
-            },
-            &[profile()],
-        );
-
-        assert_eq!(resolved.ownership_key().as_str(), "other");
+        assert_eq!(resolved.slug(), "agent");
     }
 }

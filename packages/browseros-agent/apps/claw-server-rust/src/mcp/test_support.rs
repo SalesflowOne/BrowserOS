@@ -1,10 +1,9 @@
 use crate::{
     AppState,
     config::Config,
-    domain::{AgentId, AgentRef, Session, SessionId},
+    domain::{AgentRef, Session, SessionId, SessionIdentity},
     mcp::dispatch::{ToolCall, ToolIdentity, linked_cancel_token},
 };
-use rmcp::model::RequestId;
 use serde_json::Value;
 use std::{sync::Arc, time::Duration};
 use tokio_util::sync::CancellationToken;
@@ -29,6 +28,7 @@ pub async fn tool_call_with_fallback(
         resources_dir: root.join("resources"),
         browserclaw_dir: root,
         session_idle: Duration::from_secs(300),
+        session_retention: Duration::from_secs(7_200),
         session_sweep_interval: Duration::from_secs(60),
         screencast_screenshot_fallback,
         dev_mode: false,
@@ -38,10 +38,10 @@ pub async fn tool_call_with_fallback(
     let session = Session::new(
         SessionId::new("s1"),
         AgentRef::Ephemeral {
-            agent_id: AgentId::new("codex-a"),
             slug: "codex".to_string(),
             label: "Codex".to_string(),
         },
+        SessionIdentity::new("codex", "agile-alpaca".to_string()),
         tokio::time::Instant::now(),
     );
     state.sessions.insert_for_testing(session.clone()).await;
@@ -57,13 +57,12 @@ pub async fn tool_call_with_fallback(
         client_cancel.clone(),
         dispatch_cancel.clone(),
     );
-    let ownership_key = session.agent().ownership_key();
+    let ownership_key = session.ownership_key().clone();
     Ok(ToolCall::new(
         catalog,
         tool_index,
         raw_args,
         session.id().clone(),
-        RequestId::Number(1),
         Some(ToolIdentity {
             session: session.clone(),
             agent: session.agent().clone(),
@@ -77,7 +76,5 @@ pub async fn tool_call_with_fallback(
         None,
         state,
         browseros_mcp::output_file::create_browser_output_file_access(),
-        None,
-        Arc::default(),
     ))
 }
