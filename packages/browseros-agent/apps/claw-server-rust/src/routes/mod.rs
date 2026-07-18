@@ -166,10 +166,6 @@ async fn system_health(State(state): State<AppState>) -> Json<Value> {
 
 async fn system_shutdown(State(state): State<AppState>) -> AppResult<Json<Value>> {
     let drained = state.sessions.shutdown().await?;
-    state.audit.drain_claim_writes().await;
-    state.recordings.close().await;
-    state.screencast.stop();
-    state.browser.stop();
     state.shutdown.request();
     Ok(Json(json!({ "status": "ok", "drainedSessions": drained })))
 }

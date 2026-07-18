@@ -395,6 +395,44 @@ async fn health_survives_cdp_down() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn system_shutdown_preserves_body_and_requests_runtime_teardown() -> anyhow::Result<()> {
+    let app = test_app().await?;
+    app.state
+        .sessions
+        .insert_for_testing(test_session(
+            SessionId::new("shutdown-session"),
+            "shutdown-agent",
+            "shutdown-convo",
+        ))
+        .await;
+    let request = Request::builder()
+        .method("POST")
+        .uri("/system/shutdown")
+        .header(header::HOST, "localhost")
+        .body(Body::empty())?;
+
+    let response = app.router.clone().oneshot(request).await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), usize::MAX).await?;
+    assert_eq!(bytes.as_ref(), br#"{"drainedSessions":1,"status":"ok"}"#);
+    tokio::time::timeout(Duration::from_secs(1), app.state.shutdown.requested()).await?;
+
+    let retry = Request::builder()
+        .method("POST")
+        .uri("/system/shutdown")
+        .header(header::HOST, "localhost")
+        .body(Body::empty())?;
+    let retry_response = app.router.clone().oneshot(retry).await?;
+    let retry_bytes = to_bytes(retry_response.into_body(), usize::MAX).await?;
+    assert_eq!(
+        retry_bytes.as_ref(),
+        br#"{"drainedSessions":0,"status":"ok"}"#
+    );
+    assert_eq!(app.state.sessions.shutdown().await?, 0);
+    Ok(())
+}
+
+#[tokio::test]
 async fn audit_empty_and_legacy_replay_routes_are_gone() -> anyhow::Result<()> {
     let app = test_app().await?;
     let (status, dispatches) = request_json(&app.router, "GET", "/audit/dispatches", None).await?;
