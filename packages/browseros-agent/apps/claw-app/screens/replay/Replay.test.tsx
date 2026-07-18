@@ -169,7 +169,10 @@ const frames: ReplayFrame[] = [
   },
 ]
 
-function replayData(replayEvents: readonly ReplayEvent[]) {
+function replayData(
+  replayEvents: readonly ReplayEvent[],
+  replayMetadata = metadata,
+) {
   const eventTargets = buildReplayEventTargets(replayEvents)
   return {
     sessionId: 'session-1',
@@ -185,7 +188,10 @@ function replayData(replayEvents: readonly ReplayEvent[]) {
     steps: '2',
     totalSeconds: 15,
     frames,
-    targetIds: buildReplayTargetIds(metadata.targets, eventTargets.targetIds),
+    targetIds: buildReplayTargetIds(
+      replayMetadata.targets,
+      eventTargets.targetIds,
+    ),
     eventsForTarget: eventTargets.eventsForTarget,
   }
 }
@@ -307,6 +313,42 @@ describe('Replay', () => {
         .querySelector('[data-playback-time]')
         ?.getAttribute('data-playback-time'),
     ).toBe('2')
+
+    replayResult = {
+      ...replayResult,
+      replay: replayData(events, {
+        exists: true,
+        firstEventAt: 1_000,
+        lastEventAt: 5_000,
+        sizeBytes: 512,
+        targets: [
+          {
+            targetId: 'target-a',
+            tabId: 1,
+            firstEventAt: 1_000,
+            lastEventAt: 5_000,
+          },
+        ],
+      }),
+    }
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/audit/session-1/replay']}>
+          <Replay />
+        </MemoryRouter>,
+      )
+    })
+
+    expect(
+      container
+        .querySelector('[data-player-targets]')
+        ?.getAttribute('data-player-targets'),
+    ).toBe('target-a,target-a')
+    expect(
+      container
+        .querySelector('[data-playback-time]')
+        ?.getAttribute('data-playback-time'),
+    ).toBe('0')
   })
 })
 

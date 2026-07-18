@@ -34,13 +34,17 @@ export function Replay() {
     if (!replay) return
     const firstTargetId = replay.targetIds[0] ?? null
     if (firstTargetId === null) {
-      if (selectedTargetId !== null) setSelectedTargetId(null)
+      if (selectedTargetId !== null) {
+        pendingTargetSeekRef.current = 0
+        setSelectedTargetId(null)
+      }
       return
     }
     if (
       selectedTargetId === null ||
       !replay.targetIds.includes(selectedTargetId)
     ) {
+      pendingTargetSeekRef.current = 0
       setSelectedTargetId(firstTargetId)
     }
   }, [replay, selectedTargetId])

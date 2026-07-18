@@ -36,7 +36,10 @@ export function EventTimeline({
           return (
             <button
               type="button"
-              key={`frame-${frame.kind}-${frame.verb}-${frame.t}`}
+              key={
+                frame.dispatchId ??
+                `frame-${frame.kind}-${frame.verb}-${frame.t}-${i}`
+              }
               onClick={() => onSelectFrame(frame)}
               className={cn(
                 'flex gap-3 rounded-lg p-2.5 text-left transition-opacity',
