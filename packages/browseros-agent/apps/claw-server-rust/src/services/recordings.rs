@@ -170,6 +170,7 @@ impl RecordingStore {
             self.release_append_handle(target_id).await;
             result?;
             if let Some(batch_id) = batch_id {
+                // Remember only committed batches so a failed append remains retryable.
                 self.remember_accepted_batch_id(target_id, batch_id).await;
             }
             Ok(true)
@@ -694,20 +695,109 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn deduplicates_recent_batch_ids_per_target() -> anyhow::Result<()> {
+    async fn deduplicates_accepted_batch_ids_independently_per_target() -> anyhow::Result<()> {
         let dir = tempdir()?;
         let (_, store) = store(dir.path()).await?;
         assert!(
             store
-                .append_batch_with_id("target-dedupe", 23, &[event(1, "first")], Some("batch-0"))
+                .append_batch_with_id("target-dedupe", 23, &[event(1, "first")], Some("batch-a"))
                 .await?
         );
+        let before_retry =
+            tokio::fs::read(dir.path().join("recordings/target-dedupe.ndjson")).await?;
         assert!(
             !store
-                .append_batch_with_id("target-dedupe", 23, &[event(1, "first")], Some("batch-0"))
+                .append_batch_with_id("target-dedupe", 23, &[event(1, "first")], Some("batch-a"))
                 .await?
         );
-        for index in 1..=BATCH_ID_LRU_CAPACITY {
+        assert_eq!(
+            tokio::fs::read(dir.path().join("recordings/target-dedupe.ndjson")).await?,
+            before_retry
+        );
+        assert!(
+            store
+                .append_batch_with_id("target-other", 24, &[event(1, "first")], Some("batch-a"))
+                .await?
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn appends_every_batch_without_a_batch_id() -> anyhow::Result<()> {
+        let dir = tempdir()?;
+        let (_, store) = store(dir.path()).await?;
+        store
+            .append_batch("target-no-id", 23, &[event(1, "first")])
+            .await?;
+        store
+            .append_batch("target-no-id", 23, &[event(1, "first")])
+            .await?;
+
+        let text =
+            tokio::fs::read_to_string(dir.path().join("recordings/target-no-id.ndjson")).await?;
+        assert_eq!(text.lines().count(), 2);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn serializes_concurrent_retries_before_checking_the_batch_id() -> anyhow::Result<()> {
+        let dir = tempdir()?;
+        let (_, store) = store(dir.path()).await?;
+        let events = [event(1, "first")];
+        let first = store.append_batch_with_id("target-concurrent", 23, &events, Some("batch-a"));
+        let second = store.append_batch_with_id("target-concurrent", 23, &events, Some("batch-a"));
+
+        let (first, second) = tokio::join!(first, second);
+        let mut results = [first?, second?];
+        results.sort_unstable();
+        assert_eq!(results, [false, true]);
+        let text =
+            tokio::fs::read_to_string(dir.path().join("recordings/target-concurrent.ndjson"))
+                .await?;
+        assert_eq!(text.lines().count(), 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn remembers_a_batch_id_only_after_append_succeeds() -> anyhow::Result<()> {
+        let dir = tempdir()?;
+        let (_, store) = store(dir.path()).await?;
+        let recordings_path = dir.path().join("recordings");
+        tokio::fs::write(&recordings_path, b"not a directory").await?;
+
+        assert!(
+            store
+                .append_batch_with_id(
+                    "target-retry",
+                    23,
+                    &[event(1, "retry")],
+                    Some("batch-retry")
+                )
+                .await
+                .is_err()
+        );
+        tokio::fs::remove_file(&recordings_path).await?;
+
+        assert!(
+            store
+                .append_batch_with_id(
+                    "target-retry",
+                    23,
+                    &[event(1, "retry")],
+                    Some("batch-retry")
+                )
+                .await?
+        );
+        let text = tokio::fs::read_to_string(recordings_path.join("target-retry.ndjson")).await?;
+        assert_eq!(text.lines().count(), 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn evicts_the_least_recently_used_batch_id_after_256_entries() -> anyhow::Result<()> {
+        let dir = tempdir()?;
+        let (_, store) = store(dir.path()).await?;
+        for index in 0..BATCH_ID_LRU_CAPACITY {
             let batch_id = format!("batch-{index}");
             assert!(
                 store
@@ -721,12 +811,32 @@ mod tests {
             );
         }
         assert!(
+            !store
+                .append_batch_with_id("target-dedupe", 23, &[event(1, "first")], Some("batch-0"))
+                .await?
+        );
+        assert!(
+            store
+                .append_batch_with_id(
+                    "target-dedupe",
+                    23,
+                    &[event(257, "next")],
+                    Some("batch-256")
+                )
+                .await?
+        );
+        assert!(
+            !store
+                .append_batch_with_id("target-dedupe", 23, &[event(1, "first")], Some("batch-0"))
+                .await?
+        );
+        assert!(
             store
                 .append_batch_with_id(
                     "target-dedupe",
                     23,
                     &[event(999, "evicted")],
-                    Some("batch-0")
+                    Some("batch-1")
                 )
                 .await?
         );
