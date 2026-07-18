@@ -1,11 +1,11 @@
 use crate::{
-    domain::Session,
     ids::ConvoId,
     mcp::{
         dispatch::{ToolCall, ToolEffect, ToolEffectContext, result_page_id},
         naming::desired_group_title,
         timeouts::TAB_GROUP_OPERATION,
     },
+    sessions::Session,
     tabs::{PageOwnership, color_for_slug},
 };
 use browseros_core::{BrowserSession, PageId};

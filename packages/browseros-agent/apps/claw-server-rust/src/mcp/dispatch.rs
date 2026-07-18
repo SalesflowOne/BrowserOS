@@ -1,7 +1,9 @@
 use crate::{
     AppState,
-    domain::{ClientIdentity, ConvoId, DispatchId, Session, SessionId},
+    identity::ClientIdentity,
+    ids::{ConvoId, DispatchId, SessionId},
     mcp::{effects, guards},
+    sessions::Session,
 };
 use browseros_core::{BrowserSession, PageId};
 use browseros_mcp::{

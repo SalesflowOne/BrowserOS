@@ -1,4 +1,4 @@
-use crate::domain::Session;
+use crate::sessions::Session;
 
 const SMALL_NAME_WORD_LIMIT: usize = 3;
 const SMALL_NAME_MAX_LEN: usize = 32;
@@ -42,7 +42,10 @@ pub async fn desired_group_title(session: &Session) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{ClientIdentity, ConversationIdentity, SessionId};
+    use crate::{
+        identity::{ClientIdentity, ConversationIdentity},
+        ids::SessionId,
+    };
 
     #[tokio::test]
     async fn desired_group_title_uses_label_when_named() {

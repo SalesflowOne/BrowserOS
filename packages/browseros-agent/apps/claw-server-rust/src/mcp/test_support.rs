@@ -1,8 +1,10 @@
 use crate::{
     AppState,
     config::Config,
-    domain::{ClientIdentity, ConversationIdentity, Session, SessionId},
+    identity::{ClientIdentity, ConversationIdentity},
+    ids::SessionId,
     mcp::dispatch::{ToolCall, ToolIdentity, linked_cancel_token},
+    sessions::Session,
 };
 use serde_json::Value;
 use std::{sync::Arc, time::Duration};

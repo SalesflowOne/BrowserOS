@@ -7,8 +7,11 @@ use browseros_core::TargetId;
 use claw_server_rust::{
     AppState, build_router,
     config::Config,
-    domain::{ClientIdentity, ConversationIdentity, ProfileId, Session, SessionId, TabGroupColor},
+    identity::{ClientIdentity, ConversationIdentity},
+    ids::{ConvoId, ProfileId, SessionId},
     services::tab_activity::RecordToolInput,
+    sessions::Session,
+    tabs::{PageOwnership, TabGroupColor},
 };
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
@@ -1283,7 +1286,7 @@ fn test_session(session_id: SessionId, agent_id: &str, slug: &str) -> Arc<Sessio
             slug: slug.to_string(),
             label: slug.to_string(),
         },
-        claw_server_rust::domain::ConversationIdentity::new(slug, generated_label),
+        ConversationIdentity::new(slug, generated_label),
         tokio::time::Instant::now(),
     )
 }
@@ -1392,9 +1395,9 @@ async fn wait_for_cdp_connected(router: &Router) -> anyhow::Result<()> {
 }
 
 async fn wait_for_distinct_session_groups(
-    ownership: &Arc<claw_server_rust::domain::PageOwnership>,
-    key_a: &claw_server_rust::domain::ConvoId,
-    key_b: &claw_server_rust::domain::ConvoId,
+    ownership: &Arc<PageOwnership>,
+    key_a: &ConvoId,
+    key_b: &ConvoId,
 ) -> anyhow::Result<(String, String)> {
     for _ in 0..100 {
         let group_a = ownership.tab_group_ref(key_a).await;

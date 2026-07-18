@@ -1,12 +1,14 @@
 use crate::{
     AppState,
-    domain::{ClientIdentity, ClientInfo, ProfileView, Session, SessionId},
+    identity::{ClientIdentity, ClientInfo, ProfileView},
+    ids::SessionId,
     mcp::{
         dispatch::{ToolCall, ToolIdentity, dispatch_tool_call, linked_cancel_token},
         effects::tab_groups::apply_agent_tab_group_title,
         naming::{build_session_group_title, client_prefix_from_slug, normalize_small_name},
         prompt::BROWSERCLAW_MCP_INSTRUCTIONS,
     },
+    sessions::Session,
 };
 use browseros_mcp::{OutputFileAccess, ToolDef, catalog};
 use rmcp::{
