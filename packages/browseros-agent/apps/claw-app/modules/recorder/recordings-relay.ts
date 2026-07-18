@@ -108,6 +108,7 @@ export function createRecordingsRelay(
         if (!response.ok) {
           throw new Error(`recordings ingest returned ${response.status}`)
         }
+        lastPostFailureWarningAt = null
       } catch (error) {
         markPostFailure(error)
       }

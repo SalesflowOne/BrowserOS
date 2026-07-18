@@ -90,4 +90,28 @@ describe('createRecordingsRelay', () => {
     await relay.post(7, 'third')
     expect(warnings).toHaveLength(2)
   })
+
+  it('rearms the warning after event ingestion recovers', async () => {
+    const warnings: unknown[][] = []
+    let eventPosts = 0
+    const relay = createRecordingsRelay({
+      resolveServerBaseUrl: async () => serverBaseUrl,
+      fetch: async (input) => {
+        const url = String(input)
+        if (url.endsWith('/health')) return Response.json({ ok: true })
+        eventPosts++
+        return eventPosts === 2
+          ? Response.json({ ok: true, accepted: 1 })
+          : new Response('{}', { status: 503 })
+      },
+      now: () => 0,
+      warn: (...args) => warnings.push(args),
+    })
+
+    await relay.post(7, 'failed')
+    await relay.post(7, 'recovered')
+    await relay.post(7, 'failed-again')
+
+    expect(warnings).toHaveLength(2)
+  })
 })
