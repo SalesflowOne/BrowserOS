@@ -98,6 +98,40 @@ describe('RecordingStore', () => {
     expect(() => text.trim().split('\n').map(JSON.parse)).not.toThrow()
   })
 
+  it('does not evict handles while concurrent target appends are active', async () => {
+    store = createRecordingStore({ rootDir: dir, maxOpenHandles: 1 })
+    const events = Array.from({ length: 2_000 }, (_, index) => ({
+      ts: index + 1,
+      type: 3,
+      data: { value: 'x'.repeat(500) },
+    }))
+
+    await Promise.all([
+      store.appendBatch('target-one', 1, events),
+      store.appendBatch('target-two', 2, events),
+    ])
+
+    expect((await store.readRange('target-one', 0, 3_000)).length).toBe(2_000)
+    expect((await store.readRange('target-two', 0, 3_000)).length).toBe(2_000)
+  })
+
+  it('rolls back appended bytes when the catalog update fails', async () => {
+    store = createRecordingStore({
+      rootDir: dir,
+      getDb: () => {
+        throw new Error('catalog unavailable')
+      },
+    })
+
+    await expect(
+      store.appendBatch('target-rollback', 1, [
+        { ts: 1, type: 3, data: { value: 'not committed' } },
+      ]),
+    ).rejects.toThrow('catalog unavailable')
+
+    expect(await readFile(join(dir, 'target-rollback.ndjson'), 'utf8')).toBe('')
+  })
+
   it('sanitizes target ids before using them as filenames', async () => {
     await store.appendBatch('../target/d', 44, [{ ts: 1, type: 3, data: {} }])
 

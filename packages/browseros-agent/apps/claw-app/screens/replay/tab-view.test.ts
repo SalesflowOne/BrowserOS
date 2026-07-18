@@ -10,7 +10,10 @@
 
 import { describe, expect, it } from 'bun:test'
 import type { ReplayEvent, ReplayFrame } from '@/modules/api/replay.hooks'
-import { buildReplayEventTargets } from './replay-events'
+import {
+  buildReplayEventTargets,
+  resolveSelectedTargetId,
+} from './replay-events'
 import { type BuildTabViewInput, buildTabView } from './tab-view'
 
 function frame(
@@ -163,5 +166,20 @@ describe('buildTabView', () => {
 
     expect(afterTaskPoll.events).toBe(first.events)
     expect(afterTaskPoll.frames).not.toBe(first.frames)
+  })
+})
+
+describe('resolveSelectedTargetId', () => {
+  it('keeps a selection that exists in the next replay', () => {
+    expect(resolveSelectedTargetId('target-b', ['target-a', 'target-b'])).toBe(
+      'target-b',
+    )
+  })
+
+  it('selects the first target when the previous replay target is absent', () => {
+    expect(resolveSelectedTargetId('old-target', ['new-target'])).toBe(
+      'new-target',
+    )
+    expect(resolveSelectedTargetId('old-target', [])).toBeNull()
   })
 })

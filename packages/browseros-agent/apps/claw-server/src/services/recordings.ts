@@ -56,6 +56,8 @@ export interface RecordingStore {
     retentionDays: number,
     now?: number,
   ): Promise<RetentionSweepResult>
+  /** Drains queued writes and closes every cached recording handle. */
+  close(): Promise<void>
   resetForTesting(): Promise<void>
 }
 
@@ -69,6 +71,7 @@ export interface RecordingStoreOptions {
 interface OpenEntry {
   handle: FileHandle
   closeTimer: ReturnType<typeof setTimeout> | null
+  activeWrites: number
 }
 
 /** Stores target-keyed rrweb events and keeps the SQLite catalog in sync. */
@@ -88,7 +91,7 @@ export function createRecordingStore(
 
   async function closeEntry(targetId: string): Promise<void> {
     const entry = openHandles.get(targetId)
-    if (!entry) return
+    if (!entry || entry.activeWrites > 0) return
     openHandles.delete(targetId)
     if (entry.closeTimer) clearTimeout(entry.closeTimer)
     try {
@@ -103,7 +106,7 @@ export function createRecordingStore(
 
   function bumpIdleTimer(targetId: string): void {
     const entry = openHandles.get(targetId)
-    if (!entry) return
+    if (!entry || entry.activeWrites > 0) return
     if (entry.closeTimer) clearTimeout(entry.closeTimer)
     entry.closeTimer = setTimeout(() => void closeEntry(targetId), idleHandleMs)
     entry.closeTimer.unref?.()
@@ -111,28 +114,45 @@ export function createRecordingStore(
 
   async function evictOldestIfNeeded(): Promise<void> {
     while (openHandles.size > maxOpenHandles) {
-      const oldestTarget = openHandles.keys().next().value
+      let oldestTarget: string | undefined
+      for (const [targetId, entry] of openHandles) {
+        if (entry.activeWrites === 0) {
+          oldestTarget = targetId
+          break
+        }
+      }
       if (oldestTarget === undefined) return
       await closeEntry(oldestTarget)
     }
   }
 
-  async function openForAppend(targetId: string): Promise<FileHandle> {
+  async function openForAppend(targetId: string): Promise<OpenEntry> {
     const existing = openHandles.get(targetId)
     if (existing) {
       openHandles.delete(targetId)
       openHandles.set(targetId, existing)
-      bumpIdleTimer(targetId)
-      return existing.handle
+      if (existing.closeTimer) clearTimeout(existing.closeTimer)
+      existing.closeTimer = null
+      existing.activeWrites++
+      return existing
     }
 
     const path = resolvePath(targetId)
     await mkdir(dirname(path), { recursive: true })
     const handle = await open(path, 'a')
-    openHandles.set(targetId, { handle, closeTimer: null })
-    bumpIdleTimer(targetId)
+    const entry: OpenEntry = { handle, closeTimer: null, activeWrites: 1 }
+    openHandles.set(targetId, entry)
     await evictOldestIfNeeded()
-    return handle
+    return entry
+  }
+
+  async function releaseAppendEntry(
+    targetId: string,
+    entry: OpenEntry,
+  ): Promise<void> {
+    entry.activeWrites--
+    if (openHandles.get(targetId) === entry) bumpIdleTimer(targetId)
+    await evictOldestIfNeeded()
   }
 
   async function append(
@@ -150,29 +170,50 @@ export function createRecordingStore(
       lastEventAt = Math.max(lastEventAt, event.ts)
     }
     const sizeBytes = Buffer.byteLength(payload)
-    const handle = await openForAppend(targetId)
-    await handle.appendFile(payload, 'utf8')
-    getDb()
-      .insert(tabRecordings)
-      .values({
-        targetId,
-        tabId,
-        firstEventAt,
-        lastEventAt,
-        sizeBytes,
-        eventCount: events.length,
-      })
-      .onConflictDoUpdate({
-        target: tabRecordings.targetId,
-        set: {
+    const entry = await openForAppend(targetId)
+    let originalSize: number | null = null
+    try {
+      originalSize = (await entry.handle.stat()).size
+      await entry.handle.appendFile(payload, 'utf8')
+      getDb()
+        .insert(tabRecordings)
+        .values({
+          targetId,
           tabId,
-          firstEventAt: sql`min(${tabRecordings.firstEventAt}, ${firstEventAt})`,
-          lastEventAt: sql`max(${tabRecordings.lastEventAt}, ${lastEventAt})`,
-          sizeBytes: sql`${tabRecordings.sizeBytes} + ${sizeBytes}`,
-          eventCount: sql`${tabRecordings.eventCount} + ${events.length}`,
-        },
-      })
-      .run()
+          firstEventAt,
+          lastEventAt,
+          sizeBytes,
+          eventCount: events.length,
+        })
+        .onConflictDoUpdate({
+          target: tabRecordings.targetId,
+          set: {
+            tabId,
+            firstEventAt: sql`min(${tabRecordings.firstEventAt}, ${firstEventAt})`,
+            lastEventAt: sql`max(${tabRecordings.lastEventAt}, ${lastEventAt})`,
+            sizeBytes: sql`${tabRecordings.sizeBytes} + ${sizeBytes}`,
+            eventCount: sql`${tabRecordings.eventCount} + ${events.length}`,
+          },
+        })
+        .run()
+    } catch (error) {
+      if (originalSize !== null) {
+        try {
+          await entry.handle.truncate(originalSize)
+        } catch (rollbackError) {
+          logger.warn('recording append rollback failed', {
+            targetId,
+            error:
+              rollbackError instanceof Error
+                ? rollbackError.message
+                : String(rollbackError),
+          })
+        }
+      }
+      throw error
+    } finally {
+      await releaseAppendEntry(targetId, entry)
+    }
   }
 
   function enqueue<T>(
@@ -218,6 +259,16 @@ export function createRecordingStore(
         .run()
       return true
     })
+  }
+
+  async function closeAll(): Promise<void> {
+    while (chains.size > 0) {
+      await Promise.allSettled([...chains.values()])
+    }
+    for (const targetId of [...openHandles.keys()]) {
+      await closeEntry(targetId)
+    }
+    chains.clear()
   }
 
   return {
@@ -273,12 +324,9 @@ export function createRecordingStore(
         .run()
       return { recordingsDeleted, claimsDeleted: expiredClaims.length }
     },
+    close: closeAll,
     async resetForTesting() {
-      await Promise.allSettled(chains.values())
-      for (const targetId of [...openHandles.keys()]) {
-        await closeEntry(targetId)
-      }
-      chains.clear()
+      await closeAll()
       if (options.rootDir) {
         await rm(options.rootDir, { recursive: true, force: true })
       }
@@ -288,7 +336,7 @@ export function createRecordingStore(
 
 export interface RecordingRetentionHandle {
   initialSweep: Promise<void>
-  stop(): void
+  stop(): Promise<void>
 }
 
 /** Runs recording retention at startup and hourly without keeping Bun alive. */
@@ -297,6 +345,7 @@ export function startRecordingRetention(
   retentionDays: number,
   intervalMs = RETENTION_INTERVAL_MS,
 ): RecordingRetentionHandle {
+  const activeSweeps = new Set<Promise<void>>()
   const run = async (): Promise<void> => {
     try {
       const result = await store.sweepRetention(retentionDays)
@@ -307,12 +356,20 @@ export function startRecordingRetention(
       })
     }
   }
-  const initialSweep = run()
-  const timer = setInterval(() => void run(), intervalMs)
+  const launch = (): Promise<void> => {
+    const sweep = run().finally(() => activeSweeps.delete(sweep))
+    activeSweeps.add(sweep)
+    return sweep
+  }
+  const initialSweep = launch()
+  const timer = setInterval(() => void launch(), intervalMs)
   timer.unref?.()
   return {
     initialSweep,
-    stop: () => clearInterval(timer),
+    stop: async () => {
+      clearInterval(timer)
+      await Promise.allSettled([...activeSweeps])
+    },
   }
 }
 

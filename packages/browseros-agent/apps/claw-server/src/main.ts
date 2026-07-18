@@ -87,6 +87,41 @@ async function start(): Promise<void> {
   // container-mounted filesystem, even though the socket is already serving.
   void writeRuntimeFile(url)
 
+  if (bootstrap) {
+    logger.info('cockpit attached to browseros browser', {
+      cdpPort: env.cdpPort,
+    })
+  }
+  const screencast = bootstrap
+    ? startScreencastPoller({ session: bootstrap.session })
+    : null
+  let exiting = false
+  // Stop intake before draining writes so no claim or batch can arrive after closure.
+  const cleanup = (): void => {
+    if (exiting) return
+    exiting = true
+    screencast?.stop()
+    const retentionDrain = recordingRetention.stop()
+    const killSwitch = setTimeout(() => process.exit(1), 5_000)
+    killSwitch.unref()
+    void (async () => {
+      await Promise.allSettled([httpServer.stop()])
+      await retentionDrain
+      await Promise.allSettled([recordingStore.close()])
+      stopTabTargets()
+      releaseAllOpenClaims()
+      const shutdownTasks: Promise<void>[] = [shutdownAnalytics()]
+      if (bootstrap) shutdownTasks.push(bootstrap.disconnect())
+      await Promise.allSettled(shutdownTasks)
+    })().finally(() => {
+      clearTimeout(killSwitch)
+      process.exit(0)
+    })
+  }
+  shutdown = cleanup
+  process.once('SIGINT', cleanup)
+  process.once('SIGTERM', cleanup)
+
   // Self-heal loop 1: diff manifest vs. on-disk agent configs and
   // relink any drifted / missing entries from the manifest-stored
   // spec. Fires before the URL migration so relinks use the current
@@ -98,59 +133,6 @@ async function start(): Promise<void> {
     logger.warn('integrity scan failed unexpectedly', {
       error: err instanceof Error ? err.message : String(err),
     })
-  }
-
-  if (bootstrap) {
-    logger.info('cockpit attached to browseros browser', {
-      cdpPort: env.cdpPort,
-    })
-    // Drive the Running-now homepage screencast against the live
-    // session. Cleanly stopped on SIGINT/SIGTERM below; the handle is
-    // a no-op interval (unref'd) so it never blocks shutdown.
-    const screencast = startScreencastPoller({ session: bootstrap.session })
-    // `exiting` guards against double-cleanup when a supervisor sends
-    // SIGINT and SIGTERM back-to-back. `process.once` removes each
-    // handler independently, so without the flag a SIGTERM that
-    // arrives while the SIGINT cleanup is still in flight would
-    // restart `disconnect()` on an already-closing CDP connection.
-    // The kill switch guarantees forward progress: a hung
-    // `cdp.disconnect()` (half-open socket, network stall) would
-    // otherwise leave the process stuck because both handlers have
-    // already been removed and only SIGKILL could recover it.
-    let exiting = false
-    const cleanup = (): void => {
-      if (exiting) return
-      exiting = true
-      screencast.stop()
-      recordingRetention.stop()
-      stopTabTargets()
-      releaseAllOpenClaims()
-      setTimeout(() => process.exit(1), 5_000).unref()
-      // Drain queued analytics alongside the CDP disconnect so the
-      // last session event is not stranded; the 5s kill switch above
-      // bounds either hanging.
-      Promise.allSettled([bootstrap.disconnect(), shutdownAnalytics()]).finally(
-        () => process.exit(0),
-      )
-    }
-    shutdown = cleanup
-    process.once('SIGINT', cleanup)
-    process.once('SIGTERM', cleanup)
-  } else {
-    // No browser attached (BrowserOS not reachable): still flush
-    // analytics on exit so boot/connect events are not lost.
-    let exiting = false
-    const cleanup = (): void => {
-      if (exiting) return
-      exiting = true
-      recordingRetention.stop()
-      releaseAllOpenClaims()
-      setTimeout(() => process.exit(1), 5_000).unref()
-      shutdownAnalytics().finally(() => process.exit(0))
-    }
-    shutdown = cleanup
-    process.once('SIGINT', cleanup)
-    process.once('SIGTERM', cleanup)
   }
 
   // Self-heal loop 2: rewrite the shared BrowserClaw MCP spec when

@@ -13,6 +13,16 @@ export interface ReplayEventTargets {
   eventsForTarget: (targetId: string) => readonly ReplayEvent[]
 }
 
+export function resolveSelectedTargetId(
+  selectedTargetId: string | null,
+  targetIds: readonly string[],
+): string | null {
+  if (selectedTargetId && targetIds.includes(selectedTargetId)) {
+    return selectedTargetId
+  }
+  return targetIds[0] ?? null
+}
+
 /** Groups rrweb events by tab while preserving each tab array's identity. */
 export function buildReplayEventTargets(
   events: readonly ReplayEvent[],

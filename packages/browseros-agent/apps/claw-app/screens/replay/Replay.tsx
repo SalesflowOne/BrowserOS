@@ -15,6 +15,7 @@ import { PlaybackTransport } from './PlaybackTransport'
 import { type ReplayPlayerHandle, ReplayViewport } from './ReplayViewport'
 import { buildTabView, EMPTY_TAB_VIEW, useReplayData } from './replay.data'
 import { frameIndexAt } from './replay.helpers'
+import { resolveSelectedTargetId } from './replay-events'
 import { usePlayback } from './use-playback'
 
 /** Renders the audit replay page and syncs rrweb playback to the transport UI. */
@@ -29,9 +30,11 @@ export function Replay() {
   const hasInitializedTabRef = useRef(false)
 
   useEffect(() => {
-    if (selectedTargetId !== null) return
-    if (!replay || replay.targetIds.length === 0) return
-    setSelectedTargetId(replay.targetIds[0])
+    const nextTargetId = resolveSelectedTargetId(
+      selectedTargetId,
+      replay?.targetIds ?? [],
+    )
+    if (nextTargetId !== selectedTargetId) setSelectedTargetId(nextTargetId)
   }, [replay, selectedTargetId])
 
   const perTabView = useMemo(
