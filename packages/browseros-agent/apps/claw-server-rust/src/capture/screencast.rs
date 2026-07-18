@@ -235,6 +235,8 @@ impl ScreencastService {
         .await;
     }
 
+    /// Public so integration tests can seed preview frames; production
+    /// frames arrive via `store_capture` from the poller.
     pub async fn cache_frame(&self, page_id: u32, frame: ScreencastFrame) {
         let mut inner = self.inner.lock().await;
         inner.frames.remove(&page_id);

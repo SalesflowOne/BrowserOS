@@ -70,7 +70,7 @@ export interface UseReplayMetadataVariables {
   sessionId: string
 }
 
-/** Fetches the replay target index used by the CTA and tab picker. */
+/** Cheap metadata probe behind the "View Replay" CTA and page picker. */
 export async function fetchReplayMetadata({
   sessionId,
 }: UseReplayMetadataVariables): Promise<ReplayMetadata> {
@@ -107,7 +107,13 @@ function isReplayEvent(value: unknown): value is ReplayEvent {
   )
 }
 
-/** Fetches and parses one session's target-addressed NDJSON stream. */
+/**
+ * Fetches and parses one session's target-addressed NDJSON stream.
+ * Raw fetch rather than the generated client: the route serves
+ * `application/x-ndjson`, which the JSON-typed client cannot parse.
+ * 404 (nothing recorded) maps to an empty bundle so the viewer shows
+ * its empty state instead of an error.
+ */
 export async function fetchReplayEvents({
   sessionId,
 }: UseReplayEventsVariables): Promise<ReplayEventsBundle> {

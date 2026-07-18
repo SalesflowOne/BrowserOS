@@ -3,7 +3,16 @@
  * Copyright 2025 BrowserOS
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * Canonical session queries and dispatch-artifact URL helpers.
+ * Session audit surface for the cockpit and audit screens.
+ *
+ * useSessions        paginated session list (homepage + audit screen),
+ *                    polled so live runs advance in place
+ * useSessionDetail   one session's summary + full dispatch list;
+ *                    polls only while the session is live
+ *
+ * taskScreenshotUrl builds the absolute URL to the binary screenshot
+ * route so an <img src> can render the persisted JPEG without going
+ * through the JSON client.
  */
 
 import type {
@@ -17,6 +26,8 @@ import { useEffect, useState } from 'react'
 import { createInfiniteQuery, createQuery } from 'react-query-kit'
 import { apiBaseUrl, apiClient, resolveApiBaseUrl } from './client'
 
+// The screens speak task-*; the contract speaks session-*. Aliased here
+// so call sites keep their vocabulary while the shapes stay canonical.
 export type ToolDispatchRow = Dispatch
 export type TaskStatus = SessionStatus
 export type TaskSummary = SessionSummary
@@ -64,6 +75,7 @@ export const useSessionDetail = createQuery<
     query.state.data?.session.status === 'live' ? 3000 : false,
 })
 
+/** Absolute URL for the persisted screenshot of one dispatch. */
 export function taskScreenshotUrl(
   dispatchId: number,
   baseUrl = apiBaseUrl(),
@@ -71,6 +83,11 @@ export function taskScreenshotUrl(
   return `${baseUrl}/api/v1/dispatches/${dispatchId}/screenshot`
 }
 
+/**
+ * Screenshot URL base that follows the BrowserOS server-port pref. The
+ * pref API is callback-based, so `taskScreenshotUrl`'s sync default
+ * cannot see it; components resolve the base here and pass it in.
+ */
 export function useTaskScreenshotBaseUrl(): string | null {
   const [baseUrl, setBaseUrl] = useState<string | null>(null)
 

@@ -1,5 +1,4 @@
 use browseros_core::TargetId;
-use serde::Serialize;
 use std::{
     cmp::Reverse,
     collections::{HashMap, VecDeque},
@@ -11,23 +10,21 @@ use tokio::sync::Mutex;
 const ACTIVE_WINDOW: Duration = Duration::from_secs(30);
 const RECENT_TOOLS_CAP: usize = 8;
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone)]
 pub struct ToolEvent {
     pub name: String,
     pub at: i64,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone)]
 pub struct TabActivityRecord {
     pub target_id: String,
-    #[serde(skip)]
+    /// Browser tab id joining recorder batches to CDP-side state.
     pub tab_id: i64,
     pub page_id: u32,
     pub url: String,
     pub title: String,
-    #[serde(skip)]
+    /// MCP session currently claiming the tab; recording ingest rejects stale claims.
     pub session_id: String,
     pub agent_id: String,
     pub slug: String,
@@ -39,19 +36,7 @@ pub struct TabActivityRecord {
     pub status: &'static str,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EnrichedTabRecord {
-    #[serde(flatten)]
-    pub record: TabActivityRecord,
-    pub agent_label: String,
-    pub harness: Option<String>,
-    pub color: Option<String>,
-    pub screencast: Option<ScreencastFrame>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone)]
 pub struct ScreencastFrame {
     pub jpeg_base64: String,
     pub captured_at: i64,
