@@ -305,7 +305,7 @@ async fn test_router(browserclaw_dir: &Path, home: &Path) -> anyhow::Result<Rout
         dev_mode: false,
         auth_token: None,
     });
-    let state = AppState::new_with_home(config, None, home.to_path_buf()).await?;
+    let state = AppState::new_with_home(config, home.to_path_buf()).await?;
     Ok(build_router(state))
 }
 

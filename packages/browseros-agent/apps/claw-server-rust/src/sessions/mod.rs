@@ -20,6 +20,7 @@ use tokio::{
     task::JoinHandle,
     time::{Instant, MissedTickBehavior, interval},
 };
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
 use ulid::Ulid;
 
@@ -239,16 +240,20 @@ impl Sessions {
         Ok(count)
     }
 
-    pub fn spawn_idle_sweeper(self: Arc<Self>) -> JoinHandle<()> {
+    pub fn spawn_idle_sweeper(self: Arc<Self>, cancel: CancellationToken) -> JoinHandle<()> {
         tokio::spawn(async move {
             let mut ticker = interval(self.sweep_interval);
             ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
             loop {
-                ticker.tick().await;
-                match self.sweep_idle().await {
-                    Ok(count) if count > 0 => debug!(count, "swept idle sessions"),
-                    Ok(_) => {}
-                    Err(err) => warn!(error = %err, "session idle sweep failed"),
+                tokio::select! {
+                    () = cancel.cancelled() => return,
+                    _ = ticker.tick() => {
+                        match self.sweep_idle().await {
+                            Ok(count) if count > 0 => debug!(count, "swept idle sessions"),
+                            Ok(_) => {}
+                            Err(err) => warn!(error = %err, "session idle sweep failed"),
+                        }
+                    }
                 }
             }
         })

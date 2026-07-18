@@ -37,7 +37,7 @@ pub async fn tool_call_with_fallback(
         dev_mode: false,
         auth_token: None,
     });
-    let state = AppState::new_with_home(config, None, home).await?;
+    let state = AppState::new_with_home(config, home).await?;
     let session = Session::new(
         SessionId::new("s1"),
         ClientIdentity::Ephemeral {

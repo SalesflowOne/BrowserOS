@@ -1,10 +1,12 @@
 use anyhow::Context;
 use axum::Router;
 use clap::Parser;
-use claw_server_rust::{AppState, build_router, config::Cli, mcp::browser_mcp_service};
+use claw_server_rust::{
+    AppRuntime, AppState, ShutdownHandle, build_router, config::Cli, mcp::browser_mcp_service,
+};
 use rmcp::{serve_server, transport::stdio};
 use std::{future::Future, io, net::SocketAddr, sync::Arc};
-use tokio::{net::TcpListener, sync::oneshot};
+use tokio::net::TcpListener;
 use tracing::{error, info};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
@@ -14,34 +16,36 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let config = Arc::new(claw_server_rust::config::Config::load(&cli.config)?);
     let _guard = init_tracing(config.clone())?;
-    let (shutdown_tx, shutdown_rx) = oneshot::channel();
-    let state = AppState::new(config.clone(), Some(shutdown_tx)).await?;
-    let retention_task = state
-        .recordings
-        .clone()
-        .spawn_retention(config.replay_retention_days);
-    state.browser.start();
+    let state = AppState::new(config.clone()).await?;
+    let mut runtime = AppRuntime::start(state);
+    let run_result = run(&mut runtime, config, cli.stdio).await;
+    let shutdown_result = runtime.shutdown().await;
+    match (run_result, shutdown_result) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(error), Ok(())) => Err(error),
+        (Ok(()), Err(error)) => Err(error.into()),
+        (Err(run_error), Err(shutdown_error)) => {
+            error!(error = %shutdown_error, "application teardown failed after server error");
+            Err(run_error)
+        }
+    }
+}
+
+async fn run(
+    runtime: &mut AppRuntime,
+    config: Arc<claw_server_rust::config::Config>,
+    stdio_mode: bool,
+) -> anyhow::Result<()> {
+    let state = runtime.state();
     state.browser.wait_for_initial_attempt().await;
     let initial_browser = state.browser.state();
     if initial_browser.connected && !state.tab_targets.is_ready(initial_browser.epoch) {
         anyhow::bail!("failed to seed tab target identities before server startup");
     }
-    state
-        .screencast
-        .clone()
-        .start(state.browser.clone(), state.tab_activity.clone());
-    state.sessions.clone().spawn_idle_sweeper();
-    if cli.stdio {
-        let result = serve_stdio(state).await;
-        retention_task.abort();
-        return result;
+    if stdio_mode {
+        return serve_stdio(state).await;
     }
-    spawn_signal_shutdown(state.clone());
-    let result = serve(state.clone(), config, shutdown_rx).await;
-    retention_task.abort();
-    state.audit.drain_claim_writes().await;
-    state.recordings.close().await;
-    result
+    serve(runtime, config).await
 }
 
 fn init_tracing(config: Arc<claw_server_rust::config::Config>) -> anyhow::Result<WorkerGuard> {
@@ -69,12 +73,12 @@ fn init_tracing(config: Arc<claw_server_rust::config::Config>) -> anyhow::Result
 }
 
 async fn serve(
-    state: AppState,
+    runtime: &mut AppRuntime,
     config: Arc<claw_server_rust::config::Config>,
-    shutdown_rx: oneshot::Receiver<()>,
 ) -> anyhow::Result<()> {
+    let state = runtime.state();
     let heal_state = state.clone();
-    serve_with_boot_task(build_router(state), config, shutdown_rx, async move {
+    serve_with_boot_task(runtime, build_router(state), config, async move {
         heal_boot_config(&heal_state).await
     })
     .await
@@ -82,9 +86,9 @@ async fn serve(
 
 /// Binds the HTTP listener before starting non-critical boot work in the background.
 async fn serve_with_boot_task(
+    runtime: &mut AppRuntime,
     app: Router,
     config: Arc<claw_server_rust::config::Config>,
-    shutdown_rx: oneshot::Receiver<()>,
     boot_task: impl Future<Output = ()> + Send + 'static,
 ) -> anyhow::Result<()> {
     let addr = SocketAddr::from(([127, 0, 0, 1], config.server_port));
@@ -99,11 +103,10 @@ async fn serve_with_boot_task(
         Err(err) => return Err(err).context("failed to bind claw-server listener"),
     };
     info!(%addr, "claw-server-rust listening");
-    tokio::spawn(boot_task);
+    let shutdown = runtime.state().shutdown;
+    runtime.spawn_task("MCP config integrity scan", boot_task);
     axum::serve(listener, app.into_make_service())
-        .with_graceful_shutdown(async move {
-            let _ = shutdown_rx.await;
-        })
+        .with_graceful_shutdown(wait_for_shutdown(shutdown))
         .await
         .context("claw-server listener failed")
 }
@@ -113,11 +116,6 @@ async fn serve_stdio(state: AppState) -> anyhow::Result<()> {
         .await
         .context("failed to start stdio MCP server")?;
     running.waiting().await.context("stdio MCP server failed")?;
-    state.sessions.shutdown().await?;
-    state.audit.drain_claim_writes().await;
-    state.recordings.close().await;
-    state.screencast.stop();
-    state.browser.stop();
     Ok(())
 }
 
@@ -135,21 +133,11 @@ async fn heal_boot_config(state: &AppState) {
     }
 }
 
-fn spawn_signal_shutdown(state: AppState) {
-    tokio::spawn(async move {
-        wait_for_shutdown_signal().await;
-        match state.sessions.shutdown().await {
-            Ok(drained) => info!(drained, "drained sessions after shutdown signal"),
-            Err(err) => error!(error = %err, "session drain after shutdown signal failed"),
-        }
-        state.audit.drain_claim_writes().await;
-        state.recordings.close().await;
-        state.screencast.stop();
-        state.browser.stop();
-        if let Some(tx) = state.shutdown.lock().await.take() {
-            let _ = tx.send(());
-        }
-    });
+async fn wait_for_shutdown(shutdown: ShutdownHandle) {
+    tokio::select! {
+        () = shutdown.requested() => {}
+        () = wait_for_shutdown_signal() => shutdown.request(),
+    }
 }
 
 #[cfg(unix)]
@@ -179,7 +167,7 @@ async fn wait_for_shutdown_signal() {
 mod tests {
     use super::serve_with_boot_task;
     use axum::Router;
-    use claw_server_rust::config::Config;
+    use claw_server_rust::{AppRuntime, AppState, config::Config};
     use std::{sync::Arc, time::Duration};
     use tempfile::tempdir;
     use tokio::{net::TcpStream, sync::oneshot};
@@ -204,26 +192,28 @@ mod tests {
             dev_mode: false,
             auth_token: None,
         });
-        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        let state = AppState::new_with_home(config.clone(), root.path().join("home")).await?;
+        let shutdown = state.shutdown.clone();
+        let mut runtime = AppRuntime::start(state);
         let (boot_started_tx, boot_started_rx) = oneshot::channel();
         let release = Arc::new(tokio::sync::Notify::new());
         let boot_release = release.clone();
-        let server = tokio::spawn(serve_with_boot_task(
-            Router::new(),
-            config,
-            shutdown_rx,
-            async move {
-                let _ = boot_started_tx.send(());
-                boot_release.notified().await;
-            },
-        ));
+        let client = tokio::spawn(async move {
+            tokio::time::timeout(Duration::from_secs(1), boot_started_rx).await??;
+            let stream = TcpStream::connect(("127.0.0.1", port)).await?;
+            drop(stream);
+            release.notify_one();
+            shutdown.request();
+            anyhow::Ok(())
+        });
 
-        tokio::time::timeout(Duration::from_secs(1), boot_started_rx).await??;
-        let stream = TcpStream::connect(("127.0.0.1", port)).await?;
-        drop(stream);
-        release.notify_one();
-        let _ = shutdown_tx.send(());
-        server.await??;
+        serve_with_boot_task(&mut runtime, Router::new(), config, async move {
+            let _ = boot_started_tx.send(());
+            boot_release.notified().await;
+        })
+        .await?;
+        client.await??;
+        runtime.shutdown().await?;
         Ok(())
     }
 }

@@ -145,7 +145,7 @@ async fn test_router(root: &Path) -> anyhow::Result<Router> {
         dev_mode: false,
         auth_token: None,
     });
-    let state = AppState::new_with_home(config, None, root.join("home")).await?;
+    let state = AppState::new_with_home(config, root.join("home")).await?;
     Ok(build_router(state))
 }
 

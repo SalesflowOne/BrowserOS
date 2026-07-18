@@ -61,7 +61,7 @@ async fn test_app_with_options(
         dev_mode: false,
         auth_token: None,
     });
-    let state = AppState::new_with_home(config, None, dir.path().join("home")).await?;
+    let state = AppState::new_with_home(config, dir.path().join("home")).await?;
     let browser_task = if start_browser {
         Some(state.browser.start())
     } else {

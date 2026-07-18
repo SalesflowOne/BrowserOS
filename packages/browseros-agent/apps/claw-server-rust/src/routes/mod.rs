@@ -170,9 +170,7 @@ async fn system_shutdown(State(state): State<AppState>) -> AppResult<Json<Value>
     state.recordings.close().await;
     state.screencast.stop();
     state.browser.stop();
-    if let Some(tx) = state.shutdown.lock().await.take() {
-        let _ = tx.send(());
-    }
+    state.shutdown.request();
     Ok(Json(json!({ "status": "ok", "drainedSessions": drained })))
 }
 
