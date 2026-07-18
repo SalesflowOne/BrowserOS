@@ -413,6 +413,7 @@ dependencies = [
  "browseros-core",
  "browseros-mcp",
  "clap",
+ "claw-api",
  "futures-util",
  "rand 0.9.4",
  "rmcp",

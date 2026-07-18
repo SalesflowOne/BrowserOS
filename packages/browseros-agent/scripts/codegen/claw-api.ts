@@ -71,11 +71,24 @@ function runGenerator(outputRoot: string): GeneratedTrees {
   )) {
     const path = join(typescript, file)
     const source = readFileSync(path, 'utf8')
-    const normalized = `${source
+    let normalized = `${source
       .split('\n')
       .map((line) => line.trimEnd())
       .join('\n')
       .trimEnd()}\n`
+    if (file === 'runtime.ts') {
+      // TypeScript requires `override` for the inherited Error.cause property;
+      // OpenAPI Generator 7.22's FetchError template predates that check.
+      const generatorConstructor =
+        'constructor(public cause: Error, msg?: string)'
+      if (!normalized.includes(generatorConstructor)) {
+        throw new Error('OpenAPI Generator FetchError template changed')
+      }
+      normalized = normalized.replace(
+        generatorConstructor,
+        'constructor(public override cause: Error, msg?: string)',
+      )
+    }
     writeFileSync(path, normalized)
   }
   for (const file of listFiles(rust).filter((path) => path.endsWith('.rs'))) {

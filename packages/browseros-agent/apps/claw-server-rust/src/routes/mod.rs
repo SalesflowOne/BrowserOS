@@ -1,7 +1,7 @@
 use crate::{
     AppState,
     domain::SessionId,
-    error::{AppError, AppResult},
+    error::{AppError, AppResult, RequestId},
     mcp::streamable_http_service,
     services::{
         audit::{ListDispatchesQuery, ListTasksQuery, TaskStatus},
@@ -99,11 +99,12 @@ async fn mcp_request_hygiene(req: Request, next: Next) -> Response {
     next.run(req).await
 }
 
-pub async fn request_context(req: Request, next: Next) -> Response {
-    let request_id = Ulid::new().to_string();
+pub async fn request_context(mut req: Request, next: Next) -> Response {
+    let request_id = RequestId(Ulid::new().to_string());
+    req.extensions_mut().insert(request_id.clone());
     let method = req.method().clone();
     let path = req.uri().path().to_string();
-    let span = info_span!("http_request", %request_id, %method, %path);
+    let span = info_span!("http_request", request_id = %request_id.0, %method, %path);
     async move {
         let start = Instant::now();
         let mut response = next.run(req).await;
@@ -133,7 +134,7 @@ pub async fn request_context(req: Request, next: Next) -> Response {
                 "accept,content-type,authorization,mcp-session-id,mcp-protocol-version,last-event-id",
             ),
         );
-        if let Ok(value) = HeaderValue::from_str(&request_id) {
+        if let Ok(value) = HeaderValue::from_str(&request_id.0) {
             headers.insert("x-request-id", value);
         }
         response

@@ -1,0 +1,33 @@
+{
+  "items": [
+    {
+      "sessionId": "session-live",
+      "slug": "codex",
+      "label": "Codex",
+      "name": "Research BrowserClaw",
+      "startedAt": 1784300400000,
+      "durationMs": 1200,
+      "dispatchCount": 2,
+      "toolSequence": ["navigate", "snapshot"],
+      "status": "live",
+      "errorCount": 0
+    },
+    {
+      "sessionId": "session-complete",
+      "profileId": "profile-1",
+      "slug": "claude-code",
+      "label": "Claude Code",
+      "name": "Review release notes",
+      "site": "browseros.com",
+      "startedAt": 1784290000000,
+      "endedAt": 1784290060000,
+      "durationMs": 60000,
+      "dispatchCount": 3,
+      "toolSequence": ["navigate", "read", "done"],
+      "status": "done",
+      "errorCount": 0,
+      "lastScreenshotDispatchId": 43
+    }
+  ],
+  "nextCursor": 40
+}

@@ -35,6 +35,7 @@
   },
   "dependencies": {
     "@browseros/agent-mcp-manager": "workspace:*",
+    "@browseros/claw-api": "workspace:*",
     "@browseros/browser-core": "workspace:*",
     "@browseros/browser-mcp": "workspace:*",
     "@browseros/shared": "workspace:*",

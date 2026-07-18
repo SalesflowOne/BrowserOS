@@ -22,6 +22,9 @@ use tokio::{
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 use tower::ServiceExt;
 
+#[path = "support/contract_fixtures.rs"]
+mod contract_fixtures;
+
 struct TestApp {
     router: Router,
     state: AppState,

@@ -18,6 +18,7 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { HttpError } from './lib/errors'
 import { logger } from './lib/logger'
+import { type RequestContextEnv, requestIdMiddleware } from './lib/request-id'
 import { agentsControlRoute } from './routes/agents-control'
 import { auditRoute } from './routes/audit'
 import { auditScreenshotsRoute } from './routes/audit/screenshots'
@@ -67,12 +68,13 @@ interface CreateServerOptions {
 }
 
 export function createServer(options: CreateServerOptions = {}) {
-  const app = new Hono()
+  const app = new Hono<RequestContextEnv>()
 
   // Loopback-only bind (see main.ts) makes wildcard CORS safe and
   // dodges the `null` Origin a chrome-extension:// page sends when
   // fetching from `http://127.0.0.1:<port>`.
   app.use('*', cors({ origin: '*' }))
+  app.use('*', requestIdMiddleware)
 
   // One structured line per failed request, however the failure was
   // produced: a router 404, a thrown HttpError, a direct 4xx/5xx JSON
