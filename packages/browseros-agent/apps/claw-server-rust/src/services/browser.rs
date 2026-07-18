@@ -1,4 +1,4 @@
-use crate::domain::AgentPageOwnership;
+use crate::{domain::AgentPageOwnership, services::tab_targets::TabTargetMap};
 use browseros_cdp::{CdpClient, ConnectOptions, ReconnectPolicy};
 use browseros_core::{
     BrowserSession, BrowserSessionHooks,
@@ -26,12 +26,17 @@ pub struct BrowserService {
     ownership: Arc<AgentPageOwnership>,
     state_tx: watch::Sender<BrowserConnectionState>,
     session: Arc<RwLock<Option<Arc<browseros_core::BrowserSession>>>>,
+    tab_targets: Arc<TabTargetMap>,
     cancel: CancellationToken,
 }
 
 impl BrowserService {
     #[must_use]
-    pub fn new(cdp_port: u16, ownership: Arc<AgentPageOwnership>) -> Arc<Self> {
+    pub fn new(
+        cdp_port: u16,
+        ownership: Arc<AgentPageOwnership>,
+        tab_targets: Arc<TabTargetMap>,
+    ) -> Arc<Self> {
         let (state_tx, _) = watch::channel(BrowserConnectionState {
             connected: false,
             epoch: 0,
@@ -42,6 +47,7 @@ impl BrowserService {
             ownership,
             state_tx,
             session: Arc::new(RwLock::new(None)),
+            tab_targets,
             cancel: CancellationToken::new(),
         })
     }
@@ -92,6 +98,7 @@ impl BrowserService {
     }
 
     fn browser_session(&self, client: CdpClient) -> Arc<BrowserSession> {
+        let epoch = client.epoch();
         let ownership = self.ownership.clone();
         let on_page_detached: OnPageDetached = Arc::new(move |page_id| {
             let ownership = ownership.clone();
@@ -99,7 +106,7 @@ impl BrowserService {
                 ownership.remove_page(&page_id).await;
             });
         });
-        BrowserSession::new(
+        let session = BrowserSession::new(
             Arc::new(client),
             BrowserSessionHooks {
                 page_manager: PageManagerHooks {
@@ -107,7 +114,9 @@ impl BrowserService {
                     ..PageManagerHooks::default()
                 },
             },
-        )
+        );
+        self.tab_targets.observe_session(session.clone(), epoch);
+        session
     }
 
     async fn reattach_loop(self: Arc<Self>) {
@@ -170,6 +179,11 @@ impl BrowserService {
                         });
                         last_connected = connected;
                         last_epoch = epoch;
+                        if connected
+                            && let Some(session) = self.session().await
+                        {
+                            self.tab_targets.observe_session(session, epoch);
+                        }
                     }
                 }
             }

@@ -3,8 +3,8 @@ use crate::{
         AuditDb,
         entities::{
             agent_session_ends, agent_session_starts,
-            prelude::{AgentSessionEnds, AgentSessionStarts, Tasks, ToolDispatches},
-            tasks, tool_dispatches,
+            prelude::{AgentSessionEnds, AgentSessionStarts, TabClaims, Tasks, ToolDispatches},
+            tab_claims, tasks, tool_dispatches,
         },
     },
     domain::DispatchId,
@@ -307,6 +307,17 @@ impl AuditService {
         recompute_task(&txn, session_id).await?;
         txn.commit().await?;
         Ok(())
+    }
+
+    /// Closes every open claim when CDP reports that its target was destroyed.
+    pub async fn release_claims_for_target(&self, target_id: &str) -> AppResult<u64> {
+        let result = TabClaims::update_many()
+            .col_expr(tab_claims::Column::ReleasedAt, Expr::value(now_epoch_ms()))
+            .filter(tab_claims::Column::TargetId.eq(target_id))
+            .filter(tab_claims::Column::ReleasedAt.is_null())
+            .exec(self.db.connection())
+            .await?;
+        Ok(result.rows_affected)
     }
 
     /// Lists dispatches using stable descending-id cursor pagination.

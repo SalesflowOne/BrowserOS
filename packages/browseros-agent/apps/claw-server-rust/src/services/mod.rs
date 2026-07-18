@@ -7,6 +7,7 @@ pub mod replay_tabs;
 pub mod screencast;
 pub mod screenshots;
 pub mod tab_activity;
+pub mod tab_targets;
 pub mod telemetry;
 
 pub(crate) fn now_epoch_ms() -> i64 {

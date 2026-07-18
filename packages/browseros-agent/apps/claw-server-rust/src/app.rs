@@ -7,7 +7,7 @@ use crate::{
         agents::AgentService, audit::AuditService, browser::BrowserService,
         harness::HarnessService, replay::ReplayService, screencast::ScreencastService,
         screenshots::ScreenshotService, tab_activity::TabActivityService,
-        telemetry::TelemetryService,
+        tab_targets::TabTargetMap, telemetry::TelemetryService,
     },
     storage::JsonStore,
 };
@@ -22,6 +22,7 @@ pub struct AppState {
     pub replay: Arc<ReplayService>,
     pub screenshots: Arc<ScreenshotService>,
     pub tab_activity: Arc<TabActivityService>,
+    pub tab_targets: Arc<TabTargetMap>,
     pub harness: Arc<HarnessService>,
     pub telemetry: Arc<TelemetryService>,
     pub agents: Arc<AgentService>,
@@ -72,7 +73,9 @@ impl AppState {
             config.session_retention,
             config.session_sweep_interval,
         );
-        let browser = BrowserService::new(config.cdp_port, sessions.ownership());
+        let tab_targets = TabTargetMap::new(audit.clone());
+        let browser =
+            BrowserService::new(config.cdp_port, sessions.ownership(), tab_targets.clone());
         let tab_activity = Arc::new(TabActivityService::default());
         Ok(Self {
             config,
@@ -80,6 +83,7 @@ impl AppState {
             replay,
             screenshots,
             tab_activity,
+            tab_targets,
             harness,
             telemetry,
             agents,
