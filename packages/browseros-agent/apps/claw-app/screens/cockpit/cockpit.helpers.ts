@@ -96,9 +96,9 @@ export interface AgentActivityRecord {
   /** Merged across all this agent's tabs, sorted by `at`, capped at MERGED_TRAIL_CAP. */
   recentTools: ToolEvent[]
   status: 'active' | 'idle'
-  /** The freshest tab in the group. Always present. */
+  /** The freshest tab in the group. Always present (a rollup with no tabs is impossible). */
   currentFocus: TabActivityRecord
-  /** All tabs in the group, newest activity first. */
+  /** All tabs in the group, newest activity first, so the popover reads chronologically. */
   tabs: TabActivityRecord[]
 }
 

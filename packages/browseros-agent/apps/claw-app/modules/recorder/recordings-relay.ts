@@ -36,7 +36,13 @@ interface QueuedBatch {
   batchId: string
   ndjson: string
   bytes: number
-  /** Pins retries to the session/page/target that produced these events. */
+  /**
+   * The session/page/target that produced these events, stamped from the
+   * tab's last known association at enqueue time (or on first successful
+   * tab lookup). A pinned batch whose association no longer matches the
+   * tab's live one is dropped rather than written into the session that
+   * now owns the tab.
+   */
   association?: TabAssociation
 }
 
@@ -51,6 +57,14 @@ const LEGACY_TTL_MS = 10 * 60_000
 const RETRY_INTERVAL_MS = 5_000
 const WARNING_INTERVAL_MS = 60_000
 
+/**
+ * Identity of the recording stream a tab's events belong to, as reported
+ * by the canonical tab listing. Chrome tab ids are reused when a tab is
+ * reattached to a new session, so this trio — not the tab id — decides
+ * where a batch may land: `sessionId` scopes the ingest URL, and the
+ * page/target ids travel as headers for the server to re-validate
+ * against its live registry (mismatch comes back as 409).
+ */
 interface TabAssociation {
   sessionId: string
   pageId: number
@@ -83,6 +97,9 @@ export function createRecordingsRelay(
   let queuedBatchCount = 0
   let retryTimer: TimerHandle | null = null
   let drainPromise: Promise<void> | null = null
+  // Last known association per tab id, kept so batches queued while the
+  // server is unreachable pin to the session that produced them, not to
+  // whichever session owns the tab once delivery resumes.
   const associations = new Map<number, TabAssociation>()
 
   function safeWarn(...args: unknown[]): void {
@@ -253,9 +270,15 @@ export function createRecordingsRelay(
         batch.association &&
         !associationsMatch(batch.association, association)
       ) {
+        // The tab has moved on (new session/page/target) since these
+        // events were recorded. Dropping beats leaking one session's
+        // events into another's replay; the drain loop marks the gap
+        // when it sees the unknown-tab outcome.
         return { kind: 'unknown-tab' }
       }
       batch.association = association
+      // Batches enqueued before the tab was first resolved carry no pin;
+      // they were recorded under this association, so stamp it now.
       for (const queuedBatch of queues.get(tabId) ?? []) {
         queuedBatch.association ??= association
       }
@@ -275,6 +298,9 @@ export function createRecordingsRelay(
         },
       )
       if ([404, 409, 410].includes(response.status)) {
+        // The pinned session cannot take these events any more: gone
+        // (404), association drifted server-side (409), or ended (410).
+        // Forget the association so the next batch re-resolves the tab.
         associations.delete(tabId)
         return { kind: 'unknown-tab' }
       }
@@ -286,6 +312,9 @@ export function createRecordingsRelay(
       }
       return { kind: 'success' }
     } catch (error) {
+      // Only the generated client throws ResponseError, so a 404 here is
+      // `listTabs` itself missing — a pre-canonical server. Back off via
+      // legacy mode instead of treating every tab as unknown.
       if (error instanceof ResponseError && error.response.status === 404) {
         return { kind: 'legacy' }
       }
@@ -301,6 +330,9 @@ export function createRecordingsRelay(
     }
     const previous = associations.get(tabId)
     if (previous && !associationsMatch(previous, association)) {
+      // The tab was reattached mid-recording; mark the gap so the next
+      // successful delivery fires the recovered listeners and the
+      // background re-checkpoints the new stream.
       gappedTabs.add(tabId)
     }
     associations.set(tabId, association)
