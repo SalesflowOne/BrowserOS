@@ -33,6 +33,7 @@ import { setLocalServerUrl } from './local-server-url'
 import { createServer } from './server'
 import { captureEvent, shutdownAnalytics } from './services/analytics'
 import { runIntegrityScan } from './services/integrity-scan'
+import { recordingStore, startRecordingRetention } from './services/recordings'
 import { startScreencastPoller } from './services/screencast-poller'
 import { publicMcpUrl } from './shared/mcp-url'
 
@@ -56,6 +57,10 @@ async function start(): Promise<void> {
   // the de-facto singleton lock, so a second accidental launch dies on
   // EADDRINUSE before it can rotate the live instance's log file.
   logger.setLogFile(getClawServerDir())
+  const recordingRetention = startRecordingRetention(
+    recordingStore,
+    env.replayRetentionDays,
+  )
   const url = `http://${httpServer.hostname}:${httpServer.port}`
   setLocalServerUrl(url)
   logger.info('claw-server listening', { url })
@@ -121,6 +126,7 @@ async function start(): Promise<void> {
       if (exiting) return
       exiting = true
       screencast.stop()
+      recordingRetention.stop()
       stopTabTargets()
       setTimeout(() => process.exit(1), 5_000).unref()
       // Drain queued analytics alongside the CDP disconnect so the

@@ -65,6 +65,7 @@ export const env = {
   proxyPort: null as number | null,
   cdpPort: CLAW_CDP_PORT_DEFAULT,
   resourcesDir: resolveDefaultResourcesDir(),
+  replayRetentionDays: 7,
   browserClawDirOverride: readBrowserClawDirOverride(),
   isDevelopment: readIsDevelopment(),
   // MCP session lifecycle. Idle sessions end after `sessionIdleMs`;
@@ -107,4 +108,5 @@ export function applyClawConfig(config: ClawConfig): void {
   env.proxyPort = config.proxyPort ?? null
   env.cdpPort = config.cdpPort
   env.resourcesDir = config.resourcesDir
+  env.replayRetentionDays = config.replay?.retentionDays ?? 7
 }

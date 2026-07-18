@@ -14,6 +14,7 @@ const ClawConfigSchema = z.object({
   cdpPort: portSchema,
   proxyPort: portSchema.optional(),
   resourcesDir: z.string().min(1),
+  replay: z.object({ retentionDays: z.number().int().positive() }).optional(),
 })
 
 export type ClawConfig = z.infer<typeof ClawConfigSchema>
@@ -105,6 +106,7 @@ function projectClawConfig(
     proxyPort: sidecar.ports.proxy,
     resourcesDir:
       sidecar.directories.resources ?? resolveDefaultResourcesDir(cwd),
+    replay: sidecar.replay,
   })
   if (!result.success) {
     return {
