@@ -1,8 +1,8 @@
 use super::wire::WireJson;
 use crate::{
     AppState,
+    capture::{recordings::RecordingEventInput, replays::ReplayMeta},
     error::AppResult,
-    services::{recordings::RecordingEventInput, replays::ReplayMeta},
 };
 use axum::{
     body::to_bytes,

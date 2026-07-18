@@ -1,8 +1,6 @@
 use super::wire::WireJson;
 use crate::{
-    AppState,
-    error::AppResult,
-    services::{browser::BrowserConnectionState, telemetry::TelemetryState},
+    AppState, browser::BrowserConnectionState, error::AppResult, telemetry::TelemetryState,
 };
 use axum::{Json, extract::State};
 use serde::{Deserialize, Serialize};

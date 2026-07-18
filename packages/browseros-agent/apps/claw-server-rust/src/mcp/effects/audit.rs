@@ -1,13 +1,11 @@
 use crate::{
+    capture::audit::{DispatchResultSummary, RecordToolDispatchInput},
+    clock::now_epoch_ms,
     mcp::{
         dispatch::{ToolCall, ToolEffect, ToolEffectContext, extract_page_id, result_page_id},
         timeouts::{AUDIT_SCREENSHOT_CAPTURE, SCREENCAST_FRAME_FRESHNESS},
     },
-    services::{
-        audit::{DispatchResultSummary, RecordToolDispatchInput},
-        now_epoch_ms,
-        tab_activity::ScreencastFrame,
-    },
+    tabs::activity::ScreencastFrame,
 };
 use base64::Engine;
 use browseros_core::{
@@ -278,7 +276,7 @@ const _: ToolEffect = apply;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::audit::ListDispatchesQuery;
+    use crate::capture::audit::ListDispatchesQuery;
     use serde_json::json;
     use std::sync::{
         Arc,

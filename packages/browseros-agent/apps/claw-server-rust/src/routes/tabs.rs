@@ -1,6 +1,8 @@
 use super::wire::WireJson;
 use crate::{
-    AppState, error::AppResult, services::tab_activity::EnrichedTabRecord, tabs::hex_for_slug,
+    AppState,
+    error::AppResult,
+    tabs::{activity::EnrichedTabRecord, hex_for_slug},
 };
 use axum::extract::State;
 use serde::Serialize;

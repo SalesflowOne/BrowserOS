@@ -23,7 +23,7 @@ pub fn apply(context: ToolEffectContext<'_>) -> BoxFuture<'_, anyhow::Result<Opt
             .call
             .state
             .tab_activity
-            .record_tool(crate::services::tab_activity::RecordToolInput {
+            .record_tool(crate::tabs::activity::RecordToolInput {
                 target_id: info.target_id,
                 page_id,
                 url: info.url,

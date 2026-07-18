@@ -2,7 +2,7 @@ use super::wire::WireJson;
 use crate::{
     AppState,
     error::AppResult,
-    services::harness::{ConnectionState, Harness},
+    harness::{ConnectionState, Harness},
 };
 use axum::extract::{Path, State};
 use serde::Serialize;

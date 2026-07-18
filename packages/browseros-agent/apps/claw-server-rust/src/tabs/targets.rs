@@ -1,4 +1,4 @@
-use crate::{error::AppResult, services::audit::AuditService};
+use crate::{capture::audit::AuditService, error::AppResult};
 use browseros_cdp::{CdpEvent, browser};
 use browseros_core::BrowserSession;
 use futures_util::future::BoxFuture;

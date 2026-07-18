@@ -1,13 +1,13 @@
 use crate::{
+    capture::{
+        audit::AuditService,
+        recordings::{RecordedEvent, RecordingStore},
+    },
     db::audit::entities::{
         prelude::{TabClaims, TabRecordings},
         tab_claims,
     },
     error::AppResult,
-    services::{
-        audit::AuditService,
-        recordings::{RecordedEvent, RecordingStore},
-    },
 };
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde::Serialize;
@@ -214,11 +214,11 @@ fn empty_meta() -> ReplayMeta {
 mod tests {
     use super::ReplayService;
     use crate::{
-        db::audit::entities::{prelude::TabClaims, tab_claims},
-        services::{
+        capture::{
             audit::AuditService,
             recordings::{RecordingEventInput, RecordingStore},
         },
+        db::audit::entities::{prelude::TabClaims, tab_claims},
     };
     use sea_orm::{
         ActiveValue::{NotSet, Set},

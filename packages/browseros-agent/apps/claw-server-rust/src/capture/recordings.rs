@@ -1,10 +1,10 @@
 use crate::{
+    capture::audit::AuditService,
     db::audit::entities::{
         prelude::{TabClaims, TabRecordings},
         tab_claims, tab_recordings,
     },
     error::{AppError, AppResult, IoPath},
-    services::audit::AuditService,
 };
 use sea_orm::{
     ActiveValue::Set,
@@ -269,7 +269,7 @@ impl RecordingStore {
                     () = cancel.cancelled() => return,
                     _ = ticker.tick() => {
                         match self
-                            .sweep_retention(retention_days, super::now_epoch_ms())
+                            .sweep_retention(retention_days, crate::clock::now_epoch_ms())
                             .await
                         {
                             Ok(result) => info!(
@@ -612,11 +612,11 @@ fn sanitize_target_id(target_id: &str) -> String {
 mod tests {
     use super::{BATCH_ID_LRU_CAPACITY, RecordedEvent, RecordingEventInput, RecordingStore};
     use crate::{
+        capture::audit::AuditService,
         db::audit::entities::{
             prelude::{TabClaims, TabRecordings},
             tab_claims,
         },
-        services::audit::AuditService,
     };
     use sea_orm::{
         ActiveValue::{NotSet, Set},
