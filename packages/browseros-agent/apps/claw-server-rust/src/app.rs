@@ -5,7 +5,7 @@ use crate::{
     routes,
     services::{
         agents::AgentService, audit::AuditService, browser::BrowserService,
-        harness::HarnessService, recordings::RecordingStore, replay::ReplayService,
+        harness::HarnessService, recordings::RecordingStore,
         replays::ReplayService as ReplayReadService, screencast::ScreencastService,
         screenshots::ScreenshotService, tab_activity::TabActivityService,
         tab_targets::TabTargetMap, telemetry::TelemetryService,
@@ -20,7 +20,6 @@ use tokio::sync::{Mutex, oneshot};
 pub struct AppState {
     pub config: Arc<Config>,
     pub audit: Arc<AuditService>,
-    pub replay: Arc<ReplayService>,
     pub recordings: Arc<RecordingStore>,
     pub replays: Arc<ReplayReadService>,
     pub screenshots: Arc<ScreenshotService>,
@@ -56,11 +55,6 @@ impl AppState {
         let audit =
             Arc::new(AuditService::open(config.browserclaw_dir.join("audit.sqlite")).await?);
         audit.release_all_open_claims().await?;
-        let replay = Arc::new(ReplayService::new(
-            config.browserclaw_dir.join("replays"),
-            50,
-            Duration::from_secs(30),
-        ));
         let recordings = RecordingStore::new(
             config.browserclaw_dir.join("recordings"),
             audit.clone(),
@@ -79,7 +73,6 @@ impl AppState {
         let agents = Arc::new(AgentService::new(store.clone()));
         let sessions = SessionRegistry::new(
             audit.clone(),
-            replay.clone(),
             config.session_idle,
             config.session_retention,
             config.session_sweep_interval,
@@ -91,7 +84,6 @@ impl AppState {
         Ok(Self {
             config,
             audit,
-            replay,
             recordings,
             replays,
             screenshots,

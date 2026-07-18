@@ -1,25 +1,22 @@
 use crate::{
     AppState,
-    domain::SessionId,
     error::{AppError, AppResult},
     mcp::streamable_http_service,
     services::{
         audit::{ListDispatchesQuery, ListTasksQuery, TaskStatus},
         harness::Harness,
         recordings::RecordingEventInput,
-        replay::ReplayService,
-        replay_tabs::{ReplayTabsResponse, list_replay_tabs},
         tab_activity::EnrichedTabRecord,
     },
 };
 use axum::{
     Json, Router,
-    body::{Body, to_bytes},
+    body::to_bytes,
     extract::{Path, Query, Request, State},
     http::{HeaderValue, Method, StatusCode, header},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{get, options, post},
+    routing::{get, post},
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -59,20 +56,13 @@ pub fn router(state: AppState) -> Router<AppState> {
         )
         .route("/audit/replays/{session_id}", get(audit_replay_get))
         .route("/audit/replays/{session_id}/meta", get(audit_replay_meta))
-        .route(
-            "/audit/replay/{session_id}/events",
-            post(replay_post_events),
-        )
-        .route("/audit/replay/{session_id}", get(replay_get))
-        .route("/audit/replay/{session_id}/exists", get(replay_exists))
-        .route("/replay/tabs", get(replay_tabs))
         .nest_service(
             "/mcp",
             Router::new()
                 .fallback_service(streamable_http_service(state))
                 .layer(middleware::from_fn(mcp_request_hygiene)),
         )
-        .route("/{*path}", options(preflight))
+        .fallback(route_fallback)
 }
 
 /// Enforces the header conventions native MCP clients follow (parity with
@@ -153,8 +143,12 @@ pub async fn request_context(req: Request, next: Next) -> Response {
     .await
 }
 
-async fn preflight() -> StatusCode {
-    StatusCode::NO_CONTENT
+async fn route_fallback(request: Request) -> StatusCode {
+    if *request.method() == Method::OPTIONS {
+        StatusCode::NO_CONTENT
+    } else {
+        StatusCode::NOT_FOUND
+    }
 }
 
 async fn system_health(State(state): State<AppState>) -> Json<Value> {
@@ -486,69 +480,6 @@ async fn audit_replay_meta(
     Ok(Json(serde_json::to_value(
         state.replays.meta(&session_id).await?,
     )?))
-}
-
-async fn replay_post_events(
-    State(state): State<AppState>,
-    Path(session_id): Path<String>,
-    body: String,
-) -> AppResult<Json<Value>> {
-    if !state
-        .sessions
-        .contains(&SessionId::new(session_id.clone()))
-        .await
-    {
-        return Err(AppError::gone("session not live"));
-    }
-    if body.is_empty() {
-        return Ok(Json(json!({ "ok": true, "accepted": 0 })));
-    }
-    let lines: Vec<String> = body
-        .lines()
-        .filter(|line| !line.is_empty())
-        .map(|line| ReplayService::annotate_with_session_id(line, &session_id))
-        .collect();
-    let accepted = lines.len();
-    state.replay.append_events(&session_id, &lines).await?;
-    Ok(Json(json!({ "ok": true, "accepted": accepted })))
-}
-
-async fn replay_get(
-    State(state): State<AppState>,
-    Path(session_id): Path<String>,
-) -> AppResult<Response> {
-    let stat = state.replay.stat_session(&session_id).await?;
-    if !stat.has_data {
-        return Err(AppError::not_found("no replay for this session"));
-    }
-    let bytes = state.replay.read_events(&session_id).await?;
-    let mut response = Response::new(Body::from(bytes));
-    let headers = response.headers_mut();
-    headers.insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_static("application/x-ndjson"),
-    );
-    if let Ok(value) = HeaderValue::from_str(&stat.size_bytes.to_string()) {
-        headers.insert(header::CONTENT_LENGTH, value);
-    }
-    headers.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
-    Ok(response)
-}
-
-async fn replay_exists(
-    State(state): State<AppState>,
-    Path(session_id): Path<String>,
-) -> AppResult<Json<Value>> {
-    let stat = state.replay.stat_session(&session_id).await?;
-    let mut value = serde_json::to_value(stat)?;
-    if let Value::Object(obj) = &mut value {
-        obj.insert("ok".to_string(), Value::Bool(true));
-    }
-    Ok(Json(value))
-}
-
-async fn replay_tabs(State(state): State<AppState>) -> Json<ReplayTabsResponse> {
-    Json(list_replay_tabs(&state.sessions, &state.tab_activity).await)
 }
 
 fn validate_limit(limit: Option<i64>, cap: i64) -> AppResult<()> {

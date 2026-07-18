@@ -7,7 +7,7 @@ use browseros_core::TargetId;
 use claw_server_rust::{
     AppState, build_router,
     config::Config,
-    domain::{AgentRef, ProfileId, Session, SessionId, SessionIdentity, TabGroupColor},
+    domain::{AgentRef, ProfileId, Session, SessionId, SessionIdentity},
     services::tab_activity::RecordToolInput,
 };
 use futures_util::{SinkExt, StreamExt};
@@ -368,7 +368,7 @@ async fn health_survives_cdp_down() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn audit_empty_and_replay_gone() -> anyhow::Result<()> {
+async fn audit_empty_and_legacy_replay_routes_are_gone() -> anyhow::Result<()> {
     let app = test_app().await?;
     let (status, dispatches) = request_json(&app.router, "GET", "/audit/dispatches", None).await?;
     assert_eq!(status, StatusCode::OK);
@@ -381,113 +381,17 @@ async fn audit_empty_and_replay_gone() -> anyhow::Result<()> {
     );
     assert!(dispatches["nextCursor"].is_null());
 
-    let (status, body) = request_json(
-        &app.router,
-        "POST",
-        "/audit/replay/missing/events",
-        Some(json!({ "type": 3 })),
-    )
-    .await?;
-    assert_eq!(status, StatusCode::GONE);
-    assert_eq!(body["error"], "session not live");
-    Ok(())
-}
-
-#[tokio::test]
-async fn replay_tabs_tracks_only_live_agent_sessions() -> anyhow::Result<()> {
-    let app = test_app().await?;
-    let session_id = SessionId::new("session-live");
-    let session = test_session(session_id.clone(), "agent-live", "codex");
-    app.state
-        .tab_activity
-        .record_tool(RecordToolInput {
-            target_id: TargetId::from("target-live".to_string()),
-            page_id: 7,
-            url: "https://example.com/live".to_string(),
-            title: "Live Tab".to_string(),
-            agent_id: session.agent_id().as_str().to_string(),
-            slug: "codex".to_string(),
-            tool_name: "tabs".to_string(),
-        })
-        .await;
-
-    let (status, body) = request_json(&app.router, "GET", "/replay/tabs", None).await?;
-    assert_eq!(status, StatusCode::OK, "initialize body: {body:?}");
-    assert_eq!(body, json!({ "tabs": [] }));
-
-    app.state.sessions.insert_for_testing(session.clone()).await;
-
-    let (status, body) = request_json(&app.router, "GET", "/replay/tabs", None).await?;
-    assert_eq!(status, StatusCode::OK);
-    let rows = body["tabs"]
-        .as_array()
-        .ok_or_else(|| anyhow::anyhow!("tabs not array"))?;
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0]["sessionId"], "session-live");
-    assert_eq!(rows[0]["tabPageId"], 7);
-    assert_eq!(rows[0]["url"], "https://example.com/live");
-    assert_eq!(rows[0]["title"], "Live Tab");
-    assert!(rows[0]["groupColor"].is_null());
-
-    app.state
-        .sessions
-        .ownership()
-        .set_tab_group(
-            session.ownership_key().clone(),
-            Some("group-live".to_string()),
-            Some(TabGroupColor::Purple),
-        )
-        .await;
-    let (status, body) = request_json(&app.router, "GET", "/replay/tabs", None).await?;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["tabs"][0]["groupColor"], "purple");
-
-    assert!(
-        app.state
-            .sessions
-            .remove(&session_id, "closed", Some("test close"))
-            .await?
-    );
-    let (status, body) = request_json(&app.router, "GET", "/replay/tabs", None).await?;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body, json!({ "tabs": [] }));
-    Ok(())
-}
-
-#[tokio::test]
-async fn replay_tabs_maps_each_session_scoped_agent_id() -> anyhow::Result<()> {
-    let app = test_app().await?;
-    let session_a = test_session(SessionId::new("session-a"), "agile-alpaca", "codex");
-    let session_b = test_session(SessionId::new("session-b"), "bright-beaver", "codex");
-    for (index, session) in [&session_a, &session_b].into_iter().enumerate() {
-        app.state
-            .tab_activity
-            .record_tool(RecordToolInput {
-                target_id: TargetId::from(format!("target-{index}")),
-                page_id: u32::try_from(index + 8)?,
-                url: format!("https://example.com/{index}"),
-                title: format!("Session {index}"),
-                agent_id: session.agent_id().as_str().to_string(),
-                slug: "codex".to_string(),
-                tool_name: "tabs".to_string(),
-            })
-            .await;
+    for (method, path) in [
+        ("GET", "/replay/tabs"),
+        ("GET", "/audit/replay/missing"),
+        ("GET", "/audit/replay/missing/exists"),
+        ("POST", "/audit/replay/missing/events"),
+    ] {
+        assert_eq!(
+            request_status(&app.router, method, path).await?,
+            StatusCode::NOT_FOUND
+        );
     }
-    app.state.sessions.insert_for_testing(session_a).await;
-    app.state.sessions.insert_for_testing(session_b).await;
-
-    let (status, body) = request_json(&app.router, "GET", "/replay/tabs", None).await?;
-    assert_eq!(status, StatusCode::OK);
-    let session_ids = body["tabs"]
-        .as_array()
-        .ok_or_else(|| anyhow::anyhow!("tabs not array"))?
-        .iter()
-        .filter_map(|tab| tab["sessionId"].as_str())
-        .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(
-        session_ids,
-        std::collections::BTreeSet::from(["session-a", "session-b"])
-    );
     Ok(())
 }
 

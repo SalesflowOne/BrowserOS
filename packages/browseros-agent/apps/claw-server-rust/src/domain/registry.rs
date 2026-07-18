@@ -4,7 +4,7 @@ use crate::{
         generate_fun_name,
     },
     error::{AppError, AppResult},
-    services::{audit::AuditService, replay::ReplayService},
+    services::audit::AuditService,
 };
 use futures_util::future::BoxFuture;
 use std::{
@@ -41,7 +41,6 @@ pub struct SessionRegistry {
     sessions: RwLock<HashMap<SessionId, Arc<Session>>>,
     ownership: Arc<AgentPageOwnership>,
     audit: Arc<AuditService>,
-    replay: Arc<ReplayService>,
     reserved_keys: Mutex<HashSet<AgentKey>>,
     retained: RwLock<HashMap<AgentKey, RetainedSession>>,
     reaping_keys: Mutex<HashSet<AgentKey>>,
@@ -55,7 +54,6 @@ impl SessionRegistry {
     #[must_use]
     pub fn new(
         audit: Arc<AuditService>,
-        replay: Arc<ReplayService>,
         idle_after: Duration,
         retention: Duration,
         sweep_interval: Duration,
@@ -64,7 +62,6 @@ impl SessionRegistry {
             sessions: RwLock::new(HashMap::new()),
             ownership: Arc::new(AgentPageOwnership::new()),
             audit,
-            replay,
             reserved_keys: Mutex::new(HashSet::new()),
             retained: RwLock::new(HashMap::new()),
             reaping_keys: Mutex::new(HashSet::new()),
@@ -272,7 +269,6 @@ impl SessionRegistry {
                 warn!(session_id = claim_session_id, error = %error, "session claim release failed");
             }
         });
-        let replay_result = self.replay.close_session(session.id().as_str()).await;
         let audit_result = self
             .audit
             .record_session_end(session.id().as_str(), kind, reason)
@@ -288,7 +284,6 @@ impl SessionRegistry {
         if let Some(hook) = self.retained_group_hook.get() {
             hook(self.ownership.clone(), key, RetainedGroupAction::Collapse).await;
         }
-        replay_result?;
         audit_result?;
         Ok(())
     }
@@ -359,7 +354,7 @@ mod tests {
         domain::{
             AgentKey, AgentRef, ClientInfo, Session, SessionId, SessionIdentity, generate_fun_name,
         },
-        services::{audit::AuditService, replay::ReplayService},
+        services::audit::AuditService,
     };
     use sea_orm::EntityTrait;
     use std::{
@@ -376,14 +371,8 @@ mod tests {
     async fn sweep_removes_idle_sessions_and_writes_end_row() -> anyhow::Result<()> {
         let dir = tempdir()?;
         let audit = Arc::new(AuditService::open(dir.path().join("audit.sqlite")).await?);
-        let replay = Arc::new(ReplayService::new(
-            dir.path().join("replays"),
-            50,
-            Duration::from_secs(30),
-        ));
         let registry = SessionRegistry::new(
             audit.clone(),
-            replay,
             Duration::from_secs(5),
             Duration::from_secs(60),
             Duration::from_secs(1),
@@ -410,14 +399,8 @@ mod tests {
     async fn session_teardown_releases_every_open_target_claim() -> anyhow::Result<()> {
         let dir = tempdir()?;
         let audit = Arc::new(AuditService::open(dir.path().join("audit.sqlite")).await?);
-        let replay = Arc::new(ReplayService::new(
-            dir.path().join("replays"),
-            50,
-            Duration::from_secs(30),
-        ));
         let registry = SessionRegistry::new(
             audit.clone(),
-            replay,
             Duration::from_secs(60),
             Duration::from_secs(60),
             Duration::from_secs(1),
@@ -455,14 +438,8 @@ mod tests {
     async fn mint_registers_live_session() -> anyhow::Result<()> {
         let dir = tempdir()?;
         let audit = Arc::new(AuditService::open(dir.path().join("audit.sqlite")).await?);
-        let replay = Arc::new(ReplayService::new(
-            dir.path().join("replays"),
-            50,
-            Duration::from_secs(30),
-        ));
         let registry = SessionRegistry::new(
             audit,
-            replay,
             Duration::from_secs(60),
             Duration::from_secs(60),
             Duration::from_secs(1),
@@ -488,14 +465,8 @@ mod tests {
     async fn same_client_sessions_get_distinct_identity_and_ownership() -> anyhow::Result<()> {
         let dir = tempdir()?;
         let audit = Arc::new(AuditService::open(dir.path().join("audit.sqlite")).await?);
-        let replay = Arc::new(ReplayService::new(
-            dir.path().join("replays"),
-            50,
-            Duration::from_secs(30),
-        ));
         let registry = SessionRegistry::new(
             audit,
-            replay,
             Duration::from_secs(60),
             Duration::from_secs(60),
             Duration::from_secs(1),
@@ -552,14 +523,8 @@ mod tests {
     {
         let dir = tempdir()?;
         let audit = Arc::new(AuditService::open(dir.path().join("audit.sqlite")).await?);
-        let replay = Arc::new(ReplayService::new(
-            dir.path().join("replays"),
-            50,
-            Duration::from_secs(30),
-        ));
         let registry = SessionRegistry::new(
             audit,
-            replay,
             Duration::from_secs(60),
             Duration::from_secs(10),
             Duration::from_secs(1),
@@ -645,14 +610,8 @@ mod tests {
     async fn failed_or_disconnected_close_retries_without_forgetting_state() -> anyhow::Result<()> {
         let dir = tempdir()?;
         let audit = Arc::new(AuditService::open(dir.path().join("audit.sqlite")).await?);
-        let replay = Arc::new(ReplayService::new(
-            dir.path().join("replays"),
-            50,
-            Duration::from_secs(30),
-        ));
         let registry = SessionRegistry::new(
             audit,
-            replay,
             Duration::from_secs(60),
             Duration::from_secs(10),
             Duration::from_secs(1),
@@ -723,14 +682,8 @@ mod tests {
     async fn generated_key_stays_reserved_until_retained_cleanup() -> anyhow::Result<()> {
         let dir = tempdir()?;
         let audit = Arc::new(AuditService::open(dir.path().join("audit.sqlite")).await?);
-        let replay = Arc::new(ReplayService::new(
-            dir.path().join("replays"),
-            50,
-            Duration::from_secs(30),
-        ));
         let registry = SessionRegistry::new(
             audit,
-            replay,
             Duration::from_secs(60),
             Duration::from_secs(10),
             Duration::from_secs(1),
@@ -773,14 +726,8 @@ mod tests {
     async fn overlapping_retained_sweeps_issue_one_close() -> anyhow::Result<()> {
         let dir = tempdir()?;
         let audit = Arc::new(AuditService::open(dir.path().join("audit.sqlite")).await?);
-        let replay = Arc::new(ReplayService::new(
-            dir.path().join("replays"),
-            50,
-            Duration::from_secs(30),
-        ));
         let registry = SessionRegistry::new(
             audit,
-            replay,
             Duration::from_secs(60),
             Duration::from_secs(10),
             Duration::from_secs(1),
