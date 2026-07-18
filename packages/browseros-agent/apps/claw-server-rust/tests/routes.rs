@@ -547,6 +547,106 @@ async fn mcp_initialize_list_guard_audit_and_delete() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn mcp_name_session_lists_and_renames_while_disconnected() -> anyhow::Result<()> {
+    let app = test_app().await?;
+    let session_id = initialize_mcp(&app).await?;
+    let headers = [("mcp-session-id", session_id.as_str())];
+
+    let (status, _headers, body) = request_json_with_headers(
+        &app.router,
+        "POST",
+        "/mcp",
+        Some(json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {} })),
+        &headers,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    let tool = body["result"]["tools"]
+        .as_array()
+        .and_then(|tools| tools.iter().find(|tool| tool["name"] == "name_session"))
+        .ok_or_else(|| anyhow::anyhow!("name_session missing"))?;
+    assert_eq!(
+        tool["description"],
+        "Rename this browser session: a small lowercase 2-3 word label for what this session is doing, e.g. \"invoice processing\". Tabs are grouped as <client>/<name>. Call again to rename."
+    );
+    assert_eq!(
+        tool["inputSchema"],
+        json!({
+            "type": "object",
+            "properties": { "name": { "type": "string", "maxLength": 64 } },
+            "required": ["name"]
+        })
+    );
+    assert_eq!(
+        tool["annotations"],
+        json!({
+            "title": "Name session",
+            "readOnlyHint": false,
+            "destructiveHint": false,
+            "idempotentHint": true
+        })
+    );
+
+    let session = app
+        .state
+        .sessions
+        .lookup(&SessionId::new(session_id.clone()))
+        .await
+        .ok_or_else(|| anyhow::anyhow!("session not minted"))?;
+    let generated = session.generated_label().to_string();
+    let (status, _headers, body) = request_json_with_headers(
+        &app.router,
+        "POST",
+        "/mcp",
+        Some(name_session_request(3, "  Invoice Processing!!!  ")),
+        &headers,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["result"]["isError"], false);
+    assert_eq!(
+        body["result"]["content"][0]["text"],
+        format!("renamed to codex/invoice-processing (was codex/{generated})")
+    );
+    assert_eq!(session.label().await, "invoice-processing");
+
+    let (_status, _headers, body) = request_json_with_headers(
+        &app.router,
+        "POST",
+        "/mcp",
+        Some(name_session_request(4, "Quarterly Reporting")),
+        &headers,
+    )
+    .await?;
+    assert_eq!(
+        body["result"]["content"][0]["text"],
+        "renamed to codex/quarterly-reporting (was codex/invoice-processing)"
+    );
+
+    for (id, invalid, message) in [
+        (
+            5,
+            "!!!".to_string(),
+            "name must contain a usable session name",
+        ),
+        (6, "x".repeat(65), "name must be at most 64 characters"),
+    ] {
+        let (_status, _headers, body) = request_json_with_headers(
+            &app.router,
+            "POST",
+            "/mcp",
+            Some(name_session_request(id, &invalid)),
+            &headers,
+        )
+        .await?;
+        assert_eq!(body["result"]["isError"], true);
+        assert_eq!(body["result"]["content"][0]["text"], message);
+        assert_eq!(session.label().await, "quarterly-reporting");
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn mcp_session_naming_triggers_once_after_first_successful_tabs_new() -> anyhow::Result<()> {
     let mock = MockCdp::start().await?;
     let app = test_app_with_cdp_port(mock.cdp_port, false).await?;
@@ -1178,6 +1278,18 @@ fn tabs_new_request(id: u64) -> Value {
         "params": {
             "name": "tabs",
             "arguments": { "action": "new", "url": "https://example.com" }
+        }
+    })
+}
+
+fn name_session_request(id: u64, name: &str) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "method": "tools/call",
+        "params": {
+            "name": "name_session",
+            "arguments": { "name": name }
         }
     })
 }

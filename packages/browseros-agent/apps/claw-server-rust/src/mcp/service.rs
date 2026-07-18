@@ -3,6 +3,8 @@ use crate::{
     domain::{AgentRef, ClientInfo, Session, SessionId},
     mcp::{
         dispatch::{ToolCall, ToolIdentity, dispatch_tool_call, linked_cancel_token},
+        effects::tab_groups::retitle_agent_tab_group,
+        naming::{build_session_group_title, client_prefix_from_slug, normalize_small_name},
         prompt::BROWSERCLAW_MCP_INSTRUCTIONS,
     },
 };
@@ -13,11 +15,11 @@ use rmcp::{
     model::{
         CallToolRequestMethod, CallToolRequestParams, CallToolResult, Implementation,
         InitializeRequestParams, InitializeResult, JsonObject, ListToolsResult,
-        PaginatedRequestParams, ServerCapabilities, Tool,
+        PaginatedRequestParams, ServerCapabilities, Tool, ToolAnnotations,
     },
     service::{NotificationContext, Peer, RequestContext},
 };
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -29,10 +31,14 @@ use ulid::Ulid;
 
 const SERVER_NAME: &str = "browserclaw";
 const SERVER_TITLE: &str = "BrowserClaw";
+const NAME_SESSION_TOOL_NAME: &str = "name_session";
+const NAME_SESSION_DESCRIPTION: &str = "Rename this browser session: a small lowercase 2-3 word label for what this session is doing, e.g. \"invoice processing\". Tabs are grouped as <client>/<name>. Call again to rename.";
+const NAME_SESSION_INPUT_MAX_LEN: usize = 64;
 
 pub struct ClawMcpService {
     state: AppState,
     catalog: Arc<Vec<ToolDef>>,
+    name_session_tool: Tool,
     output_files: OutputFileAccess,
     lifecycle: Arc<Mutex<ServiceLifecycle>>,
     fallback_session_id: SessionId,
@@ -63,6 +69,7 @@ impl ClawMcpService {
         Self {
             state,
             catalog: Arc::new(catalog()),
+            name_session_tool: name_session_tool(),
             output_files: browseros_mcp::output_file::create_browser_output_file_access(),
             lifecycle: Arc::new(Mutex::new(ServiceLifecycle::default())),
             fallback_session_id: SessionId::new(format!("stdio-{}", Ulid::new())),
@@ -72,6 +79,40 @@ impl ClawMcpService {
 
     fn find_tool_index(&self, name: &str) -> Option<usize> {
         self.catalog.iter().position(|tool| tool.name == name)
+    }
+
+    fn listed_tools(&self) -> Vec<Tool> {
+        let mut tools = self
+            .catalog
+            .iter()
+            .map(ToolDef::to_mcp_tool)
+            .collect::<Vec<_>>();
+        tools.push(self.name_session_tool.clone());
+        tools
+    }
+
+    async fn call_name_session(&self, session: Arc<Session>, raw_args: &Value) -> CallToolResult {
+        let rename = match rename_session(Some(session.as_ref()), raw_args).await {
+            Ok(rename) => rename,
+            Err(message) => {
+                return CallToolResult::error(vec![rmcp::model::ContentBlock::text(message)]);
+            }
+        };
+        if let (Some(browser), Some(tab_groups)) = (
+            self.state.browser.session().await,
+            self.catalog.iter().find(|tool| tool.name == "tab_groups"),
+        ) {
+            retitle_agent_tab_group(
+                tab_groups,
+                &browser,
+                &self.state.sessions.ownership(),
+                session.ownership_key(),
+                &rename.new_title,
+                session.child_token(),
+            )
+            .await;
+        }
+        CallToolResult::success(vec![rmcp::model::ContentBlock::text(rename.response)])
     }
 
     async fn set_client_info(&self, request: &InitializeRequestParams, peer: Peer<RoleServer>) {
@@ -251,15 +292,13 @@ impl ServerHandler for ClawMcpService {
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<ListToolsResult, McpError>> + Send + '_ {
-        let tools = self
-            .catalog
-            .iter()
-            .map(ToolDef::to_mcp_tool)
-            .collect::<Vec<_>>();
-        std::future::ready(Ok(ListToolsResult::with_all_items(tools)))
+        std::future::ready(Ok(ListToolsResult::with_all_items(self.listed_tools())))
     }
 
     fn get_tool(&self, name: &str) -> Option<Tool> {
+        if name == NAME_SESSION_TOOL_NAME {
+            return Some(self.name_session_tool.clone());
+        }
         self.find_tool_index(name)
             .map(|index| self.catalog[index].to_mcp_tool())
     }
@@ -269,15 +308,23 @@ impl ServerHandler for ClawMcpService {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, McpError> {
-        let Some(tool_index) = self.find_tool_index(&request.name) else {
+        let is_name_session = request.name == NAME_SESSION_TOOL_NAME;
+        let tool_index = self.find_tool_index(&request.name);
+        if !is_name_session && tool_index.is_none() {
             return Err(McpError::method_not_found::<CallToolRequestMethod>());
-        };
+        }
         let raw_args = request
             .arguments
             .map(Value::Object)
             .unwrap_or_else(|| Value::Object(JsonObject::new()));
         let started = self.learn_session_from_request(&context).await?;
         started.session.touch(tokio::time::Instant::now()).await;
+        if is_name_session {
+            return Ok(self.call_name_session(started.session, &raw_args).await);
+        }
+        let Some(tool_index) = tool_index else {
+            return Err(McpError::method_not_found::<CallToolRequestMethod>());
+        };
         let browser_session = self.state.browser.session().await;
         let ownership_key = started.session.ownership_key().clone();
         let default_tab_group_id = self
@@ -319,6 +366,64 @@ impl ServerHandler for ClawMcpService {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct SessionRename {
+    new_title: String,
+    response: String,
+}
+
+/// Validates and commits a session rename before any browser-side title synchronization.
+async fn rename_session(
+    session: Option<&Session>,
+    raw_args: &Value,
+) -> Result<SessionRename, &'static str> {
+    let Some(session) = session else {
+        return Err("unable to resolve this session");
+    };
+    let Some(raw_name) = raw_args.get("name").and_then(Value::as_str) else {
+        return Err("name must be a string");
+    };
+    if raw_name.chars().count() > NAME_SESSION_INPUT_MAX_LEN {
+        return Err("name must be at most 64 characters");
+    }
+    let label = normalize_small_name(raw_name);
+    if label.is_empty() {
+        return Err("name must contain a usable session name");
+    }
+
+    let prefix = client_prefix_from_slug(session.agent().slug());
+    let old_label = session.rename(label.clone()).await;
+    let old_title = build_session_group_title(prefix, &old_label);
+    let new_title = build_session_group_title(prefix, &label);
+    Ok(SessionRename {
+        response: format!("renamed to {new_title} (was {old_title})"),
+        new_title,
+    })
+}
+
+fn name_session_tool() -> Tool {
+    let Value::Object(input_schema) = json!({
+        "type": "object",
+        "properties": {
+            "name": { "type": "string", "maxLength": NAME_SESSION_INPUT_MAX_LEN }
+        },
+        "required": ["name"]
+    }) else {
+        unreachable!();
+    };
+    Tool::new(
+        NAME_SESSION_TOOL_NAME,
+        NAME_SESSION_DESCRIPTION,
+        input_schema,
+    )
+    .with_annotations(
+        ToolAnnotations::with_title("Name session")
+            .read_only(false)
+            .destructive(false)
+            .idempotent(true),
+    )
+}
+
 fn clean_client_field(value: &str, fallback: &str) -> String {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -358,6 +463,96 @@ mod tests {
         assert!(info.instructions.as_deref().is_some_and(|instructions| {
             instructions.contains("BrowserClaw — the browser for agents")
         }));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn name_session_schema_and_annotations_are_registered_locally() -> anyhow::Result<()> {
+        let call = crate::mcp::test_support::tool_call("tabs", json!({})).await?;
+        let service = ClawMcpService::new(call.state);
+        let listed = service
+            .listed_tools()
+            .into_iter()
+            .find(|tool| tool.name == NAME_SESSION_TOOL_NAME)
+            .ok_or_else(|| anyhow::anyhow!("name_session missing from list"))?;
+        let fetched = service
+            .get_tool(NAME_SESSION_TOOL_NAME)
+            .ok_or_else(|| anyhow::anyhow!("name_session missing from get_tool"))?;
+
+        assert_eq!(listed, fetched);
+        assert_eq!(
+            listed.description.as_deref(),
+            Some(NAME_SESSION_DESCRIPTION)
+        );
+        assert_eq!(
+            Value::Object(listed.input_schema.as_ref().clone()),
+            json!({
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "maxLength": 64 }
+                },
+                "required": ["name"]
+            })
+        );
+        assert_eq!(
+            listed.annotations,
+            Some(
+                ToolAnnotations::with_title("Name session")
+                    .read_only(false)
+                    .destructive(false)
+                    .idempotent(true)
+            )
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn name_session_validates_and_renames_without_a_browser() -> anyhow::Result<()> {
+        let call = crate::mcp::test_support::tool_call("tabs", json!({})).await?;
+        let session = call
+            .identity
+            .as_ref()
+            .map(|identity| identity.session.clone())
+            .ok_or_else(|| anyhow::anyhow!("session missing"))?;
+        let generated = session.generated_label().to_string();
+
+        let first = rename_session(
+            Some(session.as_ref()),
+            &json!({ "name": "  Invoice Processing!!!  " }),
+        )
+        .await
+        .map_err(anyhow::Error::msg)?;
+        assert_eq!(
+            first.response,
+            format!("renamed to codex/invoice-processing (was codex/{generated})")
+        );
+        assert_eq!(session.label().await, "invoice-processing");
+
+        let second = rename_session(
+            Some(session.as_ref()),
+            &json!({ "name": "Quarterly Reporting" }),
+        )
+        .await
+        .map_err(anyhow::Error::msg)?;
+        assert_eq!(
+            second.response,
+            "renamed to codex/quarterly-reporting (was codex/invoice-processing)"
+        );
+
+        let current = session.label().await;
+        assert_eq!(
+            rename_session(Some(session.as_ref()), &json!({ "name": "!!!" })).await,
+            Err("name must contain a usable session name")
+        );
+        assert_eq!(
+            rename_session(Some(session.as_ref()), &json!({ "name": "x".repeat(65) })).await,
+            Err("name must be at most 64 characters")
+        );
+        assert_eq!(session.label().await, current);
+        assert_eq!(
+            rename_session(None, &json!({ "name": "invoice processing" })).await,
+            Err("unable to resolve this session")
+        );
         Ok(())
     }
 }
