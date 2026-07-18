@@ -14,6 +14,7 @@ export default defineBackground(() => {
     resolveServerBaseUrl: resolveBrowserOSServerBaseUrl,
   })
   const requestResnapshot = (tabId: number) => {
+    // Tabs can disappear between recovery detection and message delivery.
     try {
       void chrome.tabs
         .sendMessage(tabId, { type: 'recorder-resnapshot' })

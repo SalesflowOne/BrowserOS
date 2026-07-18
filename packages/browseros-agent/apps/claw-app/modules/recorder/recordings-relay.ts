@@ -42,7 +42,11 @@ const LEGACY_TTL_MS = 10 * 60_000
 const RETRY_INTERVAL_MS = 5_000
 const WARNING_INTERVAL_MS = 60_000
 
-/** Relays recorder batches in per-tab order and repairs streams after loss. */
+/**
+ * Session-lived delivery boundary between recorder content scripts and the
+ * local recordings ingest. It preserves each tab's rrweb order in memory and
+ * reports recovered gaps so the background can request a fresh checkpoint.
+ */
 export function createRecordingsRelay(
   options: RecordingsRelayOptions,
 ): RecordingsRelay {
@@ -253,6 +257,8 @@ export function createRecordingsRelay(
   }
 
   function markLegacy(triggeringTabId: number): void {
+    // A legacy verdict can outlive the server process that produced it. Keep
+    // dropped tabs gapped so a later endpoint can heal them after the TTL.
     gappedTabs.add(triggeringTabId)
     for (const queuedTabId of queues.keys()) gappedTabs.add(queuedTabId)
     legacyUntil = now() + LEGACY_TTL_MS
