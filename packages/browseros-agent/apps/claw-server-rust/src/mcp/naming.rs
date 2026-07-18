@@ -1,4 +1,4 @@
-use crate::domain::Session;
+use crate::sessions::Session;
 
 const SMALL_NAME_WORD_LIMIT: usize = 3;
 const SMALL_NAME_MAX_LEN: usize = 32;
@@ -42,17 +42,20 @@ pub async fn desired_group_title(session: &Session) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{AgentRef, SessionId, SessionIdentity};
+    use crate::{
+        identity::{ClientIdentity, ConversationIdentity},
+        ids::SessionId,
+    };
 
     #[tokio::test]
     async fn desired_group_title_uses_label_when_named() {
         let session = Session::new(
             SessionId::new("s1"),
-            AgentRef::Ephemeral {
+            ClientIdentity::Ephemeral {
                 slug: "claude-code".to_string(),
                 label: "Claude Code".to_string(),
             },
-            SessionIdentity::new("claude-code", "agile-alpaca".to_string()),
+            ConversationIdentity::new("claude-code", "agile-alpaca".to_string()),
             tokio::time::Instant::now(),
         );
         assert_eq!(desired_group_title(&session).await, "claude/agile-alpaca");

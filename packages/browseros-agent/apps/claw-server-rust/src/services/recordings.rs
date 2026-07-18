@@ -30,6 +30,7 @@ use tracing::{info, warn};
 
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 const RETENTION_INTERVAL: Duration = Duration::from_secs(60 * 60);
+const BATCH_ID_LRU_CAPACITY: usize = 256;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -79,6 +80,7 @@ pub struct RecordingStore {
     idle_handle: Duration,
     target_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
     handles: Mutex<HandleCache>,
+    accepted_batch_ids: Mutex<HashMap<String, VecDeque<String>>>,
 }
 
 impl RecordingStore {
@@ -96,6 +98,7 @@ impl RecordingStore {
             idle_handle,
             target_locks: Mutex::new(HashMap::new()),
             handles: Mutex::new(HandleCache::default()),
+            accepted_batch_ids: Mutex::new(HashMap::new()),
         })
     }
 
@@ -105,12 +108,33 @@ impl RecordingStore {
         tab_id: i64,
         events: &[RecordingEventInput],
     ) -> AppResult<()> {
-        if events.is_empty() {
-            return Ok(());
-        }
+        self.append_batch_with_id(target_id, tab_id, events, None)
+            .await
+            .map(|_| ())
+    }
+
+    /// Returns false only when this target already accepted the batch id.
+    pub async fn append_batch_with_id(
+        self: &Arc<Self>,
+        target_id: &str,
+        tab_id: i64,
+        events: &[RecordingEventInput],
+        batch_id: Option<&str>,
+    ) -> AppResult<bool> {
         let target_lock = self.lock_for(target_id).await;
         let target_guard = target_lock.lock().await;
         let result = async {
+            if let Some(batch_id) = batch_id
+                && self.has_accepted_batch_id(target_id, batch_id).await
+            {
+                return Ok(false);
+            }
+            if events.is_empty() {
+                if let Some(batch_id) = batch_id {
+                    self.remember_accepted_batch_id(target_id, batch_id).await;
+                }
+                return Ok(true);
+            }
             let mut payload = String::new();
             for event in events {
                 payload.push_str(&serde_json::to_string(&RecordedEvent {
@@ -144,7 +168,11 @@ impl RecordingStore {
                 )
                 .await;
             self.release_append_handle(target_id).await;
-            result
+            result?;
+            if let Some(batch_id) = batch_id {
+                self.remember_accepted_batch_id(target_id, batch_id).await;
+            }
+            Ok(true)
         }
         .await;
         drop(target_guard);
@@ -359,6 +387,7 @@ impl RecordingStore {
         TabRecordings::delete_by_id(target_id)
             .exec(self.audit.connection())
             .await?;
+        self.accepted_batch_ids.lock().await.remove(target_id);
         Ok(true)
     }
 
@@ -378,6 +407,32 @@ impl RecordingStore {
         });
         if removable {
             locks.remove(target_id);
+        }
+    }
+
+    async fn has_accepted_batch_id(&self, target_id: &str, batch_id: &str) -> bool {
+        let mut accepted = self.accepted_batch_ids.lock().await;
+        let Some(target_ids) = accepted.get_mut(target_id) else {
+            return false;
+        };
+        let Some(index) = target_ids
+            .iter()
+            .position(|candidate| candidate == batch_id)
+        else {
+            return false;
+        };
+        if let Some(batch_id) = target_ids.remove(index) {
+            target_ids.push_back(batch_id);
+        }
+        true
+    }
+
+    async fn remember_accepted_batch_id(&self, target_id: &str, batch_id: &str) {
+        let mut accepted = self.accepted_batch_ids.lock().await;
+        let target_ids = accepted.entry(target_id.to_string()).or_default();
+        target_ids.push_back(batch_id.to_string());
+        if target_ids.len() > BATCH_ID_LRU_CAPACITY {
+            target_ids.pop_front();
         }
     }
 
@@ -545,7 +600,7 @@ fn sanitize_target_id(target_id: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{RecordedEvent, RecordingEventInput, RecordingStore};
+    use super::{BATCH_ID_LRU_CAPACITY, RecordedEvent, RecordingEventInput, RecordingStore};
     use crate::{
         db::audit::entities::{
             prelude::{TabClaims, TabRecordings},
@@ -635,6 +690,50 @@ mod tests {
         for line in text.lines() {
             serde_json::from_str::<RecordedEvent>(line)?;
         }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn deduplicates_recent_batch_ids_per_target() -> anyhow::Result<()> {
+        let dir = tempdir()?;
+        let (_, store) = store(dir.path()).await?;
+        assert!(
+            store
+                .append_batch_with_id("target-dedupe", 23, &[event(1, "first")], Some("batch-0"))
+                .await?
+        );
+        assert!(
+            !store
+                .append_batch_with_id("target-dedupe", 23, &[event(1, "first")], Some("batch-0"))
+                .await?
+        );
+        for index in 1..=BATCH_ID_LRU_CAPACITY {
+            let batch_id = format!("batch-{index}");
+            assert!(
+                store
+                    .append_batch_with_id(
+                        "target-dedupe",
+                        23,
+                        &[event(i64::try_from(index + 1)?, "next")],
+                        Some(&batch_id),
+                    )
+                    .await?
+            );
+        }
+        assert!(
+            store
+                .append_batch_with_id(
+                    "target-dedupe",
+                    23,
+                    &[event(999, "evicted")],
+                    Some("batch-0")
+                )
+                .await?
+        );
+
+        let text =
+            tokio::fs::read_to_string(dir.path().join("recordings/target-dedupe.ndjson")).await?;
+        assert_eq!(text.lines().count(), BATCH_ID_LRU_CAPACITY + 2);
         Ok(())
     }
 

@@ -1,8 +1,10 @@
 use crate::{
     AppState,
     config::Config,
-    domain::{AgentRef, Session, SessionId, SessionIdentity},
+    identity::{ClientIdentity, ConversationIdentity},
+    ids::SessionId,
     mcp::dispatch::{ToolCall, ToolIdentity, linked_cancel_token},
+    sessions::Session,
 };
 use serde_json::Value;
 use std::{sync::Arc, time::Duration};
@@ -38,11 +40,11 @@ pub async fn tool_call_with_fallback(
     let state = AppState::new_with_home(config, None, home).await?;
     let session = Session::new(
         SessionId::new("s1"),
-        AgentRef::Ephemeral {
+        ClientIdentity::Ephemeral {
             slug: "codex".to_string(),
             label: "Codex".to_string(),
         },
-        SessionIdentity::new("codex", "agile-alpaca".to_string()),
+        ConversationIdentity::new("codex", "agile-alpaca".to_string()),
         tokio::time::Instant::now(),
     );
     state.sessions.insert_for_testing(session.clone()).await;
@@ -58,7 +60,7 @@ pub async fn tool_call_with_fallback(
         client_cancel.clone(),
         dispatch_cancel.clone(),
     );
-    let ownership_key = session.ownership_key().clone();
+    let ownership_key = session.convo_id().clone();
     Ok(ToolCall::new(
         catalog,
         tool_index,

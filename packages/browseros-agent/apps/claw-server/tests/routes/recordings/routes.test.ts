@@ -4,19 +4,29 @@ import { createRecordingsRoute } from '../../../src/routes/recordings'
 import app from '../../../src/server'
 import type { RecordingEventInput } from '../../../src/services/recordings'
 
-function createFixture(targetId: string | null = 'target-a') {
+function createFixture(
+  targetId: string | null = 'target-a',
+  appendResult = true,
+) {
   const appended: Array<{
     targetId: string
     tabId: number
     events: RecordingEventInput[]
+    batchId?: string
   }> = []
   const route = createRecordingsRoute({
     tabTargets: {
       targetForTab: async () => targetId ?? undefined,
     },
     recordingStore: {
-      appendBatch: async (resolvedTargetId, tabId, events) => {
-        appended.push({ targetId: resolvedTargetId, tabId, events })
+      appendBatch: async (resolvedTargetId, tabId, events, batchId) => {
+        appended.push({
+          targetId: resolvedTargetId,
+          tabId,
+          events,
+          ...(batchId === undefined ? {} : { batchId }),
+        })
+        return appendResult
       },
     },
   })
@@ -73,6 +83,26 @@ describe('recordings routes', () => {
       accepted: 0,
     })
     expect(appended).toEqual([])
+  })
+
+  it('forwards batch ids and reports store-detected duplicates as delivered', async () => {
+    const { app, appended } = createFixture('target-a', false)
+    const response = await app.request('/recordings/tabs/12/events', {
+      method: 'POST',
+      headers: { 'X-Recording-Batch-Id': 'batch-a' },
+      body: JSON.stringify({ ts: 100, type: 3, data: {} }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ ok: true, accepted: 0 })
+    expect(appended).toEqual([
+      {
+        targetId: 'target-a',
+        tabId: 12,
+        events: [{ ts: 100, type: 3, data: {} }],
+        batchId: 'batch-a',
+      },
+    ])
   })
 
   it('rejects request bodies over 8 MB', async () => {

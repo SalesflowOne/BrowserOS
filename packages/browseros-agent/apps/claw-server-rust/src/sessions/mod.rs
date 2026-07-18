@@ -1,10 +1,13 @@
+mod session;
+
+pub use session::Session;
+
 use crate::{
-    domain::{
-        AgentKey, AgentPageOwnership, AgentRef, ClientInfo, Session, SessionId, SessionIdentity,
-        generate_fun_name,
-    },
     error::{AppError, AppResult},
+    identity::{ClientIdentity, ClientInfo, ConversationIdentity, generate_fun_name},
+    ids::{ConvoId, SessionId},
     services::audit::AuditService,
+    tabs::PageOwnership,
 };
 use futures_util::future::BoxFuture;
 use std::{
@@ -27,7 +30,7 @@ pub enum RetainedGroupAction {
 }
 
 pub type RetainedGroupHook = Arc<
-    dyn Fn(Arc<AgentPageOwnership>, AgentKey, RetainedGroupAction) -> BoxFuture<'static, bool>
+    dyn Fn(Arc<PageOwnership>, ConvoId, RetainedGroupAction) -> BoxFuture<'static, bool>
         + Send
         + Sync,
 >;
@@ -37,20 +40,22 @@ struct RetainedSession {
     ended_at: Instant,
 }
 
-pub struct SessionRegistry {
+/// Owns live MCP sessions and their lifecycle. Minting resolves conversation identity and records
+/// the audit start; remove, sweep, and shutdown release claims, record the end, and release tabs.
+pub struct Sessions {
     sessions: RwLock<HashMap<SessionId, Arc<Session>>>,
-    ownership: Arc<AgentPageOwnership>,
+    ownership: Arc<PageOwnership>,
     audit: Arc<AuditService>,
-    reserved_keys: Mutex<HashSet<AgentKey>>,
-    retained: RwLock<HashMap<AgentKey, RetainedSession>>,
-    reaping_keys: Mutex<HashSet<AgentKey>>,
+    reserved_keys: Mutex<HashSet<ConvoId>>,
+    retained: RwLock<HashMap<ConvoId, RetainedSession>>,
+    reaping_keys: Mutex<HashSet<ConvoId>>,
     retained_group_hook: OnceLock<RetainedGroupHook>,
     idle_after: Duration,
     retention: Duration,
     sweep_interval: Duration,
 }
 
-impl SessionRegistry {
+impl Sessions {
     #[must_use]
     pub fn new(
         audit: Arc<AuditService>,
@@ -60,7 +65,7 @@ impl SessionRegistry {
     ) -> Arc<Self> {
         Arc::new(Self {
             sessions: RwLock::new(HashMap::new()),
-            ownership: Arc::new(AgentPageOwnership::new()),
+            ownership: Arc::new(PageOwnership::new()),
             audit,
             reserved_keys: Mutex::new(HashSet::new()),
             retained: RwLock::new(HashMap::new()),
@@ -73,7 +78,7 @@ impl SessionRegistry {
     }
 
     #[must_use]
-    pub fn ownership(&self) -> Arc<AgentPageOwnership> {
+    pub fn ownership(&self) -> Arc<PageOwnership> {
         self.ownership.clone()
     }
 
@@ -84,7 +89,7 @@ impl SessionRegistry {
 
     pub async fn mint(
         self: &Arc<Self>,
-        agent: AgentRef,
+        agent: ClientIdentity,
         client: ClientInfo,
     ) -> AppResult<Arc<Session>> {
         let id = SessionId::new(Ulid::new().to_string());
@@ -94,17 +99,17 @@ impl SessionRegistry {
     pub async fn mint_with_id(
         self: &Arc<Self>,
         id: SessionId,
-        agent: AgentRef,
+        agent: ClientIdentity,
         client: ClientInfo,
     ) -> AppResult<Arc<Session>> {
         let identity = {
             let mut reserved_keys = self.reserved_keys.lock().await;
             let generated_label = generate_fun_name(rand::random::<f64>, |label| {
-                !reserved_keys.contains(&AgentKey::new(format!("{}-{label}", agent.slug())))
+                !reserved_keys.contains(&ConvoId::new(format!("{}-{label}", agent.slug())))
             })
             .map_err(|error| AppError::Internal(error.to_string()))?;
-            let identity = SessionIdentity::new(agent.slug(), generated_label);
-            reserved_keys.insert(identity.ownership_key().clone());
+            let identity = ConversationIdentity::new(agent.slug(), generated_label);
+            reserved_keys.insert(identity.convo_id().clone());
             identity
         };
         let session = Session::new(id.clone(), agent, identity, Instant::now());
@@ -112,7 +117,7 @@ impl SessionRegistry {
             .audit
             .record_session_start(
                 id.as_str(),
-                session.agent_id().as_str(),
+                session.convo_id().as_str(),
                 session.agent().slug(),
                 session.agent().label(),
                 client.name.as_str(),
@@ -120,10 +125,7 @@ impl SessionRegistry {
             )
             .await
         {
-            self.reserved_keys
-                .lock()
-                .await
-                .remove(session.ownership_key());
+            self.reserved_keys.lock().await.remove(session.convo_id());
             return Err(error);
         }
         self.sessions.write().await.insert(id, session.clone());
@@ -134,7 +136,7 @@ impl SessionRegistry {
         self.reserved_keys
             .lock()
             .await
-            .insert(session.ownership_key().clone());
+            .insert(session.convo_id().clone());
         self.sessions
             .write()
             .await
@@ -168,18 +170,18 @@ impl SessionRegistry {
         self.sessions.read().await.len()
     }
 
-    pub async fn cancel_by_agent(&self, agent_id: &str) -> usize {
+    pub async fn cancel_by_convo(&self, convo_id: &ConvoId) -> usize {
         let sessions: Vec<Arc<Session>> = self.sessions.read().await.values().cloned().collect();
         let mut cancelled = 0;
         for session in sessions {
-            if session.agent_id().as_str() == agent_id {
+            if session.convo_id() == convo_id {
                 cancelled += session.cancel_active_dispatches().await;
             }
         }
         cancelled
     }
 
-    pub async fn owner_of_page(&self, page_id: &browseros_core::PageId) -> Option<AgentKey> {
+    pub async fn owner_of_page(&self, page_id: &browseros_core::PageId) -> Option<ConvoId> {
         self.ownership.owner_of_page(page_id).await
     }
 
@@ -265,7 +267,7 @@ impl SessionRegistry {
             .audit
             .record_session_end(session.id().as_str(), kind, reason)
             .await;
-        let key = session.ownership_key().clone();
+        let key = session.convo_id().clone();
         self.retained.write().await.insert(
             key.clone(),
             RetainedSession {
@@ -281,7 +283,7 @@ impl SessionRegistry {
     }
 
     async fn reap_retained(&self, now: Instant) -> usize {
-        let retained: Vec<(AgentKey, Instant)> = self
+        let retained: Vec<(ConvoId, Instant)> = self
             .retained
             .read()
             .await
@@ -340,12 +342,11 @@ impl SessionRegistry {
 
 #[cfg(test)]
 mod tests {
-    use super::{RetainedGroupAction, SessionRegistry};
+    use super::{RetainedGroupAction, Session, Sessions};
     use crate::{
         db::audit::entities::prelude::TabClaims,
-        domain::{
-            AgentKey, AgentRef, ClientInfo, Session, SessionId, SessionIdentity, generate_fun_name,
-        },
+        identity::{ClientIdentity, ClientInfo, ConversationIdentity, generate_fun_name},
+        ids::{ConvoId, SessionId},
         services::audit::AuditService,
     };
     use sea_orm::EntityTrait;
@@ -363,7 +364,7 @@ mod tests {
     async fn sweep_removes_idle_sessions_and_writes_end_row() -> anyhow::Result<()> {
         let dir = tempdir()?;
         let audit = Arc::new(AuditService::open(dir.path().join("audit.sqlite")).await?);
-        let registry = SessionRegistry::new(
+        let registry = Sessions::new(
             audit.clone(),
             Duration::from_secs(5),
             Duration::from_secs(60),
@@ -371,11 +372,11 @@ mod tests {
         );
         let session = Session::new(
             SessionId::new("s1"),
-            AgentRef::Ephemeral {
+            ClientIdentity::Ephemeral {
                 slug: "a1".to_string(),
                 label: "A1".to_string(),
             },
-            SessionIdentity::new("a1", "agile-alpaca".to_string()),
+            ConversationIdentity::new("a1", "agile-alpaca".to_string()),
             Instant::now(),
         );
         registry.insert_for_testing(session).await;
@@ -391,7 +392,7 @@ mod tests {
     async fn session_teardown_releases_every_open_target_claim() -> anyhow::Result<()> {
         let dir = tempdir()?;
         let audit = Arc::new(AuditService::open(dir.path().join("audit.sqlite")).await?);
-        let registry = SessionRegistry::new(
+        let registry = Sessions::new(
             audit.clone(),
             Duration::from_secs(60),
             Duration::from_secs(60),
@@ -399,11 +400,11 @@ mod tests {
         );
         let session = Session::new(
             SessionId::new("claim-session"),
-            AgentRef::Ephemeral {
+            ClientIdentity::Ephemeral {
                 slug: "agent".to_string(),
                 label: "Agent".to_string(),
             },
-            SessionIdentity::new("agent", "agile-alpaca".to_string()),
+            ConversationIdentity::new("agent", "agile-alpaca".to_string()),
             Instant::now(),
         );
         registry.insert_for_testing(session.clone()).await;
@@ -430,7 +431,7 @@ mod tests {
     async fn mint_registers_live_session() -> anyhow::Result<()> {
         let dir = tempdir()?;
         let audit = Arc::new(AuditService::open(dir.path().join("audit.sqlite")).await?);
-        let registry = SessionRegistry::new(
+        let registry = Sessions::new(
             audit,
             Duration::from_secs(60),
             Duration::from_secs(60),
@@ -438,7 +439,7 @@ mod tests {
         );
         let session = registry
             .mint(
-                AgentRef::Ephemeral {
+                ClientIdentity::Ephemeral {
                     slug: "agent".to_string(),
                     label: "Agent".to_string(),
                 },
@@ -457,7 +458,7 @@ mod tests {
     async fn same_client_sessions_get_distinct_identity_and_ownership() -> anyhow::Result<()> {
         let dir = tempdir()?;
         let audit = Arc::new(AuditService::open(dir.path().join("audit.sqlite")).await?);
-        let registry = SessionRegistry::new(
+        let registry = Sessions::new(
             audit,
             Duration::from_secs(60),
             Duration::from_secs(60),
@@ -468,24 +469,23 @@ mod tests {
             version: "1".to_string(),
             title: None,
         };
-        let agent = AgentRef::Ephemeral {
+        let agent = ClientIdentity::Ephemeral {
             slug: "codex".to_string(),
             label: "Codex".to_string(),
         };
         let session1 = registry.mint(agent.clone(), client.clone()).await?;
-        let key1 = session1.ownership_key().clone();
+        let key1 = session1.convo_id().clone();
         registry
             .ownership()
             .claim_page(key1.clone(), browseros_core::PageId(1))
             .await;
         let session2 = registry.mint(agent, client).await?;
-        let key2 = session2.ownership_key().clone();
+        let key2 = session2.convo_id().clone();
         registry
             .ownership()
             .claim_page(key2.clone(), browseros_core::PageId(2))
             .await;
 
-        assert_ne!(session1.agent_id(), session2.agent_id());
         assert_ne!(key1, key2);
         assert_eq!(
             registry
@@ -515,7 +515,7 @@ mod tests {
     {
         let dir = tempdir()?;
         let audit = Arc::new(AuditService::open(dir.path().join("audit.sqlite")).await?);
-        let registry = SessionRegistry::new(
+        let registry = Sessions::new(
             audit,
             Duration::from_secs(60),
             Duration::from_secs(10),
@@ -536,14 +536,14 @@ mod tests {
         let session_id = SessionId::new("s1");
         let session = Session::new(
             session_id.clone(),
-            AgentRef::Ephemeral {
+            ClientIdentity::Ephemeral {
                 slug: "codex".to_string(),
                 label: "Codex".to_string(),
             },
-            SessionIdentity::new("codex", "agile-alpaca".to_string()),
+            ConversationIdentity::new("codex", "agile-alpaca".to_string()),
             Instant::now(),
         );
-        let key = session.ownership_key().clone();
+        let key = session.convo_id().clone();
         registry.insert_for_testing(session.clone()).await;
         registry
             .ownership()
@@ -602,7 +602,7 @@ mod tests {
     async fn failed_or_disconnected_close_retries_without_forgetting_state() -> anyhow::Result<()> {
         let dir = tempdir()?;
         let audit = Arc::new(AuditService::open(dir.path().join("audit.sqlite")).await?);
-        let registry = SessionRegistry::new(
+        let registry = Sessions::new(
             audit,
             Duration::from_secs(60),
             Duration::from_secs(10),
@@ -625,14 +625,14 @@ mod tests {
         }));
         let session = Session::new(
             SessionId::new("s1"),
-            AgentRef::Ephemeral {
+            ClientIdentity::Ephemeral {
                 slug: "codex".to_string(),
                 label: "Codex".to_string(),
             },
-            SessionIdentity::new("codex", "agile-alpaca".to_string()),
+            ConversationIdentity::new("codex", "agile-alpaca".to_string()),
             Instant::now(),
         );
-        let key = session.ownership_key().clone();
+        let key = session.convo_id().clone();
         registry.insert_for_testing(session.clone()).await;
         registry
             .ownership()
@@ -674,7 +674,7 @@ mod tests {
     async fn generated_key_stays_reserved_until_retained_cleanup() -> anyhow::Result<()> {
         let dir = tempdir()?;
         let audit = Arc::new(AuditService::open(dir.path().join("audit.sqlite")).await?);
-        let registry = SessionRegistry::new(
+        let registry = Sessions::new(
             audit,
             Duration::from_secs(60),
             Duration::from_secs(10),
@@ -682,11 +682,11 @@ mod tests {
         );
         let session = Session::new(
             SessionId::new("s1"),
-            AgentRef::Ephemeral {
+            ClientIdentity::Ephemeral {
                 slug: "codex".to_string(),
                 label: "Codex".to_string(),
             },
-            SessionIdentity::new("codex", "agile-alpaca".to_string()),
+            ConversationIdentity::new("codex", "agile-alpaca".to_string()),
             Instant::now(),
         );
         registry.insert_for_testing(session.clone()).await;
@@ -696,7 +696,7 @@ mod tests {
             let reserved = registry.reserved_keys.lock().await;
             generate_fun_name(
                 || 0.0,
-                |label| !reserved.contains(&AgentKey::new(format!("codex-{label}"))),
+                |label| !reserved.contains(&ConvoId::new(format!("codex-{label}"))),
             )?
         };
         assert_eq!(candidate_while_retained, "agile-alpaca-2");
@@ -707,7 +707,7 @@ mod tests {
             let reserved = registry.reserved_keys.lock().await;
             generate_fun_name(
                 || 0.0,
-                |label| !reserved.contains(&AgentKey::new(format!("codex-{label}"))),
+                |label| !reserved.contains(&ConvoId::new(format!("codex-{label}"))),
             )?
         };
         assert_eq!(candidate_after_cleanup, "agile-alpaca");
@@ -718,7 +718,7 @@ mod tests {
     async fn overlapping_retained_sweeps_issue_one_close() -> anyhow::Result<()> {
         let dir = tempdir()?;
         let audit = Arc::new(AuditService::open(dir.path().join("audit.sqlite")).await?);
-        let registry = SessionRegistry::new(
+        let registry = Sessions::new(
             audit,
             Duration::from_secs(60),
             Duration::from_secs(10),
@@ -745,11 +745,11 @@ mod tests {
         }));
         let session = Session::new(
             SessionId::new("s1"),
-            AgentRef::Ephemeral {
+            ClientIdentity::Ephemeral {
                 slug: "codex".to_string(),
                 label: "Codex".to_string(),
             },
-            SessionIdentity::new("codex", "agile-alpaca".to_string()),
+            ConversationIdentity::new("codex", "agile-alpaca".to_string()),
             Instant::now(),
         );
         registry.insert_for_testing(session.clone()).await;

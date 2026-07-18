@@ -30,16 +30,28 @@ export interface TabTargetSource {
 
 interface TabTargetMapOptions {
   releaseTargetClaims?: (targetId: string) => Promise<void> | void
+  now?: () => number
 }
+
+const GRACE_MS = 5 * 60 * 1_000
 
 /** Maintains the browser tab id to stable CDP target id identity boundary. */
 export class TabTargetMap {
   private readonly targetByTab = new Map<number, string>()
   private readonly tabByTarget = new Map<string, number>()
+  /**
+   * Chrome tab ids increase monotonically within a browser session, so live
+   * entries cannot alias these destroyed entries; lookups still prefer live.
+   */
+  private readonly recentlyDestroyed = new Map<
+    number,
+    { targetId: string; destroyedAt: number }
+  >()
   private readonly unsubscribers: Array<() => void> = []
   private readonly releaseTargetClaims: (
     targetId: string,
   ) => Promise<void> | void
+  private readonly now: () => number
   private sourceEpoch = -1
   private rebuildPromise: Promise<void> | null = null
 
@@ -49,6 +61,7 @@ export class TabTargetMap {
   ) {
     this.releaseTargetClaims =
       options.releaseTargetClaims ?? releaseClaimsForTarget
+    this.now = options.now ?? Date.now
   }
 
   /** Subscribes to target events and seeds the map from the browser's live tabs. */
@@ -72,6 +85,11 @@ export class TabTargetMap {
     await this.rebuildAfterReconnect()
     const cached = this.targetByTab.get(tabId)
     if (cached) return cached
+
+    const now = this.now()
+    this.pruneRecentlyDestroyed(now)
+    const destroyed = this.recentlyDestroyed.get(tabId)
+    if (destroyed) return destroyed.targetId
 
     try {
       const tab = await this.source.getTab(tabId)
@@ -128,7 +146,12 @@ export class TabTargetMap {
 
   private remove(targetId: string): void {
     const tabId = this.tabByTarget.get(targetId)
-    if (tabId !== undefined) this.targetByTab.delete(tabId)
+    if (tabId !== undefined) {
+      this.targetByTab.delete(tabId)
+      const now = this.now()
+      this.pruneRecentlyDestroyed(now)
+      this.recentlyDestroyed.set(tabId, { targetId, destroyedAt: now })
+    }
     this.tabByTarget.delete(targetId)
     try {
       const release = this.releaseTargetClaims(targetId)
@@ -137,6 +160,14 @@ export class TabTargetMap {
       }
     } catch (error) {
       logReleaseFailure(targetId, error)
+    }
+  }
+
+  private pruneRecentlyDestroyed(now: number): void {
+    for (const [tabId, entry] of this.recentlyDestroyed) {
+      if (now - entry.destroyedAt >= GRACE_MS) {
+        this.recentlyDestroyed.delete(tabId)
+      }
     }
   }
 }

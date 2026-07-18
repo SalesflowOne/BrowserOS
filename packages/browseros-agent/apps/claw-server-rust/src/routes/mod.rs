@@ -1,6 +1,7 @@
 use crate::{
     AppState,
     error::{AppError, AppResult},
+    ids::ConvoId,
     mcp::streamable_http_service,
     services::{
         audit::{ListDispatchesQuery, ListTasksQuery, TaskStatus},
@@ -8,6 +9,7 @@ use crate::{
         recordings::RecordingEventInput,
         tab_activity::EnrichedTabRecord,
     },
+    tabs::hex_for_slug,
 };
 use axum::{
     Json, Router,
@@ -131,7 +133,7 @@ pub async fn request_context(req: Request, next: Next) -> Response {
         headers.insert(
             header::ACCESS_CONTROL_ALLOW_HEADERS,
             HeaderValue::from_static(
-                "accept,content-type,authorization,mcp-session-id,mcp-protocol-version,last-event-id",
+                "accept,content-type,authorization,mcp-session-id,mcp-protocol-version,last-event-id,x-recording-batch-id",
             ),
         );
         if let Ok(value) = HeaderValue::from_str(&request_id) {
@@ -202,7 +204,10 @@ async fn system_telemetry_consent(
 }
 
 async fn agents_cancel(State(state): State<AppState>, Path(agent_id): Path<String>) -> Response {
-    let cancelled = state.sessions.cancel_by_agent(&agent_id).await;
+    let cancelled = state
+        .sessions
+        .cancel_by_convo(&ConvoId::from(agent_id.as_str()))
+        .await;
     if cancelled == 0 {
         // claw-app parses this 404 body as a CancelAgentResult (idle state,
         // not a failure), so it must keep the TS shape, not `{"error":...}`.
@@ -226,7 +231,7 @@ async fn tabs_activity(State(state): State<AppState>) -> AppResult<Json<Value>> 
     let live_sessions = state.sessions.snapshot().await;
     let sessions_by_agent_id = live_sessions
         .iter()
-        .map(|session| (session.agent_id().as_str(), session))
+        .map(|session| (session.convo_id().as_str(), session))
         .collect::<HashMap<_, _>>();
     let tabs = state.tab_activity.snapshot().await;
     let mut enriched = Vec::with_capacity(tabs.len());
@@ -245,7 +250,7 @@ async fn tabs_activity(State(state): State<AppState>) -> AppResult<Json<Value>> 
                 .or_else(|| session.map(|session| session.agent().label().to_string()))
                 .unwrap_or_else(|| record.slug.clone()),
             harness: profile.map(|profile| profile.harness.to_string()),
-            color: Some(crate::domain::hex_for_slug(&record.slug).to_string()),
+            color: Some(hex_for_slug(&record.slug).to_string()),
             screencast: state.screencast.frame_for(record.page_id).await,
             record,
         });
@@ -385,6 +390,11 @@ async fn recordings_post_events(
     {
         return StatusCode::PAYLOAD_TOO_LARGE.into_response();
     }
+    let batch_id = request
+        .headers()
+        .get("x-recording-batch-id")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
     let bytes = match to_bytes(request.into_body(), MAX_RECORDING_BODY_BYTES + 1).await {
         Ok(bytes) if bytes.len() <= MAX_RECORDING_BODY_BYTES => bytes,
         Ok(_) | Err(_) => return StatusCode::PAYLOAD_TOO_LARGE.into_response(),
@@ -420,21 +430,27 @@ async fn recordings_post_events(
     if events.is_empty() {
         return Json(json!({ "ok": true, "accepted": 0 })).into_response();
     }
-    if let Err(error) = state
+    let appended = match state
         .recordings
-        .append_batch(&target_id, tab_id, &events)
+        .append_batch_with_id(&target_id, tab_id, &events, batch_id.as_deref())
         .await
     {
-        tracing::warn!(tab_id, target_id, error = %error, "recording batch append failed");
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({
-                "ok": false,
-                "reason": "append failed",
-                "accepted": 0,
-            })),
-        )
-            .into_response();
+        Ok(appended) => appended,
+        Err(error) => {
+            tracing::warn!(tab_id, target_id, error = %error, "recording batch append failed");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "ok": false,
+                    "reason": "append failed",
+                    "accepted": 0,
+                })),
+            )
+                .into_response();
+        }
+    };
+    if !appended {
+        return Json(json!({ "ok": true, "accepted": 0 })).into_response();
     }
     Json(json!({ "ok": true, "accepted": events.len() })).into_response()
 }

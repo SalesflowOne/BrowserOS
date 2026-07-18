@@ -10,11 +10,14 @@ use std::{
         Arc,
         atomic::{AtomicU64, Ordering},
     },
+    time::Duration,
 };
 use tokio::sync::{Mutex, RwLock};
+use tokio::time::Instant;
 use tracing::warn;
 
 const NO_EPOCH: u64 = u64::MAX;
+const DESTROYED_TARGET_GRACE: Duration = Duration::from_secs(5 * 60);
 
 type TargetClaimReleaser = Arc<dyn Fn(String) -> BoxFuture<'static, AppResult<()>> + Send + Sync>;
 
@@ -37,6 +40,14 @@ impl TabIdentity {
 struct TargetMaps {
     target_by_tab: HashMap<i64, String>,
     tab_by_target: HashMap<String, i64>,
+    /// Chrome tab ids increase monotonically within a browser session, so live
+    /// entries cannot alias these destroyed entries.
+    recently_destroyed: HashMap<i64, RecentlyDestroyed>,
+}
+
+struct RecentlyDestroyed {
+    target_id: String,
+    destroyed_at: Instant,
 }
 
 /// Maintains the Chrome tab id to stable CDP target id identity boundary.
@@ -136,7 +147,14 @@ impl TabTargetMap {
     }
 
     async fn target_for_tab_cached(&self, tab_id: i64) -> Option<String> {
-        self.maps.read().await.target_by_tab.get(&tab_id).cloned()
+        let mut maps = self.maps.write().await;
+        if let Some(target_id) = maps.target_by_tab.get(&tab_id) {
+            return Some(target_id.clone());
+        }
+        prune_recently_destroyed(&mut maps, Instant::now());
+        maps.recently_destroyed
+            .get(&tab_id)
+            .map(|entry| entry.target_id.clone())
     }
 
     async fn resolve_with<F, Fut>(&self, tab_id: i64, fallback: F) -> Option<String>
@@ -201,18 +219,31 @@ impl TabTargetMap {
             .map(|tab| tab.target_id.as_str())
             .collect::<std::collections::HashSet<_>>();
         let stale_targets = {
-            let maps = self.maps.read().await;
-            maps.tab_by_target
-                .keys()
-                .filter(|target_id| !live_targets.contains(target_id.as_str()))
-                .cloned()
-                .collect::<Vec<_>>()
-        };
-        {
             let mut maps = self.maps.write().await;
+            let now = Instant::now();
+            prune_recently_destroyed(&mut maps, now);
+            let stale = maps
+                .tab_by_target
+                .iter()
+                .filter(|(target_id, _)| !live_targets.contains(target_id.as_str()))
+                .map(|(target_id, tab_id)| (*tab_id, target_id.clone()))
+                .collect::<Vec<_>>();
+            for (tab_id, target_id) in &stale {
+                maps.recently_destroyed.insert(
+                    *tab_id,
+                    RecentlyDestroyed {
+                        target_id: target_id.clone(),
+                        destroyed_at: now,
+                    },
+                );
+            }
             maps.target_by_tab.clear();
             maps.tab_by_target.clear();
-        }
+            stale
+                .into_iter()
+                .map(|(_, target_id)| target_id)
+                .collect::<Vec<_>>()
+        };
         for tab in tabs {
             self.upsert(tab).await;
         }
@@ -273,6 +304,15 @@ impl TabTargetMap {
         let mut maps = self.maps.write().await;
         if let Some(tab_id) = maps.tab_by_target.remove(target_id) {
             maps.target_by_tab.remove(&tab_id);
+            let now = Instant::now();
+            prune_recently_destroyed(&mut maps, now);
+            maps.recently_destroyed.insert(
+                tab_id,
+                RecentlyDestroyed {
+                    target_id: target_id.to_string(),
+                    destroyed_at: now,
+                },
+            );
         }
         drop(maps);
         self.release_claims(target_id.to_string());
@@ -286,6 +326,11 @@ impl TabTargetMap {
             }
         });
     }
+}
+
+fn prune_recently_destroyed(maps: &mut TargetMaps, now: Instant) {
+    maps.recently_destroyed
+        .retain(|_, entry| now.duration_since(entry.destroyed_at) < DESTROYED_TARGET_GRACE);
 }
 
 #[cfg(test)]
@@ -485,6 +530,33 @@ mod tests {
 
         assert_eq!(map.tab_for_target("target-e").await, None);
         assert_eq!(*releases.lock().await, vec!["target-e"]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn resolves_a_recently_destroyed_tab_until_the_grace_expires() {
+        let map = map_with_releases(Arc::default());
+        map.rebuild_from_tabs(1, vec![TabIdentity::new(55, "target-e")])
+            .await;
+        map.remove("target-e").await;
+        let calls = AtomicUsize::new(0);
+
+        let during_grace = map
+            .resolve_with(55, |_| async {
+                calls.fetch_add(1, Ordering::SeqCst);
+                None
+            })
+            .await;
+        tokio::time::advance(super::DESTROYED_TARGET_GRACE).await;
+        let after_grace = map
+            .resolve_with(55, |_| async {
+                calls.fetch_add(1, Ordering::SeqCst);
+                None
+            })
+            .await;
+
+        assert_eq!(during_grace.as_deref(), Some("target-e"));
+        assert_eq!(after_grace, None);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]

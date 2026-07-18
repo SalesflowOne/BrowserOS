@@ -85,7 +85,7 @@ async fn record_dispatch(
         .state
         .audit
         .record_tool_dispatch(RecordToolDispatchInput {
-            agent_id: identity.session.agent_id().as_str().to_string(),
+            agent_id: identity.session.convo_id().as_str().to_string(),
             slug: identity.agent.slug().to_string(),
             agent_label: identity.agent_label.clone(),
             session_id: call.session_id.as_str().to_string(),

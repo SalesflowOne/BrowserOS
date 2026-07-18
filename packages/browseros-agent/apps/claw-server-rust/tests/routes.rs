@@ -7,8 +7,11 @@ use browseros_core::TargetId;
 use claw_server_rust::{
     AppState, build_router,
     config::Config,
-    domain::{AgentRef, ProfileId, Session, SessionId, SessionIdentity},
+    identity::{ClientIdentity, ConversationIdentity},
+    ids::{ConvoId, ProfileId, SessionId},
     services::tab_activity::RecordToolInput,
+    sessions::Session,
+    tabs::PageOwnership,
 };
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
@@ -201,18 +204,22 @@ async fn recordings_pipeline_ingests_and_replays_only_the_claimed_target() -> an
     ])
     .collect::<Vec<_>>()
     .join("\n");
-    for (tab_id, body, accepted) in [
-        (11, first_body, 4),
+    for (tab_id, body, accepted, batch_id) in [
+        (11, first_body.clone(), 4, Some("batch-a")),
         (
             22,
             json!({ "ts": now + 150, "type": 3, "data": { "id": "unclaimed" } }).to_string(),
             1,
+            None,
         ),
     ] {
-        let request = Request::builder()
+        let mut request = Request::builder()
             .method("POST")
-            .uri(format!("/recordings/tabs/{tab_id}/events"))
-            .body(Body::from(body))?;
+            .uri(format!("/recordings/tabs/{tab_id}/events"));
+        if let Some(batch_id) = batch_id {
+            request = request.header("x-recording-batch-id", batch_id);
+        }
+        let request = request.body(Body::from(body))?;
         let response = app.router.clone().oneshot(request).await?;
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
@@ -220,6 +227,17 @@ async fn recordings_pipeline_ingests_and_replays_only_the_claimed_target() -> an
             json!({ "ok": true, "accepted": accepted })
         );
     }
+    let retry = Request::builder()
+        .method("POST")
+        .uri("/recordings/tabs/11/events")
+        .header("x-recording-batch-id", "batch-a")
+        .body(Body::from(first_body))?;
+    let response = app.router.clone().oneshot(retry).await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&to_bytes(response.into_body(), usize::MAX).await?)?,
+        json!({ "ok": true, "accepted": 0 })
+    );
     app.state
         .audit
         .claim_target_for_session("target-a", "session-a", "agent", now)
@@ -896,8 +914,7 @@ async fn same_name_mcp_sessions_have_distinct_groups_and_reject_cross_page_acces
         .lookup(&SessionId::new(session_b_id.clone()))
         .await
         .ok_or_else(|| anyhow::anyhow!("second session missing"))?;
-    assert_ne!(session_a.agent_id(), session_b.agent_id());
-    assert_ne!(session_a.ownership_key(), session_b.ownership_key());
+    assert_ne!(session_a.convo_id(), session_b.convo_id());
 
     for (id, session_id) in [(10, &session_a_id), (11, &session_b_id)] {
         let (status, _headers, body) = request_json_with_headers(
@@ -913,15 +930,12 @@ async fn same_name_mcp_sessions_have_distinct_groups_and_reject_cross_page_acces
     }
 
     let ownership = app.state.sessions.ownership();
-    let (group_a, group_b) = wait_for_distinct_session_groups(
-        &ownership,
-        session_a.ownership_key(),
-        session_b.ownership_key(),
-    )
-    .await?;
+    let (group_a, group_b) =
+        wait_for_distinct_session_groups(&ownership, session_a.convo_id(), session_b.convo_id())
+            .await?;
     assert_ne!(group_a, group_b);
-    let pages_a = ownership.owned_pages(session_a.ownership_key()).await;
-    let pages_b = ownership.owned_pages(session_b.ownership_key()).await;
+    let pages_a = ownership.owned_pages(session_a.convo_id()).await;
+    let pages_b = ownership.owned_pages(session_b.convo_id()).await;
     assert_eq!(pages_a.len(), 1);
     assert_eq!(pages_b.len(), 1);
     assert!(pages_a.is_disjoint(&pages_b));
@@ -1034,7 +1048,7 @@ async fn cancel_endpoint_aborts_in_flight_dispatch() -> anyhow::Result<()> {
         .lookup(&SessionId::new(session_id.clone()))
         .await
         .ok_or_else(|| anyhow::anyhow!("missing test session"))?;
-    let agent_id = session.agent_id().as_str().to_string();
+    let agent_id = session.convo_id().as_str().to_string();
 
     let (status, _headers, body) = request_json_with_headers(
         &app.router,
@@ -1141,12 +1155,12 @@ async fn tabs_activity_enriches_through_live_session_profile_identity() -> anyho
 
     let stored_session = Session::new(
         SessionId::new("stored-session"),
-        AgentRef::Profile {
+        ClientIdentity::Profile {
             profile_id: ProfileId::new("stored-agent"),
             slug: "mcp".to_string(),
             label: "Stored Agent".to_string(),
         },
-        SessionIdentity::new("mcp", "agile-alpaca".to_string()),
+        ConversationIdentity::new("mcp", "agile-alpaca".to_string()),
         tokio::time::Instant::now(),
     );
     let ephemeral_session =
@@ -1167,7 +1181,7 @@ async fn tabs_activity_enriches_through_live_session_profile_identity() -> anyho
             page_id: 1,
             url: "https://example.com/exact".to_string(),
             title: "Exact".to_string(),
-            agent_id: stored_session.agent_id().as_str().to_string(),
+            agent_id: stored_session.convo_id().as_str().to_string(),
             slug: "mcp".to_string(),
             tool_name: "tabs".to_string(),
         })
@@ -1179,7 +1193,7 @@ async fn tabs_activity_enriches_through_live_session_profile_identity() -> anyho
             page_id: 2,
             url: "https://example.com/fallback".to_string(),
             title: "Fallback".to_string(),
-            agent_id: ephemeral_session.agent_id().as_str().to_string(),
+            agent_id: ephemeral_session.convo_id().as_str().to_string(),
             slug: "mcp".to_string(),
             tool_name: "tabs".to_string(),
         })
@@ -1313,11 +1327,11 @@ fn test_session(session_id: SessionId, agent_id: &str, slug: &str) -> Arc<Sessio
         .to_string();
     Session::new(
         session_id,
-        AgentRef::Ephemeral {
+        ClientIdentity::Ephemeral {
             slug: slug.to_string(),
             label: slug.to_string(),
         },
-        claw_server_rust::domain::SessionIdentity::new(slug, generated_label),
+        ConversationIdentity::new(slug, generated_label),
         tokio::time::Instant::now(),
     )
 }
@@ -1426,9 +1440,9 @@ async fn wait_for_cdp_connected(router: &Router) -> anyhow::Result<()> {
 }
 
 async fn wait_for_distinct_session_groups(
-    ownership: &Arc<claw_server_rust::domain::AgentPageOwnership>,
-    key_a: &claw_server_rust::domain::AgentKey,
-    key_b: &claw_server_rust::domain::AgentKey,
+    ownership: &Arc<PageOwnership>,
+    key_a: &ConvoId,
+    key_b: &ConvoId,
 ) -> anyhow::Result<(String, String)> {
     for _ in 0..100 {
         let group_a = ownership.tab_group_ref(key_a).await;

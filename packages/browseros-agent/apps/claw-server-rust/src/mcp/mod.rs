@@ -9,7 +9,7 @@ mod timeouts;
 #[cfg(test)]
 pub mod test_support;
 
-use crate::{AppState, domain::RetainedGroupAction};
+use crate::{AppState, sessions::RetainedGroupAction};
 use rmcp::transport::streamable_http_server::{
     session::local::LocalSessionManager,
     tower::{StreamableHttpServerConfig, StreamableHttpService},

@@ -30,13 +30,13 @@ pub fn apply(
                         page_id,
                         url: info.url,
                         title: info.title,
-                        agent_id: identity.session.agent_id().as_str().to_string(),
+                        agent_id: identity.session.convo_id().as_str().to_string(),
                         slug: identity.agent.slug().to_string(),
                         tool_name: "tabs".to_string(),
                     })
                     .await;
                 let session_id = context.call.session_id.as_str().to_string();
-                let agent_id = identity.session.agent_id().as_str().to_string();
+                let agent_id = identity.session.convo_id().as_str().to_string();
                 let claimed_at = context.call.started_at_ms;
                 context
                     .call
