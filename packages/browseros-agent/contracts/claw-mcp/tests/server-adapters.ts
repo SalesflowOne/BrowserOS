@@ -180,7 +180,7 @@ export async function startTypeScriptServer(
 
 export const RUST_BINARY = resolve(
   MONOREPO_ROOT,
-  'target/debug/claw-server-rust',
+  'target/debug/browseros-claw-server-rs',
 )
 
 /**

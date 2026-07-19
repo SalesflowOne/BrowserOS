@@ -70,22 +70,35 @@ async function ensureRun(name: ServerName): Promise<ServerRun> {
       process.env.CLAW_MCP_CAPTURE_DIR,
     )
   }
-  const server = await startContractServer(name, browser.cdpPort)
-  const mcp = await McpSession.connect(server.baseUrl, 'claw-contract')
-  // The rust server attaches to the browser asynchronously after
-  // /system/health turns ok; wait until tool calls stop reporting a
-  // disconnected browser before running cases.
-  await waitUntil(
-    async () => {
-      const result = await mcp.callTool('tabs', { action: 'list' })
-      return !(
-        result.isError &&
-        textOf(result).includes('browser session not connected')
-      )
-    },
-    `${name} server to attach to the browser`,
-    { timeoutMs: 30_000, intervalMs: 500 },
-  )
+  let server: ContractServer
+  let mcp: McpSession
+  try {
+    server = await startContractServer(name, browser.cdpPort)
+  } catch (error) {
+    await browser.kill().catch(() => {})
+    throw error
+  }
+  try {
+    mcp = await McpSession.connect(server.baseUrl, 'claw-contract')
+    // The rust server attaches to the browser asynchronously after
+    // /system/health turns ok; wait until tool calls stop reporting a
+    // disconnected browser before running cases.
+    await waitUntil(
+      async () => {
+        const result = await mcp.callTool('tabs', { action: 'list' })
+        return !(
+          result.isError &&
+          textOf(result).includes('browser session not connected')
+        )
+      },
+      `${name} server to attach to the browser`,
+      { timeoutMs: 30_000, intervalMs: 500 },
+    )
+  } catch (error) {
+    await server.stop().catch(() => {})
+    await browser.kill().catch(() => {})
+    throw error
+  }
   const run: ServerRun = {
     server,
     browser,
