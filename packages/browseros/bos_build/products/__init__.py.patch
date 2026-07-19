@@ -1,0 +1,37 @@
+# Apply this patch to packages/browseros/bos_build/products/__init__.py
+# after copying the oweb/ directory into the fork.
+#
+# Add these imports near the other product imports:
+#
+#   from .oweb import OWEB_PRODUCT, OWEB_SERVER_BUNDLE
+#
+# Register in PRODUCTS dict:
+#
+#   "oweb": OWEB_PRODUCT,
+#
+# Register in SERVER_BUNDLES list:
+#
+#   OWEB_SERVER_BUNDLE,
+#
+# Example merged tail of __init__.py:
+#
+#   from .browseros import BROWSEROS_PRODUCT, BROWSEROS_SERVER_BUNDLE
+#   from .browserclaw import (
+#       BROWSERCLAW_PRODUCT,
+#       BROWSERCLAW_SERVER_BUNDLE,
+#       BROWSERCLAW_RUST_SERVER_BUNDLE,
+#   )
+#   from .oweb import OWEB_PRODUCT, OWEB_SERVER_BUNDLE
+#
+#   PRODUCTS: Dict[str, ProductDescriptor] = {
+#       "browseros": BROWSEROS_PRODUCT,
+#       "browserclaw": BROWSERCLAW_PRODUCT,
+#       "oweb": OWEB_PRODUCT,
+#   }
+#
+#   SERVER_BUNDLES: tuple[ServerBundle, ...] = (
+#       BROWSEROS_SERVER_BUNDLE,
+#       BROWSERCLAW_SERVER_BUNDLE,
+#       BROWSERCLAW_RUST_SERVER_BUNDLE,
+#       OWEB_SERVER_BUNDLE,
+#   )
