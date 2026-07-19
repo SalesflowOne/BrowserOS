@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """OWeb Browser — branded BrowserOS product for the OWeb workspace."""
 
-from pathlib import Path
-
 from ...core.products import (
     BROWSEROS_AGENT_EXTENSION_ID,
     BROWSEROS_BUG_REPORTER_EXTENSION_ID,
     MacProductIdentity,
     ProductDescriptor,
 )
-from ..server_binaries import ServerBundle, SignSpec
 
 OWEB_PRODUCT = ProductDescriptor.define(
     id="oweb",
+    # Reuse the BrowserOS Chromium product identity until oweb is wired into
+    # buildflags.gni / browseros_product.h (same agent + server as BrowserOS).
+    gn_product="browseros",
     display_name="OWeb Browser",
     windows_installer_guid="{A7E3C4F1-9B2D-4E8A-8C5F-1D6E9A0B3C72}",
     summary="The AI browser for your OWeb workspace",
@@ -59,25 +59,4 @@ OWEB_PRODUCT = ProductDescriptor.define(
         (r"Chromium", "OWeb Browser"),
         (r"Chrome", "OWeb Browser"),
     ),
-)
-
-OWEB_SERVER_BUNDLE = ServerBundle(
-    id="oweb-server",
-    name="OWeb Browser Server",
-    product_ids=("oweb",),
-    chromium_output_root="OWebServer",
-    local_resources_root=Path("resources/binaries/oweb_server"),
-    chromium_resources_root=Path("chrome/browser/browseros/server/resources"),
-    macos_bundle_resources_root=Path(
-        "Contents/Resources/OWebServer/default/resources"
-    ),
-    windows_bundle_resources_root=Path("OWebServer/default/resources"),
-    macos_binaries={
-        "browseros_server": SignSpec(
-            "browseros_server", "runtime", "browseros-executable-entitlements.plist"
-        ),
-        "bun": SignSpec("bun", "runtime", "browseros-executable-entitlements.plist"),
-        "rg": SignSpec("rg", "runtime"),
-    },
-    windows_binaries=("browseros_server.exe",),
 )
