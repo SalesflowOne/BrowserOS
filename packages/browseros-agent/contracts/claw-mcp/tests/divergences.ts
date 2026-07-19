@@ -58,6 +58,18 @@ export const DIVERGENCES: Divergence[] = [
     typescript: 'works; sets the checkbox state and reports ok (check)',
   },
   {
+    id: 'act-scroll',
+    description: 'act kind=scroll (page-level wheel scroll)',
+    rust: 'broken: Input.dispatchMouseEvent (mouse wheel) times out (~60s)',
+    typescript: 'works; scrolls roughly amount*120px',
+  },
+  {
+    id: 'covered-click-blocker-naming',
+    description: 'error text when a click lands on an occluded element',
+    rust: 'names the intercepting element in the message',
+    typescript: 'does not name the blocker (click is still blocked)',
+  },
+  {
     id: 'delete-hygiene-content-type',
     description: 'DELETE /mcp teardown without a content-type header',
     rust: 'accepted; bodyless DELETE is exempt from the json content-type check',

@@ -17,10 +17,17 @@
       #tooltip {
         display: none;
       }
+      /* cursor:pointer makes these non-ARIA nodes mint snapshot refs
+         (cursor-hit ref minting), so hover/drag can target them by ref. */
+      #hover-target {
+        cursor: pointer;
+        width: 120px;
+      }
       #hover-target:hover + #tooltip {
         display: block;
       }
       #drag-list li {
+        cursor: pointer;
         padding: 6px;
         border: 1px solid #999;
         width: 160px;
@@ -31,12 +38,12 @@
   <body>
     <h1>Scroll fixture</h1>
     <div id="status-bar">scroll:<span id="scroll-pos">0</span></div>
-    <div id="hover-target">Hover me</div>
+    <div id="hover-target" aria-label="Hover me">Hover me</div>
     <div id="tooltip">tooltip revealed</div>
     <ul id="drag-list">
-      <li>item-a</li>
-      <li>item-b</li>
-      <li>item-c</li>
+      <li aria-label="item-a">item-a</li>
+      <li aria-label="item-b">item-b</li>
+      <li aria-label="item-c">item-c</li>
     </ul>
     <div id="drag-order">item-a,item-b,item-c</div>
     <p>Tall filler content continues far below the fold.</p>
