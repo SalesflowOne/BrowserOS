@@ -52,6 +52,12 @@ export const DIVERGENCES: Divergence[] = [
     typescript: 'act embeds the settled diff only',
   },
   {
+    id: 'act-check-kind',
+    description: 'act kinds check / uncheck',
+    rust: 'broken: fails with `CDP error: Invalid parameters`',
+    typescript: 'works; sets the checkbox state and reports ok (check)',
+  },
+  {
     id: 'delete-hygiene-content-type',
     description: 'DELETE /mcp teardown without a content-type header',
     rust: 'accepted; bodyless DELETE is exempt from the json content-type check',

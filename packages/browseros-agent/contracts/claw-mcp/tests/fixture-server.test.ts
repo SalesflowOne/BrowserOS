@@ -76,7 +76,7 @@ describe('fixture server', () => {
     expect(cursor).not.toInclude('role=')
     const dynamic = await read('dynamic.html')
     expect(dynamic).toInclude('delayed content ready')
-    expect(dynamic).toInclude('20000')
+    expect(dynamic).toInclude('3000')
     expect(await read('overlay.html')).toInclude('Overlay cover')
     expect(await read('dialog.html')).toInclude('fixture confirm')
     const scroll = await read('scroll.html')

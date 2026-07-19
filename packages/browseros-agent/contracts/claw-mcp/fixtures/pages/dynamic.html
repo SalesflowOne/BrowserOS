@@ -38,14 +38,16 @@
       setTimeout(() => {
         document.getElementById('delayed').textContent = 'delayed content ready'
       }, 1500)
-      // 20k generated lines drive the >15k-token snapshot spill and the >5k-char
+      // Generated filler drives the >15k-token snapshot spill and the >5k-char
       // grep/read spills; one oversized line exercises the 500-char grep clamp.
+      // h6 (not div): plain divs are ignored AX nodes and never reach the
+      // snapshot, while headings carry their text as the accessible name.
       const big = document.getElementById('big')
       const lines = []
-      for (let index = 1; index <= 20000; index += 1) {
-        lines.push(`<div>filler line ${index} keeps the accessibility tree large</div>`)
+      for (let index = 1; index <= 3000; index += 1) {
+        lines.push(`<h6>filler line ${index} keeps the accessibility tree large</h6>`)
       }
-      lines.push(`<div>longline ${'x'.repeat(600)} endlong</div>`)
+      lines.push(`<h6>longline ${'x'.repeat(600)} endlong</h6>`)
       big.innerHTML = lines.join('')
     </script>
   </body>

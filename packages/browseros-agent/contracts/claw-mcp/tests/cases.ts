@@ -42,7 +42,12 @@ export interface ContractCase {
   run(ctx: CaseContext): Promise<void>
 }
 
+import { navigateSnapshotCases } from './cases-navigate-snapshot'
 import { tabsCases } from './cases-tabs'
 import { transportCases } from './cases-transport'
 
-export const contractCases: ContractCase[] = [...transportCases, ...tabsCases]
+export const contractCases: ContractCase[] = [
+  ...transportCases,
+  ...tabsCases,
+  ...navigateSnapshotCases,
+]
