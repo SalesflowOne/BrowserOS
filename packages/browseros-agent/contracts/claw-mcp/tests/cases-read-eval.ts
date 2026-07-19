@@ -6,7 +6,7 @@
  */
 
 import type { CaseContext, ContractCase } from './cases'
-import { expectError, expectOk, waitUntil } from './helpers'
+import { expectOk, waitUntil } from './helpers'
 import { textOf } from './mcp-client'
 
 const UNTRUSTED = /\[(END_)?UNTRUSTED_PAGE_CONTENT[^\]]*\]/g

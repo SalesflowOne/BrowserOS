@@ -66,6 +66,8 @@
     "codegen:claw-api": "bun scripts/codegen/claw-api.ts",
     "codegen:claw-api:check": "bun scripts/codegen/claw-api.ts --check",
     "test:claw-api-contract": "cargo build --locked -p claw-server-rust --example contract-server && bun test contracts/claw-api/tests/cross-server.test.ts",
+    "test:claw-mcp-smoke": "bun contracts/claw-mcp/tests/run.ts --smoke",
+    "test:claw-mcp-contract": "bun contracts/claw-mcp/tests/run.ts",
     "env:examples": "bun scripts/env/generate-examples.ts",
     "env:examples:check": "bun scripts/env/generate-examples.ts --check",
     "env:migrate": "bun scripts/env/migrate-local.ts",

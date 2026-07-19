@@ -282,7 +282,7 @@ export const clawLayerCases: ContractCase[] = [
         (d) => d.toolName === 'evaluate',
       )
       const argsJson = evalDispatch?.argsJson as string | undefined
-      if (!argsJson || argsJson.length !== 4096 || !argsJson.endsWith('~')) {
+      if (argsJson?.length !== 4096 || !argsJson.endsWith('~')) {
         throw new Error(
           `args were not truncated to 4096 with a ~: len=${argsJson?.length}`,
         )
