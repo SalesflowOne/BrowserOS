@@ -107,6 +107,16 @@ export const transportCases: ContractCase[] = [
   {
     name: 'transport: DELETE /mcp ends the session and audit records it',
     async run(ctx) {
+      // Bare DELETE (no content-type): rust exempts it, TS 415s it.
+      const probe = await ctx.openSession('claw-contract-bare-delete')
+      const bare = await fetch(`${ctx.server.baseUrl}/mcp`, {
+        method: 'DELETE',
+        headers: probe.sessionId ? { 'mcp-session-id': probe.sessionId } : {},
+      })
+      ctx.record('transport:bare-delete-status', bare.status, {
+        divergence: 'delete-hygiene-content-type',
+      })
+
       const session = await ctx.openSession('claw-contract-teardown')
       await ctx.openPage(ctx.fixture('/links.html'), session)
       const sessionId = session.sessionId

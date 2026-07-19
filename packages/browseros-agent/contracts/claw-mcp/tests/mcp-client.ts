@@ -208,11 +208,19 @@ export class McpSession {
     return result as McpToolResult
   }
 
-  /** DELETE teardown; both servers end the session and audit the close. */
+  /**
+   * DELETE teardown; both servers end the session and audit the close.
+   * Sends content-type explicitly — the TS hygiene middleware 415s a
+   * bodyless DELETE without it (rust exempts it; see divergence
+   * `delete-hygiene-content-type`).
+   */
   async close(): Promise<Response> {
     return await fetch(`${this.baseUrl}/mcp`, {
       method: 'DELETE',
-      headers: this.sessionId ? { 'mcp-session-id': this.sessionId } : {},
+      headers: {
+        'content-type': 'application/json',
+        ...(this.sessionId ? { 'mcp-session-id': this.sessionId } : {}),
+      },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
   }

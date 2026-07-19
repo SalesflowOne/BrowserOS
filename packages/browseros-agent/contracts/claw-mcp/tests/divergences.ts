@@ -52,6 +52,20 @@ export const DIVERGENCES: Divergence[] = [
     typescript: 'act embeds the settled diff only',
   },
   {
+    id: 'delete-hygiene-content-type',
+    description: 'DELETE /mcp teardown without a content-type header',
+    rust: 'accepted; bodyless DELETE is exempt from the json content-type check',
+    typescript:
+      'rejected with 415; teardown DELETE must send content-type: application/json',
+  },
+  {
+    id: 'windows-set-visibility',
+    description: 'windows action=set_visibility',
+    rust: 'broken: fails with `CDP error: Invalid parameters` for hide and show',
+    typescript:
+      'hide succeeds but recreates the window (`set window X hidden; new window id Y`); the old id is dead afterwards',
+  },
+  {
     id: 'ownership-error-wording',
     description: 'ownership-guard error text for a foreign page',
     rust: 'single wording: `page N is not owned by this agent; …`',
