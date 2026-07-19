@@ -73,18 +73,19 @@ class FeedSpec:
 
 
 # Browser feed key infix per product ("" keeps today's browseros keys).
-_BROWSER_FEED_SLUGS = {"browseros": "", "browserclaw": "claw"}
+_BROWSER_FEED_SLUGS = {"browseros": "", "browserclaw": "claw", "oweb": "oweb"}
 
 # Products whose shipping updater selects this feed by browseros::GetProduct()
 # (sparkle_glue.mm / winsparkle_glue.cc). A product listed in
 # _BROWSER_FEED_SLUGS but missing here would ship an updater still pointing at
 # the browseros feed, so its feeds stay unpublishable until that client lands.
-_BROWSER_FEED_CLIENTS = frozenset({"browseros", "browserclaw"})
+_BROWSER_FEED_CLIENTS = frozenset({"browseros", "browserclaw", "oweb"})
 
 # Server feed key slug per bundle (appcast-<slug>[.alpha].xml).
 _SERVER_FEED_SLUGS = {
     "browseros-server": "server",
     "browserclaw-server": "claw-server",
+    "oweb-server": "oweb-server",
 }
 
 
@@ -191,6 +192,7 @@ def _build_feeds() -> Tuple[FeedSpec, ...]:
     feeds = (
         *_browser_feeds("browseros"),
         *_browser_feeds("browserclaw"),
+        *_browser_feeds("oweb"),
         *(feed for bundle in SERVER_BUNDLES for feed in _server_feeds(bundle)),
         *_extension_feeds(),
     )

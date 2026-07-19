@@ -106,5 +106,6 @@ def expected_windows_bundle_binary_paths(
 def _browser_build_server_bundles() -> Tuple[ServerBundle, ...]:
     from .browseros.product import BROWSEROS_SERVER_BUNDLE
     from .browserclaw.product import BROWSERCLAW_SERVER_BUNDLE
+    from .oweb.product import OWEB_SERVER_BUNDLE
 
-    return (BROWSEROS_SERVER_BUNDLE, BROWSERCLAW_SERVER_BUNDLE)
+    return (BROWSEROS_SERVER_BUNDLE, BROWSERCLAW_SERVER_BUNDLE, OWEB_SERVER_BUNDLE)

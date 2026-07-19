@@ -1,0 +1,110 @@
+# Release OWeb Browser — adapt from BrowserOS release-browseros.yml
+# Copy to oweb-browser/.github/workflows/release-oweb.yml after fork is created.
+#
+# Prerequisites:
+# - packages/browseros/bos_build/products/oweb/ registered
+# - Signing secrets in repo (MACOS_CERTIFICATE_NAME, ESIGNER_*, R2_*, etc.)
+# - Chromium checkout on self-hosted mac runner (see BrowserOS docs)
+
+name: Release OWeb Browser
+
+on:
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: "Platforms to build (all, macos, windows, linux)"
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - macos
+          - windows
+          - linux
+      macos_arch:
+        description: "macOS architecture"
+        required: false
+        default: arm64
+        type: choice
+        options:
+          - arm64
+          - x64
+          - universal
+      sign_windows:
+        description: "Sign Windows installer"
+        required: false
+        default: true
+        type: boolean
+      upload_to_r2:
+        description: "Upload artifacts to R2/CDN"
+        required: false
+        default: false
+        type: boolean
+      github_release_draft:
+        description: "Create draft GitHub release"
+        required: false
+        default: true
+        type: boolean
+
+env:
+  PRODUCT: oweb
+  BROWSER_VERSION_FILE: packages/browseros/resources/BROWSEROS_VERSION
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: ver
+        run: |
+          VERSION=$(grep -E '^VERSION=' "$BROWSER_VERSION_FILE" | cut -d= -f2)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  # Mirror BrowserOS release lanes — see packages/browseros/bos_build/docs/release-ci.md
+  build-macos:
+    if: ${{ inputs.platforms == 'all' || inputs.platforms == 'macos' }}
+    needs: plan
+    runs-on: [self-hosted, macOS]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build OWeb Browser (macOS)
+        working-directory: packages/browseros
+        run: |
+          uv sync
+          uv run browseros build --preset release --product oweb --arch ${{ inputs.macos_arch }} --sign --upload=${{ inputs.upload_to_r2 }}
+
+  build-windows:
+    if: ${{ inputs.platforms == 'all' || inputs.platforms == 'windows' }}
+    needs: plan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build OWeb Browser (Windows)
+        working-directory: packages/browseros
+        run: |
+          uv sync
+          uv run browseros build --preset release --product oweb --arch x64 --sign=${{ inputs.sign_windows }} --upload=${{ inputs.upload_to_r2 }}
+
+  build-linux:
+    if: ${{ inputs.platforms == 'all' || inputs.platforms == 'linux' }}
+    needs: plan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build OWeb Browser (Linux)
+        working-directory: packages/browseros
+        run: |
+          uv sync
+          uv run browseros build --preset release --product oweb --arch x64 --upload=${{ inputs.upload_to_r2 }}
+
+  release-draft:
+    if: ${{ always() && inputs.github_release_draft }}
+    needs: [plan, build-macos, build-windows, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Draft GitHub release
+        run: |
+          echo "Create draft release for OWeb Browser v${{ needs.plan.outputs.version }}"
+          echo "Attach DMG, EXE, AppImage, and DEB from build artifacts."

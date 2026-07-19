@@ -9,6 +9,7 @@ from typing import Dict
 
 from ..core.products import ProductDescriptor
 from .browseros.product import BROWSEROS_PRODUCT, BROWSEROS_SERVER_BUNDLE
+from .oweb.product import OWEB_PRODUCT, OWEB_SERVER_BUNDLE
 from .browserclaw.product import (
     BROWSERCLAW_PRODUCT,
     BROWSERCLAW_RUST_SERVER_BUNDLE,
@@ -18,12 +19,12 @@ from .browserclaw.product import (
 DEFAULT_PRODUCT_ID = BROWSEROS_PRODUCT.id
 
 PRODUCTS: Dict[str, ProductDescriptor] = {}
-for _product in (BROWSEROS_PRODUCT, BROWSERCLAW_PRODUCT):
+for _product in (BROWSEROS_PRODUCT, BROWSERCLAW_PRODUCT, OWEB_PRODUCT):
     if _product.id in PRODUCTS:
         raise ValueError(f"Duplicate product id: {_product.id}")
     PRODUCTS[_product.id] = _product
 
-SERVER_BUNDLES = (BROWSEROS_SERVER_BUNDLE, BROWSERCLAW_SERVER_BUNDLE)
+SERVER_BUNDLES = (BROWSEROS_SERVER_BUNDLE, BROWSERCLAW_SERVER_BUNDLE, OWEB_SERVER_BUNDLE)
 
 __all__ = [
     "DEFAULT_PRODUCT_ID",
@@ -32,4 +33,6 @@ __all__ = [
     "BROWSEROS_PRODUCT",
     "BROWSERCLAW_PRODUCT",
     "BROWSERCLAW_RUST_SERVER_BUNDLE",
+    "OWEB_PRODUCT",
+    "OWEB_SERVER_BUNDLE",
 ]

@@ -1,0 +1,17 @@
+# OWeb Browser branding metadata
+# Used by setup-fork.sh when copying resources into the BrowserOS fork.
+
+product_id: oweb
+display_name: "OWeb Browser"
+short_name: "OWeb"
+company: "OWeb"
+accent_color: "#22D3EE"
+background_dark: "#0B1B33"
+node_color_light: "#10233F"
+node_color_dark: "#FFFFFF"
+homepage: "https://oweb.one"
+docs: "https://oweb.one/docs"
+privacy: "https://oweb.one/privacy"
+auth_url: "https://oweb.one/auth/browser"
+api_base: "https://oweb.one/api/extension/v1"
+local_api_base: "http://localhost:8080/api/extension/v1"
