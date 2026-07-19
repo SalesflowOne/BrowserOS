@@ -88,7 +88,13 @@ const ERROR_CLASSES: Array<[string, RegExp]> = [
   ['unknown-ref', /unknown ref .*take a new snapshot/i],
   ['gone-element', /not found in dom.*take a new snapshot/i],
   ['not-owned', /is (not )?owned by .*tabs new/i],
-  ['browser-down', /browser session not connected.*start BrowserClaw/is],
+  // The polished start-BrowserClaw guard fires when the browser is
+  // unreachable at boot; a browser that dies mid-session surfaces the
+  // lower-level "CDP not connected" instead (verified on both servers).
+  [
+    'browser-down',
+    /(browser session not connected.*start BrowserClaw|cdp not connected|not running or paired)/is,
+  ],
   ['scheme-refused', /navigate refuses .* URLs; only http\(s\) is allowed/i],
 ]
 

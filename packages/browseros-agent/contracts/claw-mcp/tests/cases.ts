@@ -44,11 +44,14 @@ export interface ContractCase {
 
 import { actCases } from './cases-act'
 import { captureIoCases } from './cases-capture-io'
+import { clawLayerCases } from './cases-claw-layer'
 import { navigateSnapshotCases } from './cases-navigate-snapshot'
 import { readEvalCases } from './cases-read-eval'
 import { tabsCases } from './cases-tabs'
 import { transportCases } from './cases-transport'
 
+// Order is load-bearing: clawLayerCases ends with the browser-kill case,
+// which must be the final case per server run — it poisons the browser.
 export const contractCases: ContractCase[] = [
   ...transportCases,
   ...tabsCases,
@@ -56,4 +59,5 @@ export const contractCases: ContractCase[] = [
   ...actCases,
   ...readEvalCases,
   ...captureIoCases,
+  ...clawLayerCases,
 ]
