@@ -141,7 +141,7 @@ describe('mcp client', () => {
 
   test('JSON-RPC errors throw and DELETE closes with the session header', async () => {
     const session = await McpSession.connect(`http://127.0.0.1:${server.port}`)
-    expect(session.callTool('explode')).rejects.toThrow(McpRequestError)
+    await expect(session.callTool('explode')).rejects.toThrow(McpRequestError)
 
     const response = await session.close()
     expect(response.status).toBe(204)

@@ -154,6 +154,16 @@ export const clawLayerCases: ContractCase[] = [
         'ownership:foreign-close-class',
         errorClass(textOf(foreignClose)),
       )
+      // Both servers refuse (same error class above); they differ in the
+      // wording — TS names the owner ("owned by <title>"), Rust does not
+      // ("not owned by this agent"). Recorded raw so the parity gate
+      // actually exercises the `ownership-error-wording` divergence
+      // rather than having errorClass normalize it away.
+      ctx.record(
+        'ownership:foreign-read-names-owner',
+        /page \d+ is owned by \S/.test(textOf(foreignSnapshot)),
+        { divergence: 'ownership-error-wording' },
+      )
       // The owner is unaffected: the page still lists and snapshots.
       const stillOwned = textOf(
         await ctx.mcp.callTool('tabs', { action: 'list' }),
@@ -241,6 +251,31 @@ export const clawLayerCases: ContractCase[] = [
       ctx.record(
         'auto-context:navigate-embeds-snapshot',
         navText.includes(`[Page ${page} snapshot]`),
+      )
+
+      // An action that logs a page error: Rust appends a `[page N console]`
+      // summary to the act auto-context; TS embeds the diff only. Exercises
+      // the `act-console-summary` divergence against a real logging action.
+      const consolePage = await ctx.openPage(ctx.fixture('/console.html'))
+      const consoleSnap = textOf(
+        await ctx.mcp.callTool('snapshot', { page: consolePage }),
+      )
+      const throwRef = consoleSnap
+        .split('\n')
+        .find((line) => line.includes('Throw error'))
+        ?.match(/\[ref=(e\d+)\]/)?.[1]
+      if (!throwRef) throw new Error('no Throw-error ref on console.html')
+      const throwAct = textOf(
+        await ctx.mcp.callTool('act', {
+          page: consolePage,
+          kind: 'click',
+          ref: throwRef,
+        }),
+      )
+      ctx.record(
+        'auto-context:act-embeds-console-summary',
+        throwAct.includes(`[page ${consolePage} console]`),
+        { divergence: 'act-console-summary' },
       )
     },
   },

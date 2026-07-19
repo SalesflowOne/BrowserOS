@@ -59,27 +59,25 @@ async function ensureRun(name: ServerName): Promise<ServerRun> {
 
   await ensureFixtures()
   const browser = await launchBrowser()
-  // One-time side quest: with a browser up and no server attached yet,
-  // capture-mode dumps raw CDP payloads for the serde fixtures.
-  if (!captured && process.env.CLAW_MCP_CAPTURE_DIR) {
-    captured = true
-    const pair = await ensureFixtures()
-    await runCaptureMode(
-      browser.cdpPort,
-      pair.primary,
-      process.env.CLAW_MCP_CAPTURE_DIR,
-    )
-  }
-  let server: ContractServer
-  let mcp: McpSession
+  // Everything after the launch is wrapped so a failure (capture-mode,
+  // server boot, browser attach, scratch-dir mint) never leaks the
+  // browser: nothing is stored in `runs` until the run is fully built,
+  // so afterAll's teardownRun could not otherwise reclaim it.
+  let server: ContractServer | undefined
   try {
+    // One-time side quest: with a browser up and no server attached yet,
+    // capture-mode dumps raw CDP payloads for the serde fixtures.
+    if (!captured && process.env.CLAW_MCP_CAPTURE_DIR) {
+      captured = true
+      const pair = await ensureFixtures()
+      await runCaptureMode(
+        browser.cdpPort,
+        pair.primary,
+        process.env.CLAW_MCP_CAPTURE_DIR,
+      )
+    }
     server = await startContractServer(name, browser.cdpPort)
-  } catch (error) {
-    await browser.kill().catch(() => {})
-    throw error
-  }
-  try {
-    mcp = await McpSession.connect(server.baseUrl, 'claw-contract')
+    const mcp = await McpSession.connect(server.baseUrl, 'claw-contract')
     // The rust server attaches to the browser asynchronously after
     // /system/health turns ok; wait until tool calls stop reporting a
     // disconnected browser before running cases.
@@ -94,21 +92,21 @@ async function ensureRun(name: ServerName): Promise<ServerRun> {
       `${name} server to attach to the browser`,
       { timeoutMs: 30_000, intervalMs: 500 },
     )
+    const run: ServerRun = {
+      server,
+      browser,
+      mcp,
+      extraSessions: [],
+      openedPages: [],
+      scratchDir: await mkdtemp(join(tmpdir(), 'claw-mcp-scratch-')),
+    }
+    runs.set(name, run)
+    return run
   } catch (error) {
-    await server.stop().catch(() => {})
+    await server?.stop().catch(() => {})
     await browser.kill().catch(() => {})
     throw error
   }
-  const run: ServerRun = {
-    server,
-    browser,
-    mcp,
-    extraSessions: [],
-    openedPages: [],
-    scratchDir: await mkdtemp(join(tmpdir(), 'claw-mcp-scratch-')),
-  }
-  runs.set(name, run)
-  return run
 }
 
 function makeContext(run: ServerRun): CaseContext {

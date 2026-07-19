@@ -325,6 +325,18 @@ export const tabsCases: ContractCase[] = [
         { hideOk: !hidden.isError, showOk: !shown.isError },
         { divergence: 'windows-set-visibility' },
       )
+      // Assert the CURRENTLY documented per-server behavior so this
+      // divergence-tagged case is not inert: TS hides (recreating the
+      // window), Rust fails. If either flips, the divergence should be
+      // revisited and this trips to say so.
+      if (ctx.server.name === 'typescript' && hidden.isError) {
+        throw new Error('TS set_visibility hide regressed to an error')
+      }
+      if (ctx.server.name === 'rust' && !hidden.isError) {
+        throw new Error(
+          'Rust set_visibility hide now succeeds — retire the windows-set-visibility divergence',
+        )
+      }
       await ctx.mcp.callTool('windows', { action: 'close', windowId })
     },
   },

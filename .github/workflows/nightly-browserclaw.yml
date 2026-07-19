@@ -277,13 +277,26 @@ jobs:
           fi
 
           mount_point="$(mktemp -d)"
-          cleanup() { hdiutil detach "$mount_point" -quiet || true; }
+          cleanup() {
+            # Reap any test browser the harness spawned before releasing the
+            # mount, so a cancel/timeout cannot orphan a process holding it.
+            pkill -f 'claw-mcp-browser-' 2>/dev/null || true
+            hdiutil detach "$mount_point" -quiet 2>/dev/null \
+              || hdiutil detach "$mount_point" -force -quiet 2>/dev/null || true
+          }
           trap cleanup EXIT
           hdiutil attach "${dmgs[0]}" -nobrowse -readonly -mountpoint "$mount_point"
 
           app="$(/usr/bin/find "$mount_point" -maxdepth 1 -name '*.app' -print -quit)"
-          exe="$(/usr/bin/find "$app/Contents/MacOS" -maxdepth 1 -type f -perm +111 -print -quit)"
-          if [ -z "$exe" ]; then
+          if [ -z "$app" ]; then
+            echo "::error::No .app bundle inside the mounted DMG"
+            exit 1
+          fi
+          # Resolve the real entrypoint via CFBundleExecutable rather than the
+          # first file in MacOS/, which could be a helper binary.
+          exe_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist" 2>/dev/null || true)"
+          exe="$app/Contents/MacOS/$exe_name"
+          if [ -z "$exe_name" ] || [ ! -x "$exe" ]; then
             echo "::error::Could not resolve the BrowserClaw executable inside the DMG"
             exit 1
           fi

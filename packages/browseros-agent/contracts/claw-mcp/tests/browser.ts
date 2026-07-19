@@ -105,14 +105,18 @@ export async function launchBrowser(): Promise<BrowserHandle> {
     stderr: process.env.BROWSEROS_TEST_DEBUG === 'true' ? 'inherit' : 'ignore',
   })
 
+  const abandon = (message: string): never => {
+    child.kill(9)
+    rmSync(userDataDir, { recursive: true, force: true })
+    throw new Error(message)
+  }
   for (let attempt = 0; attempt < CDP_POLL_ATTEMPTS; attempt += 1) {
     if (child.exitCode !== null) {
-      throw new Error(`BrowserOS exited during startup (${child.exitCode})`)
+      abandon(`BrowserOS exited during startup (${child.exitCode})`)
     }
     if (await isBrowserRunning(cdpPort)) break
     if (attempt === CDP_POLL_ATTEMPTS - 1) {
-      child.kill(9)
-      throw new Error(`BrowserOS CDP endpoint never came up on ${cdpPort}`)
+      abandon(`BrowserOS CDP endpoint never came up on ${cdpPort}`)
     }
     await Bun.sleep(CDP_POLL_INTERVAL_MS)
   }

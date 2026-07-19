@@ -48,16 +48,22 @@ function watchLogs(
   const consume = async (stream: ReadableStream<Uint8Array>) => {
     const decoder = new TextDecoder()
     let pending = ''
-    for await (const chunk of stream) {
-      pending += decoder.decode(chunk, { stream: true })
-      const parts = pending.split('\n')
-      pending = parts.pop() ?? ''
-      lines.push(...parts)
-      if (lines.length > LOG_TAIL_LINES) {
-        lines.splice(0, lines.length - LOG_TAIL_LINES)
+    try {
+      for await (const chunk of stream) {
+        pending += decoder.decode(chunk, { stream: true })
+        const parts = pending.split('\n')
+        pending = parts.pop() ?? ''
+        lines.push(...parts)
+        if (lines.length > LOG_TAIL_LINES) {
+          lines.splice(0, lines.length - LOG_TAIL_LINES)
+        }
       }
+      if (pending) lines.push(pending)
+    } catch {
+      // The stream errors when the process is force-killed mid-read;
+      // the log tail is best-effort, so swallow it rather than surface
+      // an unhandledRejection.
     }
-    if (pending) lines.push(pending)
   }
   void consume(child.stdout)
   void consume(child.stderr)
