@@ -1,0 +1,11 @@
+# OWeb Browser agent UI theme overrides — apply in BrowserOS fork.
+# Target: packages/browseros-agent/apps/app/styles/global.css
+
+:root {
+  --accent-orange: oklch(0.78 0.14 195);
+  --accent-orange-bright: oklch(0.85 0.16 195);
+  --oweb-cyan: #22d3ee;
+  --oweb-navy: #0b1b33;
+}
+
+/* Replace BrowserOS orange shimmer with OWeb cyan in agent UI components */
