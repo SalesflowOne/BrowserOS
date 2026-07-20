@@ -41,6 +41,12 @@ class WindowsSignPathsTest(unittest.TestCase):
                 / "resources"
                 / "bin"
                 / "browseros-claw-server.exe",
+                build_output_dir
+                / "OWebServer"
+                / "default"
+                / "resources"
+                / "bin"
+                / "browseros_server.exe",
             ],
         )
 
@@ -110,7 +116,7 @@ class WindowsSignPathsTest(unittest.TestCase):
                 )
 
     def test_missing_chrome_is_fatal_for_each_product(self):
-        for product_id in ("browseros", "browserclaw"):
+        for product_id in ("browseros", "browserclaw", "oweb"):
             with self.subTest(product=product_id), TemporaryDirectory() as tmp:
                 build_output_dir = Path(tmp)
                 for binary in get_browseros_server_binary_paths(

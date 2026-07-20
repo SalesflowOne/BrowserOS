@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { canTestProvider } from '@/lib/llm-providers/provider-runtime'
 import { BrowserOSIcon, ProviderIcon } from '@/lib/llm-providers/providerIcons'
 import type { LlmProviderConfig } from '@/lib/llm-providers/types'
+import { builtInProviderName, docsBaseUrl, hideByok } from '@/lib/product-config'
 import { cn } from '@/lib/utils'
 
 export interface ProviderCardProps {
@@ -80,19 +81,23 @@ export const ProviderCard: FC<ProviderCardProps> = ({
         </div>
         <p className="truncate text-muted-foreground text-sm">
           {isBuiltIn ? (
-            <>
-              BrowserOS-hosted model with strict rate limits.{' '}
-              <a
-                href="https://docs.browseros.com/features/bring-your-own-llm"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:text-foreground"
-                onClick={(e) => e.stopPropagation()}
-              >
-                Bring your own key
-              </a>{' '}
-              for better performance.
-            </>
+            hideByok ? (
+              `${builtInProviderName}-hosted model with workspace credits.`
+            ) : (
+              <>
+                {builtInProviderName}-hosted model with strict rate limits.{' '}
+                <a
+                  href={`${docsBaseUrl}/features/bring-your-own-llm`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-foreground"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  Bring your own key
+                </a>{' '}
+                for better performance.
+              </>
+            )
           ) : provider.baseUrl ? (
             `${provider.modelId} • ${provider.baseUrl}`
           ) : (

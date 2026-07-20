@@ -12,6 +12,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { signIn, useSession } from '@/lib/auth/auth-client'
+import { isOwebProduct, productDisplayName } from '@/lib/product-config'
 
 type LoginState = 'idle' | 'loading' | 'error'
 
@@ -27,19 +28,23 @@ export const LoginPage: FC = () => {
     }
   }, [session, isPending, navigate])
 
-  const handleGoogleSignIn = async () => {
+  const handleSignIn = async () => {
     setState('loading')
     setError(null)
 
     try {
       await signIn.social({
-        provider: 'google',
+        provider: isOwebProduct() ? 'oweb' : 'google',
         callbackURL: '/home',
       })
     } catch (err) {
       setState('error')
       setError(
-        err instanceof Error ? err.message : 'Failed to sign in with Google',
+        err instanceof Error
+          ? err.message
+          : isOwebProduct()
+            ? 'Failed to sign in with OWeb'
+            : 'Failed to sign in with Google',
       )
     }
   }
@@ -65,7 +70,9 @@ export const LoginPage: FC = () => {
             <ArrowLeft className="size-4" />
           </Button>
           <div className="flex-1 pr-9 text-center">
-            <CardTitle className="text-2xl">Welcome to BrowserOS</CardTitle>
+            <CardTitle className="text-2xl">
+              Welcome to {productDisplayName}
+            </CardTitle>
             <CardDescription>
               Sign in to your account to continue
             </CardDescription>
@@ -83,15 +90,15 @@ export const LoginPage: FC = () => {
         <Button
           variant="outline"
           className="w-full"
-          onClick={handleGoogleSignIn}
+          onClick={handleSignIn}
           disabled={state === 'loading'}
         >
           {state === 'loading' ? (
             <Loader2 className="size-4 animate-spin" />
-          ) : (
+          ) : isOwebProduct() ? null : (
             <GoogleIcon />
           )}
-          Continue with Google
+          {isOwebProduct() ? 'Continue with OWeb' : 'Continue with Google'}
         </Button>
       </CardContent>
     </Card>

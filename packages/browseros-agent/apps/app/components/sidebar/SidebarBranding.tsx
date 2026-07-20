@@ -1,7 +1,8 @@
 import { ChevronDown, LogIn, LogOut, User } from 'lucide-react'
 import type { FC } from 'react'
 import { useNavigate } from 'react-router'
-import ProductLogo from '@/assets/product_logo.svg'
+import { productLogo, productLogoAlt } from '@/lib/product-branding'
+import { productDisplayName } from '@/lib/product-config'
 import { ThemeToggle } from '@/components/elements/theme-toggle'
 import {
   DropdownMenu,
@@ -68,7 +69,7 @@ export const SidebarBranding: FC<SidebarBrandingProps> = ({
       </div>
     )
   ) : (
-    <img src={ProductLogo} alt="BrowserOS" className="size-8" />
+    <img src={productLogo} alt={productLogoAlt} className="size-8" />
   )
 
   return (
@@ -93,7 +94,7 @@ export const SidebarBranding: FC<SidebarBrandingProps> = ({
                 <span className="truncate font-semibold">
                   {isLoggedIn
                     ? displayName
-                    : selectedFolder?.name || 'BrowserOS'}
+                    : selectedFolder?.name || productDisplayName}
                 </span>
                 <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
               </div>

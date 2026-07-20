@@ -34,17 +34,18 @@ def _patched_source(relative_path: str) -> str:
     return "\n".join(source_lines)
 
 
-def _product_identity_branches(source: str) -> tuple[str, str]:
-    """Return the BrowserClaw and BrowserOS compile-time identity branches."""
+def _product_identity_branches(source: str) -> tuple[str, str, str]:
+    """Return the BrowserClaw, OWeb, and BrowserOS compile-time identity branches."""
     match = re.search(
         r"#if BUILDFLAG\(BROWSEROS_PRODUCT_BROWSERCLAW\)\n"
-        r"(?P<browserclaw>.*?)\n#else\n(?P<browseros>.*?)\n#endif",
+        r"(?P<browserclaw>.*?)\n#elif BUILDFLAG\(BROWSEROS_PRODUCT_OWEB\)\n"
+        r"(?P<oweb>.*?)\n#else\n(?P<browseros>.*?)\n#endif",
         source,
         re.DOTALL,
     )
     if match is None:
-        raise AssertionError("missing BrowserClaw install identity buildflag branch")
-    return match.group("browserclaw"), match.group("browseros")
+        raise AssertionError("missing product install identity buildflag branches")
+    return match.group("browserclaw"), match.group("oweb"), match.group("browseros")
 
 
 def _field_initializer(source: str, field: str) -> str:
@@ -98,6 +99,8 @@ class ProductUserDataDirPatchTest(unittest.TestCase):
             re.compile(
                 r'\+if \(browseros_product_browserclaw\) \{\n'
                 r'\+  browseros_product_dir_name = "BrowserClaw"\n'
+                r'\+} else if \(browseros_product_oweb\) \{\n'
+                r'\+  browseros_product_dir_name = "OWeb"\n'
                 r'\+\} else \{\n'
                 r'\+  browseros_product_dir_name = "BrowserOS"\n'
                 r'\+\}'
@@ -112,6 +115,8 @@ class ProductUserDataDirPatchTest(unittest.TestCase):
             re.compile(
                 r"\+#elif BUILDFLAG\(BROWSEROS_PRODUCT_BROWSERCLAW\)\n"
                 r'\+  std::string data_dir_basename = "browser-claw";\n'
+                r"\+#elif BUILDFLAG\(BROWSEROS_PRODUCT_OWEB\)\n"
+                r'\+  std::string data_dir_basename = "oweb-browser";\n'
                 r" #else\n"
                 r'-  std::string data_dir_basename = "chromium";\n'
                 r'\+  std::string data_dir_basename = "browser-os";'
@@ -122,7 +127,7 @@ class ProductUserDataDirPatchTest(unittest.TestCase):
         install_modes = _patched_source(
             "chrome/install_static/chromium_install_modes.h"
         )
-        browserclaw, browseros = _product_identity_branches(install_modes)
+        browserclaw, oweb, browseros = _product_identity_branches(install_modes)
 
         self.assertEqual(
             install_modes.count("#if BUILDFLAG(BROWSEROS_PRODUCT_BROWSERCLAW)"),
@@ -131,6 +136,9 @@ class ProductUserDataDirPatchTest(unittest.TestCase):
         self.assertIn(
             'inline constexpr wchar_t kProductPathName[] = L"BrowserClaw";',
             browserclaw,
+        )
+        self.assertIn(
+            'inline constexpr wchar_t kProductPathName[] = L"OWeb";', oweb
         )
         self.assertIn(
             'inline constexpr wchar_t kProductPathName[] = L"BrowserOS";', browseros
@@ -142,7 +150,7 @@ class ProductUserDataDirPatchTest(unittest.TestCase):
         install_modes = _patched_source(
             "chrome/install_static/chromium_install_modes.h"
         )
-        browserclaw, browseros = _product_identity_branches(install_modes)
+        browserclaw, oweb, browseros = _product_identity_branches(install_modes)
         identity_struct = re.search(
             r"struct ProductInstallIdentity \{(?P<body>.*?)\n\};",
             install_modes,
@@ -166,39 +174,56 @@ class ProductUserDataDirPatchTest(unittest.TestCase):
             ),
             1,
         )
+        self.assertEqual(
+            oweb.count(
+                "inline constexpr ProductInstallIdentity kProductInstallIdentity"
+            ),
+            1,
+        )
 
         expected_fields = {
-            "base_app_name": ('L"BrowserClaw"', 'L"BrowserOS"'),
-            "base_app_id": ('L"BrowserClaw"', 'L"BrowserOS"'),
-            "browser_prog_id_prefix": ('L"BClawHTML"', 'L"BOSHTML"'),
+            "base_app_name": ('L"BrowserClaw"', 'L"OWebBrowser"', 'L"BrowserOS"'),
+            "base_app_id": ('L"BrowserClaw"', 'L"OWebBrowser"', 'L"BrowserOS"'),
+            "browser_prog_id_prefix": ('L"BClawHTML"', 'L"OWebHTML"', 'L"BOSHTML"'),
             "browser_prog_id_description": (
                 'L"BrowserClaw HTML Document"',
+                'L"OWeb Browser HTML Document"',
                 'L"BrowserOS HTML Document"',
             ),
-            "direct_launch_url_scheme": ('"browserclaw"', '"browseros"'),
-            "pdf_prog_id_prefix": ('L"BClawPDF"', 'L"BOSPDF"'),
+            "direct_launch_url_scheme": ('"browserclaw"', '"oweb"', '"browseros"'),
+            "pdf_prog_id_prefix": ('L"BClawPDF"', 'L"OWebPDF"', 'L"BOSPDF"'),
             "pdf_prog_id_description": (
                 'L"BrowserClaw PDF Document"',
+                'L"OWeb Browser PDF Document"',
                 'L"BrowserOS PDF Document"',
             ),
             "active_setup_guid": (
                 'L"{E9E65674-914E-4A29-83A9-A98D407446EC}"',
+                'L"{A7E3C4F1-9B2D-4E8A-8C5F-1D6E9A0B3C72}"',
                 'L"{0EF5669B-7FD7-4138-A91F-E466631ADE97}"',
             ),
             "legacy_command_execute_clsid": (
                 'L""',
+                'L"{C45B9F07-092A-482B-6C37-8A9B0C1D2E3F}"',
                 'L"{AFDDB293-0724-49E5-A4EC-1096BF6C84AF}"',
             ),
         }
-        for field, (browserclaw_value, browseros_value) in expected_fields.items():
+        for field, (
+            browserclaw_value,
+            oweb_value,
+            browseros_value,
+        ) in expected_fields.items():
             with self.subTest(field=field, product="browserclaw"):
                 self.assertEqual(
                     _field_initializer(browserclaw, field), browserclaw_value
                 )
+            with self.subTest(field=field, product="oweb"):
+                self.assertEqual(_field_initializer(oweb, field), oweb_value)
             with self.subTest(field=field, product="browseros"):
                 self.assertEqual(_field_initializer(browseros, field), browseros_value)
 
         self.assertIn('L"924012147-"', browserclaw)
+        self.assertIn('L"924012149-"', oweb)
         self.assertIn('L"924012148-"', browseros)
 
         for field in (
@@ -222,7 +247,7 @@ class ProductUserDataDirPatchTest(unittest.TestCase):
         install_modes = _patched_source(
             "chrome/install_static/chromium_install_modes.h"
         )
-        browserclaw, browseros = _product_identity_branches(install_modes)
+        browserclaw, oweb, browseros = _product_identity_branches(install_modes)
         guid_fields = (
             "active_setup_guid",
             "toast_activator_clsid",
@@ -232,33 +257,47 @@ class ProductUserDataDirPatchTest(unittest.TestCase):
         browserclaw_guids = {
             _guid(_field_initializer(browserclaw, field)) for field in guid_fields
         }
+        oweb_guids = {
+            _guid(_field_initializer(oweb, field)) for field in guid_fields
+        }
         browseros_guids = {
             _guid(_field_initializer(browseros, field)) for field in guid_fields
         }
 
         self.assertTrue(browserclaw_guids.isdisjoint(browseros_guids))
+        self.assertTrue(browserclaw_guids.isdisjoint(oweb_guids))
+        self.assertTrue(oweb_guids.isdisjoint(browseros_guids))
         expected_clsids = {
             "toast_activator_clsid": (
                 "D0A19C03-EE25-463B-B38F-08516D2B1A79",
+                "F18E2A10-3C4D-4B5E-9F6A-1D2E3F4A5B6C",
                 "E76CCE76-27A7-46D3-9EED-CC8C5ED7BE72",
             ),
             "elevator_clsid": (
                 "0AC4EA74-A61A-4807-AFE5-03701D2B97DD",
+                "E27D1B09-2B3C-4A4D-8E59-0C1D2E3F4A5B",
                 "29ED629C-1F0E-47D1-A684-9397ACDB71AB",
             ),
             "tracing_service_clsid": (
                 "9F3CA910-142B-4C2C-A61E-B2335E2E67FD",
+                "D36C0A08-1A2B-493C-7D48-9B0C1D2E3F4A",
                 "C39C8575-9F42-4599-96F1-19DB7AEB51AF",
             ),
         }
         for field, (
             browserclaw_clsid,
+            oweb_clsid,
             browseros_clsid,
         ) in expected_clsids.items():
             with self.subTest(field=field, product="browserclaw"):
                 self.assertEqual(
                     _guid(_field_initializer(browserclaw, field)),
                     browserclaw_clsid,
+                )
+            with self.subTest(field=field, product="oweb"):
+                self.assertEqual(
+                    _guid(_field_initializer(oweb, field)),
+                    oweb_clsid,
                 )
             with self.subTest(field=field, product="browseros"):
                 self.assertEqual(
@@ -271,7 +310,7 @@ class ProductUserDataDirPatchTest(unittest.TestCase):
         install_modes = _patched_source(
             "chrome/install_static/chromium_install_modes.h"
         )
-        browserclaw, browseros = _product_identity_branches(install_modes)
+        browserclaw, oweb, browseros = _product_identity_branches(install_modes)
 
         self.assertEqual(install_modes.count('.app_guid = L"",'), 1)
         self.assertNotRegex(install_modes, r'\.app_guid\s*=\s*L"\{')

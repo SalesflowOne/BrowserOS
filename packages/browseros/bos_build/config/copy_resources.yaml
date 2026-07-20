@@ -147,6 +147,54 @@ copy_operations:
     type: "directory"
     product: "browserclaw"
 
+  - name: "OWeb Product Logo Icons"
+    source: "resources/oweb/icons/*.png"
+    destination: "chrome/app/theme/chromium/"
+    type: "files"
+    product: "oweb"
+
+  - name: "OWeb Product Logo SVG Files"
+    source: "resources/oweb/icons/*.svg"
+    destination: "chrome/app/theme/chromium/"
+    type: "files"
+    product: "oweb"
+
+  - name: "OWeb ChromeOS Icons"
+    source: "resources/oweb/icons/chromeos"
+    destination: "chrome/app/theme/chromium/chromeos"
+    type: "directory"
+    product: "oweb"
+
+  - name: "OWeb Linux Icons"
+    source: "resources/oweb/icons/linux"
+    destination: "chrome/app/theme/chromium/linux"
+    type: "directory"
+    product: "oweb"
+
+  - name: "OWeb Mac Icons"
+    source: "resources/oweb/icons/mac"
+    destination: "chrome/app/theme/chromium/mac"
+    type: "directory"
+    product: "oweb"
+
+  - name: "OWeb Windows Icons"
+    source: "resources/oweb/icons/win"
+    destination: "chrome/app/theme/chromium/win"
+    type: "directory"
+    product: "oweb"
+
+  - name: "OWeb DPI 100% Icons"
+    source: "resources/oweb/icons/default_100_percent"
+    destination: "chrome/app/theme/default_100_percent/chromium"
+    type: "directory"
+    product: "oweb"
+
+  - name: "OWeb DPI 200% Icons"
+    source: "resources/oweb/icons/default_200_percent"
+    destination: "chrome/app/theme/default_200_percent/chromium"
+    type: "directory"
+    product: "oweb"
+
   # BrowserOS Server resources - Platform & Architecture specific
   - name: "BrowserOS Server Resources - macOS ARM64"
     source: "resources/binaries/browseros_server/darwin-arm64/resources"

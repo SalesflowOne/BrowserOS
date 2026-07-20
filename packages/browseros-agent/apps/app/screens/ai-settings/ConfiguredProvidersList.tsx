@@ -1,5 +1,6 @@
 import type { FC } from 'react'
 import type { LlmProviderConfig } from '@/lib/llm-providers/types'
+import { builtInProviderId } from '@/lib/product-config'
 import { ProviderCard } from './ProviderCard'
 
 export interface ConfiguredProvidersListProps {
@@ -27,7 +28,7 @@ export const ConfiguredProvidersList: FC<ConfiguredProvidersListProps> = ({
   return (
     <div className="space-y-3">
       {providers.map((provider) => {
-        const isBuiltIn = provider.id === 'browseros'
+        const isBuiltIn = provider.id === builtInProviderId
 
         return (
           <ProviderCard

@@ -27,23 +27,33 @@ index 0000000000000..9a25f32a0da56
 +Product BakedProduct() {
 +#if BUILDFLAG(BROWSEROS_PRODUCT_BROWSERCLAW)
 +  return Product::kBrowserClaw;
++#elif BUILDFLAG(BROWSEROS_PRODUCT_OWEB)
++  return Product::kOWeb;
 +#else
 +  return Product::kBrowserOS;
 +#endif
 +}
 +
-+Product OtherProduct() {
-+  if (BakedProduct() == Product::kBrowserClaw) {
-+    return Product::kBrowserOS;
++Product AlternateProduct(Product baked) {
++  switch (baked) {
++    case Product::kBrowserClaw:
++      return Product::kBrowserOS;
++    case Product::kOWeb:
++      return Product::kBrowserClaw;
++    case Product::kBrowserOS:
++      return Product::kOWeb;
 +  }
-+  return Product::kBrowserClaw;
 +}
 +
 +std::string_view ProductSwitchValue(Product product) {
-+  if (product == Product::kBrowserClaw) {
-+    return "browserclaw";
++  switch (product) {
++    case Product::kBrowserClaw:
++      return "browserclaw";
++    case Product::kOWeb:
++      return "oweb";
++    case Product::kBrowserOS:
++      return "browseros";
 +  }
-+  return "browseros";
 +}
 +
 +ServerLaunchConfig BuildLaunchConfig() {
@@ -76,7 +86,7 @@ index 0000000000000..9a25f32a0da56
 +TEST(BrowserOSProductTest, IgnoresProductSwitchWhenOverrideDisabled) {
 +  base::test::ScopedCommandLine scoped_command_line;
 +  scoped_command_line.GetProcessCommandLine()->AppendSwitchASCII(
-+      kBrowserOSProduct, ProductSwitchValue(OtherProduct()));
++      kBrowserOSProduct, ProductSwitchValue(AlternateProduct(BakedProduct())));
 +
 +  EXPECT_EQ(BakedProduct(), GetProduct());
 +}
@@ -86,9 +96,9 @@ index 0000000000000..9a25f32a0da56
 +TEST(BrowserOSProductTest, HonorsProductSwitchWhenOverrideEnabled) {
 +  base::test::ScopedCommandLine scoped_command_line;
 +  scoped_command_line.GetProcessCommandLine()->AppendSwitchASCII(
-+      kBrowserOSProduct, ProductSwitchValue(OtherProduct()));
++      kBrowserOSProduct, ProductSwitchValue(AlternateProduct(BakedProduct())));
 +
-+  EXPECT_EQ(OtherProduct(), GetProduct());
++  EXPECT_EQ(AlternateProduct(BakedProduct()), GetProduct());
 +}
 +
 +TEST(BrowserOSProductTest, InvalidProductSwitchFallsBackToBakedProduct) {
@@ -153,7 +163,32 @@ index 0000000000000..9a25f32a0da56
 +  EXPECT_TRUE(descriptor.updater.readiness_path.empty());
 +}
 +
-+TEST(BrowserOSServerConfigTest, ManagedDescriptorUsesSelectedProduct) {
++TEST(BrowserOSServerConfigTest, OWebDescriptorMatchesOWebServer) {
++  const ManagedServerDescriptor& descriptor = GetOWebServerDescriptor();
++
++  EXPECT_EQ(Product::kOWeb, descriptor.product);
++  EXPECT_EQ(std::string_view("OWeb Browser server"), descriptor.log_name);
++  EXPECT_EQ(base::FilePath::StringType(FILE_PATH_LITERAL("OWebServer")),
++            ToPathString(descriptor.bundle_dir));
++  EXPECT_EQ(base::FilePath::StringType(FILE_PATH_LITERAL("browseros_server")),
++            ToPathString(descriptor.binary_name));
++  EXPECT_EQ(base::FilePath::StringType(FILE_PATH_LITERAL("config.json")),
++            ToPathString(descriptor.config_file_name));
++  EXPECT_EQ(std::string_view("/system/health"), descriptor.health_path);
++  EXPECT_TRUE(descriptor.enable_updater);
++
++  EXPECT_EQ(base::FilePath::StringType(FILE_PATH_LITERAL("OWebServer")),
++            ToPathString(descriptor.updater.state_dir));
++  EXPECT_EQ(
++      std::string_view("https://cdn.browseros.com/appcast-oweb-server.xml"),
++      descriptor.updater.appcast_url);
++  EXPECT_EQ(std::string_view(
++                "https://cdn.browseros.com/appcast-oweb-server.alpha.xml"),
++            descriptor.updater.alpha_appcast_url);
++  EXPECT_EQ(std::string_view("/status"), descriptor.updater.readiness_path);
++}
++
+ TEST(BrowserOSServerConfigTest, ManagedDescriptorUsesSelectedProduct) {
 +  const ManagedServerDescriptor& descriptor = GetManagedServerDescriptor();
 +
 +  EXPECT_EQ(GetProduct(), descriptor.product);
@@ -163,11 +198,11 @@ index 0000000000000..9a25f32a0da56
 +TEST(BrowserOSServerConfigTest, ManagedDescriptorFollowsRuntimeOverride) {
 +  base::test::ScopedCommandLine scoped_command_line;
 +  scoped_command_line.GetProcessCommandLine()->AppendSwitchASCII(
-+      kBrowserOSProduct, ProductSwitchValue(OtherProduct()));
++      kBrowserOSProduct, ProductSwitchValue(AlternateProduct(BakedProduct())));
 +
 +  const ManagedServerDescriptor& descriptor = GetManagedServerDescriptor();
 +
-+  EXPECT_EQ(OtherProduct(), descriptor.product);
++  EXPECT_EQ(AlternateProduct(BakedProduct()), descriptor.product);
 +}
 +#endif
 +

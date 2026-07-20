@@ -32,6 +32,7 @@ index 0000000000000..9b2f877bec910
 +  flags = [
 +    "BROWSEROS_PRODUCT_BROWSEROS=$browseros_product_browseros",
 +    "BROWSEROS_PRODUCT_BROWSERCLAW=$browseros_product_browserclaw",
++    "BROWSEROS_PRODUCT_OWEB=$browseros_product_oweb",
 +    "BROWSEROS_ALLOW_RUNTIME_PRODUCT_OVERRIDE=$browseros_allow_runtime_product_override",
 +  ]
 +}

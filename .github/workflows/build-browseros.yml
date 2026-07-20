@@ -16,7 +16,7 @@ on:
         required: true
         type: string
       product:
-        description: "Product to build: browseros or browserclaw"
+        description: "Product to build: browseros, browserclaw, or oweb"
         required: true
         type: string
       runner:
@@ -89,9 +89,9 @@ jobs:
               ;;
           esac
           case "$PRODUCT" in
-            browseros|browserclaw) ;;
+            browseros|browserclaw|oweb) ;;
             *)
-              echo "::error::product must be one of: browseros, browserclaw"
+              echo "::error::product must be one of: browseros, browserclaw, oweb"
               exit 1
               ;;
           esac
@@ -261,6 +261,7 @@ jobs:
       - name: Export bundled extension local-build env
         if: inputs['bundle-local-extensions']
         env:
+          PRODUCT: ${{ inputs.product }}
           BROWSEROS_AGENT_V2_KEY: ${{ secrets.BROWSEROS_AGENT_V2_KEY }}
           BROWSERCLAW_KEY: ${{ secrets.BROWSERCLAW_KEY }}
           POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
@@ -272,11 +273,23 @@ jobs:
           VITE_PUBLIC_POSTHOG_HOST: ${{ secrets.VITE_PUBLIC_POSTHOG_HOST }}
           VITE_CLAW_POSTHOG_KEY: ${{ secrets.VITE_CLAW_POSTHOG_KEY }}
           VITE_CLAW_POSTHOG_HOST: ${{ secrets.VITE_CLAW_POSTHOG_HOST }}
-          VITE_PUBLIC_BROWSEROS_API: https://api.browseros.com
           GRAPHQL_SCHEMA_PATH: apps/app/schema/graphql.schema.json
           NODE_ENV: production
         run: |
           set -euo pipefail
+          case "$PRODUCT" in
+            oweb)
+              VITE_PUBLIC_BROWSEROS_API="https://oweb.one"
+              VITE_PRODUCT_ID="oweb"
+              VITE_OWEB_APP_ORIGIN="https://oweb.one"
+              VITE_OWEB_API_BASE="https://oweb.one/api/browser/v1"
+              VITE_HIDE_BYOK="true"
+              ;;
+            *)
+              VITE_PUBLIC_BROWSEROS_API="https://api.browseros.com"
+              ;;
+          esac
+          export VITE_PUBLIC_BROWSEROS_API VITE_PRODUCT_ID VITE_OWEB_APP_ORIGIN VITE_OWEB_API_BASE VITE_HIDE_BYOK
           write_env() {
             local name="$1"
             local value="${!name:-}"
@@ -300,6 +313,10 @@ jobs:
           write_env VITE_PUBLIC_POSTHOG_HOST
           write_env VITE_CLAW_POSTHOG_KEY
           write_env VITE_CLAW_POSTHOG_HOST
+          write_env VITE_PRODUCT_ID
+          write_env VITE_OWEB_APP_ORIGIN
+          write_env VITE_OWEB_API_BASE
+          write_env VITE_HIDE_BYOK
           write_env VITE_PUBLIC_BROWSEROS_API
           write_env GRAPHQL_SCHEMA_PATH
           write_env NODE_ENV
@@ -364,6 +381,9 @@ jobs:
               ;;
             browserclaw)
               echo "value=BrowserClaw" >> "$GITHUB_OUTPUT"
+              ;;
+            oweb)
+              echo "value=OWebBrowser" >> "$GITHUB_OUTPUT"
               ;;
             *)
               echo "::error::product must be one of: browseros, browserclaw"

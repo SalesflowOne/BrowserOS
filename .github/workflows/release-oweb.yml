@@ -1,110 +1,276 @@
-# Release OWeb Browser — adapt from BrowserOS release-browseros.yml
-# Copy to oweb-browser/.github/workflows/release-oweb.yml after fork is created.
-#
-# Prerequisites:
-# - packages/browseros/bos_build/products/oweb/ registered
-# - Signing secrets in repo (MACOS_CERTIFICATE_NAME, ESIGNER_*, R2_*, etc.)
-# - Chromium checkout on self-hosted mac runner (see BrowserOS docs)
-
-name: Release OWeb Browser
+# OWeb Browser release orchestrator — mirrors release-browseros.yml with product=oweb.
+name: "Release: OWeb Browser (full)"
 
 on:
   workflow_dispatch:
     inputs:
       platforms:
-        description: "Platforms to build (all, macos, windows, linux)"
-        required: false
-        default: all
+        description: "Browser platforms to build"
         type: choice
+        default: all
         options:
           - all
-          - macos
-          - windows
           - linux
+          - windows
+          - macos
+      include_servers:
+        description: "Build and upload server resource bundles before browser builds"
+        type: boolean
+        default: true
+      sign_windows:
+        description: "Sign Windows binaries and update artifacts"
+        type: boolean
+        default: true
       macos_arch:
-        description: "macOS architecture"
-        required: false
-        default: arm64
+        description: "macOS architecture to build"
         type: choice
+        default: universal
         options:
           - arm64
-          - x64
           - universal
-      sign_windows:
-        description: "Sign Windows installer"
-        required: false
-        default: true
-        type: boolean
       upload_to_r2:
-        description: "Upload artifacts to R2/CDN"
-        required: false
-        default: false
+        description: "Upload browser release metadata/artifacts to R2"
         type: boolean
-      github_release_draft:
-        description: "Create draft GitHub release"
-        required: false
         default: true
+      extensions:
+        description: "Build/upload the agent extension CRX and stage this feed channel"
+        type: choice
+        default: alpha
+        options:
+          - skip
+          - alpha
+          - prod
+      extensions_version:
+        description: "Agent extension version to release when extensions is not skip"
+        required: false
+        type: string
+        default: ""
+      github_release_draft:
+        description: "Create or refresh draft GitHub release assets after successful builds"
         type: boolean
+        default: true
 
-env:
-  PRODUCT: oweb
-  BROWSER_VERSION_FILE: packages/browseros/resources/BROWSEROS_VERSION
+permissions:
+  contents: read
+
+concurrency:
+  group: release-oweb
+  cancel-in-progress: false
 
 jobs:
-  plan:
+  preflight:
+    name: Preflight
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.ver.outputs.version }}
+      version: ${{ steps.version.outputs.version }}
+      extensions_version: ${{ steps.extension_version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
-      - id: ver
-        run: |
-          VERSION=$(grep -E '^VERSION=' "$BROWSER_VERSION_FILE" | cut -d= -f2)
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
 
-  # Mirror BrowserOS release lanes — see packages/browseros/bos_build/docs/release-ci.md
-  build-macos:
-    if: ${{ inputs.platforms == 'all' || inputs.platforms == 'macos' }}
-    needs: plan
-    runs-on: [self-hosted, macOS]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build OWeb Browser (macOS)
-        working-directory: packages/browseros
+      - name: Resolve release version
+        id: version
         run: |
-          uv sync
-          uv run browseros build --preset release --product oweb --arch ${{ inputs.macos_arch }} --sign --upload=${{ inputs.upload_to_r2 }}
+          set -euo pipefail
+          version_file="packages/browseros/resources/BROWSEROS_VERSION"
+          first_line="$(sed -n '1p' "$version_file" | tr -d '[:space:]')"
+          if [ -n "$first_line" ] && [[ "$first_line" != *"="* ]]; then
+            version="$first_line"
+          else
+            major=0; minor=0; build=0; patch=0
+            while IFS='=' read -r key value; do
+              key="${key//[[:space:]]/}"
+              value="${value//[[:space:]]/}"
+              case "$key" in
+                BROWSEROS_MAJOR) major="$value" ;;
+                BROWSEROS_MINOR) minor="$value" ;;
+                BROWSEROS_BUILD) build="$value" ;;
+                BROWSEROS_PATCH) patch="$value" ;;
+              esac
+            done < "$version_file"
+            if [ "$patch" != "0" ]; then version="$major.$minor.$build.$patch"
+            elif [ "$build" != "0" ]; then version="$major.$minor.$build"
+            else version="$major.$minor.0"; fi
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
-  build-windows:
-    if: ${{ inputs.platforms == 'all' || inputs.platforms == 'windows' }}
-    needs: plan
+      - name: Resolve extension version
+        id: extension_version
+        env:
+          INPUT_EXTENSIONS: ${{ inputs.extensions }}
+          INPUT_EXTENSIONS_VERSION: ${{ inputs.extensions_version }}
+        run: |
+          set -euo pipefail
+          if [ "$INPUT_EXTENSIONS" = "skip" ]; then
+            echo "version=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          version="$(printf '%s' "$INPUT_EXTENSIONS_VERSION" | tr -d '[:space:]')"
+          if [ -z "$version" ]; then
+            echo "::error::extensions_version is required when extensions is not skip"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  server_resources:
+    name: OWeb server resources
+    needs: preflight
+    if: ${{ inputs.include_servers }}
+    uses: ./.github/workflows/release-server.yml
+    permissions:
+      contents: write
+      pull-requests: write
+    with:
+      ref: ${{ github.ref_name }}
+      publish_ota: false
+    secrets: inherit
+
+  release_linux:
+    name: Linux browser builds
+    needs: [preflight, server_resources]
+    if: >-
+      ${{
+        always() &&
+        (inputs.platforms == 'all' || inputs.platforms == 'linux') &&
+        needs.preflight.result == 'success' &&
+        (needs.server_resources.result == 'success' || needs.server_resources.result == 'skipped')
+      }}
+    uses: ./.github/workflows/release-linux.yml
+    with:
+      products: oweb
+      upload_to_r2: ${{ inputs.upload_to_r2 }}
+    secrets: inherit
+
+  release_windows:
+    name: Windows browser builds
+    needs: [preflight, server_resources]
+    if: >-
+      ${{
+        always() &&
+        (inputs.platforms == 'all' || inputs.platforms == 'windows') &&
+        needs.preflight.result == 'success' &&
+        (needs.server_resources.result == 'success' || needs.server_resources.result == 'skipped')
+      }}
+    uses: ./.github/workflows/release-windows.yml
+    with:
+      products: oweb
+      upload_to_r2: ${{ inputs.upload_to_r2 }}
+      sign: ${{ inputs.sign_windows }}
+    secrets: inherit
+
+  release_macos:
+    name: macOS browser builds
+    needs: [preflight, server_resources]
+    if: >-
+      ${{
+        always() &&
+        (inputs.platforms == 'all' || inputs.platforms == 'macos') &&
+        needs.preflight.result == 'success' &&
+        (needs.server_resources.result == 'success' || needs.server_resources.result == 'skipped')
+      }}
+    concurrency:
+      group: macos-build
+      cancel-in-progress: false
+    uses: ./.github/workflows/release-macos.yml
+    with:
+      products: oweb
+      arch: ${{ inputs.macos_arch }}
+      bump: none
+      commit_version: false
+      upload_to_r2: ${{ inputs.upload_to_r2 }}
+      ref: ${{ github.ref_name }}
+    secrets: inherit
+
+  release_extensions:
+    name: Agent extension CRX
+    needs: [preflight, release_linux, release_windows, release_macos]
+    if: >-
+      ${{
+        always() &&
+        inputs.extensions != 'skip' &&
+        needs.preflight.result == 'success' &&
+        ((inputs.platforms != 'all' && inputs.platforms != 'linux') || needs.release_linux.result == 'success') &&
+        ((inputs.platforms != 'all' && inputs.platforms != 'windows') || needs.release_windows.result == 'success') &&
+        ((inputs.platforms != 'all' && inputs.platforms != 'macos') || needs.release_macos.result == 'success')
+      }}
+    uses: ./.github/workflows/release-extensions.yml
+    with:
+      version: ${{ needs.preflight.outputs.extensions_version }}
+      extension: agent
+      branch: ${{ github.ref_name }}
+    secrets: inherit
+
+  stage_updates:
+    name: Stage update feeds
+    needs:
+      - preflight
+      - server_resources
+      - release_linux
+      - release_windows
+      - release_macos
+      - release_extensions
+    if: ${{ always() && inputs.upload_to_r2 }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Build OWeb Browser (Windows)
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v8.2.0
+      - name: Render staged OWeb update feeds
         working-directory: packages/browseros
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
-          uv sync
-          uv run browseros build --preset release --product oweb --arch x64 --sign=${{ inputs.sign_windows }} --upload=${{ inputs.upload_to_r2 }}
+          set -euo pipefail
+          uv run browseros release appcast --version "$VERSION" --product oweb
 
-  build-linux:
-    if: ${{ inputs.platforms == 'all' || inputs.platforms == 'linux' }}
-    needs: plan
+  finalize:
+    name: Finalize
+    needs:
+      - preflight
+      - release_linux
+      - release_windows
+      - release_macos
+      - release_extensions
+      - stage_updates
+    if: ${{ always() }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
-      - name: Build OWeb Browser (Linux)
+      - name: Write release summary
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          {
+            echo "## OWeb Browser release summary"
+            echo
+            echo "- Version: \`$VERSION\`"
+            echo "- Linux: \`${{ needs.release_linux.result }}\`"
+            echo "- Windows: \`${{ needs.release_windows.result }}\`"
+            echo "- macOS: \`${{ needs.release_macos.result }}\`"
+            echo "- Extensions: \`${{ needs.release_extensions.result }}\`"
+            echo "- Staged feeds: \`${{ needs.stage_updates.result }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/checkout@v7
+        if: ${{ inputs.github_release_draft && needs.preflight.result == 'success' }}
+      - uses: astral-sh/setup-uv@v8.2.0
+        if: ${{ inputs.github_release_draft && needs.preflight.result == 'success' }}
+      - name: Create or refresh draft GitHub release
+        if: ${{ inputs.github_release_draft && needs.preflight.result == 'success' }}
         working-directory: packages/browseros
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.preflight.outputs.version }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
-          uv sync
-          uv run browseros build --preset release --product oweb --arch x64 --upload=${{ inputs.upload_to_r2 }}
-
-  release-draft:
-    if: ${{ always() && inputs.github_release_draft }}
-    needs: [plan, build-macos, build-windows, build-linux]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Draft GitHub release
-        run: |
-          echo "Create draft release for OWeb Browser v${{ needs.plan.outputs.version }}"
-          echo "Attach DMG, EXE, AppImage, and DEB from build artifacts."
+          set -euo pipefail
+          uv run browseros release github create \
+            --version "$VERSION" \
+            --draft \
+            --product oweb

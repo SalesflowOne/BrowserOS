@@ -17,6 +17,7 @@ from .browserclaw.product import (
     BROWSERCLAW_SERVER_BUNDLE as BROWSEROS_CLAW_SERVER_BUNDLE,
 )
 from .browseros.product import BROWSEROS_SERVER_BUNDLE
+from .oweb.product import OWEB_SERVER_BUNDLE
 
 SERVER_BUNDLES = all_server_bundles()
 MACOS_SERVER_BINARIES = {
@@ -33,7 +34,11 @@ class MacosServerBinariesTest(unittest.TestCase):
     def test_server_bundles_use_bun_for_browser_builds(self):
         self.assertEqual(
             all_server_bundles(),
-            (BROWSEROS_SERVER_BUNDLE, BROWSEROS_CLAW_SERVER_BUNDLE),
+            (
+                BROWSEROS_SERVER_BUNDLE,
+                BROWSEROS_CLAW_SERVER_BUNDLE,
+                OWEB_SERVER_BUNDLE,
+            ),
         )
 
     def test_server_bundles_have_separate_resource_roots(self):
@@ -202,6 +207,12 @@ class WindowsServerBinariesTest(unittest.TestCase):
                 / "resources"
                 / "bin"
                 / "browseros-claw-server.exe",
+                build_output_dir
+                / "OWebServer"
+                / "default"
+                / "resources"
+                / "bin"
+                / "browseros_server.exe",
             ],
         )
 

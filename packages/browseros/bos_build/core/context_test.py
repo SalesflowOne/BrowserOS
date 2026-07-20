@@ -143,7 +143,7 @@ class GetAppPathTest(unittest.TestCase):
         )
 
     def test_release_gn_args_select_product_for_baked_identity(self):
-        for product in ("browseros", "browserclaw"):
+        for product in ("browseros", "browserclaw", "oweb"):
             with self.subTest(product=product):
                 ctx = Context(
                     chromium_src=Path("/nonexistent-src"),
@@ -171,6 +171,10 @@ class GetAppPathTest(unittest.TestCase):
                 (BROWSERCLAW_EXTENSION_ID, "BrowserClaw app"),
                 (BROWSEROS_BUG_REPORTER_EXTENSION_ID, "BrowserOS bug reporter"),
             ),
+            "oweb": (
+                (BROWSEROS_AGENT_EXTENSION_ID, "OWeb Browser agent"),
+                (BROWSEROS_BUG_REPORTER_EXTENSION_ID, "OWeb Browser bug reporter"),
+            ),
         }
 
         for product, required in expected.items():
@@ -191,7 +195,7 @@ class GetAppPathTest(unittest.TestCase):
             (BROWSERCLAW_EXTENSION_ID, "BrowserClaw app"),
         )
 
-        for product in ("browseros", "browserclaw"):
+        for product in ("browseros", "browserclaw", "oweb"):
             with self.subTest(product=product):
                 ctx = Context(
                     chromium_src=Path("/nonexistent-src"),

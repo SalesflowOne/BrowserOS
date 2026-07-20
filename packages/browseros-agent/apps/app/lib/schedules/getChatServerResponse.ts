@@ -1,7 +1,7 @@
 import { createParser, type EventSourceMessage } from 'eventsource-parser'
 import { getAgentServerUrl } from '@/lib/browseros/helpers'
 import {
-  createDefaultBrowserOSProvider,
+  createDefaultBuiltInProvider,
   defaultProviderIdStorage,
   providersStorage,
 } from '@/lib/llm-providers/storage'
@@ -88,7 +88,7 @@ const resolveProvider = async (
     const match = findCloudChatProviderById(providers ?? [], providerId)
     if (match) return match
   }
-  return (await getDefaultProvider()) ?? createDefaultBrowserOSProvider()
+  return (await getDefaultProvider()) ?? createDefaultBuiltInProvider()
 }
 
 export async function getChatServerResponse(

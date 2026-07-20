@@ -31,7 +31,10 @@ The installer/exe path is printed when the build finishes.
 After install, the browser uses:
 
 - Sign-in: https://oweb.one/auth/browser  
+- API: https://oweb.one/api/browser/v1  
 - Your OWeb account, credits, and connected tools  
+
+The bundled agent reads `VITE_PRODUCT_ID=oweb` at build time (set automatically in release CI).
 
 ## Agent-only dev (skip Chromium compile)
 
@@ -53,6 +56,15 @@ bun run dev:watch
 | Out of disk | Free space on `C:\` — Chromium lives under `C:\src\chromium` by default |
 | VS not found | Install VS 2022 C++ workload, then reopen PowerShell |
 | `product doctor` fails | Run `python oweb\generate-icons.py` |
+| GN `browseros_product` assert | Ensure you built with `--product oweb` (not browseros/browserclaw) |
+| Agent still shows BrowserOS login | Copy `oweb\agent.env.example` → `packages\browseros-agent\.env.development` and rebuild |
+
+## Release (maintainers)
+
+1. Configure repo secrets (R2, ESIGNER, macOS certs, PostHog, Sentry).
+2. Run **Release: OWeb Browser (full)** from GitHub Actions.
+3. Promote staged appcasts to `https://cdn.browseros.com/appcast-oweb*.xml` (or your CDN).
+4. Publish draft GitHub release after artifact verification.
 
 ## Upstream sync
 

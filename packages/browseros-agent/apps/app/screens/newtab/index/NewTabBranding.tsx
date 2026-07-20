@@ -1,6 +1,6 @@
 import { motion } from 'motion/react'
 import type { FC } from 'react'
-import ProductLogoSvg from '@/assets/product_logo.svg'
+import { productLogo, productLogoAlt } from '@/lib/product-branding'
 
 export const NewTabBranding: FC = () => {
   return (
@@ -15,7 +15,7 @@ export const NewTabBranding: FC = () => {
           }}
           className="flex h-20 w-20 items-center justify-center rounded-xl bg-transparent"
         >
-          <img src={ProductLogoSvg} alt="BrowserOS" className="h-20 w-20" />
+          <img src={productLogo} alt={productLogoAlt} className="h-20 w-20" />
         </motion.div>
       </div>
     </div>

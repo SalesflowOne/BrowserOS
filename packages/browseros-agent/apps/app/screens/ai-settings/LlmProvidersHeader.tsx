@@ -1,6 +1,5 @@
 import { Plus } from 'lucide-react'
 import type { FC } from 'react'
-import ProductLogoSvg from '@/assets/product_logo.svg'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -12,6 +11,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { LlmProviderConfig } from '@/lib/llm-providers/types'
+import { productLogo, productLogoAlt } from '@/lib/product-branding'
+import { hideByok } from '@/lib/product-config'
 import type { HarnessAgent } from '@/modules/agents/agent-harness-types'
 import type { SidepanelChatTargetSelection } from '@/modules/chat/sidepanel-chat-targets'
 import {
@@ -24,7 +25,7 @@ export interface LlmProvidersHeaderProps {
   agents: HarnessAgent[]
   selectedTarget: SidepanelChatTargetSelection
   onSelectTarget: (selection: SidepanelChatTargetSelection) => void
-  onAddProvider: () => void
+  onAddProvider?: () => void
 }
 
 /**
@@ -42,12 +43,14 @@ export const LlmProvidersHeader: FC<LlmProvidersHeaderProps> = ({
     <div className="rounded-xl border border-border bg-card p-6 shadow-sm transition-all hover:shadow-md">
       <div className="flex items-start gap-4">
         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[var(--accent-orange)]/10">
-          <img src={ProductLogoSvg} alt="BrowserOS" className="h-8 w-8" />
+          <img src={productLogo} alt={productLogoAlt} className="h-8 w-8" />
         </div>
         <div className="flex-1">
           <h2 className="mb-1 font-semibold text-xl">LLM Providers</h2>
           <p className="mb-6 text-muted-foreground text-sm">
-            Add your provider and choose the default for new chats
+            {hideByok
+              ? 'Choose the default model for new chats'
+              : 'Add your provider and choose the default for new chats'}
           </p>
 
           <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
@@ -100,14 +103,16 @@ export const LlmProvidersHeader: FC<LlmProvidersHeaderProps> = ({
                 )}
               </SelectContent>
             </Select>
-            <Button
-              variant="outline"
-              onClick={onAddProvider}
-              className="border-[var(--accent-orange)] bg-[var(--accent-orange)]/10 text-[var(--accent-orange)] hover:bg-[var(--accent-orange)]/20 hover:text-[var(--accent-orange)]"
-            >
-              <Plus className="h-4 w-4" />
-              Add custom provider
-            </Button>
+            {onAddProvider && !hideByok && (
+              <Button
+                variant="outline"
+                onClick={onAddProvider}
+                className="border-[var(--accent-orange)] bg-[var(--accent-orange)]/10 text-[var(--accent-orange)] hover:bg-[var(--accent-orange)]/20 hover:text-[var(--accent-orange)]"
+              >
+                <Plus className="h-4 w-4" />
+                Add custom provider
+              </Button>
+            )}
           </div>
         </div>
       </div>
