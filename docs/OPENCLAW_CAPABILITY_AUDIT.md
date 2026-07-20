@@ -146,9 +146,13 @@ See `skills/import-openclaw/README.md`. Design principles:
 6. ✅ Webhooks: org-webhooks + multi-route registry with rate limits
 7. ✅ Cron-lite scheduler for scheduled agent runs
 8. 🔲 Wire modules into OWeb API routes + Channels UI
-9. 🔲 Signal-cli MCP (opt-in, self-hosted) — deferred
 
-See `oweb-gap-closures/README.md` for integration checklist.
+8. ✅ Full integration layer: `oweb-gap-closures/src/integration/` (API router, MCP bundle, cron, skills seeder, UI)
+9. ✅ Migrations: `oweb-gap-closures/migrations/001_openclaw_integration.sql`
+10. ✅ Seed script: `scripts/seed-ao-skills.ts`
+11. 🔲 Signal-cli MCP (opt-in, self-hosted) — deferred
+
+See `oweb-gap-closures/README.md` for deployment guide.
 
 ---
 

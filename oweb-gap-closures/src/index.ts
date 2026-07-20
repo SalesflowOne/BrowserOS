@@ -12,3 +12,4 @@ export * from "./webhooks/webhook-registry.server.js";
 export * from "./scheduler/cron-lite.server.js";
 export * from "./marketplace/composio-additions.js";
 export * from "./lib/rate-limit.js";
+export * from "./integration/index.js";
