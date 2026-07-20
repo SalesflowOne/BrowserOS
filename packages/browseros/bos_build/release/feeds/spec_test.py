@@ -64,6 +64,19 @@ class FeedTableTest(unittest.TestCase):
         # sparkle_glue.mm and winsparkle_glue.cc select the claw feed.
         self.assertTrue(all(feed.publishable for feed in claw_feeds))
 
+    def test_oweb_browser_feeds_are_publishable(self):
+        oweb_feeds = browser_feeds_for_product("oweb")
+        self.assertEqual(
+            [feed.key for feed in oweb_feeds],
+            [
+                "appcast-oweb.xml",
+                "appcast-oweb-x86_64.xml",
+                "appcast-oweb-win.xml",
+                "appcast-oweb-win-arm64.xml",
+            ],
+        )
+        self.assertTrue(all(feed.publishable for feed in oweb_feeds))
+
     def test_browseros_browser_feeds_are_publishable(self):
         feeds = browser_feeds_for_product("browseros")
         self.assertTrue(all(feed.publishable for feed in feeds))
@@ -102,6 +115,10 @@ class FeedTableTest(unittest.TestCase):
         self.assertEqual(alpha.key, "appcast-claw-server.alpha.xml")
         self.assertEqual(alpha.title, "BrowserOS Claw Server (Alpha)")
         self.assertEqual(alpha.bundle_id, "browserclaw-server")
+
+        oweb_server = server_feed("oweb-server", "prod")
+        self.assertEqual(oweb_server.key, "appcast-oweb-server.xml")
+        self.assertEqual(oweb_server.product, "oweb")
 
     def test_extension_feed_lookups(self):
         self.assertEqual(

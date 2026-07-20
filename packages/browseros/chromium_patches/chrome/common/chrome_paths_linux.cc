@@ -16,6 +16,8 @@ index 5575c049b222f..800d48d3c798d 100644
    std::string data_dir_basename = "google-chrome";
 +#elif BUILDFLAG(BROWSEROS_PRODUCT_BROWSERCLAW)
 +  std::string data_dir_basename = "browser-claw";
++#elif BUILDFLAG(BROWSEROS_PRODUCT_OWEB)
++  std::string data_dir_basename = "oweb-browser";
  #else
 -  std::string data_dir_basename = "chromium";
 +  std::string data_dir_basename = "browser-os";

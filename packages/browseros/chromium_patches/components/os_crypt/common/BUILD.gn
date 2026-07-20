@@ -17,7 +17,10 @@ index eb5c136381779..f47dd4a811905 100644
  
 +buildflag_header("browseros_product_buildflags") {
 +  header = "browseros_product_buildflags.h"
-+  flags = [ "BROWSEROS_PRODUCT_BROWSERCLAW=$browseros_product_browserclaw" ]
++  flags = [
++    "BROWSEROS_PRODUCT_BROWSERCLAW=$browseros_product_browserclaw",
++    "BROWSEROS_PRODUCT_OWEB=$browseros_product_oweb",
++  ]
 +}
 +
  if (is_apple) {

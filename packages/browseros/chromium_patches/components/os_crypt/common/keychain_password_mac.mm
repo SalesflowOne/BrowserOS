@@ -19,6 +19,9 @@ index f240dc22ee391..805f7e3f37a5b 100644
 +#if BUILDFLAG(BROWSEROS_PRODUCT_BROWSERCLAW)
 +const char kDefaultServiceName[] = "BrowserClaw Safe Storage";
 +const char kDefaultAccountName[] = "BrowserClaw";
++#elif BUILDFLAG(BROWSEROS_PRODUCT_OWEB)
++const char kDefaultServiceName[] = "OWeb Browser Safe Storage";
++const char kDefaultAccountName[] = "OWeb Browser";
 +#else
 +const char kDefaultServiceName[] = "BrowserOS Safe Storage";
 +const char kDefaultAccountName[] = "BrowserOS";

@@ -24,7 +24,7 @@ index 0000000000000000000000000000000000000000..dcc0720c667865f28b40801cd250c5aa
 +  "adlpneommgkgeanpaekgoaolcpncohkf.crx",  # Bug Reporter
 +]
 +
-+if (browseros_allow_runtime_product_override || browseros_product_browseros) {
++if (browseros_allow_runtime_product_override || browseros_product_browseros || browseros_product_oweb) {
 +  _bundled_extensions_sources +=
 +      [ "bflpfmnmnokmjhmgnolecpppdbdophmk.crx" ]  # Agent
 +}

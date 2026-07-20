@@ -66,7 +66,8 @@ OWEB_SERVER_BUNDLE = ServerBundle(
     name="OWeb Browser Server",
     product_ids=("oweb",),
     chromium_output_root="OWebServer",
-    local_resources_root=Path("resources/binaries/oweb_server"),
+    # Reuse BrowserOS server binaries; Chromium stages them under OWebServer/.
+    local_resources_root=Path("resources/binaries/browseros_server"),
     chromium_resources_root=Path("chrome/browser/browseros/server/resources"),
     macos_bundle_resources_root=Path(
         "Contents/Resources/OWebServer/default/resources"
@@ -80,4 +81,5 @@ OWEB_SERVER_BUNDLE = ServerBundle(
         "rg": SignSpec("rg", "runtime"),
     },
     windows_binaries=("browseros_server.exe",),
+    required_in_chromium_output=False,
 )

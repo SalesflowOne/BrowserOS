@@ -35,6 +35,15 @@ index 0f331c3e0f2a39813af0a33a162cefaff9324524..56773976378807c144a07ef9725a2261
 +BrowserClawServer\default\resources\db\migrations\*.*: %(VersionDir)s\BrowserClawServer\default\resources\db\migrations\
 +BrowserClawServer\default\resources\db\migrations\meta\*.*: %(VersionDir)s\BrowserClawServer\default\resources\db\migrations\meta\
 +
++#
++# OWeb Browser Server
++#
++OWebServer\default\resources\*.*: %(VersionDir)s\OWebServer\default\resources\
++OWebServer\default\resources\bin\*.*: %(VersionDir)s\OWebServer\default\resources\bin\
++OWebServer\default\resources\bin\third_party\*.*: %(VersionDir)s\OWebServer\default\resources\bin\third_party\
++OWebServer\default\resources\db\migrations\*.*: %(VersionDir)s\OWebServer\default\resources\db\migrations\
++OWebServer\default\resources\db\migrations\meta\*.*: %(VersionDir)s\OWebServer\default\resources\db\migrations\meta\
++
  #
  # IWA Key Distribution
  #

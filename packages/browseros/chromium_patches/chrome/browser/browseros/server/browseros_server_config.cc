@@ -52,6 +52,22 @@ index 0000000000000..6fe71062a9c96
 +    },
 +};
 +
++constexpr ManagedServerDescriptor kOWebServerDescriptor = {
++    Product::kOWeb,
++    "OWeb Browser server",
++    FILE_PATH_LITERAL("OWebServer"),
++    FILE_PATH_LITERAL("browseros_server"),
++    FILE_PATH_LITERAL("config.json"),
++    "/system/health",
++    true,
++    {
++        FILE_PATH_LITERAL("OWebServer"),
++        "https://cdn.browseros.com/appcast-oweb-server.xml",
++        "https://cdn.browseros.com/appcast-oweb-server.alpha.xml",
++        "/status",
++    },
++};
++
 +}  // namespace
 +
 +const ManagedServerDescriptor& GetBrowserOSServerDescriptor() {
@@ -62,9 +78,16 @@ index 0000000000000..6fe71062a9c96
 +  return kBrowserClawServerDescriptor;
 +}
 +
++const ManagedServerDescriptor& GetOWebServerDescriptor() {
++  return kOWebServerDescriptor;
++}
++
 +const ManagedServerDescriptor& GetManagedServerDescriptor() {
 +  if (IsBrowserClawProduct()) {
 +    return GetBrowserClawServerDescriptor();
++  }
++  if (IsOWebProduct()) {
++    return GetOWebServerDescriptor();
 +  }
 +  return GetBrowserOSServerDescriptor();
 +}
