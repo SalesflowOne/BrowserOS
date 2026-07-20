@@ -1,6 +1,6 @@
 /** Shared channel types for OWeb messaging integrations. */
 
-export type ChannelKind = "telegram" | "slack" | "discord" | "teams" | "webhook";
+export type ChannelKind = "telegram" | "slack" | "discord" | "teams" | "webhook" | "whatsapp";
 
 export type ChannelInboundMessage = {
   channel: ChannelKind;

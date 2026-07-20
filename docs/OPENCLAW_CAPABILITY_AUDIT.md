@@ -53,7 +53,7 @@
 | 3 | **slack** | Channel + `slack` skill | Composio `slack` + `slack-channel.server.ts` + Channels UI | Covered | Skill maps cleanly; rewrite `slack` tool → `slack__SLACK_*` Composio slugs |
 | 4 | **discord** | Channel + skill | Composio `discord` + Composio triggers + Channels | Covered | `DISCORD_SEND_*` slug fallbacks already in `channel-utils.ts` |
 | 5 | **telegram** | Messaging channel | `telegram-channel.server.ts` + Composio `telegram` | Covered (impl) | Portable module in `oweb-gap-closures/`; wire to OWeb API router |
-| 6 | **whatsapp** | WhatsApp Web channel | Composio `twilio` (SMS/WhatsApp API) if connected | Partial | No native WhatsApp Web channel like OpenClaw |
+| 6 | **whatsapp** | WhatsApp Web channel | `whatsapp-twilio-channel.server.ts` + Composio `twilio` | Covered (impl) | Twilio Messaging API — no Baileys/WhatsApp Web |
 | 7 | **google** | Gemini/Vertex LLM providers + media | AI Gateway model router (`model-router.server.ts`) | Different layer | Gmail/Calendar/Drive are separate Composio toolkits |
 | 8 | **gmail** | (via Google workspace / Composio) | Composio `gmail` + inbox digest channel | Covered | Morning brief playbook already references Gmail |
 | 9 | **spotify** | Media control | Composio `spotify` marketplace entry | Covered (impl) | Add via `composio-additions.ts`; no custom runtime |
@@ -70,8 +70,8 @@
 | 20 | **microsoft / outlook** | Outlook mail/calendar | Composio `outlook` + inbox digest | Covered | `pickMailToolkit()` prefers Gmail then Outlook |
 
 ### Summary counts
-- **Covered (14):** brave, slack, discord, telegram, gmail, spotify, memory-core, voice-call, webhooks, tavily, firecrawl, perplexity, msteams, outlook
-- **Partial (4):** browser, whatsapp, google (LLM), onepassword
+- **Covered (15):** brave, slack, discord, telegram, whatsapp, gmail, spotify, memory-core, voice-call, webhooks, tavily, firecrawl, perplexity, msteams, outlook
+- **Partial (3):** browser, google (LLM), onepassword
 - **Gap (2):** imessage, signal
 
 ---
@@ -138,11 +138,17 @@ See `skills/import-openclaw/README.md`. Design principles:
 
 ## Recommended implementation order
 
-1. Ship `skills/import-openclaw/` CLI + mappings for top 5 skills (slack, browser-automation, gmail patterns)
-2. Add Composio catalog audit script (`scripts/audit-composio-vs-openclaw.ts`)
-3. Marketplace: surface missing Composio toolkits (telegram, spotify) without code
-4. Channels: Telegram webhook handler (highest demand gap)
-5. MCP: memory_search/remember exposure
+1. ✅ `skills/import-openclaw/` CLI + bundled playbooks (slack, discord, browser-automation, voice-call, tavily)
+2. ✅ `scripts/audit-composio-vs-openclaw.ts` + `scripts/sync-openclaw-skills.ts`
+3. ✅ Marketplace: `composio-additions.ts` (telegram, spotify)
+4. ✅ Channels: Telegram + WhatsApp (Twilio) + channel hub
+5. ✅ MCP: memory_search / memory_remember / memory_get + Twilio Voice + TwiML
+6. ✅ Webhooks: org-webhooks + multi-route registry with rate limits
+7. ✅ Cron-lite scheduler for scheduled agent runs
+8. 🔲 Wire modules into OWeb API routes + Channels UI
+9. 🔲 Signal-cli MCP (opt-in, self-hosted) — deferred
+
+See `oweb-gap-closures/README.md` for integration checklist.
 
 ---
 

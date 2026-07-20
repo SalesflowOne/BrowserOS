@@ -1,0 +1,15 @@
+{
+  "name": "slack",
+  "description": "💬 Slack tool actions: send/read/edit/delete messages, react, pin/unpin, list pins/reactions/emoji, member info.",
+  "content": "# Slack\n\nUse Composio toolkit `slack` via `search_tools` then `invoke_tool`. Reuse `channelId` and Slack timestamp message IDs from context when present.\n\n## Inputs\n\n- `channelId`: Slack channel ID.\n- `messageId`: Slack timestamp, e.g. `1712023032.1234`.\n- `to`: `channel:<id>` or `user:<id>` for sends.\n- `emoji`: Unicode or `:name:` for reactions.\n\n## Actions\n\n```json\n{ \"action\": \"sendMessage\", \"to\": \"channel:C123\", \"content\": \"Hello\" }\n```\n\n```json\n{ \"action\": \"readMessages\", \"channelId\": \"C123\", \"limit\": 20 }\n```\n\n```json\n{\n  \"action\": \"react\",\n  \"channelId\": \"C123\",\n  \"messageId\": \"1712023032.1234\",\n  \"emoji\": \":white_check_mark:\"\n}\n```\n\n```json\n{ \"action\": \"reactions\", \"channelId\": \"C123\", \"messageId\": \"1712023032.1234\" }\n```\n\n```json\n{\n  \"action\": \"editMessage\",\n  \"channelId\": \"C123\",\n  \"messageId\": \"1712023032.1234\",\n  \"content\": \"Updated text\"\n}\n```\n\n```json\n{ \"action\": \"deleteMessage\", \"channelId\": \"C123\", \"messageId\": \"1712023032.1234\" }\n```\n\n```json\n{ \"action\": \"pinMessage\", \"channelId\": \"C123\", \"messageId\": \"1712023032.1234\" }\n```\n\n```json\n{ \"action\": \"unpinMessage\", \"channelId\": \"C123\", \"messageId\": \"1712023032.1234\" }\n```\n\n```json\n{ \"action\": \"listPins\", \"channelId\": \"C123\" }\n```\n\n```json\n{ \"action\": \"memberInfo\", \"userId\": \"U123\" }\n```\n\n```json\n{ \"action\": \"emojiList\" }\n```\n\n## Safety\n\n- Confirm destructive deletes when context is unclear.\n- Keep outbound messages short; avoid Markdown tables.\n- Prefer thread/message IDs over fuzzy channel names.\n\n## Prerequisites (mapped from OpenClaw)\n- **channels.slack**: Connect Slack in Integrations, then enable Slack on Channels.\n\n---\n_Imported from OpenClaw: extensions/slack/skills/slack/SKILL.md. Review tool names before enabling._",
+  "status": "draft",
+  "enabled": false,
+  "source": "openclaw-import",
+  "pattern_key": "51ff32d494a9da2b4bd1f277296e746d",
+  "metadata": {
+    "openclaw_requires": [
+      "channels.slack"
+    ],
+    "import_path": "extensions/slack/skills/slack/SKILL.md"
+  }
+}

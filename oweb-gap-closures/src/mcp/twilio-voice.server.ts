@@ -75,6 +75,21 @@ export async function endTwilioCall(config: TwilioVoiceConfig, callSid: string):
   return twilioRequest<TwilioCall>(config, `/Calls/${callSid}.json`, { Status: "completed" });
 }
 
+export async function getTwilioCallStatus(
+  config: TwilioVoiceConfig,
+  callSid: string,
+): Promise<TwilioCall> {
+  const url = `https://api.twilio.com/2010-04-01/Accounts/${config.accountSid}/Calls/${callSid}.json`;
+  const res = await fetch(url, {
+    headers: { Authorization: twilioAuthHeader(config) },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Twilio API error ${res.status}: ${text}`);
+  }
+  return (await res.json()) as TwilioCall;
+}
+
 export function createTwilioVoiceMcpTools(config: TwilioVoiceConfig): McpToolDefinition[] {
   return [
     {
@@ -109,6 +124,23 @@ export function createTwilioVoiceMcpTools(config: TwilioVoiceConfig): McpToolDef
         if (!callSid) throw new Error("callSid is required");
         const call = await endTwilioCall(config, callSid);
         return { callSid: call.sid, status: call.status };
+      },
+    },
+    {
+      name: "get_call_status",
+      description: "Get the current status of a Twilio Voice call by SID.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          callSid: { type: "string", description: "Twilio Call SID (CA...)" },
+        },
+        required: ["callSid"],
+      },
+      handler: async (args) => {
+        const callSid = String(args.callSid ?? "").trim();
+        if (!callSid) throw new Error("callSid is required");
+        const call = await getTwilioCallStatus(config, callSid);
+        return { callSid: call.sid, status: call.status, to: call.to, from: call.from };
       },
     },
   ];

@@ -1,0 +1,12 @@
+{
+  "name": "voice-call",
+  "description": "Start voice calls via the OpenClaw voice-call plugin.",
+  "content": "# Voice Call\n\nUse the voice-call plugin to start or inspect calls (Twilio, Telnyx, Plivo, or mock).\n\n## CLI\n\n```bash\n call --to \"+15555550123\" --message \"Hello from OpenClaw\"\n status --call-id <id>\n```\n\n## Tool\n\nUse `voice_call` for agent-initiated calls.\n\nActions:\n\n- `initiate_call` (message, to?, mode?)\n- `continue_call` (callId, message)\n- `speak_to_user` (callId, message)\n- `end_call` (callId)\n- `get_status` (callId)\n\nNotes:\n\n- Requires the voice-call plugin to be enabled.\n- Plugin config lives under `plugins.entries.voice-call.config`.\n- Twilio config: `provider: \"twilio\"` + `twilio.accountSid/authToken` + `fromNumber`.\n- Telnyx config: `provider: \"telnyx\"` + `telnyx.apiKey/connectionId` + `fromNumber`.\n- Plivo config: `provider: \"plivo\"` + `plivo.authId/authToken` + `fromNumber`.\n- Dev fallback: `provider: \"mock\"` (no network).\n\n---\n_Imported from OpenClaw: extensions/voice-call/skills/voice-call/SKILL.md. Review tool names before enabling._",
+  "status": "draft",
+  "enabled": false,
+  "source": "openclaw-import",
+  "pattern_key": "d01a8f1cd449bcfe1c8c5024e034f94f",
+  "metadata": {
+    "import_path": "extensions/voice-call/skills/voice-call/SKILL.md"
+  }
+}

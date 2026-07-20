@@ -1,74 +1,99 @@
 # OWeb OpenClaw Gap Closures
 
-Portable TypeScript modules that close the highest-priority gaps identified in the [OpenClaw capability audit](../docs/OPENCLAW_CAPABILITY_AUDIT.md).
+Portable TypeScript modules that close OpenClaw capability gaps for OWeb — copy OpenClaw patterns where they fit, custom lightweight implementations everywhere else.
 
-**Design:** No OpenClaw plugin runtime. Thin webhook/MCP layers that wire into OWeb's existing chat runner and `ao_entities` memory graph.
+**Design:** No OpenClaw plugin runtime. Thin webhook/MCP/scheduler layers wired to OWeb's chat runner and `ao_entities` memory graph.
 
 ## Modules
 
 | Module | Path | Purpose |
 |--------|------|---------|
-| **Telegram channel** | `src/channels/telegram-channel.server.ts` | Bot API webhook ingress → chat thread; outbound replies |
-| **Memory MCP** | `src/mcp/memory-tools.server.ts` | `memory_search` / `memory_remember` over memory store |
-| **Twilio Voice MCP** | `src/mcp/twilio-voice.server.ts` | `initiate_call` / `end_call` PSTN |
-| **Org webhooks** | `src/webhooks/org-webhooks.server.ts` | Signed per-org URLs → chat runner |
-| **Marketplace** | `src/marketplace/composio-additions.ts` | Surface `telegram` + `spotify` Composio toolkits |
+| **Telegram channel** | `src/channels/telegram-channel.server.ts` | Bot API webhook → chat thread; outbound replies |
+| **WhatsApp (Twilio)** | `src/channels/whatsapp-twilio-channel.server.ts` | Twilio Messaging API ingress/outbound (no Baileys) |
+| **Channel hub** | `src/channels/channel-hub.server.ts` | Unified router for multi-channel webhooks |
+| **Memory MCP** | `src/mcp/memory-tools.server.ts` | `memory_search`, `memory_remember`, `memory_get` + prompt section |
+| **Twilio Voice MCP** | `src/mcp/twilio-voice.server.ts` | `initiate_call`, `end_call`, `get_call_status` |
+| **Twilio security** | `src/mcp/twilio-webhook-security.server.ts` | HMAC-SHA1 signature verification |
+| **TwiML** | `src/mcp/twiml.server.ts` | Voice webhook response helpers |
+| **Org webhooks** | `src/webhooks/org-webhooks.server.ts` | HMAC-signed single-route ingress |
+| **Webhook registry** | `src/webhooks/webhook-registry.server.ts` | Multi-route + bearer auth + rate limits |
+| **Cron-lite** | `src/scheduler/cron-lite.server.ts` | Scheduled chat runs (OpenClaw cron subset) |
+| **Rate limit** | `src/lib/rate-limit.ts` | Fixed-window limiter (from OpenClaw webhook-ingress) |
+| **Marketplace** | `src/marketplace/composio-additions.ts` | `telegram` + `spotify` Composio toolkits |
 
-## Telegram setup
+## Related packages
 
-1. Create a bot via [@BotFather](https://t.me/BotFather) and store the token in OWeb Vault / org channel config.
-2. Generate a webhook secret (`openssl rand -hex 32`).
-3. Register webhook:
+| Path | Purpose |
+|------|---------|
+| `skills/import-openclaw/` | OpenClaw `SKILL.md` → `ao_skills` CLI importer |
+| `skills/import-openclaw/bundled/` | Pre-synced playbook seeds (slack, discord, browser, voice-call, tavily) |
+| `scripts/sync-openclaw-skills.ts` | Re-sync skills from local openclaw clone |
+| `scripts/audit-composio-vs-openclaw.ts` | Composio catalog vs OpenClaw extension diff |
 
-```ts
-import { setTelegramWebhook, buildTelegramWebhookPath } from "@oweb/gap-closures";
+## Channel setup
 
-await setTelegramWebhook(botToken, {
-  url: `https://oweb.one${buildTelegramWebhookPath(orgId)}`,
-  secret_token: webhookSecret,
-  allowed_updates: ["message"],
-});
-```
+### Telegram
+1. Create bot via [@BotFather](https://t.me/BotFather)
+2. Register webhook with `setTelegramWebhook(botToken, { url, secret_token })`
+3. Mount `handleChannelWebhook(req, "telegram", orgId, deps)`
 
-4. Mount `handleTelegramWebhook` on your API router with org config lookup.
-
-Uses native `fetch` to the Telegram Bot API (no grammy/OpenClaw deps).
+### WhatsApp (Twilio)
+1. Enable WhatsApp sandbox or Business API in Twilio
+2. Set webhook URL to `buildWhatsAppWebhookPath(orgId)`
+3. Mount `handleChannelWebhook(req, "whatsapp", orgId, deps)`
 
 ## Memory tools
-
-Wire `createMemoryMcpTools()` to your `memory-graph.server.ts` adapter:
 
 ```ts
 const store: MemoryStore = {
   search: (p) => memoryGraphSearch(p),
   remember: (p) => memoryGraphRemember(p),
+  get: (p) => memoryGraphGet(p),
 };
 export const memoryTools = createMemoryMcpTools(store);
+// Inject buildMemoryPromptSection() into system prompt
 ```
 
-## Org webhooks
+## Cron-lite
 
-Clients sign requests with HMAC-SHA256:
-
+```ts
+const cron = createCronService(async ({ orgId, threadKey, message }) => {
+  await chatRunner({ orgId, threadKey, inbound: { ... } });
+});
+cron.add({
+  id: "morning-brief",
+  orgId, name: "Morning brief",
+  schedule: { kind: "cron", expression: "0 8 * * *", timezone: "America/New_York" },
+  threadKey: "cron:morning", message: "Run morning brief playbook",
+  enabled: true,
+});
 ```
-X-OWeb-Timestamp: <unix-seconds>
-X-OWeb-Signature: sha256=<hmac(secret, timestamp + "." + body)>
+
+## Webhooks
+
+**Single route:** HMAC `x-oweb-signature` + `x-oweb-timestamp`
+
+**Multi-route registry:** Bearer `Authorization: Bearer <secret>` OR HMAC headers, with per-route rate limits.
+
+## Sync OpenClaw skills
+
+```bash
+git clone https://github.com/openclaw/openclaw /tmp/openclaw
+npx tsx scripts/sync-openclaw-skills.ts --openclaw /tmp/openclaw
 ```
-
-Body: `{ "message": "...", "threadKey": "optional" }`
-
-## Integration checklist (OWeb)
-
-- [ ] Copy `src/channels/telegram-channel.server.ts` → `src/lib/channels/`
-- [ ] Add API route `src/routes/api/channels/telegram/webhook.ts`
-- [ ] Register memory MCP tools in custom MCP merge
-- [ ] Register Twilio Voice MCP (requires `TWILIO_*` env or Vault)
-- [ ] Extend `platform-webhooks.server.ts` with `org-webhooks` handler
-- [ ] Add `telegram` + `spotify` to `composio-marketplace.ts`
-- [ ] Channels UI: Telegram connect flow (token + webhook status)
 
 ## Tests
 
 ```bash
-cd oweb-gap-closures && npm install && npm test
+cd oweb-gap-closures && npm test
 ```
+
+## Integration checklist (OWeb)
+
+- [ ] Mount channel hub routes for telegram + whatsapp
+- [ ] Wire memory MCP + `buildMemoryPromptSection()` into chat harness
+- [ ] Register Twilio Voice MCP + TwiML status webhook
+- [ ] Deploy webhook registry with per-org route table
+- [ ] Connect cron-lite to Vercel cron or pg_cron worker
+- [ ] Import bundled skills into `ao_skills` via Settings → Skills
+- [ ] Add `telegram` + `spotify` to `composio-marketplace.ts`
