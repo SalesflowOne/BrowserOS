@@ -10,6 +10,7 @@ on:
         options:
           - browseros
           - browserclaw
+          - oweb
           - all
       arch:
         description: macOS architecture to build
@@ -81,6 +82,7 @@ jobs:
       product_ids: ${{ steps.workflow_inputs.outputs.product_ids }}
       build_browseros: ${{ steps.workflow_inputs.outputs.build_browseros }}
       build_browserclaw: ${{ steps.workflow_inputs.outputs.build_browserclaw }}
+      build_oweb: ${{ steps.workflow_inputs.outputs.build_oweb }}
       arch: ${{ steps.workflow_inputs.outputs.arch }}
       bump_mode: ${{ steps.workflow_inputs.outputs.bump_mode }}
       commit_version: ${{ steps.workflow_inputs.outputs.commit_version }}
@@ -112,16 +114,25 @@ jobs:
               product_ids="browseros"
               build_browseros="true"
               build_browserclaw="false"
+              build_oweb="false"
               ;;
             browserclaw)
               product_ids="browserclaw"
               build_browseros="false"
               build_browserclaw="true"
+              build_oweb="false"
+              ;;
+            oweb)
+              product_ids="oweb"
+              build_browseros="false"
+              build_browserclaw="false"
+              build_oweb="true"
               ;;
             all)
               product_ids="browseros browserclaw"
               build_browseros="true"
               build_browserclaw="true"
+              build_oweb="false"
               ;;
             *)
               echo "::error::Invalid products input: $products"
@@ -171,6 +182,7 @@ jobs:
             echo "product_ids=$product_ids"
             echo "build_browseros=$build_browseros"
             echo "build_browserclaw=$build_browserclaw"
+            echo "build_oweb=$build_oweb"
             echo "arch=$arch"
             echo "bump_mode=$bump_mode"
             echo "commit_version=$commit_version"
@@ -391,6 +403,15 @@ jobs:
         with:
           name: BrowserOS_v${{ steps.bump.outputs.version }}_${{ needs.resolve_inputs.outputs.arch }}
           path: ${{ steps.build_inputs.outputs.browseros_repo }}/packages/browseros/releases/${{ steps.bump.outputs.version }}/BrowserOS_*.dmg
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Upload OWeb Browser DMG artifact
+        if: ${{ always() && steps.bump.outputs.version != '' && needs.resolve_inputs.outputs.build_oweb == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: OWebBrowser_v${{ steps.bump.outputs.version }}_${{ needs.resolve_inputs.outputs.arch }}
+          path: ${{ steps.build_inputs.outputs.browseros_repo }}/packages/browseros/releases/${{ steps.bump.outputs.version }}/OWebBrowser_*.dmg
           retention-days: 14
           if-no-files-found: warn
 

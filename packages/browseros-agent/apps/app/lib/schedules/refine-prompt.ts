@@ -1,6 +1,6 @@
 import { getAgentServerUrl } from '@/lib/browseros/helpers'
 import {
-  createDefaultBrowserOSProvider,
+  createDefaultBuiltInProvider,
   defaultProviderIdStorage,
   providersStorage,
 } from '@/lib/llm-providers/storage'
@@ -22,7 +22,7 @@ const resolveProvider = async (
     const provider = resolveCloudChatProvider(providers, defaultProviderId)
     if (provider) return provider
   }
-  return createDefaultBrowserOSProvider()
+  return createDefaultBuiltInProvider()
 }
 
 interface RefinePromptResponse {

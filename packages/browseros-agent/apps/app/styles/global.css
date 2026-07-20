@@ -660,3 +660,11 @@
     transform: scale(1.15);
   }
 }
+
+html[data-product="oweb"] {
+  --accent-orange: oklch(0.78 0.14 195);
+  --accent-orange-bright: oklch(0.85 0.16 195);
+  --primary: oklch(0.72 0.14 195);
+  --ring: oklch(0.78 0.14 195);
+  --sidebar-primary: oklch(0.72 0.14 195);
+}

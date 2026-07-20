@@ -30,6 +30,7 @@ import type { ProviderTemplate } from '@/lib/llm-providers/providerTemplates'
 import { testProvider } from '@/lib/llm-providers/testProvider'
 import type { LlmProviderConfig } from '@/lib/llm-providers/types'
 import { track } from '@/lib/metrics/track'
+import { hideByok } from '@/lib/product-config'
 import type { HarnessAgentAdapter } from '@/modules/agents/agent-harness-types'
 import { useAgentServerUrl } from '@/modules/browseros/agent-server-url.hooks'
 import { useGraphqlMutation } from '@/modules/graphql/graphql-mutation.hooks'
@@ -406,16 +407,18 @@ export const BrowserOsAiPane: FC = () => {
         agents={coding.agents}
         selectedTarget={effectiveTarget}
         onSelectTarget={defaultTarget.selectTarget}
-        onAddProvider={handleAddProvider}
+        onAddProvider={hideByok ? undefined : handleAddProvider}
       />
 
       <McpPromoBanner />
 
-      <ProviderTemplatesSection
-        codingAdapters={coding.adapters}
-        onCreateAgent={handleUseCodingAgentTemplate}
-        onUseTemplate={handleUseTemplate}
-      />
+      {!hideByok && (
+        <ProviderTemplatesSection
+          codingAdapters={coding.adapters}
+          onCreateAgent={handleUseCodingAgentTemplate}
+          onUseTemplate={handleUseTemplate}
+        />
+      )}
 
       <ConfiguredProvidersList
         providers={providers}
@@ -427,31 +430,39 @@ export const BrowserOsAiPane: FC = () => {
         onDeleteProvider={handleDeleteProvider}
       />
 
-      <CodingAgentsList
-        controller={coding}
-        selectedAgentId={selectedAgentId}
-        onSelectAgent={defaultTarget.selectAgent}
-      />
+      {!hideByok && (
+        <CodingAgentsList
+          controller={coding}
+          selectedAgentId={selectedAgentId}
+          onSelectAgent={defaultTarget.selectAgent}
+        />
+      )}
 
-      <IncompleteProvidersList
-        providers={incompleteProviders}
-        onAddKeys={handleAddKeysToIncomplete}
-        onDelete={handleDeleteIncompleteProvider}
-      />
+      {!hideByok && (
+        <IncompleteProvidersList
+          providers={incompleteProviders}
+          onAddKeys={handleAddKeysToIncomplete}
+          onDelete={handleDeleteIncompleteProvider}
+        />
+      )}
 
-      <NewProviderDialog
-        open={isNewDialogOpen}
-        onOpenChange={setIsNewDialogOpen}
-        initialValues={templateValues}
-        onSave={handleSaveProvider}
-      />
+      {!hideByok && (
+        <NewProviderDialog
+          open={isNewDialogOpen}
+          onOpenChange={setIsNewDialogOpen}
+          initialValues={templateValues}
+          onSave={handleSaveProvider}
+        />
+      )}
 
-      <NewProviderDialog
-        open={isEditDialogOpen}
-        onOpenChange={setIsEditDialogOpen}
-        initialValues={editingProvider ?? undefined}
-        onSave={handleSaveProvider}
-      />
+      {!hideByok && (
+        <NewProviderDialog
+          open={isEditDialogOpen}
+          onOpenChange={setIsEditDialogOpen}
+          initialValues={editingProvider ?? undefined}
+          onSave={handleSaveProvider}
+        />
+      )}
 
       <AlertDialog
         open={!!providerToDelete}

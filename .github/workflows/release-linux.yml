@@ -10,6 +10,7 @@ on:
         options:
           - browseros
           - browserclaw
+          - oweb
           - all
       upload_to_r2:
         description: "Upload release metadata/artifacts to R2"
@@ -51,11 +52,11 @@ jobs:
             all)
               matrix='[{"product":"browseros"},{"product":"browserclaw"}]'
               ;;
-            browseros|browserclaw)
+            browseros|browserclaw|oweb)
               matrix="$(jq -cn --arg product "$PRODUCTS" '[{product:$product}]')"
               ;;
             *)
-              echo "::error::products must be one of: browseros, browserclaw, all"
+              echo "::error::products must be one of: browseros, browserclaw, oweb, all"
               exit 1
               ;;
           esac

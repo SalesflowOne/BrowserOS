@@ -1,7 +1,13 @@
 import { storage } from '@wxt-dev/storage'
 import { sessionStorage } from '@/lib/auth/sessionStorage'
+import { getOwebAccessToken } from '@/lib/auth/oweb-session'
 import { getBrowserOSAdapter } from '@/lib/browseros/adapter'
 import { BROWSEROS_PREFS } from '@/lib/browseros/prefs'
+import { isOwebProduct } from '@/lib/product-config'
+import {
+  OWEB_API_BASE,
+  OWEB_DEFAULT_MODEL,
+} from '@/lib/oweb-config'
 import {
   migrateLlmProvidersToV3,
   normalizeProviderNames,
@@ -122,9 +128,35 @@ export function createDefaultBrowserOSProvider(): LlmProviderConfig {
   }
 }
 
+/** Creates the default OWeb provider configuration */
+export function createDefaultOwebProvider(): LlmProviderConfig {
+  const timestamp = Date.now()
+  const accessToken = getOwebAccessToken() ?? undefined
+  return {
+    id: 'oweb',
+    type: 'openai-compatible',
+    name: 'OWeb',
+    baseUrl: OWEB_API_BASE,
+    modelId: OWEB_DEFAULT_MODEL,
+    apiKey: accessToken,
+    supportsImages: true,
+    contextWindow: 200000,
+    temperature: 0.2,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }
+}
+
+/** Creates the built-in provider for the active product */
+export function createDefaultBuiltInProvider(): LlmProviderConfig {
+  return isOwebProduct()
+    ? createDefaultOwebProvider()
+    : createDefaultBrowserOSProvider()
+}
+
 /** Creates the default providers configuration. Only call when storage is empty. */
 export function createDefaultProvidersConfig(): LlmProviderConfig[] {
-  return [createDefaultBrowserOSProvider()]
+  return [createDefaultBuiltInProvider()]
 }
 
 export const defaultProviderIdStorage = storage.defineItem<string>(

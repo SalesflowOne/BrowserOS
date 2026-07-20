@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { signIn } from '@/lib/auth/auth-client'
+import { isOwebProduct, productDisplayName } from '@/lib/product-config'
 import {
   ONBOARDING_SIGNIN_COMPLETED_EVENT,
   ONBOARDING_SIGNIN_SKIPPED_EVENT,
@@ -38,12 +39,14 @@ export const StepTwo = ({ direction, onContinue }: StepTwoProps) => {
     setError(null)
 
     try {
-      track(ONBOARDING_SIGNIN_COMPLETED_EVENT, { method: 'google' })
+      track(ONBOARDING_SIGNIN_COMPLETED_EVENT, {
+        method: isOwebProduct() ? 'oweb' : 'google',
+      })
       track(ONBOARDING_STEP_COMPLETED_EVENT, { step: 3, step_name: 'signin' })
 
       await authRedirectPathStorage.setValue('/onboarding/demo')
       await signIn.social({
-        provider: 'google',
+        provider: isOwebProduct() ? 'oweb' : 'google',
         callbackURL: '/home',
       })
     } catch (err) {
@@ -60,7 +63,7 @@ export const StepTwo = ({ direction, onContinue }: StepTwoProps) => {
         <div className="w-full max-w-md space-y-6">
           <div className="space-y-2 text-center">
             <h2 className="font-bold text-3xl tracking-tight">
-              Sign in to BrowserOS
+              Sign in to {productDisplayName}
             </h2>
             <p className="text-base text-muted-foreground">
               Sync your settings and unlock cloud features
@@ -82,10 +85,10 @@ export const StepTwo = ({ direction, onContinue }: StepTwoProps) => {
           >
             {state === 'loading' ? (
               <Loader2 className="size-4 animate-spin" />
-            ) : (
+            ) : isOwebProduct() ? null : (
               <GoogleIcon />
             )}
-            Continue with Google
+            {isOwebProduct() ? 'Continue with OWeb' : 'Continue with Google'}
           </Button>
 
           <div className="text-center">

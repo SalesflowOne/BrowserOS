@@ -7,7 +7,10 @@ import { AnalyticsProvider } from '@/lib/analytics/AnalyticsProvider.tsx'
 import { AuthProvider } from '@/lib/auth/AuthProvider'
 import { QueryProvider } from '@/lib/graphql/QueryProvider'
 import { sentryRootErrorHandler } from '@/lib/sentry/sentryRootErrorHandler.ts'
+import { PRODUCT_ID } from '@/lib/product-config'
 import { App } from './App'
+
+document.documentElement.dataset.product = PRODUCT_ID
 
 const $root = document.getElementById('root')
 
