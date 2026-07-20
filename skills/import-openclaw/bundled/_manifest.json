@@ -1,0 +1,14 @@
+{
+  "syncedAt": "2026-07-20T14:21:27.923Z",
+  "count": 5,
+  "skills": [
+    "browser-automation",
+    "slack",
+    "discord",
+    "voice-call",
+    "tavily"
+  ],
+  "skipped": [
+    "extensions/telegram/skills/telegram/SKILL.md"
+  ]
+}

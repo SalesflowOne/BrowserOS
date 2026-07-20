@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "description": "OpenClaw tool/skill references to OWeb Composio patterns",
+  "extensionToComposioToolkit": {
+    "slack": "slack",
+    "discord": "discord",
+    "telegram": "telegram",
+    "whatsapp": "twilio",
+    "gmail": "gmail",
+    "google": "googlesuper",
+    "googlecalendar": "googlecalendar",
+    "googledrive": "googledrive",
+    "notion": "notion",
+    "github": "github",
+    "linear": "linear",
+    "jira": "jira",
+    "hubspot": "hubspot",
+    "salesforce": "salesforce",
+    "stripe": "stripe",
+    "shopify": "shopify",
+    "msteams": "microsoft_teams",
+    "outlook": "outlook",
+    "browser": "browser_tool",
+    "brave": "composio_search",
+    "tavily": "tavily",
+    "firecrawl": "firecrawl",
+    "perplexity": "perplexityai",
+    "spotify": "spotify"
+  },
+  "openclawRequiresToIntegrationHint": {
+    "channels.slack": "Connect Slack in Integrations, then enable Slack on Channels.",
+    "channels.discord": "Connect Discord in Integrations.",
+    "channels.telegram": "Connect Telegram bot token in Channels, then enable the Telegram channel webhook.",
+    "channels.whatsapp": "Connect Twilio or WhatsApp via Integrations.",
+    "channels.msteams": "Connect Microsoft Teams + configure Azure Bot (see docs/channels/TEAMS_SETUP.md).",
+    "channels.imessage": "iMessage is not supported on OWeb.",
+    "channels.signal": "Signal is not supported on OWeb.",
+    "browser": "Browser automation uses browser_tool + Anchor Browser. Ensure ANCHOR_API_KEY or connect browser_tool.",
+    "webSearch.brave": "Use composio_search or connect Tavily/Perplexity in Integrations.",
+    "webSearch.tavily": "Tavily is available via composio_search without OAuth, or connect the tavily toolkit.",
+    "memory": "OWeb uses org memory graph (ao_entities) — no OpenClaw memory plugin required."
+  },
+  "toolActionRewrites": [
+    {
+      "match": "action\\s*[:=]\\s*\"sendMessage\"",
+      "toolkit": "slack",
+      "composioSlug": "SLACK_SEND_MESSAGE"
+    },
+    {
+      "match": "action\\s*[:=]\\s*\"readMessages\"",
+      "toolkit": "slack",
+      "composioSlug": "SLACK_FETCH_CONVERSATION_HISTORY"
+    },
+    {
+      "match": "action\\s*[:=]\\s*\"snapshot\"",
+      "toolkit": "browser_tool",
+      "composioSlug": "BROWSER_TOOL_FETCH_WEBPAGE"
+    },
+    {
+      "match": "action\\s*[:=]\\s*\"open\"",
+      "toolkit": "browser_tool",
+      "composioSlug": "BROWSER_TOOL_NAVIGATE"
+    },
+    {
+      "match": "openclaw\\s+browser",
+      "replace": "OWeb browser_tool (see browse_web and browser_tool Composio tools)"
+    }
+  ],
+  "stripPatterns": [
+    "openclaw\\s+\\w+",
+    "profile=\"user\"",
+    "action=\"importprofile\""
+  ]
+}
