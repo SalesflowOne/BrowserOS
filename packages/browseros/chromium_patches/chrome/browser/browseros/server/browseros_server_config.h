@@ -54,6 +54,7 @@ index 0000000000000..a98e3b74de45e
 +
 +const ManagedServerDescriptor& GetBrowserOSServerDescriptor();
 +const ManagedServerDescriptor& GetBrowserClawServerDescriptor();
++const ManagedServerDescriptor& GetOWebServerDescriptor();
 +
 +// Returns the descriptor selected by browseros::GetProduct().
 +const ManagedServerDescriptor& GetManagedServerDescriptor();

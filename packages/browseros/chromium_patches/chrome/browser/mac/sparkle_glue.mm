@@ -35,9 +35,12 @@ index 0000000000000..7a5da195279c1
 +NSString* GetArchitectureSpecificFeedURL() {
 +  // Feed keys are owned by release/feeds/spec.py (_BROWSER_FEED_SLUGS) in
 +  // the BrowserOS repo; keep the two in lockstep.
-+  const char* base_url = browseros::IsBrowserClawProduct()
-+                             ? "https://cdn.browseros.com/appcast-claw"
-+                             : "https://cdn.browseros.com/appcast";
++  const char* base_url = "https://cdn.browseros.com/appcast";
++  if (browseros::IsBrowserClawProduct()) {
++    base_url = "https://cdn.browseros.com/appcast-claw";
++  } else if (browseros::IsOWebProduct()) {
++    base_url = "https://cdn.browseros.com/appcast-oweb";
++  }
 +
 +  if (base::SysInfo::OperatingSystemArchitecture() == "x86_64") {
 +    return [NSString stringWithFormat:@"%s-x86_64.xml", base_url];

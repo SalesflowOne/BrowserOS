@@ -64,6 +64,35 @@ index ee62888f89705a08a95f130505ebfafb246f4bc2..a0835e7f66dd12edeed11c672368f2d6
 +        L"1938553385-"
 +        L"924012147-",
 +};
++#elif BUILDFLAG(BROWSEROS_PRODUCT_OWEB)
++inline constexpr wchar_t kProductPathName[] = L"OWeb";
++inline constexpr ProductInstallIdentity kProductInstallIdentity = {
++    .base_app_name = L"OWebBrowser",
++    .base_app_id = L"OWebBrowser",
++    .browser_prog_id_prefix = L"OWebHTML",
++    .browser_prog_id_description = L"OWeb Browser HTML Document",
++    .direct_launch_url_scheme = "oweb",
++    .pdf_prog_id_prefix = L"OWebPDF",
++    .pdf_prog_id_description = L"OWeb Browser PDF Document",
++    .active_setup_guid = L"{A7E3C4F1-9B2D-4E8A-8C5F-1D6E9A0B3C72}",
++    .legacy_command_execute_clsid = L"{C45B9F07-092A-482B-6C37-8A9B0C1D2E3F}",
++    .toast_activator_clsid = {0xF18E2A10,
++                              0x3C4D,
++                              0x4B5E,
++                              {0x9F, 0x6A, 0x1D, 0x2E, 0x3F, 0x4A, 0x5B, 0x6C}},
++    .elevator_clsid = {0xE27D1B09,
++                       0x2B3C,
++                       0x4A4D,
++                       {0x8E, 0x59, 0x0C, 0x1D, 0x2E, 0x3F, 0x4A, 0x5B}},
++    .tracing_service_clsid = {0xD36C0A08,
++                              0x1A2B,
++                              0x493C,
++                              {0x7D, 0x48, 0x9B, 0x0C, 0x1D, 0x2E, 0x3F, 0x4A}},
++    .sandbox_sid_prefix =
++        L"S-1-15-2-3251537155-1984446955-2931258699-841473695-"
++        L"1938553385-"
++        L"924012149-",
++};
 +#else
 +inline constexpr wchar_t kProductPathName[] = L"BrowserOS";
 +inline constexpr ProductInstallIdentity kProductInstallIdentity = {

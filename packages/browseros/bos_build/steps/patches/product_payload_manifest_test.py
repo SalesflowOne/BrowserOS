@@ -65,9 +65,19 @@ class ProductPayloadManifestPatchTest(unittest.TestCase):
                 "BrowserClawServer\\default\\resources\\db\\migrations\\meta\\*.*: %(VersionDir)s\\BrowserClawServer\\default\\resources\\db\\migrations\\meta\\",
             )
         )
+        oweb_block = "\n".join(
+            (
+                "OWebServer\\default\\resources\\*.*: %(VersionDir)s\\OWebServer\\default\\resources\\",
+                "OWebServer\\default\\resources\\bin\\*.*: %(VersionDir)s\\OWebServer\\default\\resources\\bin\\",
+                "OWebServer\\default\\resources\\bin\\third_party\\*.*: %(VersionDir)s\\OWebServer\\default\\resources\\bin\\third_party\\",
+                "OWebServer\\default\\resources\\db\\migrations\\*.*: %(VersionDir)s\\OWebServer\\default\\resources\\db\\migrations\\",
+                "OWebServer\\default\\resources\\db\\migrations\\meta\\*.*: %(VersionDir)s\\OWebServer\\default\\resources\\db\\migrations\\meta\\",
+            )
+        )
 
         self.assertIn(browseros_block, manifest)
         self.assertIn(browserclaw_block, manifest)
+        self.assertIn(oweb_block, manifest)
         self.assertNotIn(
             "BrowserClawServer\\default\\resources\\bin\\third_party", manifest
         )
@@ -97,7 +107,7 @@ class ProductPayloadManifestPatchTest(unittest.TestCase):
         base_sources = _source_literals(assignment.group("body"))
         browseros_sources = _conditional_sources(
             build,
-            "browseros_allow_runtime_product_override || browseros_product_browseros",
+            "browseros_allow_runtime_product_override || browseros_product_browseros || browseros_product_oweb",
         )
         browserclaw_sources = _conditional_sources(
             build,

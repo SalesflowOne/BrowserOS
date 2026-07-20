@@ -85,6 +85,7 @@ _BROWSER_FEED_CLIENTS = frozenset({"browseros", "browserclaw", "oweb"})
 _SERVER_FEED_SLUGS = {
     "browseros-server": "server",
     "browserclaw-server": "claw-server",
+    "oweb-server": "oweb-server",
 }
 
 

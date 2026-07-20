@@ -157,7 +157,7 @@ class DefineBehaviorTest(unittest.TestCase):
 
 class RegistryTest(unittest.TestCase):
     def test_registry_has_both_products_and_default(self):
-        self.assertEqual(set(PRODUCTS), {"browseros", "browserclaw"})
+        self.assertEqual(set(PRODUCTS), {"browseros", "browserclaw", "oweb"})
         self.assertEqual(DEFAULT_PRODUCT_ID, "browseros")
 
     def test_unknown_product_raises(self):

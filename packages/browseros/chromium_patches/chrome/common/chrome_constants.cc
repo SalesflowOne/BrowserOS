@@ -18,6 +18,9 @@ index 6e30ef11474c457acf1bca690c6a310afb11d751..a87732bff1ae008949f8d86f70e35c98
 +#if BUILDFLAG(BROWSEROS_PRODUCT_BROWSERCLAW)
 +const base::FilePath::CharType kBrowserProcessExecutableName[] =
 +    FPL("browserclaw");
++#elif BUILDFLAG(BROWSEROS_PRODUCT_OWEB)
++const base::FilePath::CharType kBrowserProcessExecutableName[] =
++    FPL("owebbrowser");
 +#else
 +const base::FilePath::CharType kBrowserProcessExecutableName[] = FPL("browseros");
 +#endif
@@ -35,6 +38,11 @@ index 6e30ef11474c457acf1bca690c6a310afb11d751..a87732bff1ae008949f8d86f70e35c98
 +    FPL("browserclaw");
 +const base::FilePath::CharType kHelperProcessExecutablePath[] =
 +    FPL("browserclaw");
++#elif BUILDFLAG(BROWSEROS_PRODUCT_OWEB)
++const base::FilePath::CharType kBrowserProcessExecutablePath[] =
++    FPL("owebbrowser");
++const base::FilePath::CharType kHelperProcessExecutablePath[] =
++    FPL("owebbrowser");
 +#else
 +const base::FilePath::CharType kBrowserProcessExecutablePath[] = FPL("browseros");
 +const base::FilePath::CharType kHelperProcessExecutablePath[] = FPL("browseros");

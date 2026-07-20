@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000000000..e35cbdaf72a25
 --- /dev/null
 +++ b/chrome/browser/browseros/core/browseros_product.h
-@@ -0,0 +1,89 @@
+@@ -0,0 +1,108 @@
 +// Copyright 2024 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -25,15 +25,21 @@ index 0000000000000..e35cbdaf72a25
 +enum class Product {
 +  kBrowserOS,
 +  kBrowserClaw,
++  kOWeb,
 +};
 +
-+static_assert(BUILDFLAG(BROWSEROS_PRODUCT_BROWSEROS) !=
-+                  BUILDFLAG(BROWSEROS_PRODUCT_BROWSERCLAW),
++static_assert(static_cast<int>(BUILDFLAG(BROWSEROS_PRODUCT_BROWSEROS)) +
++                      static_cast<int>(
++                          BUILDFLAG(BROWSEROS_PRODUCT_BROWSERCLAW)) +
++                      static_cast<int>(BUILDFLAG(BROWSEROS_PRODUCT_OWEB)) ==
++                  1,
 +              "Exactly one BrowserOS product must be selected");
 +
 +inline Product GetBakedProduct() {
 +#if BUILDFLAG(BROWSEROS_PRODUCT_BROWSERCLAW)
 +  return Product::kBrowserClaw;
++#elif BUILDFLAG(BROWSEROS_PRODUCT_OWEB)
++  return Product::kOWeb;
 +#else
 +  return Product::kBrowserOS;
 +#endif
@@ -42,6 +48,7 @@ index 0000000000000..e35cbdaf72a25
 +#if BUILDFLAG(BROWSEROS_ALLOW_RUNTIME_PRODUCT_OVERRIDE)
 +inline constexpr char kBrowserOSProductValue[] = "browseros";
 +inline constexpr char kBrowserClawProductValue[] = "browserclaw";
++inline constexpr char kOWebProductValue[] = "oweb";
 +
 +inline std::optional<Product> ProductFromSwitchValue(std::string_view value) {
 +  if (value == kBrowserOSProductValue) {
@@ -49,6 +56,9 @@ index 0000000000000..e35cbdaf72a25
 +  }
 +  if (value == kBrowserClawProductValue) {
 +    return Product::kBrowserClaw;
++  }
++  if (value == kOWebProductValue) {
++    return Product::kOWeb;
 +  }
 +  return std::nullopt;
 +}
@@ -88,6 +98,10 @@ index 0000000000000..e35cbdaf72a25
 +
 +inline bool IsBrowserClawProduct() {
 +  return GetProduct() == Product::kBrowserClaw;
++}
++
++inline bool IsOWebProduct() {
++  return GetProduct() == Product::kOWeb;
 +}
 +
 +}  // namespace browseros

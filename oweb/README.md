@@ -53,7 +53,7 @@ bun run dev:watch
 | Out of disk | Free space on `C:\` — Chromium lives under `C:\src\chromium` by default |
 | VS not found | Install VS 2022 C++ workload, then reopen PowerShell |
 | `product doctor` fails | Run `python oweb\generate-icons.py` |
-| GN `browseros_product` assert | OWeb builds with `gn_product=browseros` internally; branding comes from `--product oweb` overlays |
+| GN `browseros_product` assert | Ensure you built with `--product oweb` (not browseros/browserclaw) |
 
 ## Upstream sync
 

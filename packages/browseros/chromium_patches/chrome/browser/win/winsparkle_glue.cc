@@ -57,14 +57,24 @@ index 0000000000000000000000000000000000000000..08612fa1795d97550c56f02254ea8916
 +    "https://cdn.browseros.com/appcast-win-arm64.xml";
 +constexpr char kClawAppcastURL[] =
 +    "https://cdn.browseros.com/appcast-claw-win-arm64.xml";
++constexpr char kOWebAppcastURL[] =
++    "https://cdn.browseros.com/appcast-oweb-win-arm64.xml";
 +#else
 +constexpr char kAppcastURL[] = "https://cdn.browseros.com/appcast-win.xml";
 +constexpr char kClawAppcastURL[] =
 +    "https://cdn.browseros.com/appcast-claw-win.xml";
++constexpr char kOWebAppcastURL[] =
++    "https://cdn.browseros.com/appcast-oweb-win.xml";
 +#endif
 +
 +const char* GetAppcastURL() {
-+  return browseros::IsBrowserClawProduct() ? kClawAppcastURL : kAppcastURL;
++  if (browseros::IsBrowserClawProduct()) {
++    return kClawAppcastURL;
++  }
++  if (browseros::IsOWebProduct()) {
++    return kOWebAppcastURL;
++  }
++  return kAppcastURL;
 +}
 +
 +// Matches SUScheduledCheckInterval on macOS; also WinSparkle's minimum.
@@ -75,6 +85,7 @@ index 0000000000000000000000000000000000000000..08612fa1795d97550c56f02254ea8916
 +// cross-contaminate their updaters.
 +constexpr char kRegistryPath[] = "Software\\BrowserOS\\WinSparkle";
 +constexpr char kClawRegistryPath[] = "Software\\BrowserClaw\\WinSparkle";
++constexpr char kOWebRegistryPath[] = "Software\\OWeb\\WinSparkle";
 +
 +// Version compared against the appcast's sparkle:version: the BrowserOS
 +// version behind a fixed epoch component. The epoch keeps new releases
@@ -304,19 +315,31 @@ index 0000000000000000000000000000000000000000..08612fa1795d97550c56f02254ea8916
 +  }
 +
 +  const bool is_claw = browseros::IsBrowserClawProduct();
++  const bool is_oweb = browseros::IsOWebProduct();
 +
 +  // WinSparkle UI / User-Agent shows the BrowserOS release version;
 +  // comparisons use the epoch-prefixed feed version below.
 +  const std::wstring display_version =
 +      base::UTF8ToWide(version_info::GetBrowserOSVersionNumber());
-+  win_sparkle_set_app_details(L"BrowserOS",
-+                              is_claw ? L"BrowserClaw" : L"BrowserOS",
++  const wchar_t* product_name = L"BrowserOS";
++  if (is_claw) {
++    product_name = L"BrowserClaw";
++  } else if (is_oweb) {
++    product_name = L"OWeb Browser";
++  }
++  win_sparkle_set_app_details(L"BrowserOS", product_name,
 +                              display_version.c_str());
 +
 +  const std::wstring build_version = base::UTF8ToWide(GetUpdateFeedVersion());
 +  win_sparkle_set_app_build_version(build_version.c_str());
 +
-+  win_sparkle_set_registry_path(is_claw ? kClawRegistryPath : kRegistryPath);
++  const char* registry_path = kRegistryPath;
++  if (is_claw) {
++    registry_path = kClawRegistryPath;
++  } else if (is_oweb) {
++    registry_path = kOWebRegistryPath;
++  }
++  win_sparkle_set_registry_path(registry_path);
 +
 +  // Pre-seeding the automatic-check setting keeps WinSparkle from showing
 +  // its first-run permission prompt (macOS equivalent: SUEnableAutomaticChecks
